@@ -1,5 +1,13 @@
-from docs.domain.models.template import Field, Topic
-from docs.infrastructure.persistence.context_markdown import render_topic, parse_topic
+import re
+
+from docs.domain.context import TopicStatus
+from docs.domain.models.template import ContextSchema, Field, Topic
+from docs.infrastructure.persistence.context_markdown import (
+    parse_requests,
+    parse_topic,
+    render_requests,
+    render_topic,
+)
 
 
 def _prose_topic() -> Topic:
@@ -88,11 +96,6 @@ def test_round_trip_field_topic():
     assert parse_topic(_field_topic(), rendered) == values
 
 
-from docs.domain.context import TopicStatus
-from docs.domain.models.template import ContextSchema
-from docs.infrastructure.persistence.context_markdown import render_requests, parse_requests
-
-
 def _requests_schema() -> ContextSchema:
     return ContextSchema(
         topics=[
@@ -175,6 +178,46 @@ def test_parse_requests_ignores_unknown_topic():
     text = "## Desconocido (`ghost`)\n- **X** (`x`): y\n"
     parsed = parse_requests(schema, text)
     assert parsed == {}
+
+
+def test_parse_requests_mode_by_delimiter_not_tag():
+    schema = _requests_schema()
+
+    # No [prosa] tag, but has <<</>>> delimiter -> must still parse as prose string.
+    text_delimiter_without_tag = (
+        "## Introducción (`intro`)\n"
+        "\n"
+        "<<<\n"
+        "Texto de respuesta.\n"
+        ">>>\n"
+    )
+    parsed = parse_requests(schema, text_delimiter_without_tag)
+    assert parsed == {"intro": "Texto de respuesta."}
+
+    # Has [prosa] tag, but no <<</>>> delimiter (field-style lines instead) ->
+    # must still parse as a field dict.
+    text_tag_without_delimiter = (
+        "## Introducción (`intro`) [prosa]\n"
+        "- **Nombre** (`nombre`): Ana\n"
+    )
+    parsed = parse_requests(schema, text_tag_without_delimiter)
+    assert parsed == {"intro": {"nombre": "Ana"}}
+
+
+def test_render_requests_prose_block_always_blank_even_with_prior_value():
+    schema = _requests_schema()
+    statuses = [
+        (
+            TopicStatus(id="intro", title="Introducción", required=True, exists=False, missing=["(texto)"]),
+            "some stale prior text",
+        ),
+    ]
+    text = render_requests(schema, statuses)
+    assert "some stale prior text" not in text
+
+    delim_match = re.search(r"<<<\s*\n(.*?)\n\s*>>>", text, re.DOTALL)
+    assert delim_match is not None
+    assert delim_match.group(1).strip() == ""
 
 
 def test_render_then_parse_requests_round_trip():
