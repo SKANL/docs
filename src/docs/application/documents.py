@@ -61,11 +61,14 @@ class DocumentService:
         return self.repository.active_id()
 
     def use(self, doc_id: str) -> None:
+        validate_slug(doc_id)
         self.repository.set_active(doc_id)
 
     def rename(self, doc_id: str, new_id: str) -> None:
+        validate_slug(doc_id)
         validate_slug(new_id)
         self.repository.move(doc_id, new_id)
 
     def delete(self, doc_id: str) -> None:
+        validate_slug(doc_id)
         self.repository.remove(doc_id)

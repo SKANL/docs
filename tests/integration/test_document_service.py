@@ -72,3 +72,22 @@ def test_delete_removes_and_repoints_active(service):
     service.delete("beta")
     assert not service.repository.workspace.doc_root("beta").exists()
     assert service.current() == "alpha"
+
+
+@pytest.mark.parametrize("bad_id", ["../escape", "Bad Slug", "/abs", "a/b"])
+def test_use_rejects_invalid_slug(service, bad_id):
+    with pytest.raises(InvalidSlugError):
+        service.use(bad_id)
+
+
+@pytest.mark.parametrize("bad_id", ["../escape", "Bad Slug", "/abs", "a/b"])
+def test_delete_rejects_invalid_slug(service, bad_id):
+    with pytest.raises(InvalidSlugError):
+        service.delete(bad_id)
+
+
+@pytest.mark.parametrize("bad_id", ["../escape", "Bad Slug", "/abs", "a/b"])
+def test_rename_rejects_invalid_source_slug(service, bad_id):
+    service.create("alpha", "documento-generico")
+    with pytest.raises(InvalidSlugError):
+        service.rename(bad_id, "gamma")
