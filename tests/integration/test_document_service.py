@@ -54,3 +54,21 @@ def test_list_and_current_and_use(service):
 def test_use_unknown_raises(service):
     with pytest.raises(DocumentNotFoundError):
         service.use("ghost")
+
+
+def test_rename_moves_dir_and_updates_registry(service):
+    service.create("alpha", "documento-generico")
+    service.rename("alpha", "gamma")
+    ws = service.repository.workspace
+    assert ws.doc_root("gamma").exists()
+    assert not ws.doc_root("alpha").exists()
+    assert service.repository.read_document("gamma").id == "gamma"
+    assert service.current() == "gamma"
+
+
+def test_delete_removes_and_repoints_active(service):
+    service.create("alpha", "documento-generico")
+    service.create("beta", "documento-generico")
+    service.delete("beta")
+    assert not service.repository.workspace.doc_root("beta").exists()
+    assert service.current() == "alpha"

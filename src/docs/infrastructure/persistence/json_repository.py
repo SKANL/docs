@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import Template
 from docs.domain.ports.document_repository import (
@@ -46,7 +48,7 @@ class JsonDocumentRepository:
         self.save_registry(registry)
 
     # documents ----------------------------------------------------------------
-    def _document_json(self, doc_id: str):
+    def _document_json(self, doc_id: str) -> Path:
         return self.workspace.doc_root(doc_id) / "document.json"
 
     def exists(self, doc_id: str) -> bool:
@@ -76,3 +78,38 @@ class JsonDocumentRepository:
         if not directory.exists():
             return []
         return [p.stem for p in sorted(directory.glob("*.json"))]
+
+    # mutations ------------------------------------------------------------------
+    def move(self, old_id: str, new_id: str) -> None:
+        src = self.workspace.doc_root(old_id)
+        dst = self.workspace.doc_root(new_id)
+        if not src.exists():
+            raise DocumentNotFoundError(f"Document `{old_id}` does not exist.")
+        if dst.exists():
+            raise DocumentExistsError(f"Document `{new_id}` already exists.")
+        src.rename(dst)
+        document = self.read_document(new_id)
+        document.id = new_id
+        self.write_document(document)
+        registry = self.load_registry()
+        for summary in registry.documents:
+            if summary.id == old_id:
+                summary.id = new_id
+        if registry.active == old_id:
+            registry.active = new_id
+        self.save_registry(registry)
+
+    def remove(self, doc_id: str) -> None:
+        import shutil
+
+        doc_root = self.workspace.doc_root(doc_id)
+        if not doc_root.exists():
+            raise DocumentNotFoundError(f"Document `{doc_id}` does not exist.")
+        if self.workspace.documents_dir.resolve() not in doc_root.resolve().parents:
+            raise ValueError(f"Refusing to delete outside workspace: {doc_root}")
+        shutil.rmtree(doc_root)
+        registry = self.load_registry()
+        registry.documents = [d for d in registry.documents if d.id != doc_id]
+        if registry.active == doc_id:
+            registry.active = registry.documents[0].id if registry.documents else ""
+        self.save_registry(registry)
