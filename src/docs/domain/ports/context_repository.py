@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from docs.domain.models.template import Topic
+from docs.domain.context import TopicStatus
+from docs.domain.models.template import ContextSchema, Topic
 
 
 class ContextRepository(Protocol):
@@ -12,3 +13,6 @@ class ContextRepository(Protocol):
     def write_topic(self, doc_id: str, topic: Topic, values: str | dict[str, str]) -> Path: ...
     def topic_exists(self, doc_id: str, topic_id: str) -> bool: ...
     def remove_topic(self, doc_id: str, topic_id: str) -> None: ...
+    def regenerate_index(
+        self, doc_id: str, schema: ContextSchema, statuses: list[TopicStatus]
+    ) -> Path: ...
