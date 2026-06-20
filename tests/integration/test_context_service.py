@@ -17,7 +17,15 @@ def _template() -> Template:
         title="Doc",
         context_schema=ContextSchema(
             topics=[
-                Topic(id="alumno", title="Alumno", required=True, fields=[Field(key="nombre", label="Nombre", required=True)]),
+                Topic(
+                    id="alumno",
+                    title="Alumno",
+                    required=True,
+                    fields=[
+                        Field(key="nombre", label="Nombre", required=True),
+                        Field(key="legajo", label="Legajo", required=False),
+                    ],
+                ),
                 Topic(id="intro", title="Introducción", required=True, multiline=True),
             ]
         ),
@@ -117,3 +125,60 @@ def test_status_and_set_raise_for_unknown_document(setup):
         service.status("ghost", template)
     with pytest.raises(DocumentNotFoundError):
         service.set("ghost", template, "intro", "x")
+
+
+def test_ingest_writes_known_topics_and_regenerates_index(setup):
+    service, template = setup
+    service.set("alpha", template, "alumno", "Ana", field="nombre")
+    requests_text = (
+        "## Alumno (`alumno`)\n"
+        "- **Nombre** (`nombre`): Ana\n"
+        "- **Legajo** (`legajo`): 123\n"
+        "\n"
+        "## Introducción (`intro`) [prosa]\n"
+        "\n"
+        "<<<\n"
+        "Texto nuevo.\n"
+        ">>>\n"
+    )
+    service.context_repo.write_requests("alpha", requests_text)
+
+    written = service.ingest("alpha", template)
+
+    assert set(written) == {"alumno", "intro"}
+    statuses = service.status("alpha", template)
+    assert statuses[0].missing == []
+    assert statuses[1].missing == []
+    index_path = service.context_repo.workspace.doc_root("alpha") / "context" / "index.json"
+    assert index_path.exists()
+
+
+def test_ingest_merge_never_erases_existing_value(setup):
+    service, template = setup
+    service.set("alpha", template, "alumno", "Ana", field="nombre")
+    service.set("alpha", template, "alumno", "123", field="legajo")
+    requests_text = (
+        "## Alumno (`alumno`)\n"
+        "- **Nombre** (`nombre`): \n"  # empty answer must NOT erase "Ana"
+        "- **Legajo** (`legajo`): \n"
+        "\n"
+    )
+    service.context_repo.write_requests("alpha", requests_text)
+
+    service.ingest("alpha", template)
+
+    value = service.context_repo.read_topic("alpha", template.context_schema.topics[0])
+    assert value == {"nombre": "Ana", "legajo": "123"}
+
+
+def test_ingest_skips_unknown_topic(setup):
+    service, template = setup
+    service.context_repo.write_requests("alpha", "## Desconocido (`ghost`)\n- **X** (`x`): y\n")
+    written = service.ingest("alpha", template)
+    assert written == []
+
+
+def test_ingest_raises_if_requests_file_absent(setup):
+    service, template = setup
+    with pytest.raises(FileNotFoundError):
+        service.ingest("alpha", template)

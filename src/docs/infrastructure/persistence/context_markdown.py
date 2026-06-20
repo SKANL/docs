@@ -11,7 +11,7 @@ _NOISE_RE = re.compile(r"[\\*`]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 _REQUEST_HEADER_RE = re.compile(r"^##\s+.*\(`([^`]+)`\)\s*(\[prosa\])?\s*$", re.MULTILINE)
-_REQUEST_FIELD_RE = re.compile(r"^-\s+\*\*.+?\*\*\s+\(`([^`]+)`\):\s*(.*)$", re.MULTILINE)
+_REQUEST_FIELD_RE = re.compile(r"^-\s+\*\*.+?\*\*\s+\(`([^`]+)`\):[ \t]*(.*)$", re.MULTILINE)
 
 _NO_PENDING = "_No hay campos pendientes._"
 

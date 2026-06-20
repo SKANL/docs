@@ -6,6 +6,7 @@ from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
 from docs.domain.models.template import Template, Topic
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_repository import DocumentNotFoundError, DocumentRepository
+from docs.infrastructure.persistence.context_markdown import parse_requests
 
 
 class ContextService:
@@ -69,3 +70,37 @@ class ContextService:
         self._require_document(doc_id)
         self.context_repo.remove_topic(doc_id, topic_id)
         self.context_repo.regenerate_index(doc_id, template.context_schema, self.status(doc_id, template))
+
+    def ingest(self, doc_id: str, template: Template) -> list[str]:
+        self._require_document(doc_id)
+        text = self.context_repo.read_requests(doc_id)
+        if not text:
+            raise FileNotFoundError(f"No pending requests file for document `{doc_id}`.")
+
+        parsed = parse_requests(template.context_schema, text)
+        topics_by_id = {t.id: t for t in template.context_schema.topics}
+        written: list[str] = []
+
+        for topic_id, new_value in parsed.items():
+            topic = topics_by_id.get(topic_id)
+            if topic is None:
+                continue
+
+            current = self.context_repo.read_topic(doc_id, topic)
+
+            if is_prose_topic(topic):
+                new_text = new_value if isinstance(new_value, str) else ""
+                merged: str = new_text.strip() if new_text.strip() else (current if isinstance(current, str) else "")
+                if str(merged).strip():
+                    self.context_repo.write_topic(doc_id, topic, merged)
+                    written.append(topic_id)
+            else:
+                current_fields = current if isinstance(current, dict) else {}
+                new_fields = new_value if isinstance(new_value, dict) else {}
+                merged_fields = {**current_fields, **{k: v for k, v in new_fields.items() if v}}
+                if any(merged_fields.values()):
+                    self.context_repo.write_topic(doc_id, topic, merged_fields)
+                    written.append(topic_id)
+
+        self.context_repo.regenerate_index(doc_id, template.context_schema, self.status(doc_id, template))
+        return written
