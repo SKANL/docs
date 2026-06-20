@@ -82,3 +82,16 @@ class JsonContextRepository:
         md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
         return json_path
+
+    def _requests_path(self, doc_id: str) -> Path:
+        return self._context_dir(doc_id) / "_requests.md"
+
+    def read_requests(self, doc_id: str) -> str:
+        path = self._requests_path(doc_id)
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def write_requests(self, doc_id: str, text: str) -> Path:
+        path = self._requests_path(doc_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
