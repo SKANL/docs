@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from docs.domain.models.document import Document, DocumentSummary
@@ -39,11 +40,15 @@ class JsonDocumentRepository:
         registry.active = doc_id
         self.save_registry(registry)
 
+    @staticmethod
+    def _sorted(documents: list[DocumentSummary]) -> list[DocumentSummary]:
+        return sorted(documents, key=lambda d: d.id)
+
     def register(self, summary: DocumentSummary) -> None:
         registry = self.load_registry()
         documents = [d for d in registry.documents if d.id != summary.id]
         documents.append(summary)
-        registry.documents = sorted(documents, key=lambda d: d.id)
+        registry.documents = self._sorted(documents)
         registry.active = summary.id
         self.save_registry(registry)
 
@@ -89,19 +94,18 @@ class JsonDocumentRepository:
             raise DocumentExistsError(f"Document `{new_id}` already exists.")
         src.rename(dst)
         document = self.read_document(new_id)
-        document.id = new_id
-        self.write_document(document)
+        self.write_document(document.model_copy(update={"id": new_id}))
         registry = self.load_registry()
-        for summary in registry.documents:
-            if summary.id == old_id:
-                summary.id = new_id
+        documents = [
+            summary.model_copy(update={"id": new_id}) if summary.id == old_id else summary
+            for summary in registry.documents
+        ]
+        registry.documents = self._sorted(documents)
         if registry.active == old_id:
             registry.active = new_id
         self.save_registry(registry)
 
     def remove(self, doc_id: str) -> None:
-        import shutil
-
         doc_root = self.workspace.doc_root(doc_id)
         if not doc_root.exists():
             raise DocumentNotFoundError(f"Document `{doc_id}` does not exist.")

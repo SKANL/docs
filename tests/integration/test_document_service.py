@@ -91,3 +91,11 @@ def test_rename_rejects_invalid_source_slug(service, bad_id):
     service.create("alpha", "documento-generico")
     with pytest.raises(InvalidSlugError):
         service.rename(bad_id, "gamma")
+
+
+def test_rename_keeps_registry_sorted(service):
+    service.create("alpha", "documento-generico")
+    service.create("beta", "documento-generico")
+    service.rename("alpha", "zeta")
+    ids = [d.id for d in service.list()]
+    assert ids == sorted(ids) == ["beta", "zeta"]
