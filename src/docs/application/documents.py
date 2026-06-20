@@ -53,3 +53,12 @@ class DocumentService:
             )
         )
         return document
+
+    def list(self) -> list[DocumentSummary]:
+        return self.repository.load_registry().documents
+
+    def current(self) -> str:
+        return self.repository.active_id()
+
+    def use(self, doc_id: str) -> None:
+        self.repository.set_active(doc_id)
