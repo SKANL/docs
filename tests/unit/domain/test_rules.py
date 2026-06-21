@@ -525,3 +525,130 @@ def test_review_rules_contract_apa_required_but_apa7_disabled_duplicates_documen
 def test_review_rules_all_issues_have_empty_code():
     result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=True)
     assert all(i.code == "" for i in result.issues)
+
+
+from docs.domain.rules import review_cross_consistency
+
+
+def test_review_cross_consistency_citation_without_global_reference():
+    bodies = {
+        "introduccion": "Esto se sostiene (García, 2020) en la literatura.",
+        "referencias": "# REFERENCIAS\nOtroAutor, B. (2019). Título.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    issue = next(i for i in result.issues if i.code == "coherence.citation_without_global_reference")
+    assert issue.severity == "warning"
+    assert "García, 2020" in issue.message
+
+
+def test_review_cross_consistency_reference_without_global_citation():
+    bodies = {
+        "introduccion": "Texto sin ninguna cita.",
+        "referencias": "# REFERENCIAS\nGarcía, A. (2020). Un título largo cualquiera. Editorial.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    issue = next(i for i in result.issues if i.code == "coherence.reference_without_global_citation")
+    assert "García" in issue.message
+
+
+def test_review_cross_consistency_matching_citation_and_reference_no_issue():
+    bodies = {
+        "introduccion": "Esto se sostiene (García, 2020) en la literatura.",
+        "referencias": "# REFERENCIAS\nGarcía, A. (2020). Un título largo cualquiera. Editorial.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(
+        i.code in {"coherence.citation_without_global_reference", "coherence.reference_without_global_citation"}
+        for i in result.issues
+    )
+
+
+def test_review_cross_consistency_referencias_section_itself_excluded_from_citation_pool():
+    bodies = {
+        "referencias": "(EsteAutor, 2020) # REFERENCIAS\nOtroAutor, B. (2019). Título.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    # "EsteAutor" citation lives only inside the referencias body, which is excluded
+    # from the citation pool entirely -- so no citation-side issue should appear for it.
+    assert not any("EsteAutor" in i.message for i in result.issues)
+
+
+def test_review_cross_consistency_reciprocity_skipped_when_references_pending_and_not_strict():
+    bodies = {
+        "introduccion": "Esto se sostiene (García, 2020) en la literatura.",
+        "referencias": "# REFERENCIAS\nPENDIENTE de completar.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code.startswith("coherence.citation_without") for i in result.issues)
+    assert not any(i.code.startswith("coherence.reference_without") for i in result.issues)
+
+
+def test_review_cross_consistency_reciprocity_not_skipped_when_strict_even_if_pending():
+    bodies = {
+        "introduccion": "Esto se sostiene (García, 2020) en la literatura.",
+        "referencias": "# REFERENCIAS\nPENDIENTE de completar.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=True)
+    assert any(i.code == "coherence.citation_without_global_reference" for i in result.issues)
+
+
+def test_review_cross_consistency_duration_mismatch():
+    bodies = {
+        "introduccion": "La estadía duró 160 horas en total.",
+        "resumen": "Se cumplieron 200 horas de trabajo.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    issue = next(i for i in result.issues if i.code == "coherence.duration_mismatch")
+    assert "160 horas" in issue.message and "200 horas" in issue.message
+    assert issue.severity == "warning"
+
+
+def test_review_cross_consistency_duration_consistent_no_issue():
+    bodies = {
+        "introduccion": "La estadía duró 160 horas en total.",
+        "resumen": "Se cumplieron 160 horas de trabajo.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code == "coherence.duration_mismatch" for i in result.issues)
+
+
+def test_review_cross_consistency_duration_mismatch_severity_tracks_strict():
+    bodies = {
+        "introduccion": "La estadía duró 160 horas en total.",
+        "resumen": "Se cumplieron 200 horas de trabajo.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=True)
+    issue = next(i for i in result.issues if i.code == "coherence.duration_mismatch")
+    assert issue.severity == "error"
+
+
+def test_review_cross_consistency_contested_stack_term_unqualified():
+    bodies = {"infraestructura": "El sistema usa MySQL como base de datos definitiva."}
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    issue = next(i for i in result.issues if i.code == "coherence.contested_stack_unqualified")
+    assert issue.severity == "warning"
+    assert "MySQL" in issue.message
+    assert "infraestructura" in issue.message
+
+
+def test_review_cross_consistency_contested_stack_term_hedged_no_issue():
+    bodies = {"infraestructura": "El sistema usa MySQL como posible dependencia externa en el prototipo."}
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
+
+
+def test_review_cross_consistency_contested_stack_term_pendiente_no_issue():
+    bodies = {"infraestructura": "El uso de MySQL está PENDIENTE de definición."}
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
+
+
+def test_review_cross_consistency_contested_stack_terms_overridable():
+    bodies = {"infraestructura": "El sistema usa Redis como base definitiva."}
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["Redis"])
+    assert any(i.code == "coherence.contested_stack_unqualified" and "Redis" in i.message for i in result.issues)
+
+
+def test_review_cross_consistency_no_issues_for_empty_bodies():
+    result = review_cross_consistency(_template(), {}, strict=False)
+    assert result.issues == []

@@ -341,3 +341,87 @@ def review_rules(
             issues.append(Issue("error", f"El contrato `{section_id}` requiere APA pero APA 7 está deshabilitado."))
 
     return ReviewResult(issues)
+
+
+_DURATION_RE = re.compile(r"\b(\d{2,4})\s*horas\b", re.IGNORECASE)
+_HEDGE_RE = re.compile(r"\b(contexto|prototipo|dependencia|externa|posible|planea|futur\w*)")
+
+DEFAULT_CONTESTED_STACK_TERMS = ["Laravel", "Supabase", "bun.js", "MySQL", "GCP", "Firebase"]
+
+
+def review_cross_consistency(
+    template: Template,
+    section_bodies: dict[str, str],
+    strict: bool = False,
+    contested_stack_terms: list[str] | None = None,
+) -> ReviewResult:
+    issues: list[Issue] = []
+    severity = "error" if strict else "warning"
+    terms = contested_stack_terms if contested_stack_terms is not None else DEFAULT_CONTESTED_STACK_TERMS
+
+    references_body = section_bodies.get("referencias", "")
+    references_pending = "pendiente" in clean_markdown_text(references_body).lower()
+
+    citations: dict[str, str] = {}
+    for section_id, body in section_bodies.items():
+        if section_id == "referencias":
+            continue
+        for citation in extract_apa_citations(body):
+            key = citation_author_key(citation)
+            if key:
+                citations.setdefault(key, citation)
+
+    references = extract_reference_entries(references_body)
+    reference_keys = {reference_author_key(entry) for entry in references}
+
+    if not (references_pending and not strict):
+        for key, citation in sorted(citations.items()):
+            if not any(key in ref_key or ref_key in key for ref_key in reference_keys if ref_key):
+                issues.append(
+                    Issue(
+                        severity,
+                        f"Cita `{citation}` usada en el cuerpo no tiene referencia en REFERENCIAS BIBLIOGRÁFICAS.",
+                        code="coherence.citation_without_global_reference",
+                    )
+                )
+        for entry in references:
+            ref_key = reference_author_key(entry)
+            if ref_key and not any(ref_key in cite_key or cite_key in ref_key for cite_key in citations):
+                issues.append(
+                    Issue(
+                        severity,
+                        f"Referencia `{entry[:80]}` no está citada en ninguna sección del cuerpo.",
+                        code="coherence.reference_without_global_citation",
+                    )
+                )
+
+    hour_mentions: set[int] = set()
+    for body in section_bodies.values():
+        for match in _DURATION_RE.finditer(body):
+            hour_mentions.add(int(match.group(1)))
+    if len(hour_mentions) > 1:
+        values = ", ".join(f"{value} horas" for value in sorted(hour_mentions))
+        issues.append(
+            Issue(
+                severity,
+                f"La duración de la estadía es inconsistente entre secciones: {values}.",
+                code="coherence.duration_mismatch",
+            )
+        )
+
+    for section_id, body in section_bodies.items():
+        lowered = body.lower()
+        section_pending = "pendiente" in lowered
+        for term in terms:
+            pattern = re.compile(rf"(?<![\w]){re.escape(term.lower())}(?![\w])")
+            if pattern.search(lowered) and not section_pending and not _HEDGE_RE.search(lowered):
+                issues.append(
+                    Issue(
+                        "warning",
+                        f"`{section_id}` menciona tecnología en disputa `{term}` como definitiva "
+                        "sin delimitarla ni marcar PENDIENTE.",
+                        code="coherence.contested_stack_unqualified",
+                    )
+                )
+
+    return ReviewResult(issues)
