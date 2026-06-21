@@ -1,4 +1,5 @@
 # tests/integration/test_evidence_service.py
+import hashlib
 import json
 from pathlib import Path
 
@@ -155,3 +156,83 @@ def test_build_rules_second_call_with_new_manual_file_rewrites_manifest(tmp_path
     path = service.build_rules(config)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     assert len(manifest["manual_files"]) == 1
+
+
+def test_rules_hash_returns_file_hash_when_manifest_exists(tmp_path, service):
+    config = _config(tmp_path)
+    rules_path = service.build_rules(config)  # creates the manifest on disk
+    expected = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+    assert service.rules_hash(config) == expected
+
+
+def test_rules_hash_ignores_other_config_fields_when_manifest_exists(tmp_path, service):
+    config = _config(tmp_path, section_contracts={"intro": {"title": "Should not matter"}})
+    rules_path = service.build_rules(config)
+    expected = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+    assert service.rules_hash(config) == expected
+
+
+def test_rules_hash_falls_back_to_synthesized_payload_when_manifest_absent(tmp_path, service):
+    config = _config(tmp_path)  # rules_manifest never built
+    from pathlib import Path
+
+    manual_dir = Path(config["paths"]["manual_dir"])
+    (manual_dir / "00-intro.md").write_text("# Intro", encoding="utf-8")
+    result = service.rules_hash(config)
+    manual_path = (manual_dir / "00-intro.md").resolve().as_posix()
+    manual_sha = hashlib.sha256((manual_dir / "00-intro.md").read_bytes()).hexdigest()
+    expected_payload = {
+        "manual_dir": [{"path": manual_path, "sha256": manual_sha}],
+        "section_contracts": {},
+        "format": {},
+        "apa7": {},
+        "structure": [],
+        "preliminaries": {},
+    }
+    expected = hashlib.sha256(
+        json.dumps(expected_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert result == expected
+
+
+def test_rules_hash_fallback_with_missing_manual_dir_produces_empty_manual_list(tmp_path, service):
+    config = _config(tmp_path, paths={"manual_dir": str(tmp_path / "does-not-exist")})
+    result = service.rules_hash(config)
+    expected_payload = {
+        "manual_dir": [], "section_contracts": {}, "format": {}, "apa7": {}, "structure": [], "preliminaries": {},
+    }
+    expected = hashlib.sha256(
+        json.dumps(expected_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert result == expected
+
+
+def test_contract_hash_hashes_existing_contract(tmp_path, service):
+    contracts = {"intro": {"title": "Introducción", "required_content": ["objetivo"]}}
+    config = _config(tmp_path, section_contracts=contracts)
+    expected = hashlib.sha256(
+        json.dumps(contracts["intro"], ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert service.contract_hash(config, "intro") == expected
+
+
+def test_contract_hash_hashes_empty_dict_when_section_unknown(tmp_path, service):
+    config = _config(tmp_path)
+    expected = hashlib.sha256(json.dumps({}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    assert service.contract_hash(config, "unknown") == expected
+
+
+def test_manifest_hash_empty_string_when_path_value_falsy(service):
+    assert service.manifest_hash(None) == ""
+    assert service.manifest_hash("") == ""
+
+
+def test_manifest_hash_empty_string_when_path_missing(tmp_path, service):
+    assert service.manifest_hash(str(tmp_path / "missing.json")) == ""
+
+
+def test_manifest_hash_returns_file_hash_when_path_exists(tmp_path, service):
+    path = tmp_path / "source-manifest.json"
+    path.write_text('{"a": 1}', encoding="utf-8")
+    expected = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert service.manifest_hash(str(path)) == expected

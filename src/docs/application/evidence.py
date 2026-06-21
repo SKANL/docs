@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from docs.domain.evidence import ManualFileFact, TraceabilityFact, build_manifest
+from docs.domain.evidence import ManualFileFact, ManualHashFact, TraceabilityFact, build_manifest, build_rules_hash_payload
 from docs.domain.markdown_text import clean_markdown_text, extract_markdown_headings
 from docs.domain.ports.evidence_repository import EvidenceRepository
 
@@ -90,3 +90,36 @@ class EvidenceService:
         path = Path(config["paths"]["rules_manifest"])
         self.repository.write_manifest(path, manifest)
         return path
+
+    def rules_hash(self, config: dict[str, Any]) -> str:
+        rules_path = Path(config["paths"]["rules_manifest"])
+        if self.repository.file_exists(rules_path):
+            return self.repository.hash_file(rules_path)
+
+        manual_dir_str = config["paths"].get("manual_dir")
+        manual_files: list[ManualHashFact] = []
+        if manual_dir_str and self.repository.file_exists(Path(manual_dir_str)):
+            for path in self.repository.list_manual_files(Path(manual_dir_str)):
+                manual_files.append(
+                    ManualHashFact(path=path.resolve().as_posix(), sha256=self.repository.hash_file(path))
+                )
+
+        payload = build_rules_hash_payload(
+            manual_files=manual_files,
+            section_contracts=config.get("section_contracts", {}),
+            format=config.get("format", {}),
+            apa7=config.get("apa7", {}),
+            structure=config.get("structure", []),
+            preliminaries=config.get("preliminaries", {}),
+        )
+        return self.repository.hash_json(payload)
+
+    def contract_hash(self, config: dict[str, Any], section_id: str) -> str:
+        section_contracts = config.get("section_contracts", {})
+        return self.repository.hash_json(section_contracts.get(section_id, {}))
+
+    def manifest_hash(self, path_value: str | None) -> str:
+        if not path_value:
+            return ""
+        path = Path(path_value)
+        return self.repository.hash_file(path) if self.repository.file_exists(path) else ""
