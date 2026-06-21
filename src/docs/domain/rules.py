@@ -2,8 +2,17 @@ from __future__ import annotations
 
 import re
 
-from docs.domain.apa import extract_apa_citations
-from docs.domain.markdown_text import clean_markdown_text, strip_frontmatter_and_markdown
+from docs.domain.apa import (
+    citation_author_key,
+    extract_apa_citations,
+    extract_reference_entries,
+    reference_author_key,
+)
+from docs.domain.markdown_text import (
+    clean_markdown_text,
+    normalize_for_sort,
+    strip_frontmatter_and_markdown,
+)
 from docs.domain.models.template import SectionContract, StrictPolicyBlock
 from docs.domain.review import Issue
 
@@ -12,6 +21,8 @@ _EVIDENCE_RE = re.compile(
     r"\b(evidencia|captura|prueba|medici[oó]n|issue|commit|anexo|repositorio|c[oó]digo|manifest)\b"
 )
 _REQUIREMENT_WORD_SPLIT_RE = re.compile(r"\W+")
+_QUOTE_RE = re.compile(r'"[^"]{20,}"|“[^”]{20,}”')
+_LOCATOR_RE = re.compile(r"\(([^)]*(p\.|pp\.|párr\.|cap\.|sección|tabla)\s*[^)]*)\)", re.IGNORECASE)
 
 
 def requirement_present(requirement: str, plain: str, detect: dict[str, list[str]]) -> bool:
@@ -92,5 +103,65 @@ def review_section_contract(
                 code="apa.required",
             )
         )
+
+    return issues
+
+
+def review_apa7_text(text: str, apa7_enabled: bool, strict_policy: StrictPolicyBlock) -> list[Issue]:
+    if not apa7_enabled:
+        return []
+
+    issues: list[Issue] = []
+    severity = strict_policy.apa_violations
+    citations = extract_apa_citations(text)
+    references = extract_reference_entries(text)
+
+    if citations and not references:
+        issues.append(
+            Issue(
+                severity,
+                "Hay citas APA en texto pero no hay lista de referencias detectable.",
+                code="apa.no_reference_list",
+            )
+        )
+        for citation in sorted(citations):
+            issues.append(
+                Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference")
+            )
+
+    if references and not citations:
+        for entry in references:
+            issues.append(
+                Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation")
+            )
+
+    citation_keys = {citation_author_key(citation) for citation in citations}
+    reference_keys = {reference_author_key(entry) for entry in references}
+
+    for citation in sorted(citations):
+        key = citation_author_key(citation)
+        if key and references and not any(key in ref_key or ref_key in key for ref_key in reference_keys):
+            issues.append(
+                Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference")
+            )
+
+    for entry in references:
+        key = reference_author_key(entry)
+        if key and citations and not any(key in cite_key or cite_key in key for cite_key in citation_keys):
+            issues.append(
+                Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation")
+            )
+
+    if references and references != sorted(references, key=normalize_for_sort):
+        issues.append(
+            Issue(severity, "Las referencias no están ordenadas alfabéticamente.", code="apa.references_not_sorted")
+        )
+
+    for match in _QUOTE_RE.finditer(text):
+        window = text[match.end():match.end() + 90]
+        if not _LOCATOR_RE.search(window):
+            issues.append(
+                Issue(severity, "Cita textual detectada sin localizador APA 7 cercano.", code="apa.quote_without_locator")
+            )
 
     return issues

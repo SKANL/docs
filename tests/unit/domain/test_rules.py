@@ -1,5 +1,5 @@
 from docs.domain.models.template import SectionContract, StrictPolicyBlock
-from docs.domain.rules import requirement_present, review_section_contract
+from docs.domain.rules import requirement_present, review_apa7_text, review_section_contract
 
 
 def _policy(**overrides) -> StrictPolicyBlock:
@@ -118,3 +118,90 @@ def test_review_section_contract_apa_required_satisfied_by_pendiente():
     text = "# Sección\n\nEsto está PENDIENTE de citar."
     issues = review_section_contract(text, "intro", contract, _policy(), strict=False)
     assert not any(i.code == "apa.required" for i in issues)
+
+
+def test_review_apa7_text_disabled_returns_no_issues():
+    text = "Esto se sostiene (García, 2020) sin lista de referencias."
+    issues = review_apa7_text(text, apa7_enabled=False, strict_policy=_policy())
+    assert issues == []
+
+
+def test_review_apa7_text_citations_without_references_flags_no_reference_list():
+    text = "Esto se sostiene (García, 2020) sin lista de referencias."
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy(apa_violations="error"))
+    codes = [i.code for i in issues]
+    assert "apa.no_reference_list" in codes
+    assert "apa.citation_without_reference" in codes
+    assert all(i.severity == "error" for i in issues)
+
+
+def test_review_apa7_text_references_without_citations_flags_reference_without_citation():
+    text = (
+        "Texto sin citas en el cuerpo.\n\n"
+        "# REFERENCIAS\n"
+        "García, A. (2020). Título largo de un trabajo. Editorial.\n"
+    )
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    codes = [i.code for i in issues]
+    assert "apa.reference_without_citation" in codes
+
+
+def test_review_apa7_text_matching_citation_and_reference_no_issues():
+    text = (
+        "Esto se sostiene (García, 2020) en la literatura.\n\n"
+        "# REFERENCIAS\n"
+        "García, A. (2020). Un título cualquiera. Editorial.\n"
+    )
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    assert not any(i.code in {"apa.citation_without_reference", "apa.reference_without_citation"} for i in issues)
+
+
+def test_review_apa7_text_unmatched_citation_among_others_flags_only_that_one():
+    text = (
+        "Esto se sostiene (García, 2020) y también (Pérez, 2021).\n\n"
+        "# REFERENCIAS\n"
+        "García, A. (2020). Un título cualquiera. Editorial.\n"
+    )
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    unmatched = [i for i in issues if i.code == "apa.citation_without_reference"]
+    assert len(unmatched) == 1
+    assert "Pérez" in unmatched[0].message
+
+
+def test_review_apa7_text_references_not_sorted():
+    text = (
+        "(Zeta, 2020) y (Alfa, 2019) se citan aquí.\n\n"
+        "# REFERENCIAS\n"
+        "Zeta, A. (2020). Título Z.\n"
+        "Alfa, B. (2019). Título A.\n"
+    )
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    assert any(i.code == "apa.references_not_sorted" for i in issues)
+
+
+def test_review_apa7_text_references_sorted_no_issue():
+    text = (
+        "(Alfa, 2019) y (Zeta, 2020) se citan aquí.\n\n"
+        "# REFERENCIAS\n"
+        "Alfa, B. (2019). Título A.\n"
+        "Zeta, A. (2020). Título Z.\n"
+    )
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    assert not any(i.code == "apa.references_not_sorted" for i in issues)
+
+
+def test_review_apa7_text_quote_without_locator():
+    text = 'Dice textualmente "esto es una cita larga de más de veinte caracteres" sin nada más.'
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    assert any(i.code == "apa.quote_without_locator" for i in issues)
+
+
+def test_review_apa7_text_quote_with_nearby_locator_no_issue():
+    text = 'Dice textualmente "esto es una cita larga de más de veinte caracteres" (p. 5) según el autor.'
+    issues = review_apa7_text(text, apa7_enabled=True, strict_policy=_policy())
+    assert not any(i.code == "apa.quote_without_locator" for i in issues)
+
+
+def test_review_apa7_text_no_citations_no_references_no_issues():
+    issues = review_apa7_text("Texto neutro sin nada relevante.", apa7_enabled=True, strict_policy=_policy())
+    assert issues == []
