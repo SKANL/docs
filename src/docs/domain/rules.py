@@ -13,7 +13,7 @@ from docs.domain.markdown_text import (
     normalize_for_sort,
     strip_frontmatter_and_markdown,
 )
-from docs.domain.models.template import SectionContract, StrictPolicyBlock
+from docs.domain.models.template import SectionContract, StrictPolicyBlock, Template
 from docs.domain.review import Issue
 
 _WORD_RE = re.compile(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ-]+\b")
@@ -23,6 +23,9 @@ _EVIDENCE_RE = re.compile(
 _REQUIREMENT_WORD_SPLIT_RE = re.compile(r"\W+")
 _QUOTE_RE = re.compile(r'"[^"]{20,}"|“[^”]{20,}”')
 _LOCATOR_RE = re.compile(r"\(([^)]*(p\.|pp\.|párr\.|cap\.|sección|tabla)\s*[^)]*)\)", re.IGNORECASE)
+_TITLE_RE = re.compile(r"^#\s+\S+", re.MULTILINE)
+_RESULTS_RE = re.compile(r"\bresultados?\b")
+_RESULTS_EVIDENCE_RE = re.compile(r"\b(evidencia|captura|prueba|medici[oó]n|issue|commit|anexo)\b")
 
 
 def requirement_present(requirement: str, plain: str, detect: dict[str, list[str]]) -> bool:
@@ -163,5 +166,109 @@ def review_apa7_text(text: str, apa7_enabled: bool, strict_policy: StrictPolicyB
             issues.append(
                 Issue(severity, "Cita textual detectada sin localizador APA 7 cercano.", code="apa.quote_without_locator")
             )
+
+    return issues
+
+
+def review_section_text(
+    text: str,
+    metadata: dict,
+    section_id: str,
+    contract: SectionContract,
+    template: Template,
+    strict: bool,
+    *,
+    excluded_terms: dict[str, str],
+    is_policy_file: bool,
+    first_person_patterns: list[str],
+    subjective_terms: list[str],
+    secret_patterns: list[str],
+    scope_term: str = "",
+    scope_focus: str = "",
+) -> list[Issue]:
+    lowered = text.lower()
+    issues: list[Issue] = []
+    strict_policy = template.strict_policy.strict if strict else template.strict_policy.draft
+
+    if not is_policy_file:
+        for term, reason in excluded_terms.items():
+            if term in lowered:
+                issues.append(
+                    Issue(
+                        "error",
+                        f"Contiene apartado excluido: `{term}`. {reason}".strip(),
+                        code="scope.excluded_section",
+                    )
+                )
+
+    for pattern in first_person_patterns:
+        if re.search(pattern, lowered):
+            issues.append(
+                Issue(
+                    "error",
+                    f"Contiene primera persona o voz no permitida: patrón `{pattern}`.",
+                    code="voice.first_person",
+                )
+            )
+
+    for term in subjective_terms:
+        if re.search(rf"\b{re.escape(term)}\b", lowered):
+            issues.append(
+                Issue(
+                    "warning",
+                    f"Contiene término subjetivo sin evidencia automática: `{term}`.",
+                    code="voice.subjective_term",
+                )
+            )
+
+    for pattern in secret_patterns:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            issues.append(
+                Issue(
+                    "error",
+                    f"Contiene posible secreto, credencial o dato sensible: patrón `{pattern}`.",
+                    code="privacy.sensitive_data",
+                )
+            )
+
+    if scope_term and scope_focus and scope_term in lowered and scope_focus not in lowered:
+        issues.append(
+            Issue(
+                "warning",
+                f"Menciona `{scope_term}` sin delimitar el alcance a `{scope_focus}`.",
+                code="scope.undelimited_ecosystem",
+            )
+        )
+
+    if not is_policy_file and not _TITLE_RE.search(text):
+        issues.append(Issue("error", "La sección no tiene título principal Markdown.", code="structure.missing_title"))
+
+    if contract != SectionContract() and not is_policy_file:
+        issues.extend(review_section_contract(text, section_id, contract, strict_policy, strict))
+
+    pending_allowed = strict_policy.allow_pending and contract.pending_allowed_in_draft
+    if not is_policy_file and "pendiente" in lowered and not pending_allowed:
+        issues.append(
+            Issue(
+                "error",
+                "Contiene PENDIENTE en modo estricto o en una sección que no permite pendientes.",
+                code="content.pending_not_allowed",
+            )
+        )
+
+    issues.extend(review_apa7_text(text, template.apa7.enabled, strict_policy))
+
+    if (
+        _RESULTS_RE.search(lowered)
+        and "pendiente" not in lowered
+        and not _RESULTS_EVIDENCE_RE.search(lowered)
+    ):
+        issues.append(
+            Issue(
+                "warning",
+                "Menciona resultados sin evidencia detectable ni marcador PENDIENTE.",
+                code="evidence.results_without_evidence",
+            )
+        )
 
     return issues

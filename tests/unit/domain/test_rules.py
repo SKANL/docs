@@ -205,3 +205,161 @@ def test_review_apa7_text_quote_with_nearby_locator_no_issue():
 def test_review_apa7_text_no_citations_no_references_no_issues():
     issues = review_apa7_text("Texto neutro sin nada relevante.", apa7_enabled=True, strict_policy=_policy())
     assert issues == []
+
+
+from docs.domain.models.template import Template
+from docs.domain.rules import review_section_text
+
+
+def _template(**overrides) -> Template:
+    return Template(type="x", title="X", **overrides)
+
+
+def _call(text, contract=None, template=None, strict=False, **kwargs):
+    defaults = dict(
+        excluded_terms={},
+        is_policy_file=False,
+        first_person_patterns=[],
+        subjective_terms=[],
+        secret_patterns=[],
+        scope_term="",
+        scope_focus="",
+    )
+    defaults.update(kwargs)
+    return review_section_text(
+        text,
+        {},
+        "intro",
+        contract or SectionContract(),
+        template or _template(),
+        strict,
+        **defaults,
+    )
+
+
+def test_review_section_text_excluded_term_flags_error_unless_policy_file():
+    text = "# Título\n\nEste texto contiene plagio detectado."
+    issues = _call(text, excluded_terms={"plagio": "No se permite contenido plagiado."})
+    issue = next(i for i in issues if i.code == "scope.excluded_section")
+    assert issue.severity == "error"
+    assert "Contiene apartado excluido: `plagio`. No se permite contenido plagiado." == issue.message
+
+
+def test_review_section_text_excluded_term_skipped_for_policy_file():
+    text = "# Título\n\nEste texto contiene plagio detectado."
+    issues = _call(text, excluded_terms={"plagio": "x"}, is_policy_file=True)
+    assert not any(i.code == "scope.excluded_section" for i in issues)
+
+
+def test_review_section_text_first_person_pattern_flags_error():
+    text = "# Título\n\nYo considero que esto es así."
+    issues = _call(text, first_person_patterns=[r"\byo\b"])
+    issue = next(i for i in issues if i.code == "voice.first_person")
+    assert issue.severity == "error"
+    assert "patrón `\\byo\\b`" in issue.message
+
+
+def test_review_section_text_subjective_term_always_warning():
+    text = "# Título\n\nEsto es excelente sin duda."
+    issues = _call(text, subjective_terms=["excelente"])
+    issue = next(i for i in issues if i.code == "voice.subjective_term")
+    assert issue.severity == "warning"
+
+
+def test_review_section_text_secret_pattern_checked_against_raw_text_case_insensitive():
+    text = "# Título\n\nAPI_KEY=ABC123SECRET"
+    issues = _call(text, secret_patterns=[r"api_key\s*="])
+    issue = next(i for i in issues if i.code == "privacy.sensitive_data")
+    assert issue.severity == "error"
+
+
+def test_review_section_text_scope_undelimited_warning():
+    text = "# Título\n\nSe usa azure en este proyecto."
+    issues = _call(text, scope_term="azure", scope_focus="estadía tic")
+    issue = next(i for i in issues if i.code == "scope.undelimited_ecosystem")
+    assert issue.severity == "warning"
+
+
+def test_review_section_text_scope_check_skipped_when_focus_present():
+    text = "# Título\n\nSe usa azure en el contexto de la estadía tic."
+    issues = _call(text, scope_term="azure", scope_focus="estadía tic")
+    assert not any(i.code == "scope.undelimited_ecosystem" for i in issues)
+
+
+def test_review_section_text_missing_title_flagged():
+    text = "Texto sin encabezado markdown."
+    issues = _call(text)
+    assert any(i.code == "structure.missing_title" for i in issues)
+
+
+def test_review_section_text_missing_title_skipped_for_policy_file():
+    text = "Texto sin encabezado markdown."
+    issues = _call(text, is_policy_file=True)
+    assert not any(i.code == "structure.missing_title" for i in issues)
+
+
+def test_review_section_text_dispatches_to_contract_review():
+    contract = SectionContract(required_content=["objetivo"])
+    text = "# Título\n\nTexto sin relación alguna."
+    issues = _call(text, contract=contract)
+    assert any(i.code == "contract.missing_required" for i in issues)
+
+
+def test_review_section_text_contract_dispatch_skipped_for_policy_file():
+    contract = SectionContract(required_content=["objetivo"])
+    text = "# Título\n\nTexto sin relación alguna."
+    issues = _call(text, contract=contract, is_policy_file=True)
+    assert not any(i.code == "contract.missing_required" for i in issues)
+
+
+def test_review_section_text_pending_marker_flagged_when_not_allowed():
+    contract = SectionContract(pending_allowed_in_draft=False)
+    text = "# Título\n\nEsto está PENDIENTE."
+    issues = _call(text, contract=contract)
+    issue = next(i for i in issues if i.code == "content.pending_not_allowed")
+    assert issue.severity == "error"
+
+
+def test_review_section_text_pending_marker_allowed_by_default():
+    text = "# Título\n\nEsto está PENDIENTE."
+    issues = _call(text)
+    assert not any(i.code == "content.pending_not_allowed" for i in issues)
+
+
+def test_review_section_text_pending_marker_skipped_for_policy_file():
+    contract = SectionContract(pending_allowed_in_draft=False)
+    text = "# Título\n\nEsto está PENDIENTE."
+    issues = _call(text, contract=contract, is_policy_file=True)
+    assert not any(i.code == "content.pending_not_allowed" for i in issues)
+
+
+def test_review_section_text_dispatches_to_apa7_review():
+    text = "# Título\n\nEsto se sostiene (García, 2020) sin lista de referencias."
+    issues = _call(text)
+    assert any(i.code == "apa.no_reference_list" for i in issues)
+
+
+def test_review_section_text_apa7_disabled_via_template_skips_apa_checks():
+    text = "# Título\n\nEsto se sostiene (García, 2020) sin lista de referencias."
+    template = _template(apa7={"enabled": False})
+    issues = _call(text, template=template)
+    assert not any(i.code.startswith("apa.") for i in issues)
+
+
+def test_review_section_text_results_without_evidence_warning():
+    text = "# Título\n\nLos resultados obtenidos fueron positivos."
+    issues = _call(text)
+    issue = next(i for i in issues if i.code == "evidence.results_without_evidence")
+    assert issue.severity == "warning"
+
+
+def test_review_section_text_results_with_evidence_word_no_warning():
+    text = "# Título\n\nLos resultados obtenidos se respaldan con evidencia adjunta."
+    issues = _call(text)
+    assert not any(i.code == "evidence.results_without_evidence" for i in issues)
+
+
+def test_review_section_text_results_with_pendiente_no_warning():
+    text = "# Título\n\nLos resultados están PENDIENTE de evaluación."
+    issues = _call(text)
+    assert not any(i.code == "evidence.results_without_evidence" for i in issues)
