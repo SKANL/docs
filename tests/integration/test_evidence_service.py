@@ -236,3 +236,181 @@ def test_manifest_hash_returns_file_hash_when_path_exists(tmp_path, service):
     path.write_text('{"a": 1}', encoding="utf-8")
     expected = hashlib.sha256(path.read_bytes()).hexdigest()
     assert service.manifest_hash(str(path)) == expected
+
+
+def _manifest_paths_config(tmp_path: Path, **overrides) -> dict:
+    # Manifest paths default to nonexistent files under tmp_path rather than ""
+    # — Path("") resolves to the cwd (which exists), so an empty string is not
+    # a safe "this manifest is absent" sentinel for file_exists()/read_manifest().
+    config = {
+        "paths": {
+            "source_manifest": str(tmp_path / "source.json"),
+            "issues_manifest": str(tmp_path / "issues.json"),
+            "code_evidence_manifest": str(tmp_path / "code-evidence.json"),
+        },
+    }
+    config["paths"].update(overrides.pop("paths", {}))
+    config.update(overrides)
+    return config
+
+
+def test_load_manifest_facts_dedupes_across_manifests(tmp_path: Path, service):
+    source_manifest = Path(tmp_path / "source.json")
+    fact = {"classification": "confirmado", "claim": "x", "source": "a"}
+    service.repository.write_manifest(source_manifest, {"facts": [fact, fact]})
+    config = _manifest_paths_config(tmp_path)
+
+    facts = service.load_manifest_facts(config)
+
+    assert facts == [fact]
+
+
+def test_load_manifest_facts_collects_facts_and_issues_across_all_three_manifests(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+    service.repository.write_manifest(
+        Path(config["paths"]["source_manifest"]), {"facts": [{"classification": "confirmado", "claim": "s1"}]}
+    )
+    service.repository.write_manifest(
+        Path(config["paths"]["issues_manifest"]), {"issues": [{"classification": "pendiente", "claim": "i1"}]}
+    )
+    service.repository.write_manifest(
+        Path(config["paths"]["code_evidence_manifest"]), {"facts": [{"classification": "prototipo", "claim": "c1"}]}
+    )
+
+    facts = service.load_manifest_facts(config)
+
+    claims = {f["claim"] for f in facts}
+    assert claims == {"s1", "i1", "c1"}
+
+
+def test_load_manifest_facts_skips_missing_manifest_paths(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)  # none of the three files exist
+
+    assert service.load_manifest_facts(config) == []
+
+
+def test_load_manifest_facts_skips_malformed_json_manifest(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+    Path(config["paths"]["source_manifest"]).write_text("{not valid json", encoding="utf-8")
+
+    assert service.load_manifest_facts(config) == []
+
+
+def test_load_manifest_facts_ignores_non_dict_items_in_facts_and_issues(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+    service.repository.write_manifest(
+        Path(config["paths"]["source_manifest"]),
+        {"facts": ["not-a-dict", {"classification": "confirmado", "claim": "ok"}], "issues": [42]},
+    )
+
+    facts = service.load_manifest_facts(config)
+
+    assert facts == [{"classification": "confirmado", "claim": "ok"}]
+
+
+def test_render_fact_ledger_includes_ledger_seed_claim_in_confirmado_group(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path, ledger_seed=[{"classification": "confirmado", "claim": "Hecho sembrado"}])
+
+    ledger = service.render_fact_ledger(config)
+
+    assert "# Fact Ledger" in ledger
+    assert "## Datos confirmados" in ledger
+    assert "- Hecho sembrado" in ledger
+
+
+def test_render_fact_ledger_ledger_seed_defaults_to_confirmado_when_classification_absent(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path, ledger_seed=[{"claim": "Sin clasificacion"}])
+
+    ledger = service.render_fact_ledger(config)
+
+    assert "## Datos confirmados" in ledger
+    assert "- Sin clasificacion" in ledger
+
+
+def test_render_fact_ledger_omits_empty_groups(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+
+    ledger = service.render_fact_ledger(config)
+
+    assert ledger == "# Fact Ledger\n"
+    assert "## Contradicciones conocidas" not in ledger
+
+
+def test_render_fact_ledger_includes_caller_supplied_context_lines_in_confirmado_group(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+
+    ledger = service.render_fact_ledger(config, context_confirmed_lines=["Nombre: Ana"])
+
+    assert "## Datos confirmados" in ledger
+    assert "- Nombre: Ana" in ledger
+
+
+def test_render_fact_ledger_includes_manifest_facts_with_classification_fallback_to_pendiente(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+    service.repository.write_manifest(
+        Path(config["paths"]["source_manifest"]), {"facts": [{"claim": "Sin clasificar en manifest"}]}
+    )
+
+    ledger = service.render_fact_ledger(config)
+
+    assert "## Pendientes obligatorios" in ledger
+    assert "- Sin clasificar en manifest" in ledger
+
+
+def test_render_fact_ledger_manifest_fact_falls_back_to_title_when_claim_absent(tmp_path: Path, service):
+    config = _manifest_paths_config(tmp_path)
+    service.repository.write_manifest(
+        Path(config["paths"]["source_manifest"]),
+        {"issues": [{"classification": "pendiente", "title": "Issue sin claim"}]},
+    )
+
+    ledger = service.render_fact_ledger(config)
+
+    assert "- Issue sin claim" in ledger
+
+
+def test_render_fact_ledger_dedupes_repeated_claims_across_sources(tmp_path: Path, service):
+    config = _manifest_paths_config(
+        tmp_path,
+        ledger_seed=[{"classification": "confirmado", "claim": "Repetido"}],
+    )
+    service.repository.write_manifest(
+        Path(config["paths"]["source_manifest"]), {"facts": [{"classification": "confirmado", "claim": "Repetido"}]}
+    )
+
+    ledger = service.render_fact_ledger(config, context_confirmed_lines=["Repetido"])
+
+    assert ledger.count("- Repetido") == 1
+
+
+def test_render_fact_ledger_covers_all_six_categories_when_reachable(tmp_path: Path, service):
+    config = _manifest_paths_config(
+        tmp_path,
+        ledger_seed=[
+            {"classification": "confirmado", "claim": "Confirmado seed"},
+            {"classification": "contradiccion", "claim": "Contradiccion seed"},
+            {"classification": "pendiente", "claim": "Pendiente seed"},
+            {"classification": "prototipo", "claim": "Prototipo seed"},
+            {"classification": "fuera_de_alcance", "claim": "Fuera de alcance seed"},
+            {"classification": "dato_sensible", "claim": "Dato sensible seed"},
+        ],
+    )
+
+    ledger = service.render_fact_ledger(config)
+
+    assert "## Datos confirmados" in ledger
+    assert "## Contradicciones conocidas" in ledger
+    assert "## Pendientes obligatorios" in ledger
+    assert "## Prototipos o dependencias externas" in ledger
+    assert "## Fuera de alcance del cuerpo" in ledger
+    assert "## Datos sensibles excluidos del cuerpo" in ledger
+    headings = [
+        "## Datos confirmados",
+        "## Contradicciones conocidas",
+        "## Pendientes obligatorios",
+        "## Prototipos o dependencias externas",
+        "## Fuera de alcance del cuerpo",
+        "## Datos sensibles excluidos del cuerpo",
+    ]
+    positions = [ledger.index(h) for h in headings]
+    assert positions == sorted(positions)

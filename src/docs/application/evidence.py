@@ -4,8 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from docs.domain.collection import dedupe_facts
 from docs.domain.evidence import ManualFileFact, ManualHashFact, TraceabilityFact, build_manifest, build_rules_hash_payload
-from docs.domain.markdown_text import clean_markdown_text, extract_markdown_headings
+from docs.domain.markdown_text import clean_markdown_text, dedupe_strings, extract_markdown_headings
 from docs.domain.ports.evidence_repository import EvidenceRepository
 
 _TRACEABILITY_PATH_KEYS = [
@@ -13,6 +14,17 @@ _TRACEABILITY_PATH_KEYS = [
     ("example_pdf", "structural_example_pdf"),
 ]
 _EXCERPT_LENGTH = 1200
+
+_MANIFEST_PATH_KEYS = ["source_manifest", "issues_manifest", "code_evidence_manifest"]
+
+_LEDGER_HEADINGS = {
+    "confirmado": "Datos confirmados",
+    "contradiccion": "Contradicciones conocidas",
+    "pendiente": "Pendientes obligatorios",
+    "prototipo": "Prototipos o dependencias externas",
+    "fuera_de_alcance": "Fuera de alcance del cuerpo",
+    "dato_sensible": "Datos sensibles excluidos del cuerpo",
+}
 
 
 class EvidenceService:
@@ -123,3 +135,49 @@ class EvidenceService:
             return ""
         path = Path(path_value)
         return self.repository.hash_file(path) if self.repository.file_exists(path) else ""
+
+    def load_manifest_facts(self, config: dict[str, Any]) -> list[dict[str, Any]]:
+        facts: list[dict[str, Any]] = []
+        for key in _MANIFEST_PATH_KEYS:
+            path_str = config["paths"].get(key, "")
+            path = Path(path_str)
+            if not self.repository.file_exists(path):
+                continue
+            data = self.repository.read_manifest(path)
+            if not data:
+                continue
+            facts.extend(item for item in data.get("facts", []) if isinstance(item, dict))
+            facts.extend(item for item in data.get("issues", []) if isinstance(item, dict))
+        return dedupe_facts(facts)
+
+    def render_fact_ledger(
+        self,
+        config: dict[str, Any],
+        context_confirmed_lines: list[str] | None = None,
+    ) -> str:
+        grouped: dict[str, list[str]] = {key: [] for key in _LEDGER_HEADINGS}
+
+        for fact in config.get("ledger_seed", []):
+            classification = fact.get("classification", "confirmado")
+            claim = fact.get("claim", "")
+            if claim:
+                grouped.setdefault(classification, []).append(claim)
+
+        for line in context_confirmed_lines or []:
+            grouped["confirmado"].append(line)
+
+        for fact in self.load_manifest_facts(config):
+            classification = fact.get("classification", "pendiente")
+            claim = fact.get("claim") or fact.get("title", "")
+            if claim:
+                grouped.setdefault(classification, []).append(claim)
+
+        lines = ["# Fact Ledger", ""]
+        for key, title in _LEDGER_HEADINGS.items():
+            values = dedupe_strings(grouped.get(key, []))
+            if not values:
+                continue
+            lines.extend([f"## {title}", ""])
+            lines.extend(f"- {value}" for value in values)
+            lines.append("")
+        return "\n".join(lines)
