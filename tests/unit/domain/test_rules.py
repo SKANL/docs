@@ -363,3 +363,165 @@ def test_review_section_text_results_with_pendiente_no_warning():
     text = "# Título\n\nLos resultados están PENDIENTE de evaluación."
     issues = _call(text)
     assert not any(i.code == "evidence.results_without_evidence" for i in issues)
+
+
+from docs.domain.rules import review_rules
+
+
+def _valid_extra() -> dict:
+    return {
+        "paths": {"extracted_dir_policy": "rules_traceability_only"},
+        "project": {"source_priority": ["tesina/manual"]},
+        "preliminaries": {
+            "roman_pagination": {"enabled": True},
+            "body_pagination_start": {"section_id": "introduccion"},
+        },
+        "format": {
+            "page_margins_cm": {
+                "cover_policy": "preserve_template",
+                "non_cover": {"top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5},
+            }
+        },
+        "advisor_overrides": [{"id": "margins-2-5cm-non-cover", "status": "active"}],
+    }
+
+
+def _valid_template(**overrides) -> Template:
+    return Template.model_validate({"type": "x", "title": "X", **_valid_extra(), **overrides})
+
+
+def test_review_rules_all_valid_no_issues():
+    result = review_rules(_valid_template(), manifest_exists=True, manifest_size=10, strict=False)
+    assert result.issues == []
+    assert result.passed is True
+
+
+def test_review_rules_manifest_missing_warning_in_draft():
+    result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=False)
+    issue = next(i for i in result.issues if "manual-rules.json" in i.message and "ejecuta" in i.message)
+    assert issue.severity == "warning"
+    assert issue.code == ""
+
+
+def test_review_rules_manifest_missing_error_in_strict():
+    result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=True)
+    issue = next(i for i in result.issues if "manual-rules.json" in i.message and "ejecuta" in i.message)
+    assert issue.severity == "error"
+
+
+def test_review_rules_manifest_empty_always_error():
+    result = review_rules(_valid_template(), manifest_exists=True, manifest_size=0, strict=False)
+    issue = next(i for i in result.issues if "está vacío" in i.message)
+    assert issue.severity == "error"
+
+
+def test_review_rules_missing_section_contracts():
+    template = Template.model_validate(
+        {
+            "type": "x",
+            "title": "X",
+            "sections": [{"id": "intro", "title": "Intro"}, {"id": "resumen", "title": "Resumen"}],
+            "section_contracts": {"intro": {}},
+            **_valid_extra(),
+        }
+    )
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    issue = next(i for i in result.issues if "Faltan contratos" in i.message)
+    assert "resumen" in issue.message
+
+
+def test_review_rules_extracted_dir_policy_wrong():
+    extra = _valid_extra()
+    extra["paths"]["extracted_dir_policy"] = "anything_else"
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("rules_traceability_only" in i.message for i in result.issues)
+
+
+def test_review_rules_tesina_extracted_in_source_priority():
+    extra = _valid_extra()
+    extra["project"]["source_priority"] = ["tesina/extracted/foo"]
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("source_priority" in i.message for i in result.issues)
+
+
+def test_review_rules_apa7_disabled():
+    template = Template.model_validate({"type": "x", "title": "X", "apa7": {"enabled": False}, **_valid_extra()})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any(i.message == "APA 7 debe estar habilitado." for i in result.issues)
+
+
+def test_review_rules_roman_pagination_disabled():
+    extra = _valid_extra()
+    extra["preliminaries"]["roman_pagination"]["enabled"] = False
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("paginación romana" in i.message for i in result.issues)
+
+
+def test_review_rules_body_pagination_start_wrong_section():
+    extra = _valid_extra()
+    extra["preliminaries"]["body_pagination_start"]["section_id"] = "resumen"
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("INTRODUCCIÓN" in i.message for i in result.issues)
+
+
+def test_review_rules_cover_policy_wrong():
+    extra = _valid_extra()
+    extra["format"]["page_margins_cm"]["cover_policy"] = "custom"
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("preserve_template" in i.message for i in result.issues)
+
+
+def test_review_rules_bad_margins():
+    extra = _valid_extra()
+    extra["format"]["page_margins_cm"]["non_cover"]["top"] = 3.0
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("márgenes de 2.5 cm" in i.message for i in result.issues)
+
+
+def test_review_rules_missing_active_advisor_override():
+    extra = _valid_extra()
+    extra["advisor_overrides"] = []
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("advisor_override activo" in i.message for i in result.issues)
+
+
+def test_review_rules_contract_without_required_content():
+    template = Template.model_validate(
+        {
+            "type": "x",
+            "title": "X",
+            "section_contracts": {"intro": {"required_content": []}},
+            **_valid_extra(),
+        }
+    )
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("no define contenido obligatorio" in i.message for i in result.issues)
+
+
+def test_review_rules_contract_apa_required_but_apa7_disabled_duplicates_document_level_issue():
+    template = Template.model_validate(
+        {
+            "type": "x",
+            "title": "X",
+            "apa7": {"enabled": False},
+            "section_contracts": {"intro": {"required_content": ["x"], "apa_required": True}},
+            **_valid_extra(),
+        }
+    )
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    document_level = [i for i in result.issues if i.message == "APA 7 debe estar habilitado."]
+    contract_level = [i for i in result.issues if "requiere APA pero APA 7 está deshabilitado" in i.message]
+    assert len(document_level) == 1
+    assert len(contract_level) == 1
+
+
+def test_review_rules_all_issues_have_empty_code():
+    result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=True)
+    assert all(i.code == "" for i in result.issues)
