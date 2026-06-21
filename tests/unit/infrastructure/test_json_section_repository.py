@@ -94,3 +94,16 @@ def test_write_section_path_matches_section_path(workspace, repo):
     repo.write_section("doc-1", 3, "metodologia", "contenido")
     expected_path = repo.section_path("doc-1", 3, "metodologia")
     assert expected_path.read_text(encoding="utf-8") == "contenido"
+
+
+def test_write_proposal_section_creates_proposals_dir_and_writes_file(workspace, repo):
+    repo.write_proposal_section("doc-1", 1, "introduccion", "contenido propuesto")
+    path = workspace.doc_root("doc-1") / "sections" / "_proposals" / "001-introduccion.candidate.md"
+    assert path.exists()
+    assert path.read_text(encoding="utf-8") == "contenido propuesto"
+
+
+def test_write_proposal_section_returns_the_written_path(workspace, repo):
+    result = repo.write_proposal_section("doc-1", 1, "introduccion", "contenido propuesto")
+    expected_path = workspace.doc_root("doc-1") / "sections" / "_proposals" / "001-introduccion.candidate.md"
+    assert result == expected_path
