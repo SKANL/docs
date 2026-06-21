@@ -107,3 +107,46 @@ def test_write_proposal_section_returns_the_written_path(workspace, repo):
     result = repo.write_proposal_section("doc-1", 1, "introduccion", "contenido propuesto")
     expected_path = workspace.doc_root("doc-1") / "sections" / "_proposals" / "001-introduccion.candidate.md"
     assert result == expected_path
+
+
+def test_context_pack_path_under_context_subdir(workspace, repo):
+    path = repo.context_pack_path("doc-1", 3, "introduccion")
+    expected_path = workspace.doc_root("doc-1") / "sections" / "_context" / "003-introduccion.context.md"
+    assert path == expected_path
+    assert path.name == "003-introduccion.context.md"
+    assert path.parent.name == "_context"
+
+
+def test_context_pack_path_pads_multi_digit_order(workspace, repo):
+    path = repo.context_pack_path("doc-1", 12, "metodologia")
+    assert path.name == "012-metodologia.context.md"
+
+
+def test_document_context_pack_path_is_000_document(workspace, repo):
+    path = repo.document_context_pack_path("doc-1")
+    expected_path = workspace.doc_root("doc-1") / "sections" / "_context" / "000-document.context.md"
+    assert path == expected_path
+    assert path.name == "000-document.context.md"
+
+
+def test_write_context_pack_creates_dir_and_writes_content(workspace, repo):
+    target = repo.context_pack_path("doc-1", 1, "introduccion")
+    result = repo.write_context_pack(target, "contenido")
+    assert result == target
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == "contenido"
+
+
+def test_write_context_pack_overwrites_existing_file(workspace, repo):
+    target = repo.context_pack_path("doc-1", 1, "introduccion")
+    target.parent.mkdir(parents=True)
+    target.write_text("vieja version", encoding="utf-8")
+    repo.write_context_pack(target, "nueva version")
+    assert target.read_text(encoding="utf-8") == "nueva version"
+
+
+def test_write_document_context_pack_path_works_too(workspace, repo):
+    target = repo.document_context_pack_path("doc-1")
+    result = repo.write_context_pack(target, "resumen global")
+    assert result == target
+    assert target.read_text(encoding="utf-8") == "resumen global"

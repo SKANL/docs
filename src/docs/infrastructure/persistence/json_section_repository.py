@@ -40,3 +40,14 @@ class JsonSectionRepository:
         path = proposals_dir / f"{order:03d}-{section_id}.candidate.md"
         path.write_text(raw_text, encoding="utf-8")
         return path
+
+    def context_pack_path(self, doc_id: str, order: int, section_id: str) -> Path:
+        return self._sections_dir(doc_id) / "_context" / f"{order:03d}-{section_id}.context.md"
+
+    def document_context_pack_path(self, doc_id: str) -> Path:
+        return self._sections_dir(doc_id) / "_context" / "000-document.context.md"
+
+    def write_context_pack(self, path: Path, content: str) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
