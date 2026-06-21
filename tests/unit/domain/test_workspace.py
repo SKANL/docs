@@ -9,6 +9,11 @@ def test_workspace_derives_registry_and_doc_root():
     assert ws.doc_root("alpha") == Path("/w/documents/alpha")
 
 
+def test_assets_dir_is_under_doc_root(tmp_path):
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    assert workspace.assets_dir("doc-1") == workspace.doc_root("doc-1") / "assets"
+
+
 def test_document_to_json_is_sorted_and_unicode():
     doc = Document(id="a", title="Área", template="documento-generico")
     text = doc.to_json()

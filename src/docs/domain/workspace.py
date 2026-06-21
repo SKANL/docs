@@ -15,3 +15,6 @@ class Workspace:
 
     def doc_root(self, doc_id: str) -> Path:
         return self.documents_dir / doc_id
+
+    def assets_dir(self, doc_id: str) -> Path:
+        return self.doc_root(doc_id) / "assets"
