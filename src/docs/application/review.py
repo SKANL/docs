@@ -1,11 +1,14 @@
 # src/docs/application/review.py
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
+
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.ports.section_repository import SectionRepository
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_cross_consistency, review_rules, review_section_text
-from docs.domain.sections import infer_section_id_from_path
+from docs.domain.sections import apply_stamp, infer_section_id_from_path, with_frontmatter
 
 _REQUIRED_FLOW_TERMS = ["problema", "objetivo", "metodología", "resultados", "conclusiones"]
 
@@ -113,3 +116,25 @@ class ReviewService:
         )
 
         return ReviewResult(issues)
+
+    def stamp_section(
+        self,
+        doc_id: str,
+        template: Template,
+        section_id: str,
+        authored_by: str,
+        model: str = "",
+        *,
+        now: str,
+    ) -> Path:
+        section = next(s for s in template.sections if s.id == section_id)
+        if not self.repository.section_exists(doc_id, section.order, section.id):
+            path = self.repository.section_path(doc_id, section.order, section.id)
+            raise FileNotFoundError(f"No existe la sección a sellar: {path}")
+
+        metadata, body = self.repository.read_section(doc_id, section.order, section.id)
+        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        new_metadata = apply_stamp(metadata, section.id, section.title, body, body_hash, authored_by, model, now)
+        raw_text = with_frontmatter(body, new_metadata)
+        self.repository.write_section(doc_id, section.order, section.id, raw_text)
+        return self.repository.section_path(doc_id, section.order, section.id)

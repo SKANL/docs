@@ -1,4 +1,5 @@
 # tests/integration/test_review_service.py
+import json
 from pathlib import Path
 
 import pytest
@@ -229,3 +230,77 @@ def test_review_document_includes_rules_issues_when_manifest_missing(workspace: 
     )
     messages = [issue.message for issue in result.issues]
     assert any("manual-rules.json" in message for message in messages)
+
+
+def test_stamp_section_raises_when_section_file_missing(workspace, service):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    with pytest.raises(FileNotFoundError):
+        service.stamp_section("doc-1", template, "introduccion", "agent-x", now="2026-06-21T00:00:00")
+
+
+def test_stamp_section_sets_authored_by_and_body_hash(workspace, service):
+    import hashlib
+
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="# Introducción\n\nTexto.\n",
+        metadata={"section_id": "introduccion"},
+    )
+    result_path = service.stamp_section("doc-1", template, "introduccion", "agent-x", now="2026-06-21T00:00:00")
+    text = result_path.read_text(encoding="utf-8")
+    metadata_json = text.split("---\n")[1]
+    metadata = json.loads(metadata_json)
+    assert metadata["authored_by"] == "agent-x"
+    assert metadata["stamped_at"] == "2026-06-21T00:00:00"
+    assert metadata["body_hash"] == hashlib.sha256("# Introducción\n\nTexto.\n".encode("utf-8")).hexdigest()
+
+
+def test_stamp_section_sets_model_when_provided(workspace, service):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="# Introducción\n\nTexto.\n",
+        metadata={"section_id": "introduccion"},
+    )
+    result_path = service.stamp_section(
+        "doc-1", template, "introduccion", "agent-x", model="opus", now="2026-06-21T00:00:00"
+    )
+    metadata_json = result_path.read_text(encoding="utf-8").split("---\n")[1]
+    assert json.loads(metadata_json)["model"] == "opus"
+
+
+def test_stamp_section_synthesizes_metadata_when_file_has_no_frontmatter(workspace, service):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    _write_section(workspace, "doc-1", 1, "introduccion", body="# Introducción\n\nSin metadata.\n", metadata=None)
+    result_path = service.stamp_section("doc-1", template, "introduccion", "agent-x", now="2026-06-21T00:00:00")
+    metadata_json = result_path.read_text(encoding="utf-8").split("---\n")[1]
+    metadata = json.loads(metadata_json)
+    assert metadata["managed_by"] == "tesina-harness"
+    assert metadata["schema"] == 3
+    assert metadata["section_id"] == "introduccion"
+    assert metadata["title"] == "Introducción"
+    assert metadata["authored_by"] == "agent-x"
+
+
+def test_stamp_section_preserves_unrelated_existing_metadata_fields(workspace, service):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="# Introducción\n\nTexto.\n",
+        metadata={"section_id": "introduccion", "custom_field": "preserved"},
+    )
+    result_path = service.stamp_section("doc-1", template, "introduccion", "agent-x", now="2026-06-21T00:00:00")
+    metadata_json = result_path.read_text(encoding="utf-8").split("---\n")[1]
+    assert json.loads(metadata_json)["custom_field"] == "preserved"
+
+
+def test_stamp_section_returns_section_path(workspace, service):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    written_path = _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="# Introducción\n\nTexto.\n",
+        metadata={"section_id": "introduccion"},
+    )
+    result_path = service.stamp_section("doc-1", template, "introduccion", "agent-x", now="2026-06-21T00:00:00")
+    assert result_path == written_path
