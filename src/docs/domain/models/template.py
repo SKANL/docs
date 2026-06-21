@@ -57,6 +57,8 @@ class SectionContract(BaseModel):
     pending_allowed_in_draft: bool = True
     length: LengthSpec = LengthSpec()
     detect: dict[str, list[str]] = {}
+    toc: bool = False
+    references_list: bool = False
 
 
 class Apa7Config(BaseModel):

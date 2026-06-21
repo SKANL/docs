@@ -103,3 +103,35 @@ def test_template_models_dont_share_mutable_default_state():
 def test_section_contract_extra_fields_allowed():
     contract = SectionContract.model_validate({"title": "x", "custom_field": "y"})
     assert contract.model_extra["custom_field"] == "y"
+
+
+def test_section_contract_toc_and_references_list_default_to_false():
+    contract = SectionContract()
+    assert contract.toc is False
+    assert contract.references_list is False
+
+
+def test_template_from_json_parses_toc_and_references_list_typed_fields():
+    payload = """
+    {
+      "type": "documento-generico",
+      "title": "Documento",
+      "section_contracts": {
+        "indice": {
+          "title": "ÍNDICE",
+          "toc": true,
+          "required_content": ["campo TOC dinámico"]
+        },
+        "referencias": {
+          "title": "REFERENCIAS",
+          "references_list": true,
+          "required_content": ["fuentes citadas"]
+        }
+      }
+    }
+    """
+    template = Template.from_json(payload)
+    assert template.section_contracts["indice"].toc is True
+    assert template.section_contracts["indice"].references_list is False
+    assert template.section_contracts["referencias"].references_list is True
+    assert template.section_contracts["referencias"].toc is False

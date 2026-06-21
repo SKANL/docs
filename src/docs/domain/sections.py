@@ -43,3 +43,18 @@ def apply_stamp(
     new_metadata["body_hash"] = body_hash
     new_metadata["stamped_at"] = stamped_at
     return new_metadata
+
+
+def generated_metadata_changed(current: dict[str, Any], new: dict[str, Any]) -> bool:
+    keys = [
+        "schema",
+        "title",
+        "source_hash",
+        "source_manifest_hash",
+        "code_evidence_manifest_hash",
+        "rules_hash",
+        "contract_hash",
+        "prompt_hash",
+        "body_hash",
+    ]
+    return any(current.get(key) != new.get(key) for key in keys)

@@ -1,7 +1,13 @@
 # tests/unit/domain/test_sections.py
 from pathlib import Path
 
-from docs.domain.sections import apply_stamp, default_section_metadata, infer_section_id_from_path, with_frontmatter
+from docs.domain.sections import (
+    apply_stamp,
+    default_section_metadata,
+    generated_metadata_changed,
+    infer_section_id_from_path,
+    with_frontmatter,
+)
 
 
 def test_infer_section_id_strips_leading_digits_and_hyphen():
@@ -133,3 +139,50 @@ def test_apply_stamp_always_overwrites_body_hash_and_stamped_at():
     )
     assert result["body_hash"] == "f" * 64
     assert result["stamped_at"] == "2026-06-21T12:00:00"
+
+
+def test_generated_metadata_changed_true_when_body_hash_differs():
+    current = {"schema": 3, "body_hash": "a"}
+    new = {"schema": 3, "body_hash": "b"}
+    assert generated_metadata_changed(current, new) is True
+
+
+def test_generated_metadata_changed_false_when_tracked_keys_match():
+    payload = {"schema": 3, "title": "t", "body_hash": "a", "untracked": "x"}
+    other = dict(payload, untracked="y")
+    assert generated_metadata_changed(payload, other) is False
+
+
+def test_generated_metadata_changed_true_when_title_differs():
+    current = {"schema": 3, "title": "Old"}
+    new = {"schema": 3, "title": "New"}
+    assert generated_metadata_changed(current, new) is True
+
+
+def test_generated_metadata_changed_true_when_key_missing_from_current():
+    current = {"schema": 3}
+    new = {"schema": 3, "contract_hash": "h"}
+    assert generated_metadata_changed(current, new) is True
+
+
+def test_generated_metadata_changed_false_for_empty_dicts():
+    assert generated_metadata_changed({}, {}) is False
+
+
+def test_generated_metadata_changed_checks_all_tracked_keys():
+    tracked = [
+        "schema",
+        "title",
+        "source_hash",
+        "source_manifest_hash",
+        "code_evidence_manifest_hash",
+        "rules_hash",
+        "contract_hash",
+        "prompt_hash",
+        "body_hash",
+    ]
+    base = {key: "same" for key in tracked}
+    for key in tracked:
+        current = dict(base)
+        new = dict(base, **{key: "different"})
+        assert generated_metadata_changed(current, new) is True, key

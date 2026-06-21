@@ -1,6 +1,7 @@
 # tests/unit/domain/test_markdown_text.py
 from docs.domain.markdown_text import (
     clean_markdown_text,
+    dedupe_strings,
     extract_markdown_headings,
     normalize_author_key,
     normalize_for_sort,
@@ -92,3 +93,23 @@ def test_normalize_author_key_lowercases_and_collapses_non_alnum():
 def test_normalize_for_sort_falls_back_to_lower_when_key_empty():
     assert normalize_for_sort("123") == "123"
     assert normalize_for_sort("García") == "garcia"
+
+
+def test_dedupe_strings_normalizes_whitespace_and_dedupes():
+    assert dedupe_strings(["a  b", "a b", "c"]) == ["a b", "c"]
+
+
+def test_dedupe_strings_skips_blank_after_normalization():
+    assert dedupe_strings(["   ", "x"]) == ["x"]
+
+
+def test_dedupe_strings_empty_list_returns_empty_list():
+    assert dedupe_strings([]) == []
+
+
+def test_dedupe_strings_preserves_first_occurrence_order():
+    assert dedupe_strings(["b", "a", "b", "a"]) == ["b", "a"]
+
+
+def test_dedupe_strings_trims_leading_and_trailing_whitespace():
+    assert dedupe_strings(["  x  "]) == ["x"]

@@ -76,3 +76,14 @@ def normalize_author_key(value: str) -> str:
 
 def normalize_for_sort(value: str) -> str:
     return normalize_author_key(value) or value.lower()
+
+
+def dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        normalized = _WHITESPACE_RE.sub(" ", value).strip()
+        if normalized and normalized not in seen:
+            out.append(normalized)
+            seen.add(normalized)
+    return out
