@@ -87,3 +87,20 @@ def dedupe_strings(values: list[str]) -> list[str]:
             out.append(normalized)
             seen.add(normalized)
     return out
+
+
+def keyword_set(*texts: str) -> set[str]:
+    tokens: set[str] = set()
+    for text in texts:
+        normalized = normalize_author_key(text)
+        for token in normalized.split():
+            if len(token) >= 4:
+                tokens.add(token)
+    return tokens
+
+
+def matches_keywords(text: str, keywords: set[str]) -> bool:
+    if not keywords:
+        return True
+    normalized = normalize_author_key(text)
+    return any(keyword in normalized for keyword in keywords)

@@ -3,6 +3,8 @@ from docs.domain.markdown_text import (
     clean_markdown_text,
     dedupe_strings,
     extract_markdown_headings,
+    keyword_set,
+    matches_keywords,
     normalize_author_key,
     normalize_for_sort,
     normalize_heading,
@@ -113,3 +115,32 @@ def test_dedupe_strings_preserves_first_occurrence_order():
 
 def test_dedupe_strings_trims_leading_and_trailing_whitespace():
     assert dedupe_strings(["  x  "]) == ["x"]
+
+
+def test_keyword_set_collects_tokens_of_length_4_or_more():
+    assert keyword_set("Resultados del Proyecto") == {"resultados", "proyecto"}
+
+
+def test_keyword_set_drops_short_tokens():
+    assert "del" not in keyword_set("Resultados del Proyecto")
+
+
+def test_keyword_set_merges_tokens_across_multiple_texts():
+    result = keyword_set("Introducción", "alcance")
+    assert {"introduccion", "alcance"} <= result
+
+
+def test_keyword_set_returns_empty_set_for_empty_input():
+    assert keyword_set("") == set()
+
+
+def test_matches_keywords_empty_keywords_matches_everything():
+    assert matches_keywords("cualquier texto", set()) is True
+
+
+def test_matches_keywords_true_when_keyword_substring_present():
+    assert matches_keywords("- El alcance del proyecto es claro", {"alcance"}) is True
+
+
+def test_matches_keywords_false_when_no_keyword_present():
+    assert matches_keywords("- Texto sin relación", {"alcance"}) is False
