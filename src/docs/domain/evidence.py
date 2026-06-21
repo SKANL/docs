@@ -69,3 +69,27 @@ def build_manifest(
         "section_contracts": section_contracts,
         "contract_hashes": contract_hashes,
     }
+
+
+@dataclass(frozen=True)
+class ManualHashFact:
+    path: str
+    sha256: str
+
+
+def build_rules_hash_payload(
+    manual_files: list[ManualHashFact],
+    section_contracts: dict[str, dict],
+    format: dict,
+    apa7: dict,
+    structure: list[dict],
+    preliminaries: dict,
+) -> dict[str, Any]:
+    return {
+        "manual_dir": [{"path": fact.path, "sha256": fact.sha256} for fact in manual_files],
+        "section_contracts": section_contracts,
+        "format": format,
+        "apa7": apa7,
+        "structure": structure,
+        "preliminaries": preliminaries,
+    }

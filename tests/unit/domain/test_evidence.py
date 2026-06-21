@@ -1,5 +1,5 @@
 # tests/unit/domain/test_evidence.py
-from docs.domain.evidence import ManualFileFact, TraceabilityFact, build_manifest
+from docs.domain.evidence import ManualFileFact, ManualHashFact, TraceabilityFact, build_manifest, build_rules_hash_payload
 
 
 def _manual_file(**overrides) -> ManualFileFact:
@@ -119,3 +119,46 @@ def test_build_manifest_empty_inputs_produce_empty_lists_and_dicts():
     assert manifest["traceability"] == []
     assert manifest["section_contracts"] == {}
     assert manifest["contract_hashes"] == {}
+
+
+def test_build_rules_hash_payload_assembles_expected_keys():
+    fact = ManualHashFact(path="/repo/manual/00-intro.md", sha256="a" * 64)
+    payload = build_rules_hash_payload(
+        manual_files=[fact],
+        section_contracts={"intro": {"title": "Introducción"}},
+        format={"page_margins_cm": {}},
+        apa7={"enabled": True},
+        structure=[{"type": "cover"}],
+        preliminaries={"roman_pagination": {"enabled": True}},
+    )
+    assert payload == {
+        "manual_dir": [{"path": fact.path, "sha256": fact.sha256}],
+        "section_contracts": {"intro": {"title": "Introducción"}},
+        "format": {"page_margins_cm": {}},
+        "apa7": {"enabled": True},
+        "structure": [{"type": "cover"}],
+        "preliminaries": {"roman_pagination": {"enabled": True}},
+    }
+
+
+def test_build_rules_hash_payload_empty_inputs():
+    payload = build_rules_hash_payload(
+        manual_files=[], section_contracts={}, format={}, apa7={}, structure=[], preliminaries={}
+    )
+    assert payload == {
+        "manual_dir": [],
+        "section_contracts": {},
+        "format": {},
+        "apa7": {},
+        "structure": [],
+        "preliminaries": {},
+    }
+
+
+def test_build_rules_hash_payload_preserves_manual_files_order():
+    first = ManualHashFact(path="/repo/manual/00-a.md", sha256="a" * 64)
+    second = ManualHashFact(path="/repo/manual/01-b.md", sha256="b" * 64)
+    payload = build_rules_hash_payload(
+        manual_files=[first, second], section_contracts={}, format={}, apa7={}, structure=[], preliminaries={}
+    )
+    assert [f["path"] for f in payload["manual_dir"]] == [first.path, second.path]
