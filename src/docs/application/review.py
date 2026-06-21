@@ -8,7 +8,12 @@ from docs.domain.models.template import SectionContract, Template
 from docs.domain.ports.section_repository import SectionRepository
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_cross_consistency, review_rules, review_section_text
-from docs.domain.sections import apply_stamp, infer_section_id_from_path, with_frontmatter
+from docs.domain.sections import (
+    apply_stamp,
+    generated_metadata_changed,
+    infer_section_id_from_path,
+    with_frontmatter,
+)
 
 _REQUIRED_FLOW_TERMS = ["problema", "objetivo", "metodología", "resultados", "conclusiones"]
 
@@ -138,3 +143,61 @@ class ReviewService:
         raw_text = with_frontmatter(body, new_metadata)
         self.repository.write_section(doc_id, section.order, section.id, raw_text)
         return self.repository.section_path(doc_id, section.order, section.id)
+
+    def build_section(
+        self,
+        doc_id: str,
+        template: Template,
+        section_id: str,
+        body: str,
+        *,
+        source_hash: str,
+        source_manifest_hash: str,
+        code_evidence_manifest_hash: str,
+        rules_hash: str,
+        contract_hash: str,
+        prompt_hash: str,
+    ) -> Path:
+        section = next(s for s in template.sections if s.id == section_id)
+        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        metadata = {
+            "managed_by": "tesina-harness",
+            "authored_by": "harness-scaffold",
+            "schema": 3,
+            "section_id": section_id,
+            "title": section.title,
+            "source_hash": source_hash,
+            "source_manifest_hash": source_manifest_hash,
+            "code_evidence_manifest_hash": code_evidence_manifest_hash,
+            "rules_hash": rules_hash,
+            "contract_hash": contract_hash,
+            "prompt_hash": prompt_hash,
+            "body_hash": body_hash,
+            "last_review_hash": "",
+        }
+        generated = with_frontmatter(body, metadata)
+        section_path = self.repository.section_path(doc_id, section.order, section.id)
+
+        if self.repository.section_exists(doc_id, section.order, section.id):
+            current_metadata, current_body = self.repository.read_section(doc_id, section.order, section.id)
+            if not current_metadata and current_body == body:
+                self.repository.write_section(doc_id, section.order, section.id, generated)
+                return section_path
+            is_managed = current_metadata.get("managed_by") == "tesina-harness"
+            current_body_hash = hashlib.sha256(current_body.encode("utf-8")).hexdigest()
+            is_unchanged = current_metadata.get("body_hash") == current_body_hash
+            if is_managed and is_unchanged:
+                if generated_metadata_changed(current_metadata, metadata):
+                    self.repository.write_section(doc_id, section.order, section.id, generated)
+                return section_path
+
+            return self.repository.write_proposal_section(doc_id, section.order, section.id, generated)
+
+        self.repository.write_section(doc_id, section.order, section.id, generated)
+        return section_path
+
+    def resolve_section_path(self, doc_id: str, template: Template, section_or_id: str) -> Path:
+        for section in template.sections:
+            if section.id == section_or_id:
+                return self.repository.section_path(doc_id, section.order, section.id)
+        raise FileNotFoundError(f"No existe sección: {section_or_id}")
