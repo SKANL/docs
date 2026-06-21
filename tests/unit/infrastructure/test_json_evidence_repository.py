@@ -117,3 +117,15 @@ def test_write_manifest_treats_corrupt_existing_file_as_absent(tmp_path: Path, r
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["schema"] == 1
     assert "generated_at" in payload
+
+
+def test_hash_text_matches_raw_sha256_of_utf8_bytes(repo):
+    text = "café con PENDIENTE"
+    assert repo.hash_text(text) == hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def test_hash_text_matches_hash_file_for_same_bytes(tmp_path, repo):
+    text = "contenido idéntico"
+    path = tmp_path / "f.md"
+    path.write_text(text, encoding="utf-8")
+    assert repo.hash_text(text) == repo.hash_file(path)

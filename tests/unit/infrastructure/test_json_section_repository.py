@@ -72,3 +72,25 @@ def test_read_section_returns_empty_metadata_when_no_frontmatter(workspace: Work
 def test_read_section_raises_file_not_found_when_missing(repo: JsonSectionRepository):
     with pytest.raises(FileNotFoundError):
         repo.read_section("doc-1", 9, "missing")
+
+
+def test_write_section_creates_sections_dir_and_writes_file(workspace, repo):
+    repo.write_section("doc-1", 1, "introduccion", "---\n{}\n---\n# Introducción\n")
+    path = workspace.doc_root("doc-1") / "sections" / "001-introduccion.md"
+    assert path.exists()
+    assert path.read_text(encoding="utf-8") == "---\n{}\n---\n# Introducción\n"
+
+
+def test_write_section_overwrites_existing_file(workspace, repo):
+    sections_dir = workspace.doc_root("doc-1") / "sections"
+    sections_dir.mkdir(parents=True)
+    path = sections_dir / "002-objetivos.md"
+    path.write_text("vieja version", encoding="utf-8")
+    repo.write_section("doc-1", 2, "objetivos", "nueva version")
+    assert path.read_text(encoding="utf-8") == "nueva version"
+
+
+def test_write_section_path_matches_section_path(workspace, repo):
+    repo.write_section("doc-1", 3, "metodologia", "contenido")
+    expected_path = repo.section_path("doc-1", 3, "metodologia")
+    assert expected_path.read_text(encoding="utf-8") == "contenido"

@@ -26,6 +26,9 @@ class JsonEvidenceRepository:
         text = json.dumps(value, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
+    def hash_text(self, text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
     def list_manual_files(self, manual_dir: Path) -> list[Path]:
         return sorted(manual_dir.glob("*.md"))
 

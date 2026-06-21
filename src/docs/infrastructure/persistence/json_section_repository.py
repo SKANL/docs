@@ -28,3 +28,8 @@ class JsonSectionRepository:
             raise FileNotFoundError(f"Section file does not exist: {path}")
         raw_text = path.read_text(encoding="utf-8")
         return split_frontmatter(raw_text)
+
+    def write_section(self, doc_id: str, order: int, section_id: str, raw_text: str) -> None:
+        path = self.section_path(doc_id, order, section_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(raw_text, encoding="utf-8")
