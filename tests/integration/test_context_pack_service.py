@@ -187,7 +187,7 @@ def test_pack_context_section_contract_model_dump_surfaces_extra_keys(tmp_path, 
 
 def test_pack_context_document_lists_missing_section_as_no(tmp_path, workspace, service):
     out_path = service.pack_context_document(
-        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+        "doc-1", _template(), _config(tmp_path), **_REVIEW_DOCUMENT_KWARGS
     )
     text = out_path.read_text(encoding="utf-8")
     assert "| introduccion | no | – | – | – | – |" in text
@@ -203,7 +203,7 @@ def test_pack_context_document_reports_word_count_and_pending_for_existing_secti
         encoding="utf-8",
     )
     out_path = service.pack_context_document(
-        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+        "doc-1", _template(), _config(tmp_path), **_REVIEW_DOCUMENT_KWARGS
     )
     text = out_path.read_text(encoding="utf-8")
     assert "| introduccion | sí |" in text
@@ -212,7 +212,7 @@ def test_pack_context_document_reports_word_count_and_pending_for_existing_secti
 
 def test_pack_context_document_writes_to_000_document_path(tmp_path, workspace, service):
     out_path = service.pack_context_document(
-        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+        "doc-1", _template(), _config(tmp_path), **_REVIEW_DOCUMENT_KWARGS
     )
     assert out_path == workspace.doc_root("doc-1") / "sections" / "_context" / "000-document.context.md"
 
@@ -223,13 +223,13 @@ def test_pack_context_document_includes_ledger_text_when_present(tmp_path, works
         "# Fact Ledger\n\n- Hecho canónico.\n", encoding="utf-8"
     )
     out_path = service.pack_context_document(
-        "doc-1", _template(), config, review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+        "doc-1", _template(), config, **_REVIEW_DOCUMENT_KWARGS
     )
     assert "Hecho canónico." in out_path.read_text(encoding="utf-8")
 
 
 def test_pack_context_document_omits_ledger_section_when_ledger_absent(tmp_path, workspace, service):
     out_path = service.pack_context_document(
-        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+        "doc-1", _template(), _config(tmp_path), **_REVIEW_DOCUMENT_KWARGS
     )
     assert "## Hechos canónicos (ledger)" not in out_path.read_text(encoding="utf-8")

@@ -164,7 +164,15 @@ class ContextPackService:
         template: Template,
         config: dict[str, Any],
         *,
-        review_document_kwargs: dict[str, Any],
+        manifest_exists: bool,
+        manifest_size: int,
+        excluded_terms: dict[str, str],
+        is_policy_file: bool,
+        first_person_patterns: list[str],
+        subjective_terms: list[str],
+        secret_patterns: list[str],
+        scope_term: str = "",
+        scope_focus: str = "",
     ) -> Path:
         lines: list[str] = [
             "# Context pack — DOCUMENTO COMPLETO",
@@ -199,7 +207,20 @@ class ContextPackService:
             if content:
                 lines.extend([f"### {name}", "", content, ""])
 
-        review = self.review_service.review_document(doc_id, template, strict=False, **review_document_kwargs)
+        review = self.review_service.review_document(
+            doc_id,
+            template,
+            strict=False,
+            manifest_exists=manifest_exists,
+            manifest_size=manifest_size,
+            excluded_terms=excluded_terms,
+            is_policy_file=is_policy_file,
+            first_person_patterns=first_person_patterns,
+            subjective_terms=subjective_terms,
+            secret_patterns=secret_patterns,
+            scope_term=scope_term,
+            scope_focus=scope_focus,
+        )
         lines.extend(["## Hallazgos globales (review-document)", ""])
         if review.issues:
             for issue in review.issues:
