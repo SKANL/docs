@@ -233,6 +233,85 @@ def test_review_document_includes_rules_issues_when_manifest_missing(workspace: 
     assert any("manual-rules.json" in message for message in messages)
 
 
+def test_review_section_flags_issues_for_section_with_problems(workspace: Workspace, service: ReviewService):
+    template = _template(
+        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)]
+    )
+    _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="Sin titulo principal.\n",
+        metadata={"section_id": "introduccion"},
+    )
+    result = service.review_section(
+        "doc-1",
+        template,
+        "introduccion",
+        strict=False,
+        excluded_terms={},
+        is_policy_file=False,
+        first_person_patterns=[],
+        subjective_terms=[],
+        secret_patterns=[],
+    )
+    codes = [issue.code for issue in result.issues]
+    assert "structure.missing_title" in codes
+
+
+def test_review_section_no_issues_for_clean_section(workspace: Workspace, service: ReviewService):
+    template = _template(
+        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)]
+    )
+    _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="# Introducción\n\nTexto con suficiente contenido para la sección.\n",
+        metadata={"section_id": "introduccion"},
+    )
+    result = service.review_section(
+        "doc-1",
+        template,
+        "introduccion",
+        strict=False,
+        excluded_terms={},
+        is_policy_file=False,
+        first_person_patterns=[],
+        subjective_terms=[],
+        secret_patterns=[],
+    )
+    assert result.issues == []
+
+
+def test_review_section_raises_when_section_file_missing(workspace: Workspace, service: ReviewService):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    with pytest.raises(FileNotFoundError):
+        service.review_section(
+            "doc-1",
+            template,
+            "introduccion",
+            strict=False,
+            excluded_terms={},
+            is_policy_file=False,
+            first_person_patterns=[],
+            subjective_terms=[],
+            secret_patterns=[],
+        )
+
+
+def test_review_section_raises_when_section_id_unknown(workspace: Workspace, service: ReviewService):
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    with pytest.raises(FileNotFoundError):
+        service.review_section(
+            "doc-1",
+            template,
+            "no-existe",
+            strict=False,
+            excluded_terms={},
+            is_policy_file=False,
+            first_person_patterns=[],
+            subjective_terms=[],
+            secret_patterns=[],
+        )
+
+
 def test_stamp_section_raises_when_section_file_missing(workspace, service):
     template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
     with pytest.raises(FileNotFoundError):

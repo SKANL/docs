@@ -122,6 +122,50 @@ class ReviewService:
 
         return ReviewResult(issues)
 
+    def review_section(
+        self,
+        doc_id: str,
+        template: Template,
+        section_id: str,
+        strict: bool = False,
+        *,
+        excluded_terms: dict[str, str],
+        is_policy_file: bool,
+        first_person_patterns: list[str],
+        subjective_terms: list[str],
+        secret_patterns: list[str],
+        scope_term: str = "",
+        scope_focus: str = "",
+    ) -> ReviewResult:
+        section = next((s for s in template.sections if s.id == section_id), None)
+        if section is None:
+            raise FileNotFoundError(f"No existe sección: {section_id}")
+        if not self.repository.section_exists(doc_id, section.order, section.id):
+            path = self.repository.section_path(doc_id, section.order, section.id)
+            raise FileNotFoundError(f"No existe la sección a revisar: {path}")
+
+        metadata, body = self.repository.read_section(doc_id, section.order, section.id)
+        section_path = self.repository.section_path(doc_id, section.order, section.id)
+        resolved_section_id = metadata.get("section_id") or infer_section_id_from_path(section_path)
+        contract = template.section_contracts.get(resolved_section_id, SectionContract())
+
+        issues = review_section_text(
+            body,
+            metadata,
+            resolved_section_id,
+            contract,
+            template,
+            strict,
+            excluded_terms=excluded_terms,
+            is_policy_file=is_policy_file,
+            first_person_patterns=first_person_patterns,
+            subjective_terms=subjective_terms,
+            secret_patterns=secret_patterns,
+            scope_term=scope_term,
+            scope_focus=scope_focus,
+        )
+        return ReviewResult(issues)
+
     def stamp_section(
         self,
         doc_id: str,
