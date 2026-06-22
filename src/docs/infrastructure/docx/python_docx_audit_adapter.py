@@ -20,7 +20,7 @@ def _section_margin_emu(section: Any) -> dict[str, int]:
     }
 
 
-def _table_has_vertical_borders_or_shading(table: Any) -> bool:
+def table_has_vertical_borders_or_shading(table: Any) -> bool:
     xml = table._tbl.xml
     if re.search(r"<w:(left|right|insideV)\b", xml):
         return True
@@ -114,7 +114,7 @@ class PythonDocxAuditAdapter:
                 issues.append(Issue("warning", f"Título de primer orden parece numerado manualmente: `{text}`."))
 
         for idx, table in enumerate(document.tables, start=1):
-            if _table_has_vertical_borders_or_shading(table):
+            if table_has_vertical_borders_or_shading(table):
                 issues.append(Issue("error", f"Tabla {idx} contiene bordes verticales o sombreado; el manual exige sólo líneas horizontales sin colores."))
 
         body_start = 0
