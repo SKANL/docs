@@ -2,19 +2,22 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from docs.application.evidence import EvidenceService
 from docs.application.review import ReviewService
-from docs.domain.markdown_text import keyword_set, matches_keywords
+from docs.domain.markdown_text import keyword_set, matches_keywords, strip_frontmatter_and_markdown
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.section_repository import SectionRepository
 
 _SECTION_PROMPT_NAMES = ["section-planner.md", "section-author.md", "section-reviewer.md"]
 _APA_PROMPT_NAME = "apa7-citation-auditor.md"
+_DOCUMENT_PROMPT_NAMES = ["document-reviewer.md", "docx-builder.md", "format-auditor.md"]
 _MAX_MANIFEST_FACTS = 40
+_WORD_RE = re.compile(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ-]+\b")
 
 
 class ContextPackService:
@@ -153,4 +156,73 @@ class ContextPackService:
             )
 
         out_path = self.section_repository.context_pack_path(doc_id, section.order, section.id)
+        return self.section_repository.write_context_pack(out_path, "\n".join(lines))
+
+    def pack_context_document(
+        self,
+        doc_id: str,
+        template: Template,
+        config: dict[str, Any],
+        *,
+        review_document_kwargs: dict[str, Any],
+    ) -> Path:
+        lines: list[str] = [
+            "# Context pack — DOCUMENTO COMPLETO",
+            "",
+            "_Paquete para la revisión global y el cierre del documento. Úsalo con el rol "
+            "`document-reviewer.md` y corre `review-document --strict --json` y `verify --strict` "
+            "hasta quedar en verde._",
+            "",
+            "## Estado por sección",
+            "",
+            "| Sección | Existe | Palabras | PENDIENTE | Autor | Modelo |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        for section in sorted(template.sections, key=lambda item: item.order):
+            if not self.section_repository.section_exists(doc_id, section.order, section.id):
+                lines.append(f"| {section.id} | no | – | – | – | – |")
+                continue
+            metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
+            section_path = self.section_repository.section_path(doc_id, section.order, section.id)
+            raw = section_path.read_text(encoding="utf-8")
+            words = len(_WORD_RE.findall(strip_frontmatter_and_markdown(raw)))
+            pending = "sí" if "PENDIENTE" in body else "no"
+            author = metadata.get("authored_by", "–")
+            model = metadata.get("model", "–")
+            lines.append(f"| {section.id} | sí | {words} | {pending} | {author} | {model} |")
+        lines.append("")
+
+        prompts_dir = Path(config["paths"]["prompts_dir"])
+        lines.extend(["## Prompts del rol", ""])
+        for name in _DOCUMENT_PROMPT_NAMES:
+            content = self._read_prompt(prompts_dir, name)
+            if content:
+                lines.extend([f"### {name}", "", content, ""])
+
+        review = self.review_service.review_document(doc_id, template, strict=False, **review_document_kwargs)
+        lines.extend(["## Hallazgos globales (review-document)", ""])
+        if review.issues:
+            for issue in review.issues:
+                code = f" ({issue.code})" if issue.code else ""
+                lines.append(f"- {issue.severity.upper()}{code}: {issue.message}")
+        else:
+            lines.append("- Sin hallazgos.")
+        lines.append("")
+
+        ledger_path = Path(config["paths"]["fact_ledger"])
+        if self.evidence_repository.file_exists(ledger_path):
+            ledger_text = self.evidence_repository.read_text(ledger_path)
+            lines.extend(
+                [
+                    "## Hechos canónicos (ledger)",
+                    "",
+                    f"Fuente de verdad: `{ledger_path.resolve().as_posix()}`. Toda afirmación del documento "
+                    "debe ser consistente con estos hechos.",
+                    "",
+                    ledger_text.strip(),
+                    "",
+                ]
+            )
+
+        out_path = self.section_repository.document_context_pack_path(doc_id)
         return self.section_repository.write_context_pack(out_path, "\n".join(lines))

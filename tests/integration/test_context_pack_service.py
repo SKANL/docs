@@ -19,6 +19,16 @@ _REVIEW_KWARGS = dict(
     secret_patterns=[],
 )
 
+_REVIEW_DOCUMENT_KWARGS = dict(
+    manifest_exists=True,
+    manifest_size=10,
+    excluded_terms={},
+    is_policy_file=False,
+    first_person_patterns=[],
+    subjective_terms=[],
+    secret_patterns=[],
+)
+
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Workspace:
@@ -173,3 +183,53 @@ def test_pack_context_section_contract_model_dump_surfaces_extra_keys(tmp_path, 
     )
     text = out_path.read_text(encoding="utf-8")
     assert '"custom_legacy_key": "valor-no-tipado"' in text
+
+
+def test_pack_context_document_lists_missing_section_as_no(tmp_path, workspace, service):
+    out_path = service.pack_context_document(
+        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+    )
+    text = out_path.read_text(encoding="utf-8")
+    assert "| introduccion | no | – | – | – | – |" in text
+
+
+def test_pack_context_document_reports_word_count_and_pending_for_existing_section(
+    tmp_path, workspace, service
+):
+    sections_dir = workspace.doc_root("doc-1") / "sections"
+    sections_dir.mkdir(parents=True)
+    (sections_dir / "001-introduccion.md").write_text(
+        '---\n{"authored_by": "agent-x", "model": "opus"}\n---\n# Introducción\n\nPENDIENTE: completar.\n',
+        encoding="utf-8",
+    )
+    out_path = service.pack_context_document(
+        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+    )
+    text = out_path.read_text(encoding="utf-8")
+    assert "| introduccion | sí |" in text
+    assert "| sí | agent-x | opus |" in text
+
+
+def test_pack_context_document_writes_to_000_document_path(tmp_path, workspace, service):
+    out_path = service.pack_context_document(
+        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+    )
+    assert out_path == workspace.doc_root("doc-1") / "sections" / "_context" / "000-document.context.md"
+
+
+def test_pack_context_document_includes_ledger_text_when_present(tmp_path, workspace, service):
+    config = _config(tmp_path)
+    Path(config["paths"]["fact_ledger"]).write_text(
+        "# Fact Ledger\n\n- Hecho canónico.\n", encoding="utf-8"
+    )
+    out_path = service.pack_context_document(
+        "doc-1", _template(), config, review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+    )
+    assert "Hecho canónico." in out_path.read_text(encoding="utf-8")
+
+
+def test_pack_context_document_omits_ledger_section_when_ledger_absent(tmp_path, workspace, service):
+    out_path = service.pack_context_document(
+        "doc-1", _template(), _config(tmp_path), review_document_kwargs=_REVIEW_DOCUMENT_KWARGS
+    )
+    assert "## Hechos canónicos (ledger)" not in out_path.read_text(encoding="utf-8")
