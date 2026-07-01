@@ -68,3 +68,14 @@ class FilesystemSourceRepository:
         except Exception:
             return ""
         return proc.stdout.strip()
+
+    def run_git_rev_parse_head(self, repo_root: Path) -> str:
+        try:
+            proc = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=repo_root,
+                **_RUN_KWARGS,
+            )
+        except Exception:
+            return ""
+        return proc.stdout.strip()

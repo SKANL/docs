@@ -109,3 +109,19 @@ def test_detect_github_remote_returns_empty_string_on_any_exception(tmp_path: Pa
 
     monkeypatch.setattr("subprocess.run", fake_run)
     assert repo.detect_github_remote(tmp_path) == ""
+
+
+def test_run_git_rev_parse_head_returns_stripped_stdout(tmp_path: Path, repo, monkeypatch):
+    def fake_run(args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout="abc1234\n", stderr="")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    assert repo.run_git_rev_parse_head(tmp_path) == "abc1234"
+
+
+def test_run_git_rev_parse_head_returns_empty_string_on_any_exception(tmp_path: Path, repo, monkeypatch):
+    def fake_run(args, **kwargs):
+        raise OSError("git not found")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    assert repo.run_git_rev_parse_head(tmp_path) == ""
