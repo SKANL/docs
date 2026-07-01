@@ -20,6 +20,7 @@ from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.source_repository import SourceRepository
+from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_rules
 from docs.domain.workspace import Workspace
 
@@ -235,3 +236,32 @@ class PipelineService:
         summary = {"stage_set": stage_set, "strict": strict, "passed": passed, "stages": results}
         self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)
         return summary
+
+    def verify_all(
+        self,
+        doc_id: str,
+        template: Template,
+        config: dict[str, Any],
+        docx_path: Path | None = None,
+        strict: bool = True,
+    ) -> ReviewResult:
+        issues: list[Issue] = []
+        manifest_exists, manifest_size = self._rules_manifest_state(config)
+        issues.extend(review_rules(template, manifest_exists, manifest_size, strict=strict).issues)
+        normative = resolve_normative_settings(config)
+        issues.extend(
+            self.review_service.review_document(
+                doc_id, template, strict=strict,
+                manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+            ).issues
+        )
+        if docx_path is None:
+            candidate = Path(config["paths"]["output_draft_dir"]) / _DRAFT_DOCX_NAME
+            docx_path = candidate if candidate.exists() else None
+        if docx_path and docx_path.exists():
+            issues.extend(self.format_audit_service.audit_format(docx_path, config, strict=strict).issues)
+            try:
+                self.qa_service.qa_docx(config, docx_path, strict=strict)
+            except Exception as exc:
+                issues.append(Issue("error", f"QA visual falló: {exc}", code="qa.failed"))
+        return ReviewResult(issues)

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
+from docx import Document
 
 from docs.application.collection import CollectionService
 from docs.application.context_pack import ContextPackService
@@ -26,6 +28,8 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 from docs.application.asset import AssetService
+
+_HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
 
 
 def _service(tmp_path) -> tuple[PipelineService, Workspace]:
@@ -251,3 +255,72 @@ def test_run_pipeline_unknown_stage_set_raises_value_error(tmp_path):
     service, _ = _service(tmp_path)
     with pytest.raises(ValueError, match="Conjunto de etapas desconocido"):
         service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "bogus", repo_root=tmp_path)
+
+
+# --- Task 6: verify_all --------------------------------------------------
+#
+# NOTE: `verify_all` takes no `repo_root` parameter -- confirmed against the
+# plan's Task 6 section ("Verbatim legacy reference: verify_all does not call
+# collect_issues/collect_code_evidence/log_run, so it takes no repo_root
+# parameter, unlike run_pipeline"), and reuses `_rules_manifest_state`/
+# `resolve_normative_settings` from Task 5 rather than re-deriving them.
+
+
+def test_verify_all_includes_review_rules_and_review_document_issues(tmp_path):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")  # no docx present -> docx-dependent checks skipped
+    result = service.verify_all("doc1", _template(), config, strict=True)
+    assert not result.passed  # missing rules_manifest -> review_rules error under strict
+
+
+def test_verify_all_skips_docx_checks_when_no_draft_exists(tmp_path):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+    result = service.verify_all("doc1", _template(), config, strict=False)
+    assert not any(issue.code == "qa.failed" for issue in result.issues)
+
+
+# Task 6's plan sketched a single loosely-asserting third test whose outcome
+# depends on whether LibreOffice is installed in the execution environment.
+# Following the plan's own instruction (and test_qa_service.py's existing
+# dual-path convention), this is split into two skipif-guarded variants: one
+# forces LibreOffice-unavailable deterministically via monkeypatch (works
+# regardless of host toolchain), one exercises the real success path and is
+# skipped when LibreOffice is absent (as it is on this host).
+
+
+def test_verify_all_appends_qa_failed_issue_when_libreoffice_unavailable(tmp_path, monkeypatch):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    draft_dir = tmp_path / "draft"
+    draft_dir.mkdir()
+    config["paths"]["output_draft_dir"] = str(draft_dir)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    docx_path = draft_dir / "tesina-draft.docx"
+    Document().save(docx_path)
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
+        lambda paths: None,
+    )
+    result = service.verify_all("doc1", _template(), config, strict=False)
+    assert any(issue.code == "qa.failed" for issue in result.issues)
+
+
+@pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")
+def test_verify_all_completes_qa_without_qa_failed_when_libreoffice_available(tmp_path):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    draft_dir = tmp_path / "draft"
+    draft_dir.mkdir()
+    config["paths"]["output_draft_dir"] = str(draft_dir)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    docx_path = draft_dir / "tesina-draft.docx"
+    Document().save(docx_path)
+    result = service.verify_all("doc1", _template(), config, strict=False)
+    assert not any(issue.code == "qa.failed" for issue in result.issues)
