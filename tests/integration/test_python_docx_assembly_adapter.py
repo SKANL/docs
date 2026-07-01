@@ -7,11 +7,17 @@ from pathlib import Path
 
 import pytest
 from docx import Document
+from docx.enum.section import WD_SECTION_START
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+from docs.infrastructure.docx import python_docx_assembly_adapter
+from docs.infrastructure.docx.python_docx_assembly_adapter import (
+    PythonDocxAssemblyAdapter,
+    configure_numbered_body_section,
+    configure_roman_preliminary_section,
+)
 
 
 # --- render_pandoc -----------------------------------------------------------
@@ -370,3 +376,73 @@ def test_assemble_clears_header_and_footer_on_configured_sections(tmp_path):
     prelim_section = result.sections[1]
     assert prelim_section.header.is_linked_to_previous is False
     assert prelim_section.footer.is_linked_to_previous is False
+
+
+# --- configure_*_section: direct unit coverage against transposition (Slice 11b fix) ---
+#
+# Fresh-context review of commit 237b773 found that the two pipeline-level tests
+# above (test_assemble_configures_lower_roman_preliminary_section_pagination and
+# test_assemble_configures_decimal_body_section_pagination_restart) do NOT catch a
+# copy-paste transposition between configure_roman_preliminary_section and
+# configure_numbered_body_section, because _build_main_document unconditionally
+# re-calls set_section_page_number_start right after each configure_*_section call,
+# overwriting whatever the (possibly wrong) configure_* function set. The tests
+# below close that gap: they call each configure_*_section function directly on a
+# bare Section (bypassing _build_main_document's redundant overwrite entirely), and
+# they spy on which configurator fires for which branch inside assemble().
+
+
+def test_configure_roman_preliminary_section_sets_lower_roman_pagination_directly():
+    document = Document()
+    section = document.add_section(WD_SECTION_START.NEW_PAGE)
+    configure_roman_preliminary_section(section, {}, start=2)
+    pg_num_type = section._sectPr.find(qn("w:pgNumType"))
+    assert pg_num_type.get(qn("w:start")) == "2"
+    assert pg_num_type.get(qn("w:fmt")) == "lowerRoman"
+
+
+def test_configure_numbered_body_section_sets_decimal_pagination_directly():
+    document = Document()
+    section = document.add_section(WD_SECTION_START.NEW_PAGE)
+    configure_numbered_body_section(section, {})
+    pg_num_type = section._sectPr.find(qn("w:pgNumType"))
+    assert pg_num_type.get(qn("w:start")) == "1"
+    assert pg_num_type.get(qn("w:fmt")) == "decimal"
+
+
+def test_assemble_invokes_configure_functions_in_correct_order_for_correct_branch(tmp_path, monkeypatch):
+    # Spies on the two module-level configurator names so we can assert WHICH
+    # function fires for WHICH section-construction branch, independent of what
+    # that function's pagination side effects produce (those get overwritten by
+    # the redundant set_section_page_number_start call right after, see above).
+    call_order: list[str] = []
+    original_roman = python_docx_assembly_adapter.configure_roman_preliminary_section
+    original_numbered = python_docx_assembly_adapter.configure_numbered_body_section
+
+    def roman_spy(section, config, start=2):
+        call_order.append("roman_preliminary")
+        return original_roman(section, config, start)
+
+    def numbered_spy(section, config):
+        call_order.append("numbered_body")
+        return original_numbered(section, config)
+
+    monkeypatch.setattr(python_docx_assembly_adapter, "configure_roman_preliminary_section", roman_spy)
+    monkeypatch.setattr(python_docx_assembly_adapter, "configure_numbered_body_section", numbered_spy)
+
+    document = Document()
+    document.add_heading("CAPITULO DOS", level=1)
+    document.add_paragraph("Texto de cuerpo.")
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble(
+        _config_with_roman_prelim_and_body_restart(), body, output,
+        cover_asset_path=None, embed_front_paths=[], embed_back_paths=[],
+    )
+
+    # The preliminary section is built first and must use the roman configurator;
+    # the body-restart section is built afterward and must use the numbered
+    # configurator. A transposed call site would flip this order.
+    assert call_order == ["roman_preliminary", "numbered_body"]
