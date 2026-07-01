@@ -286,11 +286,11 @@ def test_verify_all_skips_docx_checks_when_no_draft_exists(tmp_path):
 
 # Task 6's plan sketched a single loosely-asserting third test whose outcome
 # depends on whether LibreOffice is installed in the execution environment.
-# Following the plan's own instruction (and test_qa_service.py's existing
-# dual-path convention), this is split into two skipif-guarded variants: one
-# forces LibreOffice-unavailable deterministically via monkeypatch (works
-# regardless of host toolchain), one exercises the real success path and is
-# skipped when LibreOffice is absent (as it is on this host).
+# This is split into two variants, following test_libreoffice_qa_adapter.py's
+# existing convention: one forces LibreOffice-unavailable deterministically
+# via monkeypatch (works regardless of host toolchain, no skipif needed), one
+# exercises the real success path and is skipif-skipped when LibreOffice is
+# absent (as it is on this host).
 
 
 def test_verify_all_appends_qa_failed_issue_when_libreoffice_unavailable(tmp_path, monkeypatch):
