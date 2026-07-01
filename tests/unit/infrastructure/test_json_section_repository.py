@@ -150,3 +150,32 @@ def test_write_document_context_pack_path_works_too(workspace, repo):
     result = repo.write_context_pack(target, "resumen global")
     assert result == target
     assert target.read_text(encoding="utf-8") == "resumen global"
+
+
+def test_find_section_file_returns_the_matching_path(repo: JsonSectionRepository):
+    repo.write_section("doc1", 2, "intro", "body")
+    found = repo.find_section_file("doc1", "intro")
+    assert found == repo.section_path("doc1", 2, "intro")
+
+
+def test_find_section_file_returns_none_when_nothing_matches(repo: JsonSectionRepository):
+    assert repo.find_section_file("doc1", "missing") is None
+
+
+def test_find_section_file_returns_the_first_sorted_match_when_multiple_exist(repo: JsonSectionRepository):
+    repo.write_section("doc1", 2, "intro", "second")
+    repo.write_section("doc1", 1, "intro", "first")
+    found = repo.find_section_file("doc1", "intro")
+    assert found == repo.section_path("doc1", 1, "intro")
+
+
+def test_read_raw_text_returns_the_full_file_content_including_frontmatter(repo: JsonSectionRepository):
+    repo.write_section("doc1", 1, "intro", "---\nsection_id: intro\n---\nBody text")
+    path = repo.section_path("doc1", 1, "intro")
+    assert repo.read_raw_text(path) == "---\nsection_id: intro\n---\nBody text"
+
+
+def test_write_raw_text_creates_parent_directories_and_writes_content(repo: JsonSectionRepository, tmp_path: Path):
+    path = tmp_path / "nested" / "dir" / "file.md"
+    repo.write_raw_text(path, "hello")
+    assert path.read_text(encoding="utf-8") == "hello"

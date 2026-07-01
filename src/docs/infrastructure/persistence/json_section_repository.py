@@ -51,3 +51,14 @@ class JsonSectionRepository:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path
+
+    def find_section_file(self, doc_id: str, section_id: str) -> Path | None:
+        matches = sorted(self._sections_dir(doc_id).glob(f"*-{section_id}.md"))
+        return matches[0] if matches else None
+
+    def read_raw_text(self, path: Path) -> str:
+        return path.read_text(encoding="utf-8")
+
+    def write_raw_text(self, path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
