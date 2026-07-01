@@ -1,11 +1,14 @@
 # tests/unit/domain/test_sections.py
 from pathlib import Path
 
+import pytest
+
 from docs.domain.sections import (
     apply_stamp,
     default_section_metadata,
     generated_metadata_changed,
     infer_section_id_from_path,
+    section_by_id,
     with_frontmatter,
 )
 
@@ -186,3 +189,14 @@ def test_generated_metadata_changed_checks_all_tracked_keys():
         current = dict(base)
         new = dict(base, **{key: "different"})
         assert generated_metadata_changed(current, new) is True, key
+
+
+def test_section_by_id_returns_the_matching_section():
+    sections = [{"id": "intro", "order": 1}, {"id": "methods", "order": 2}]
+    assert section_by_id(sections, "methods") == {"id": "methods", "order": 2}
+
+
+def test_section_by_id_raises_value_error_with_known_ids_when_missing():
+    sections = [{"id": "intro", "order": 1}, {"id": "methods", "order": 2}]
+    with pytest.raises(ValueError, match="Sección desconocida: bogus. Secciones disponibles: intro, methods"):
+        section_by_id(sections, "bogus")

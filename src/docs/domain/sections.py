@@ -58,3 +58,11 @@ def generated_metadata_changed(current: dict[str, Any], new: dict[str, Any]) -> 
         "body_hash",
     ]
     return any(current.get(key) != new.get(key) for key in keys)
+
+
+def section_by_id(sections: list[dict[str, Any]], section_id: str) -> dict[str, Any]:
+    for section in sections:
+        if section["id"] == section_id:
+            return section
+    known = ", ".join(section["id"] for section in sections)
+    raise ValueError(f"Sección desconocida: {section_id}. Secciones disponibles: {known}")
