@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from docs.application.collection import CollectionService
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
@@ -13,6 +15,7 @@ from docs.application.format_audit import FormatAuditService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.domain.models.template import Template
 from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
@@ -97,3 +100,154 @@ def test_list_runs_skips_malformed_json_files(tmp_path):
     (workspace.doc_root("doc1") / "runs" / "broken.json").write_text("not json", encoding="utf-8")
     records = service.list_runs("doc1", config)
     assert len(records) == 1
+
+
+# --- Task 5: run_pipeline -----------------------------------------------
+#
+# NOTE on fixtures below: the plan's own draft `_template()`/`_pipeline_config()`
+# were NOT copied verbatim. Two real discrepancies were found against the
+# actual source and fixed here (see Task 5 final report for the full writeup):
+#
+# 1. `review_rules` (src/docs/domain/rules.py) unconditionally raises "error"
+#    issues for a `Template` that lacks `paths.extracted_dir_policy`,
+#    `preliminaries.roman_pagination`/`body_pagination_start`,
+#    `format.page_margins_cm`, and an active `margins-2-5cm-non-cover`
+#    advisor_override -- and for any declared `section_contracts` entry with
+#    empty `required_content`. The plan's bare `_template()` (no extra
+#    fields) and `_pipeline_config()` (no `type`/`title`, no matching
+#    `section_contracts`) both fail `review_rules` unconditionally. Since
+#    `review-rules` is a `fail_fast=True` prep stage, EVERY test that expects
+#    stages after `review-rules` to run (build-sections, pack-context) would
+#    never get there. Fixed by extending both fixtures with the same
+#    review_rules-satisfying shape `tests/unit/domain/test_rules.py` already
+#    uses for this purpose (`_valid_extra`), and by using
+#    `Template.model_validate(...)` on a matching dict instead of the bare
+#    constructor so `model_extra` is actually populated.
+# 2. `DoctorService.run_doctor` (src/docs/application/doctor.py) appends
+#    "pandoc" and "libreoffice" as `required=True` checks unconditionally
+#    (not gated by `strict`, unlike "gh"). This host has pandoc but not
+#    LibreOffice, so `doctor` would always fail regardless of config,
+#    fail-fast-stopping every "prep" run at stage 1. Patched via the same
+#    monkeypatch-the-resolver convention the plan itself already used for
+#    "gh" (`shutil.which`), applied to `resolve_pandoc_executable`/
+#    `resolve_libreoffice_executable` as imported into `docs.application.doctor`.
+# 3. `del config["paths"]["context_dir"]` in the plan's fail-fast test does
+#    NOT reproduce a KeyError: `run_doctor` reads `config["paths"].get(name)`
+#    defensively, so a missing key is silently skipped (no check emitted at
+#    all), and doctor would pass instead of failing. The actual, real way to
+#    make the required `context_dir` check fail is to leave the configured
+#    path pointing at a directory that is never created -- which is already
+#    what happens if the `tmp_path / "context"` `.mkdir()` call is simply
+#    omitted for that one test. The `del` line was removed accordingly.
+
+
+def _valid_rules_extra() -> dict:
+    """Matches tests/unit/domain/test_rules.py::_valid_extra() -- the minimal
+    shape that makes review_rules() report zero "error" issues."""
+    return {
+        "preliminaries": {
+            "roman_pagination": {"enabled": True},
+            "body_pagination_start": {"section_id": "introduccion"},
+        },
+        "format": {
+            "page_margins_cm": {
+                "cover_policy": "preserve_template",
+                "non_cover": {"top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5},
+            }
+        },
+        "advisor_overrides": [{"id": "margins-2-5cm-non-cover", "status": "active"}],
+    }
+
+
+def _template() -> Template:
+    return Template.model_validate(
+        {
+            "type": "tesina",
+            "title": "Tesina",
+            "sections": [{"id": "introduccion", "title": "Introducción", "order": 1}],
+            "section_contracts": {"introduccion": {"required_content": ["algo"]}},
+            "paths": {"extracted_dir_policy": "rules_traceability_only"},
+            **_valid_rules_extra(),
+        }
+    )
+
+
+def _pipeline_config(tmp_path: Path) -> dict:
+    return {
+        "type": "tesina",
+        "title": "Tesina",
+        "paths": {
+            "rules_manifest": str(tmp_path / "manual-rules.json"),
+            "context_dir": str(tmp_path / "context"),
+            "source_manifest": str(tmp_path / "source.json"),
+            "issues_manifest": str(tmp_path / "issues.json"),
+            "code_evidence_manifest": str(tmp_path / "code-evidence.json"),
+            "fact_ledger": str(tmp_path / "00-fact-ledger.md"),
+            "prompts_dir": str(tmp_path / "prompts"),
+            "extracted_dir_policy": "rules_traceability_only",
+        },
+        "sections": [{"id": "introduccion", "title": "Introducción", "order": 1}],
+        "section_contracts": {"introduccion": {"required_content": ["algo"]}},
+        **_valid_rules_extra(),
+        "evidence_sources": {},
+        "privacy": {},
+        "project": {},
+    }
+
+
+def _patch_doctor_tools(monkeypatch) -> None:
+    """doctor's pandoc/libreoffice checks are required=True unconditionally
+    (unlike gh, which is only required in --strict). Patched so `doctor`'s
+    pass/fail in these tests reflects the fixture, not this host's toolchain."""
+    monkeypatch.setattr("docs.application.doctor.resolve_pandoc_executable", lambda paths: "pandoc")
+    monkeypatch.setattr("docs.application.doctor.resolve_libreoffice_executable", lambda paths: "soffice")
+
+
+def test_run_pipeline_prep_reports_build_sections_as_a_failed_stage(tmp_path, monkeypatch):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    _patch_doctor_tools(monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: None)  # gh unavailable -> collect-issues "omitido"
+    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
+    stage = next(s for s in summary["stages"] if s["stage"] == "build-sections")
+    assert stage["ok"] is False
+    assert "NotImplementedError" not in stage["detail"]  # detail is the exception message, not its type
+    assert "build-section requiere" in stage["detail"]
+
+
+def test_run_pipeline_prep_does_not_fail_fast_after_build_sections(tmp_path, monkeypatch):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    _patch_doctor_tools(monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
+    stage_names = [s["stage"] for s in summary["stages"]]
+    assert "pack-context" in stage_names  # ran despite build-sections failing (fail_fast=False)
+
+
+def test_run_pipeline_stops_at_first_fail_fast_failure(tmp_path):
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    # `tmp_path / "context"` is intentionally never created: doctor's required
+    # `context_dir` check (`path.exists() and path.is_dir()`) fails, which is
+    # what actually reproduces the fail-fast-at-doctor scenario (see note above).
+    summary = service.run_pipeline("doc1", _template(), config, "prep", repo_root=tmp_path)
+    assert summary["passed"] is False
+    assert summary["stages"][0]["stage"] == "doctor"
+    assert len(summary["stages"]) == 1
+
+
+def test_run_pipeline_writes_a_run_log_entry(tmp_path, monkeypatch):
+    Path(tmp_path / "context").mkdir()
+    service, workspace = _service(tmp_path)
+    _patch_doctor_tools(monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
+    runs = service.list_runs("doc1", _pipeline_config(tmp_path))
+    assert any(r["command"] == "pipeline-prep" for r in runs)
+
+
+def test_run_pipeline_unknown_stage_set_raises_value_error(tmp_path):
+    service, _ = _service(tmp_path)
+    with pytest.raises(ValueError, match="Conjunto de etapas desconocido"):
+        service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "bogus", repo_root=tmp_path)
