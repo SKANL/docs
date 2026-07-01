@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from typing import Any
+
+from defusedxml.ElementTree import parse as safe_parse
 
 from docs.domain.docx_structure import resolve_part_text, structure_parts
 from docs.domain.markdown_text import normalize_heading
@@ -96,9 +101,76 @@ def _set_section_page_number_start_stub(section: Any, start: int, fmt: str | Non
     pass
 
 
-def _ensure_bullet_numbering_part_stub(docx_path: Path, num_id: int = 42) -> None:
-    # Placeholder for Slice 11b's ensure_bullet_numbering_part. No-op.
-    pass
+def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    rel_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    content_namespace = "http://schemas.openxmlformats.org/package/2006/content-types"
+    ET.register_namespace("w", namespace)
+    ET.register_namespace("rel", rel_namespace)
+    ET.register_namespace("ct", content_namespace)
+    with tempfile.TemporaryDirectory(prefix="docs_docx_numbering_") as tmp:
+        tmp_path = Path(tmp)
+        with zipfile.ZipFile(docx_path, "r") as archive:
+            archive.extractall(tmp_path)
+
+        document_xml = (tmp_path / "word" / "document.xml").read_text(encoding="utf-8")
+        if f'w:numId w:val="{num_id}"' not in document_xml:
+            return
+
+        numbering_path = tmp_path / "word" / "numbering.xml"
+        if numbering_path.exists():
+            numbering_tree = safe_parse(numbering_path)
+            numbering_root = numbering_tree.getroot()
+        else:
+            numbering_path.parent.mkdir(parents=True, exist_ok=True)
+            numbering_root = ET.Element(f"{{{namespace}}}numbering")
+            numbering_tree = ET.ElementTree(numbering_root)
+
+        if not numbering_root.find(f".//{{{namespace}}}num[@{{{namespace}}}numId='{num_id}']"):
+            abstract = ET.SubElement(numbering_root, f"{{{namespace}}}abstractNum", {f"{{{namespace}}}abstractNumId": str(num_id)})
+            ET.SubElement(abstract, f"{{{namespace}}}multiLevelType", {f"{{{namespace}}}val": "hybridMultilevel"})
+            lvl = ET.SubElement(abstract, f"{{{namespace}}}lvl", {f"{{{namespace}}}ilvl": "0"})
+            ET.SubElement(lvl, f"{{{namespace}}}start", {f"{{{namespace}}}val": "1"})
+            ET.SubElement(lvl, f"{{{namespace}}}numFmt", {f"{{{namespace}}}val": "bullet"})
+            ET.SubElement(lvl, f"{{{namespace}}}lvlText", {f"{{{namespace}}}val": "•"})
+            ET.SubElement(lvl, f"{{{namespace}}}lvlJc", {f"{{{namespace}}}val": "left"})
+            p_pr = ET.SubElement(lvl, f"{{{namespace}}}pPr")
+            tabs = ET.SubElement(p_pr, f"{{{namespace}}}tabs")
+            ET.SubElement(tabs, f"{{{namespace}}}tab", {f"{{{namespace}}}val": "num", f"{{{namespace}}}pos": "720"})
+            ET.SubElement(p_pr, f"{{{namespace}}}ind", {f"{{{namespace}}}left": "720", f"{{{namespace}}}hanging": "360"})
+            r_pr = ET.SubElement(lvl, f"{{{namespace}}}rPr")
+            ET.SubElement(r_pr, f"{{{namespace}}}rFonts", {f"{{{namespace}}}ascii": "Symbol", f"{{{namespace}}}hAnsi": "Symbol"})
+            ET.SubElement(r_pr, f"{{{namespace}}}sz", {f"{{{namespace}}}val": "24"})
+            num = ET.SubElement(numbering_root, f"{{{namespace}}}num", {f"{{{namespace}}}numId": str(num_id)})
+            ET.SubElement(num, f"{{{namespace}}}abstractNumId", {f"{{{namespace}}}val": str(num_id)})
+        numbering_tree.write(numbering_path, xml_declaration=True, encoding="UTF-8")
+
+        rels_path = tmp_path / "word" / "_rels" / "document.xml.rels"
+        rels_tree = safe_parse(rels_path)
+        rels_root = rels_tree.getroot()
+        numbering_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
+        if not any(rel.get("Type") == numbering_rel_type for rel in rels_root):
+            existing_ids = [int(match.group(1)) for rel in rels_root for match in [re.match(r"rId(\d+)$", rel.get("Id", ""))] if match]
+            next_id = max(existing_ids or [0]) + 1
+            ET.SubElement(rels_root, f"{{{rel_namespace}}}Relationship", {"Id": f"rId{next_id}", "Type": numbering_rel_type, "Target": "numbering.xml"})
+            rels_tree.write(rels_path, xml_declaration=True, encoding="UTF-8")
+
+        content_types_path = tmp_path / "[Content_Types].xml"
+        content_tree = safe_parse(content_types_path)
+        content_root = content_tree.getroot()
+        numbering_content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"
+        if not any(override.get("PartName") == "/word/numbering.xml" for override in content_root):
+            ET.SubElement(
+                content_root,
+                f"{{{content_namespace}}}Override",
+                {"PartName": "/word/numbering.xml", "ContentType": numbering_content_type},
+            )
+            content_tree.write(content_types_path, xml_declaration=True, encoding="UTF-8")
+
+        with zipfile.ZipFile(docx_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in tmp_path.rglob("*"):
+                if path.is_file():
+                    archive.write(path, path.relative_to(tmp_path).as_posix())
 
 
 def add_fixed_text_page(document: Any, text: str) -> None:
@@ -260,13 +332,13 @@ class PythonDocxAssemblyAdapter:
 
         if not embed_front_paths and not embed_back_paths:
             main.save(str(output_docx))
-            _ensure_bullet_numbering_part_stub(output_docx)
+            ensure_bullet_numbering_part(output_docx)
             return
 
         with tempfile.TemporaryDirectory(prefix="docs_assemble_") as tmp:
             main_path = Path(tmp) / "main.docx"
             main.save(str(main_path))
-            _ensure_bullet_numbering_part_stub(main_path)
+            ensure_bullet_numbering_part(main_path)
             try:
                 from docxcompose.composer import Composer
             except Exception as exc:

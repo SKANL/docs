@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "defusedxml>=0.7.1",
     "pydantic>=2.13.4",
     "python-docx>=1.2.0",
 ]
