@@ -32,9 +32,23 @@ def test_qa_docx_raises_when_docx_missing(tmp_path):
         service.qa_docx(config, tmp_path / "missing.docx")
 
 
+@pytest.mark.skipif(_HAS_LIBREOFFICE, reason="requires LibreOffice to be unavailable")
+def test_qa_docx_strict_raises_when_libreoffice_unavailable(tmp_path):
+    # render_docx_to_pdf runs first (Design Decision 6: render-before-guard
+    # order matches legacy), so without LibreOffice it raises its own
+    # RuntimeError before the code ever reaches the PNG guard.
+    docx_path = _make_docx(tmp_path)
+    service = _make_service()
+    config = {"paths": {"output_qa_dir": str(tmp_path / "qa")}}
+
+    with pytest.raises(RuntimeError):
+        service.qa_docx(config, docx_path, strict=True)
+
+
+@pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")
 def test_qa_docx_strict_always_raises_since_png_rendering_is_out_of_scope(tmp_path):
-    # Fires before render_docx_to_pdf is ever called (Design Decision 6),
-    # so this assertion holds regardless of LibreOffice being installed.
+    # Only reachable when render_docx_to_pdf succeeds, i.e. LibreOffice is
+    # installed: the PNG-per-page guard still always raises in strict mode.
     docx_path = _make_docx(tmp_path)
     service = _make_service()
     config = {"paths": {"output_qa_dir": str(tmp_path / "qa")}}

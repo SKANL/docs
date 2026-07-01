@@ -25,19 +25,17 @@ class QaService:
             ensure_child_path(Path(config["paths"]["output_qa_dir"]), output_dir)
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        expected_pdf = self.port.render_docx_to_pdf(config, docx_path, output_dir)
 
         # PNG-per-page rendering is permanently out of scope (user decision,
         # 2026-06-21) — will be reimplemented differently later. Verbatim
         # strict-mode consequence preserved: strict QA still requires PNG
         # evidence and therefore always raises here until that capability
-        # lands under a future, differently-shaped slice. Checked before
-        # render_docx_to_pdf / the format audit / the Documents audits ever
-        # run, so strict mode never depends on an external rendering tool.
+        # lands under a future, differently-shaped slice.
         pngs: list[Path] = []
         if strict and not pngs:
             raise RuntimeError(f"QA estricto requiere PNG por página y no se generó ninguno en: {output_dir}")
 
-        expected_pdf = self.port.render_docx_to_pdf(config, docx_path, output_dir)
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)
         if strict:
