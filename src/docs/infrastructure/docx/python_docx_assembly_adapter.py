@@ -35,10 +35,24 @@ def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
 # repointed to the real implementations.
 
 
-def _safe_style_name_stub(document: Any, preferred_style: str | None) -> str | None:
-    # Placeholder for Slice 11b's safe_style_name. No style-fallback mapping
-    # applied yet; returns the preferred style name unchanged.
-    return preferred_style
+def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
+    available = {style.name for style in document.styles}
+    if preferred_style in available:
+        return preferred_style
+
+    pandoc_style_map = {
+        "First Paragraph": "No Spacing",
+        "Body Text": "No Spacing",
+        "Compact": "No Spacing",
+    }
+    mapped = pandoc_style_map.get(preferred_style or "")
+    if mapped in available:
+        return mapped
+    if "Normal" in available:
+        return "Normal"
+    if "No Spacing" in available:
+        return "No Spacing"
+    return None
 
 
 def _set_bullet_numbering_stub(paragraph: Any, num_id: int = 42) -> None:
@@ -172,10 +186,10 @@ class PythonDocxAssemblyAdapter:
         body_heading_seen = False
         restart_started = False
         for paragraph in body.paragraphs:
-            style_name = _safe_style_name_stub(cover, paragraph.style.name if paragraph.style else None)
+            style_name = safe_style_name(cover, paragraph.style.name if paragraph.style else None)
             is_list = paragraph_has_numbering(paragraph)
             if is_list:
-                style_name = _safe_style_name_stub(cover, "List Bullet") or style_name
+                style_name = safe_style_name(cover, "List Bullet") or style_name
             paragraph_text = paragraph.text.strip()
             is_heading_1 = style_name == "Heading 1"
             is_restart = is_heading_1 and restart_heading and normalize_heading(paragraph_text) == restart_heading

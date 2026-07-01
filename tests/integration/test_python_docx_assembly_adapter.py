@@ -35,6 +35,28 @@ def test_render_pandoc_raises_on_pandoc_failure(tmp_path):
         PythonDocxAssemblyAdapter().render_pandoc(shutil.which("pandoc"), [missing_input], output)
 
 
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_assemble_does_not_crash_on_real_pandoc_first_paragraph_style(tmp_path):
+    # Regression test for the gap flagged during Slice 11a review: real
+    # pandoc output stamps the paragraph right after a heading with style
+    # "First Paragraph", which a blank cover Document() does not define.
+    # Before this slice's safe_style_name, this raised KeyError via
+    # document.add_paragraph(style="First Paragraph").
+    markdown = tmp_path / "section.md"
+    markdown.write_text("# Titulo\n\nCuerpo del texto de prueba.\n", encoding="utf-8")
+    body_docx = tmp_path / "body.docx"
+    PythonDocxAssemblyAdapter().render_pandoc(shutil.which("pandoc"), [markdown], body_docx)
+
+    output = tmp_path / "out.docx"
+    # Should not raise KeyError.
+    PythonDocxAssemblyAdapter().assemble(
+        {}, body_docx, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    result = Document(str(output))
+    target = next(p for p in result.paragraphs if p.text.strip() == "Cuerpo del texto de prueba.")
+    assert target.style.name == "No Spacing"
+
+
 # --- fixtures ------------------------------------------------------------------
 
 
