@@ -38,6 +38,9 @@ def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
 # lands, these stubs and their call sites below (in `_build_main_document`,
 # `apply_normative_paragraph_format`, and `assemble`) are deleted and
 # repointed to the real implementations.
+#
+# Remaining stubs (Task 5): `_configure_roman_preliminary_section_stub`,
+# `_configure_unnumbered_section_stub`, `_configure_numbered_body_section_stub`.
 
 
 def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
@@ -96,9 +99,75 @@ def _configure_numbered_body_section_stub(section: Any, config: dict[str, Any]) 
     pass
 
 
-def _set_section_page_number_start_stub(section: Any, start: int, fmt: str | None = None) -> None:
-    # Placeholder for Slice 11b's set_section_page_number_start. No-op.
-    pass
+def apply_non_cover_section_layout(section: Any, config: dict[str, Any]) -> None:
+    from docx.shared import Cm, Inches
+
+    if config.get("format", {}).get("page_size") == "letter":
+        section.page_width = Inches(8.5)
+        section.page_height = Inches(11)
+
+    margins = config.get("format", {}).get("page_margins_cm", {}).get("non_cover", {})
+    for attr, key in [
+        ("top_margin", "top"),
+        ("right_margin", "right"),
+        ("bottom_margin", "bottom"),
+        ("left_margin", "left"),
+    ]:
+        value = margins.get(key)
+        if isinstance(value, (int, float)):
+            setattr(section, attr, Cm(float(value)))
+
+
+def add_page_number_footer(footer: Any) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    paragraph = footer.paragraphs[-1] if footer.paragraphs else footer.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = paragraph.add_run()
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(12)
+
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = " PAGE "
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    text = OxmlElement("w:t")
+    text.text = "1"
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_sep)
+    run._r.append(text)
+    run._r.append(fld_end)
+
+
+def set_section_page_number_start(section: Any, start: int, fmt: str | None = None) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    sect_pr = section._sectPr
+    pg_num_type = sect_pr.find(qn("w:pgNumType"))
+    if pg_num_type is None:
+        pg_num_type = OxmlElement("w:pgNumType")
+        sect_pr.append(pg_num_type)
+    pg_num_type.set(qn("w:start"), str(start))
+    if fmt:
+        pg_num_type.set(qn("w:fmt"), fmt)
+
+
+def clear_story_part(part: Any) -> None:
+    element = part._element
+    for child in list(element):
+        element.remove(child)
+    part.add_paragraph()
 
 
 def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
@@ -245,7 +314,7 @@ class PythonDocxAssemblyAdapter:
         if prelim_pag:
             _configure_roman_preliminary_section_stub(prelim_section, config, int(prelim_pag.get("start", 2)))
             if prelim_pag.get("format"):
-                _set_section_page_number_start_stub(
+                set_section_page_number_start(
                     prelim_section, int(prelim_pag.get("start", 2)), prelim_pag["format"]
                 )
         else:
@@ -284,7 +353,7 @@ class PythonDocxAssemblyAdapter:
             if is_restart and not restart_started:
                 numbered_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
                 _configure_numbered_body_section_stub(numbered_section, config)
-                _set_section_page_number_start_stub(
+                set_section_page_number_start(
                     numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
                 )
                 restart_started = True
