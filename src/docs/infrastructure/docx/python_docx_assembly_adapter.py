@@ -30,19 +30,6 @@ def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
     return None
 
 
-# --- Slice 11b stub seam -----------------------------------------------------
-# These are local no-op placeholders for real OOXML layout helpers that a
-# future Slice 11b ("DOCX Layout & TOC") will add. Slice 11a's own scope
-# excludes Word-correct page numbering, TOC insertion, and bullet-glyph
-# rendering (see plans/2026-06-22-slice-11-docx-assembly.md). When Slice 11b
-# lands, these stubs and their call sites below (in `_build_main_document`,
-# `apply_normative_paragraph_format`, and `assemble`) are deleted and
-# repointed to the real implementations.
-#
-# Remaining stubs (Task 5): `_configure_roman_preliminary_section_stub`,
-# `_configure_unnumbered_section_stub`, `_configure_numbered_body_section_stub`.
-
-
 def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
     available = {style.name for style in document.styles}
     if preferred_style in available:
@@ -84,19 +71,32 @@ def set_bullet_numbering(paragraph: Any, num_id: int = 42) -> None:
     num_id_el.set(qn("w:val"), str(num_id))
 
 
-def _configure_roman_preliminary_section_stub(section: Any, config: dict[str, Any], start: int = 2) -> None:
-    # Placeholder for Slice 11b's configure_roman_preliminary_section. No-op.
-    pass
+def configure_unnumbered_section(section: Any, config: dict[str, Any]) -> None:
+    apply_non_cover_section_layout(section, config)
+    section.header.is_linked_to_previous = False
+    section.footer.is_linked_to_previous = False
+    clear_story_part(section.header)
+    clear_story_part(section.footer)
 
 
-def _configure_unnumbered_section_stub(section: Any, config: dict[str, Any]) -> None:
-    # Placeholder for Slice 11b's configure_unnumbered_section. No-op.
-    pass
+def configure_numbered_body_section(section: Any, config: dict[str, Any]) -> None:
+    apply_non_cover_section_layout(section, config)
+    section.header.is_linked_to_previous = False
+    section.footer.is_linked_to_previous = False
+    clear_story_part(section.header)
+    clear_story_part(section.footer)
+    add_page_number_footer(section.footer)
+    set_section_page_number_start(section, 1, "decimal")
 
 
-def _configure_numbered_body_section_stub(section: Any, config: dict[str, Any]) -> None:
-    # Placeholder for Slice 11b's configure_numbered_body_section. No-op.
-    pass
+def configure_roman_preliminary_section(section: Any, config: dict[str, Any], start: int = 2) -> None:
+    apply_non_cover_section_layout(section, config)
+    section.header.is_linked_to_previous = False
+    section.footer.is_linked_to_previous = False
+    clear_story_part(section.header)
+    clear_story_part(section.footer)
+    add_page_number_footer(section.footer)
+    set_section_page_number_start(section, start, "lowerRoman")
 
 
 def apply_non_cover_section_layout(section: Any, config: dict[str, Any]) -> None:
@@ -312,13 +312,13 @@ class PythonDocxAssemblyAdapter:
         prelim_pag = sections_part.get("preliminary_pagination", {})
         prelim_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
         if prelim_pag:
-            _configure_roman_preliminary_section_stub(prelim_section, config, int(prelim_pag.get("start", 2)))
+            configure_roman_preliminary_section(prelim_section, config, int(prelim_pag.get("start", 2)))
             if prelim_pag.get("format"):
                 set_section_page_number_start(
                     prelim_section, int(prelim_pag.get("start", 2)), prelim_pag["format"]
                 )
         else:
-            _configure_unnumbered_section_stub(prelim_section, config)
+            configure_unnumbered_section(prelim_section, config)
 
         for part in leading:
             kind = part.get("type")
@@ -352,7 +352,7 @@ class PythonDocxAssemblyAdapter:
             is_restart = is_heading_1 and restart_heading and normalize_heading(paragraph_text) == restart_heading
             if is_restart and not restart_started:
                 numbered_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
-                _configure_numbered_body_section_stub(numbered_section, config)
+                configure_numbered_body_section(numbered_section, config)
                 set_section_page_number_start(
                     numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
                 )

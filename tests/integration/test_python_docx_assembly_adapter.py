@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
@@ -281,3 +282,91 @@ def test_assemble_creates_output_parent_directory_when_missing(tmp_path):
     output = tmp_path / "nested" / "dir" / "out.docx"
     PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
     assert output.exists()
+
+
+# --- assemble: section pagination (Word-correct, Slice 11b) ---------------------
+
+
+def _config_with_roman_prelim_and_body_restart() -> dict:
+    return {
+        "structure": [
+            {"type": "cover_from_template"},
+            {
+                "type": "sections",
+                "preliminary_pagination": {"start": 2, "format": "lowerRoman"},
+                "body_restart_section": "cap2",
+                "body_pagination": {"format": "decimal", "start": 1},
+            },
+        ],
+        "sections": [{"id": "cap2", "title": "CAPITULO DOS"}],
+    }
+
+
+def test_assemble_configures_lower_roman_preliminary_section_pagination(tmp_path):
+    document = Document()
+    document.add_heading("CAPITULO DOS", level=1)
+    document.add_paragraph("Texto de cuerpo.")
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble(
+        _config_with_roman_prelim_and_body_restart(), body, output,
+        cover_asset_path=None, embed_front_paths=[], embed_back_paths=[],
+    )
+    result = Document(str(output))
+    prelim_section = result.sections[1]
+    pg_num_type = prelim_section._sectPr.find(qn("w:pgNumType"))
+    assert pg_num_type.get(qn("w:start")) == "2"
+    assert pg_num_type.get(qn("w:fmt")) == "lowerRoman"
+
+
+def test_assemble_configures_decimal_body_section_pagination_restart(tmp_path):
+    document = Document()
+    document.add_heading("CAPITULO DOS", level=1)
+    document.add_paragraph("Texto de cuerpo.")
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble(
+        _config_with_roman_prelim_and_body_restart(), body, output,
+        cover_asset_path=None, embed_front_paths=[], embed_back_paths=[],
+    )
+    result = Document(str(output))
+    body_section = result.sections[2]
+    pg_num_type = body_section._sectPr.find(qn("w:pgNumType"))
+    assert pg_num_type.get(qn("w:start")) == "1"
+    assert pg_num_type.get(qn("w:fmt")) == "decimal"
+    footer_xml = body_section.footer.paragraphs[-1]._p.xml
+    assert "PAGE" in footer_xml
+
+
+def test_assemble_unnumbered_section_has_no_page_field_in_footer(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    config = {
+        "structure": [
+            {"type": "cover_from_template"},
+            {"type": "sections", "preliminary_pagination": {}},
+        ]
+    }
+    PythonDocxAssemblyAdapter().assemble(
+        config, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    result = Document(str(output))
+    prelim_section = result.sections[1]
+    assert "PAGE" not in prelim_section.footer.paragraphs[-1]._p.xml
+
+
+def test_assemble_clears_header_and_footer_on_configured_sections(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble(
+        _config_with_roman_prelim_and_body_restart(), body, output,
+        cover_asset_path=None, embed_front_paths=[], embed_back_paths=[],
+    )
+    result = Document(str(output))
+    prelim_section = result.sections[1]
+    assert prelim_section.header.is_linked_to_previous is False
+    assert prelim_section.footer.is_linked_to_previous is False
