@@ -1,0 +1,261 @@
+# tests/integration/test_python_docx_assembly_adapter.py
+from __future__ import annotations
+
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
+
+from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+
+
+# --- render_pandoc -----------------------------------------------------------
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_render_pandoc_converts_markdown_to_docx(tmp_path):
+    markdown = tmp_path / "section.md"
+    markdown.write_text("# Título\n\nCuerpo del texto.\n", encoding="utf-8")
+    output = tmp_path / "body.docx"
+    PythonDocxAssemblyAdapter().render_pandoc(shutil.which("pandoc"), [markdown], output)
+    assert output.exists()
+    document = Document(str(output))
+    assert any("Cuerpo del texto" in p.text for p in document.paragraphs)
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_render_pandoc_raises_on_pandoc_failure(tmp_path):
+    missing_input = tmp_path / "does-not-exist.md"
+    output = tmp_path / "body.docx"
+    with pytest.raises(subprocess.CalledProcessError):
+        PythonDocxAssemblyAdapter().render_pandoc(shutil.which("pandoc"), [missing_input], output)
+
+
+# --- fixtures ------------------------------------------------------------------
+
+
+def _save_body_docx(tmp_path: Path, name: str = "body.docx") -> Path:
+    document = Document()
+    document.add_heading("Introduccion", level=1)
+    document.add_paragraph("Texto de cuerpo.")
+    path = tmp_path / name
+    document.save(path)
+    return path
+
+
+def _count_page_breaks(document) -> int:
+    return sum(1 for paragraph in document.paragraphs if 'w:type="page"' in paragraph._p.xml)
+
+
+# --- assemble: cover resolution -------------------------------------------------
+
+
+def test_assemble_produces_output_with_blank_cover_when_no_template(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    config: dict = {}
+    PythonDocxAssemblyAdapter().assemble(
+        config, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    assert output.exists()
+    document = Document(str(output))
+    assert any("Introduccion" in p.text for p in document.paragraphs)
+
+
+def test_assemble_loads_cover_from_template_when_configured(tmp_path):
+    template = Document()
+    template.add_paragraph("TEMPLATE COVER MARKER")
+    template_path = tmp_path / "template.docx"
+    template.save(template_path)
+
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    config = {"paths": {"template_docx": str(template_path)}}
+    PythonDocxAssemblyAdapter().assemble(
+        config, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    document = Document(str(output))
+    assert any("TEMPLATE COVER MARKER" in p.text for p in document.paragraphs)
+
+
+def test_assemble_loads_cover_from_asset_when_structure_declares_it(tmp_path):
+    cover = Document()
+    cover.add_paragraph("COVER ASSET MARKER")
+    cover_path = tmp_path / "cover.docx"
+    cover.save(cover_path)
+
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    config = {"structure": [{"type": "cover_from_asset", "asset": "cover"}, {"type": "sections"}]}
+    PythonDocxAssemblyAdapter().assemble(
+        config, body, output, cover_asset_path=cover_path, embed_front_paths=[], embed_back_paths=[]
+    )
+    document = Document(str(output))
+    assert any("COVER ASSET MARKER" in p.text for p in document.paragraphs)
+
+
+def test_assemble_falls_back_to_blank_cover_when_asset_path_missing(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    config = {"structure": [{"type": "cover_from_asset", "asset": "cover"}, {"type": "sections"}]}
+    PythonDocxAssemblyAdapter().assemble(
+        config, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    document = Document(str(output))
+    assert not any("COVER ASSET MARKER" in p.text for p in document.paragraphs)
+    assert any("Introduccion" in p.text for p in document.paragraphs)
+
+
+# --- assemble: body traversal ---------------------------------------------------
+
+
+def test_assemble_copies_tables_from_body(tmp_path):
+    document = Document()
+    document.add_heading("Capitulo", level=1)
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "celda-a"
+    table.cell(0, 1).text = "celda-b"
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
+    result = Document(str(output))
+    assert len(result.tables) == 1
+    assert result.tables[0].cell(0, 0).text == "celda-a"
+
+
+def test_assemble_applies_normative_paragraph_format_line_spacing(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
+    document = Document(str(output))
+    body_paragraphs = [p for p in document.paragraphs if p.text.strip() == "Texto de cuerpo."]
+    assert body_paragraphs[0].paragraph_format.line_spacing == 1.5
+
+
+def test_assemble_centers_heading_1_paragraphs(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
+    document = Document(str(output))
+    headings = [p for p in document.paragraphs if p.text.strip() == "Introduccion" and p.style and p.style.name == "Heading 1"]
+    assert headings
+    assert headings[0].alignment == WD_ALIGN_PARAGRAPH.CENTER
+
+
+def test_assemble_copies_run_formatting_from_body(tmp_path):
+    document = Document()
+    document.add_heading("Capitulo", level=1)
+    paragraph = document.add_paragraph()
+    run = paragraph.add_run("Texto en negrita.")
+    run.bold = True
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
+    result = Document(str(output))
+    target = next(p for p in result.paragraphs if p.text.strip() == "Texto en negrita.")
+    assert target.runs[0].bold is True
+    assert target.runs[0].font.name == "Times New Roman"
+    assert target.runs[0].font.size == Pt(12)
+
+
+def test_assemble_inserts_page_break_before_second_heading_1(tmp_path):
+    document = Document()
+    document.add_heading("Primero", level=1)
+    document.add_paragraph("Texto uno.")
+    document.add_heading("Segundo", level=1)
+    document.add_paragraph("Texto dos.")
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
+    result = Document(str(output))
+    assert _count_page_breaks(result) == 1
+
+
+# --- assemble: section count (structural only, not numbering format) ------------
+
+
+def _restart_config() -> dict:
+    return {
+        "structure": [
+            {"type": "cover_from_template"},
+            {
+                "type": "sections",
+                "preliminary_pagination": {},
+                "body_restart_section": "cap2",
+                "body_pagination": {"format": "decimal", "start": 1},
+            },
+        ],
+        "sections": [{"id": "cap2", "title": "CAPITULO DOS"}],
+    }
+
+
+def test_assemble_adds_extra_section_when_restart_heading_matches(tmp_path):
+    document = Document()
+    document.add_heading("CAPITULO DOS", level=1)
+    document.add_paragraph("Texto de cuerpo.")
+    body = tmp_path / "body.docx"
+    document.save(body)
+
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble(
+        _restart_config(), body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    result = Document(str(output))
+    assert len(result.sections) == 3
+
+
+def test_assemble_does_not_add_extra_section_when_restart_heading_does_not_match(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "out.docx"
+    PythonDocxAssemblyAdapter().assemble(
+        _restart_config(), body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[]
+    )
+    result = Document(str(output))
+    assert len(result.sections) == 2
+
+
+# --- assemble: embed front/back + docxcompose missing ---------------------------
+
+
+def test_assemble_raises_runtime_error_when_docxcompose_missing_with_front_asset(tmp_path, monkeypatch):
+    body = _save_body_docx(tmp_path)
+    front_asset = tmp_path / "front.docx"
+    Document().save(front_asset)
+    output = tmp_path / "out.docx"
+    monkeypatch.setitem(__import__("sys").modules, "docxcompose", None)
+    with pytest.raises(RuntimeError, match="docxcompose"):
+        PythonDocxAssemblyAdapter().assemble(
+            {}, body, output, cover_asset_path=None, embed_front_paths=[front_asset], embed_back_paths=[]
+        )
+
+
+def test_assemble_raises_runtime_error_when_docxcompose_missing_with_back_asset(tmp_path, monkeypatch):
+    body = _save_body_docx(tmp_path)
+    back_asset = tmp_path / "back.docx"
+    Document().save(back_asset)
+    output = tmp_path / "out.docx"
+    monkeypatch.setitem(__import__("sys").modules, "docxcompose", None)
+    with pytest.raises(RuntimeError, match="docxcompose"):
+        PythonDocxAssemblyAdapter().assemble(
+            {}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[back_asset]
+        )
+
+
+# --- assemble: output path handling ----------------------------------------------
+
+
+def test_assemble_creates_output_parent_directory_when_missing(tmp_path):
+    body = _save_body_docx(tmp_path)
+    output = tmp_path / "nested" / "dir" / "out.docx"
+    PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
+    assert output.exists()
