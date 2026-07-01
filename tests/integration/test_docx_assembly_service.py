@@ -337,3 +337,20 @@ def test_build_resolves_cover_asset_via_asset_service_with_doc_id(tmp_path, work
     output = service.build("doc-1", config)
     document = Document(str(output))
     assert any("COVER FROM BUILD" in p.text for p in document.paragraphs)
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_produces_working_toc_field_not_literal_placeholder(tmp_path, service):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nContenido.\n", encoding="utf-8")
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")},
+        "structure": [{"type": "cover_from_template"}, {"type": "toc"}, {"type": "sections"}],
+    }
+
+    output = service.build("tesina-demo", config)
+    result = Document(str(output))
+    assert not any(p.text.strip() == "[[TOC]]" for p in result.paragraphs)
+    assert any('w:fldCharType="begin"' in p._p.xml for p in result.paragraphs)

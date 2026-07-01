@@ -276,9 +276,82 @@ def apply_normative_paragraph_format(paragraph: Any, style_name: str | None, tex
             paragraph.paragraph_format.first_line_indent = Cm(1.25)
 
 
+def insert_toc_field(docx_path: Path, placeholder: str = "[[TOC]]", levels: str = "1-3") -> bool:
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    document = Document(str(docx_path))
+    target = None
+    for paragraph in document.paragraphs:
+        if (paragraph.text or "").strip() == placeholder:
+            target = paragraph
+            break
+    if target is None:
+        return False
+
+    for run in list(target.runs)[::-1]:
+        target._p.remove(run._r)
+
+    run = target.add_run()
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f' TOC \\o "{levels}" \\h \\z \\u '
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    text = OxmlElement("w:t")
+    text.text = "(El indice se actualizara al abrir el documento en Word)"
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_sep)
+    run._r.append(text)
+    run._r.append(fld_end)
+    document.save(str(docx_path))
+    set_update_fields_on_open(docx_path)
+    return True
+
+
+def set_update_fields_on_open(docx_path: Path) -> None:
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    ET.register_namespace("w", namespace)
+    with tempfile.TemporaryDirectory(prefix="docs_docx_settings_") as tmp:
+        tmp_path = Path(tmp)
+        with zipfile.ZipFile(docx_path, "r") as archive:
+            archive.extractall(tmp_path)
+
+        settings_path = tmp_path / "word" / "settings.xml"
+        if settings_path.exists():
+            tree = safe_parse(settings_path)  # Design Decision 5.1 (defusedxml)
+            root = tree.getroot()
+        else:
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            root = ET.Element(f"{{{namespace}}}settings")
+            tree = ET.ElementTree(root)
+
+        update_fields = root.find(f"{{{namespace}}}updateFields")
+        if update_fields is None:
+            update_fields = ET.Element(f"{{{namespace}}}updateFields")
+            root.insert(0, update_fields)
+        update_fields.set(f"{{{namespace}}}val", "true")
+        tree.write(settings_path, xml_declaration=True, encoding="UTF-8")
+
+        with zipfile.ZipFile(docx_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in tmp_path.rglob("*"):
+                if path.is_file():
+                    archive.write(path, path.relative_to(tmp_path).as_posix())
+
+
 class PythonDocxAssemblyAdapter:
     def render_pandoc(self, pandoc_path: str, inputs: list[Path], output: Path) -> None:
         subprocess.run([pandoc_path, *map(str, inputs), "-o", str(output)], check=True)
+
+    def insert_toc_field(self, docx_path: Path, placeholder: str = "[[TOC]]", levels: str = "1-3") -> bool:
+        return insert_toc_field(docx_path, placeholder=placeholder, levels=levels)
 
     def _cover_base_document(
         self, config: dict[str, Any], cover_asset_path: Path | None, has_cover_from_asset_part: bool

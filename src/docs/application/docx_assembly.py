@@ -82,9 +82,7 @@ class DocxAssemblyService:
         stripped_sections = self._strip_frontmatter_to_temp(existing_sections)
         self.port.render_pandoc(pandoc, stripped_sections, body_docx)
         self.assemble(doc_id, config, body_docx, output)
-        # insert_toc_field(output) — deferred to Slice 11b; build() does not call
-        # it yet, so the returned .docx has a literal "[[TOC]]" placeholder
-        # paragraph instead of a working TOC field until Slice 11b lands.
+        self.port.insert_toc_field(output)
         return output
 
     def _strip_frontmatter_to_temp(self, sections: list[Path]) -> list[Path]:
