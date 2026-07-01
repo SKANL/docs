@@ -55,9 +55,25 @@ def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
     return None
 
 
-def _set_bullet_numbering_stub(paragraph: Any, num_id: int = 42) -> None:
-    # Placeholder for Slice 11b's set_bullet_numbering. No-op.
-    pass
+def set_bullet_numbering(paragraph: Any, num_id: int = 42) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    p_pr = paragraph._p.get_or_add_pPr()
+    num_pr = p_pr.find(qn("w:numPr"))
+    if num_pr is None:
+        num_pr = OxmlElement("w:numPr")
+        p_pr.append(num_pr)
+    ilvl = num_pr.find(qn("w:ilvl"))
+    if ilvl is None:
+        ilvl = OxmlElement("w:ilvl")
+        num_pr.append(ilvl)
+    ilvl.set(qn("w:val"), "0")
+    num_id_el = num_pr.find(qn("w:numId"))
+    if num_id_el is None:
+        num_id_el = OxmlElement("w:numId")
+        num_pr.append(num_id_el)
+    num_id_el.set(qn("w:val"), str(num_id))
 
 
 def _configure_roman_preliminary_section_stub(section: Any, config: dict[str, Any], start: int = 2) -> None:
@@ -112,7 +128,7 @@ def apply_normative_paragraph_format(paragraph: Any, style_name: str | None, tex
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.first_line_indent = None
         paragraph.paragraph_format.left_indent = Cm(0.63)
-        _set_bullet_numbering_stub(paragraph)
+        set_bullet_numbering(paragraph)
     else:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         if text:
