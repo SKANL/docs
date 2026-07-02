@@ -248,6 +248,45 @@ def review_document(
     raise typer.Exit(code=0 if result.passed else 1)
 
 
+@app.command("build-docx")
+def build_docx(ctx: typer.Context, output: str = typer.Option("", "--output")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.docx.build(resolved.doc_id, resolved.config, Path(output) if output else None))
+
+
+@app.command("qa-docx")
+def qa_docx(ctx: typer.Context, docx: str = typer.Argument(...), strict: bool = typer.Option(False, "--strict")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.qa.qa_docx(resolved.config, Path(docx), strict=strict))
+
+
+@app.command("format-audit-docx")
+def format_audit_docx(ctx: typer.Context, docx: str = typer.Argument(...), strict: bool = typer.Option(False, "--strict")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    result = deps.format_audit.audit_format(Path(docx), resolved.config, strict=strict)
+    print(result.to_markdown())
+    raise typer.Exit(code=0 if result.passed else 1)
+
+
+@app.command("apply-corrections")
+def apply_corrections(ctx: typer.Context) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    count = deps.corrections.apply_corrections(resolved.doc_id, resolved.config)
+    print(f"Correcciones aplicadas: {count}")
+
+
+@app.command("stamp-section")
+def stamp_section(ctx: typer.Context, section_id: str = typer.Argument(...), by: str = typer.Option(..., "--by"), model: str = typer.Option("", "--model")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    now = datetime.now().isoformat(timespec="seconds")
+    print(deps.review.stamp_section(resolved.doc_id, resolved.template, section_id, authored_by=by, model=model, now=now))
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         app(args=argv, standalone_mode=False)
