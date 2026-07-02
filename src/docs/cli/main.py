@@ -379,6 +379,39 @@ def doc_delete(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id
     print(f"Documento `{doc_id}` eliminado.")
 
 
+asset_app = typer.Typer(help="Adjunta archivos .docx al documento (portada, anexos).")
+app.add_typer(asset_app, name="asset")
+
+
+@asset_app.command("add")
+def asset_add(ctx: typer.Context, path: str = typer.Argument(...), name: str = typer.Option("", "--name")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    target = deps.assets.add_asset(resolved.doc_id, path, name=name)
+    print(target)
+    print(f"Asset `{target.stem}` agregado. Úsalo en la estructura con cover_from_asset o embed_docx.")
+
+
+@asset_app.command("list")
+def asset_list(ctx: typer.Context) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    names = deps.assets.list_assets(resolved.doc_id)
+    if not names:
+        print("No hay assets. Agrega uno con `asset add <ruta.docx>`.")
+        return
+    for name in names:
+        print(f"- {name}")
+
+
+@asset_app.command("rm")
+def asset_rm(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    deps.assets.remove_asset(resolved.doc_id, name)
+    print(f"Asset `{name}` eliminado.")
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         app(args=argv, standalone_mode=False)
