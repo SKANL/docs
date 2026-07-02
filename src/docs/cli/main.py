@@ -287,6 +287,29 @@ def stamp_section(ctx: typer.Context, section_id: str = typer.Argument(...), by:
     print(deps.review.stamp_section(resolved.doc_id, resolved.template, section_id, authored_by=by, model=model, now=now))
 
 
+template_app = typer.Typer(help="Gestiona los tipos de documento (plantillas).")
+app.add_typer(template_app, name="template")
+
+
+@template_app.command("list")
+def template_list(ctx: typer.Context) -> None:
+    deps, _ = _ctx(ctx)
+    names = deps.document_repository.list_templates()
+    if not names:
+        print("No hay plantillas en templates/.")
+        return
+    for name in names:
+        template = deps.document_repository.load_template(name)
+        print(f"- {name}: {template.title}")
+
+
+@template_app.command("show")
+def template_show(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
+    deps, _ = _ctx(ctx)
+    template = deps.document_repository.load_template(name)
+    print(json.dumps(template.model_dump(), ensure_ascii=False, indent=2))
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         app(args=argv, standalone_mode=False)
