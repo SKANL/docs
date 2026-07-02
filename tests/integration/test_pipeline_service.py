@@ -107,6 +107,33 @@ def test_list_runs_skips_malformed_json_files(tmp_path):
     assert len(records) == 1
 
 
+def test_context_confirmed_lines_skips_sensitive_fields_and_includes_regular_ones(tmp_path):
+    from docs.domain.models.template import Field, Template, Topic
+
+    service, workspace = _service(tmp_path)
+    template = Template(
+        type="tesina",
+        title="Tesina",
+        context_schema={
+            "topics": [
+                Topic(
+                    id="alumno",
+                    title="Alumno",
+                    fields=[
+                        Field(key="nombre", label="Nombre", required=True),
+                        Field(key="curp", label="CURP", required=False, sensitive=True),
+                    ],
+                )
+            ]
+        },
+    )
+    service.context_repository.write_topic("doc-1", template.context_schema.topics[0], {"nombre": "Ada", "curp": "AAAA000101HDFRRD01"})
+
+    lines = service.context_confirmed_lines("doc-1", template)
+
+    assert lines == ["Nombre: Ada"]
+
+
 # --- Task 5: run_pipeline -----------------------------------------------
 #
 # NOTE on fixtures below: the plan's own draft `_template()`/`_pipeline_config()`

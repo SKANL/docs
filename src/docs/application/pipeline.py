@@ -97,7 +97,7 @@ class PipelineService:
         size = self.evidence_repository.file_size(rules_path) if exists else 0
         return exists, size
 
-    def _context_confirmed_lines(self, doc_id: str, template: Template) -> list[str]:
+    def context_confirmed_lines(self, doc_id: str, template: Template) -> list[str]:
         # Legacy also routes sensitive topic fields into a separate
         # "dato_sensible" ledger bucket. EvidenceService.render_fact_ledger
         # (Slice 8) only accepts one confirmado-scoped list, so sensitive
@@ -147,7 +147,7 @@ class PipelineService:
         def stage_build_ledger() -> tuple[bool, str]:
             path = Path(config["paths"]["fact_ledger"])
             path.parent.mkdir(parents=True, exist_ok=True)
-            context_lines = self._context_confirmed_lines(doc_id, template)
+            context_lines = self.context_confirmed_lines(doc_id, template)
             path.write_text(self.evidence_service.render_fact_ledger(config, context_lines), encoding="utf-8")
             return True, str(path)
 

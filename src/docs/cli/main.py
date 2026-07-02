@@ -148,7 +148,7 @@ def build_ledger(ctx: typer.Context) -> None:
     resolved = deps.resolve_context(doc)
     path = Path(resolved.config["paths"]["fact_ledger"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = _context_confirmed_lines(deps, resolved.doc_id, resolved.template)
+    lines = deps.pipeline.context_confirmed_lines(resolved.doc_id, resolved.template)
     path.write_text(deps.evidence.render_fact_ledger(resolved.config, lines), encoding="utf-8")
     print(path)
 
@@ -157,23 +157,6 @@ def _rules_manifest_state(deps: Deps, config: dict) -> tuple[bool, int]:
     rules_path = Path(config["paths"]["rules_manifest"])
     exists = rules_path.exists()
     return exists, (rules_path.stat().st_size if exists else 0)
-
-
-def _context_confirmed_lines(deps: Deps, doc_id: str, template) -> list[str]:
-    # Mirrors PipelineService._context_confirmed_lines (Slice 14 JC4): sensitive
-    # topic fields are skipped, not mis-classified.
-    lines: list[str] = []
-    for topic in template.context_schema.topics:
-        values = deps.context_repository.read_topic(doc_id, topic)
-        if isinstance(values, dict):
-            for field in topic.fields:
-                value = values.get(field.key, "")
-                if not value or field.sensitive:
-                    continue
-                lines.append(f"{field.label}: {value}")
-        elif isinstance(values, str) and values.strip():
-            lines.append(f"{topic.title or topic.id}: {values.strip()[:160]}")
-    return lines
 
 
 _BUILD_SECTION_UNAVAILABLE = (
