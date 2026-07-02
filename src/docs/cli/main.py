@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from docs.cli._shared import Deps, ResolvedContext, emit_result
+from docs.domain.normative import resolve_normative_settings
 from docs.domain.rules import review_rules as domain_review_rules
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
@@ -173,6 +174,78 @@ def _context_confirmed_lines(deps: Deps, doc_id: str, template) -> list[str]:
         elif isinstance(values, str) and values.strip():
             lines.append(f"{topic.title or topic.id}: {values.strip()[:160]}")
     return lines
+
+
+_BUILD_SECTION_UNAVAILABLE = (
+    "build-section requiere un renderer de borradores y source_hash/prompt_hash "
+    "aún no modelados en esta migración (ver Slice 6 y Slice 8, Design Decision 4)."
+)
+
+
+@app.command("build-section")
+def build_section(ctx: typer.Context, section_id: str = typer.Argument(...)) -> None:
+    # Judgment call 3: surface the unmodeled gap cleanly, do not fake hashes.
+    print(f"ERROR: {_BUILD_SECTION_UNAVAILABLE}", file=sys.stderr)
+    raise typer.Exit(code=1)
+
+
+@app.command("pack-context")
+def pack_context(ctx: typer.Context, section_id: str = typer.Argument(..., help="<id> | all | document")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    normative = resolve_normative_settings(resolved.config)
+    manifest_exists, manifest_size = _rules_manifest_state(deps, resolved.config)
+
+    def pack_one(sid: str) -> Path:
+        return deps.context_pack.pack_context(resolved.doc_id, resolved.template, sid, resolved.config, **normative)
+
+    def pack_document() -> Path:
+        return deps.context_pack.pack_context_document(
+            resolved.doc_id, resolved.template, resolved.config,
+            manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+        )
+
+    if section_id == "all":
+        for section in resolved.template.sections:
+            print(pack_one(section.id))
+        print(pack_document())
+    elif section_id == "document":
+        print(pack_document())
+    else:
+        print(pack_one(section_id))
+
+
+@app.command("review-section")
+def review_section(
+    ctx: typer.Context,
+    section: str = typer.Argument(...),
+    strict: bool = typer.Option(False, "--strict"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    normative = resolve_normative_settings(resolved.config)
+    result = deps.review.review_section(resolved.doc_id, resolved.template, section, strict=strict, **normative)
+    emit_result(result, as_json)
+    raise typer.Exit(code=0 if result.passed else 1)
+
+
+@app.command("review-document")
+def review_document(
+    ctx: typer.Context,
+    strict: bool = typer.Option(False, "--strict"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    normative = resolve_normative_settings(resolved.config)
+    manifest_exists, manifest_size = _rules_manifest_state(deps, resolved.config)
+    result = deps.review.review_document(
+        resolved.doc_id, resolved.template, strict=strict,
+        manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+    )
+    emit_result(result, as_json)
+    raise typer.Exit(code=0 if result.passed else 1)
 
 
 def main(argv: list[str] | None = None) -> int:
