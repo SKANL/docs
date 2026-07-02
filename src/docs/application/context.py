@@ -6,7 +6,7 @@ from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
 from docs.domain.models.template import Template, Topic
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_repository import DocumentNotFoundError, DocumentRepository
-from docs.infrastructure.persistence.context_markdown import parse_requests
+from docs.infrastructure.persistence.context_markdown import parse_requests, render_requests
 
 
 class ContextService:
@@ -104,3 +104,14 @@ class ContextService:
 
         self.context_repo.regenerate_index(doc_id, template.context_schema, self.status(doc_id, template))
         return written
+
+    def write_requests_file(self, doc_id: str, template: Template, only_topic: str = "") -> Path:
+        """Non-interactive elicitation: render the pending-fields questionnaire
+        and persist it. Composes the already-migrated status + render_requests +
+        ContextRepository.write_requests. The interactive TTY loop (legacy
+        elicit_interactive) is out of scope for this migration."""
+        self._require_document(doc_id)
+        statuses = self.status(doc_id, template)
+        pairs = [(s, self.context_repo.read_topic(doc_id, self._find_topic(template, s.id))) for s in statuses]
+        text = render_requests(template.context_schema, pairs, only_topic=only_topic)
+        return self.context_repo.write_requests(doc_id, text)

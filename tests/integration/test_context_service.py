@@ -182,3 +182,20 @@ def test_ingest_raises_if_requests_file_absent(setup):
     service, template = setup
     with pytest.raises(FileNotFoundError):
         service.ingest("alpha", template)
+
+
+def test_write_requests_file_renders_pending_questionnaire(setup):
+    service, template = setup
+    path = service.write_requests_file("alpha", template)
+    text = path.read_text(encoding="utf-8")
+    assert "`alumno`" in text
+    assert "`intro`" in text
+    assert path == service.context_repo.workspace.doc_root("alpha") / "context" / "_requests.md"
+
+
+def test_write_requests_file_only_topic_filters_to_single_topic(setup):
+    service, template = setup
+    path = service.write_requests_file("alpha", template, only_topic="alumno")
+    text = path.read_text(encoding="utf-8")
+    assert "`alumno`" in text
+    assert "`intro`" not in text
