@@ -11,15 +11,20 @@ from docs.domain.doctor import Check, DoctorResult
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.evidence_repository import EvidenceRepository
+from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.domain.rules import review_rules
-from docs.infrastructure.docx.libreoffice_qa_adapter import resolve_libreoffice_executable
-from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_pandoc_executable
 
 
 class DoctorService:
-    def __init__(self, evidence_repository: EvidenceRepository, asset_service: AssetService) -> None:
+    def __init__(
+        self,
+        evidence_repository: EvidenceRepository,
+        asset_service: AssetService,
+        tool_resolver: ToolResolverPort,
+    ) -> None:
         self.evidence_repository = evidence_repository
         self.asset_service = asset_service
+        self.tool_resolver = tool_resolver
 
     def run_doctor(self, doc_id: str, config: dict[str, Any], strict: bool = False) -> DoctorResult:
         checks: list[Check] = []
@@ -78,9 +83,9 @@ class DoctorService:
         )
 
         checks.append(Check("python", True, sys.executable))
-        pandoc = resolve_pandoc_executable(config.get("paths", {}))
+        pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
         checks.append(Check("pandoc", bool(pandoc), pandoc or "No encontrado en PATH. Instalar Pandoc para build-docx."))
-        libreoffice = resolve_libreoffice_executable(config.get("paths", {}))
+        libreoffice = self.tool_resolver.resolve_libreoffice(config.get("paths", {}))
         checks.append(
             Check("libreoffice", bool(libreoffice), libreoffice or "No encontrado en PATH. Instalar LibreOffice para qa-docx.")
         )

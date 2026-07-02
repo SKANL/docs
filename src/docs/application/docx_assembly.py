@@ -9,13 +9,14 @@ from docs.application.asset import AssetService
 from docs.domain.docx_structure import structure_parts
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
-from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_pandoc_executable
+from docs.domain.ports.tool_resolver_port import ToolResolverPort
 
 
 class DocxAssemblyService:
-    def __init__(self, port: DocxAssemblyPort, asset_service: AssetService) -> None:
+    def __init__(self, port: DocxAssemblyPort, asset_service: AssetService, tool_resolver: ToolResolverPort) -> None:
         self.port = port
         self.asset_service = asset_service
+        self.tool_resolver = tool_resolver
 
     def _sections_index(self, parts: list[dict[str, Any]]) -> int:
         return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))
@@ -57,7 +58,7 @@ class DocxAssemblyService:
         )
 
     def build(self, doc_id: str, config: dict[str, Any], output: Path | None = None) -> Path:
-        pandoc = resolve_pandoc_executable(config.get("paths", {}))
+        pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
         if not pandoc:
             raise RuntimeError("Pandoc no está disponible en PATH. Instálalo y vuelve a ejecutar `build-docx`.")
 

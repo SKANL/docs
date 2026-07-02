@@ -26,6 +26,7 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
@@ -70,10 +71,11 @@ class Deps:
         review_service = ReviewService(section_repo)
         collection_service = CollectionService(source_repo, evidence_repo)
         context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
-        docx_assembly_service = DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service)
+        tool_resolver = SystemToolResolverAdapter()
+        docx_assembly_service = DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
         qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
-        doctor_service = DoctorService(evidence_repo, asset_service)
+        doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
 
         self.assets = asset_service
         self.evidence = evidence_service

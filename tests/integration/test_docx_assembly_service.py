@@ -12,6 +12,7 @@ from docs.application.asset import AssetService
 from docs.application.docx_assembly import DocxAssemblyService
 from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 
 
@@ -43,7 +44,7 @@ def asset_service(workspace: Workspace) -> AssetService:
 
 @pytest.fixture
 def service(asset_service: AssetService) -> DocxAssemblyService:
-    return DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service)
+    return DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
 
 
 # --- _resolve_cover_asset_path ------------------------------------------------

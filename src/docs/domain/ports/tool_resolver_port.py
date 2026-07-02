@@ -1,0 +1,8 @@
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class ToolResolverPort(Protocol):
+    def resolve_pandoc(self, paths: dict[str, Any]) -> str | None: ...
+    def resolve_libreoffice(self, paths: dict[str, Any]) -> str | None: ...

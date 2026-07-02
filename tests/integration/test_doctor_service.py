@@ -7,6 +7,7 @@ from pathlib import Path
 from docs.application.asset import AssetService
 from docs.application.doctor import DoctorService
 from docs.domain.workspace import Workspace
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 
@@ -23,7 +24,29 @@ _MINIMAL_TEMPLATE_FIELDS = {
 def _service(tmp_path):
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
-    return DoctorService(JsonEvidenceRepository(), asset_service)
+    return DoctorService(JsonEvidenceRepository(), asset_service, SystemToolResolverAdapter())
+
+
+def test_run_doctor_uses_injected_tool_resolver_not_shutil_which(tmp_path, monkeypatch):
+    class _FakeToolResolver:
+        def resolve_pandoc(self, paths):
+            return "/fake/pandoc"
+
+        def resolve_libreoffice(self, paths):
+            return None
+
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    asset_service = AssetService(FilesystemAssetRepository(), workspace)
+    service = DoctorService(JsonEvidenceRepository(), asset_service, _FakeToolResolver())
+    config = _config(tmp_path)
+
+    result = service.run_doctor("doc-1", config)
+
+    pandoc_check = next(c for c in result.checks if c.name == "pandoc")
+    libreoffice_check = next(c for c in result.checks if c.name == "libreoffice")
+    assert pandoc_check.ok is True
+    assert pandoc_check.detail == "/fake/pandoc"
+    assert libreoffice_check.ok is False
 
 
 def _config(tmp_path, **paths):
