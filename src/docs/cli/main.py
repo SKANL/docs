@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from docs.cli._shared import Deps, ResolvedContext, emit_result
+from docs.domain.rules import review_rules as domain_review_rules
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
@@ -100,6 +101,78 @@ def history(ctx: typer.Context, limit: int = typer.Option(20, "--limit"), as_jso
 @app.command()
 def stamp() -> None:
     print(datetime.now().isoformat(timespec="seconds"))
+
+
+@app.command("collect-sources")
+def collect_sources(ctx: typer.Context) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.collection.collect_sources(resolved.config))
+
+
+@app.command("build-rules")
+def build_rules(ctx: typer.Context) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.evidence.build_rules(resolved.config))
+
+
+@app.command("review-rules")
+def review_rules(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), as_json: bool = typer.Option(False, "--json")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    manifest_exists, manifest_size = _rules_manifest_state(deps, resolved.config)
+    result = domain_review_rules(resolved.template, manifest_exists, manifest_size, strict=strict)
+    emit_result(result, as_json)
+    raise typer.Exit(code=0 if result.passed else 1)
+
+
+@app.command("collect-issues")
+def collect_issues(ctx: typer.Context, repo_root: Path = typer.Option(Path.cwd, "--repo-root")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.collection.collect_issues(resolved.config, repo_root))
+
+
+@app.command("collect-code-evidence")
+def collect_code_evidence(ctx: typer.Context, repo_root: Path = typer.Option(Path.cwd, "--repo-root")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.collection.collect_code_evidence(resolved.config, repo_root))
+
+
+@app.command("build-ledger")
+def build_ledger(ctx: typer.Context) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    path = Path(resolved.config["paths"]["fact_ledger"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = _context_confirmed_lines(deps, resolved.doc_id, resolved.template)
+    path.write_text(deps.evidence.render_fact_ledger(resolved.config, lines), encoding="utf-8")
+    print(path)
+
+
+def _rules_manifest_state(deps: Deps, config: dict) -> tuple[bool, int]:
+    rules_path = Path(config["paths"]["rules_manifest"])
+    exists = rules_path.exists()
+    return exists, (rules_path.stat().st_size if exists else 0)
+
+
+def _context_confirmed_lines(deps: Deps, doc_id: str, template) -> list[str]:
+    # Mirrors PipelineService._context_confirmed_lines (Slice 14 JC4): sensitive
+    # topic fields are skipped, not mis-classified.
+    lines: list[str] = []
+    for topic in template.context_schema.topics:
+        values = deps.context_repository.read_topic(doc_id, topic)
+        if isinstance(values, dict):
+            for field in topic.fields:
+                value = values.get(field.key, "")
+                if not value or field.sensitive:
+                    continue
+                lines.append(f"{field.label}: {value}")
+        elif isinstance(values, str) and values.strip():
+            lines.append(f"{topic.title or topic.id}: {values.strip()[:160]}")
+    return lines
 
 
 def main(argv: list[str] | None = None) -> int:
