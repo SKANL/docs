@@ -6,6 +6,7 @@ from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Field, Template, Topic
 from docs.domain.ports.document_repository import DocumentNotFoundError
 from docs.domain.workspace import Workspace
+from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.application.context import ContextService
@@ -45,7 +46,7 @@ def setup(tmp_path: Path):
     document_repo.register(
         DocumentSummary(id="alpha", title="Alpha", template="documento-generico", created_at="t")
     )
-    service = ContextService(context_repo, document_repo)
+    service = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
     return service, _template()
 
 
@@ -199,3 +200,25 @@ def test_write_requests_file_only_topic_filters_to_single_topic(setup):
     text = path.read_text(encoding="utf-8")
     assert "`alumno`" in text
     assert "`intro`" not in text
+
+
+def test_write_requests_file_delegates_to_injected_context_markdown_port(setup):
+    class _RecordingContextMarkdown:
+        def __init__(self):
+            self.render_calls = []
+
+        def render_requests(self, schema, statuses_with_values, only_topic=""):
+            self.render_calls.append((schema, only_topic))
+            return "# rendered by fake\n"
+
+        def parse_requests(self, schema, text):
+            raise AssertionError("not exercised by this test")
+
+    service, template = setup
+    fake_markdown = _RecordingContextMarkdown()
+    service_with_fake = ContextService(service.context_repo, service.document_repo, fake_markdown)
+
+    path = service_with_fake.write_requests_file("alpha", template)
+
+    assert fake_markdown.render_calls == [(template.context_schema, "")]
+    assert path.read_text(encoding="utf-8") == "# rendered by fake\n"

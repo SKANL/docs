@@ -10,6 +10,7 @@ from typing import Any
 from docs.application.asset import AssetService
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
+from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.application.context_pack import ContextPackService
 from docs.application.corrections import CorrectionsService
 from docs.application.doctor import DoctorService
@@ -85,7 +86,7 @@ class Deps:
         self.doctor = doctor_service
         self.documents = DocumentService(document_repo)
         self.corrections = CorrectionsService(section_repo, evidence_repo)
-        self.context = ContextService(context_repo, document_repo)
+        self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
         self.pipeline = PipelineService(
             doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
             review_service, context_pack_service, context_repo, docx_assembly_service,

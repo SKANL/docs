@@ -114,3 +114,21 @@ def parse_requests(schema: ContextSchema, text: str) -> dict[str, str | dict[str
             result[topic_id] = fields
 
     return result
+
+
+class ContextMarkdownAdapter:
+    """Adapts the module-level render_requests/parse_requests to
+    ContextMarkdownPort so application/context.py depends on the port
+    instead of importing this infrastructure module directly (Slice 16
+    tech-debt remediation, finding 1)."""
+
+    def render_requests(
+        self,
+        schema: ContextSchema,
+        statuses_with_values: list[tuple[TopicStatus, str | dict[str, str]]],
+        only_topic: str = "",
+    ) -> str:
+        return render_requests(schema, statuses_with_values, only_topic=only_topic)
+
+    def parse_requests(self, schema: ContextSchema, text: str) -> dict[str, str | dict[str, str]]:
+        return parse_requests(schema, text)

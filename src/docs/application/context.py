@@ -6,13 +6,19 @@ from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
 from docs.domain.models.template import Template, Topic
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_repository import DocumentNotFoundError, DocumentRepository
-from docs.infrastructure.persistence.context_markdown import parse_requests, render_requests
+from docs.domain.ports.context_markdown_port import ContextMarkdownPort
 
 
 class ContextService:
-    def __init__(self, context_repo: ContextRepository, document_repo: DocumentRepository) -> None:
+    def __init__(
+        self,
+        context_repo: ContextRepository,
+        document_repo: DocumentRepository,
+        context_markdown: ContextMarkdownPort,
+    ) -> None:
         self.context_repo = context_repo
         self.document_repo = document_repo
+        self.context_markdown = context_markdown
 
     def _require_document(self, doc_id: str) -> None:
         if not self.document_repo.exists(doc_id):
@@ -77,7 +83,7 @@ class ContextService:
         if not text:
             raise FileNotFoundError(f"No pending requests file for document `{doc_id}`.")
 
-        parsed = parse_requests(template.context_schema, text)
+        parsed = self.context_markdown.parse_requests(template.context_schema, text)
         topics_by_id = {t.id: t for t in template.context_schema.topics}
         written: list[str] = []
 
@@ -113,5 +119,5 @@ class ContextService:
         self._require_document(doc_id)
         statuses = self.status(doc_id, template)
         pairs = [(s, self.context_repo.read_topic(doc_id, self._find_topic(template, s.id))) for s in statuses]
-        text = render_requests(template.context_schema, pairs, only_topic=only_topic)
+        text = self.context_markdown.render_requests(template.context_schema, pairs, only_topic=only_topic)
         return self.context_repo.write_requests(doc_id, text)
