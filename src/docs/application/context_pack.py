@@ -10,6 +10,7 @@ from docs.application.evidence import EvidenceService
 from docs.application.review import ReviewService
 from docs.domain.markdown_text import keyword_set, matches_keywords, strip_frontmatter_and_markdown
 from docs.domain.models.template import SectionContract, Template
+from docs.domain.normative import NormativeSettings
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.section_repository import SectionRepository
 
@@ -123,11 +124,7 @@ class ContextPackService:
 
         if self.section_repository.section_exists(doc_id, section.order, section.id):
             _metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
-            review = self.review_service.review_section(
-                doc_id,
-                template,
-                section_id,
-                strict=False,
+            normative = NormativeSettings(
                 excluded_terms=excluded_terms,
                 is_policy_file=is_policy_file,
                 first_person_patterns=first_person_patterns,
@@ -136,6 +133,7 @@ class ContextPackService:
                 scope_term=scope_term,
                 scope_focus=scope_focus,
             )
+            review = self.review_service.review_section(doc_id, template, section_id, strict=False, normative=normative)
             lines.extend(["## Borrador actual", "", "```markdown", body.strip(), "```", ""])
             lines.extend(["## Hallazgos actuales (review-section)", ""])
             if review.issues:
@@ -207,12 +205,7 @@ class ContextPackService:
             if content:
                 lines.extend([f"### {name}", "", content, ""])
 
-        review = self.review_service.review_document(
-            doc_id,
-            template,
-            strict=False,
-            manifest_exists=manifest_exists,
-            manifest_size=manifest_size,
+        normative = NormativeSettings(
             excluded_terms=excluded_terms,
             is_policy_file=is_policy_file,
             first_person_patterns=first_person_patterns,
@@ -220,6 +213,9 @@ class ContextPackService:
             secret_patterns=secret_patterns,
             scope_term=scope_term,
             scope_focus=scope_focus,
+        )
+        review = self.review_service.review_document(
+            doc_id, template, strict=False, manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
         )
         lines.extend(["## Hallazgos globales (review-document)", ""])
         if review.issues:

@@ -31,13 +31,7 @@ class ReviewService:
         *,
         manifest_exists: bool,
         manifest_size: int,
-        excluded_terms: dict[str, str],
-        is_policy_file: bool,
-        first_person_patterns: list[str],
-        subjective_terms: list[str],
-        secret_patterns: list[str],
-        scope_term: str = "",
-        scope_focus: str = "",
+        normative: NormativeSettings,
     ) -> ReviewResult:
         issues: list[Issue] = list(
             review_rules(template, manifest_exists, manifest_size, strict=strict).issues
@@ -65,15 +59,6 @@ class ReviewService:
                 section_id = metadata.get("section_id") or infer_section_id_from_path(section_path)
                 contract = template.section_contracts.get(section_id, SectionContract())
 
-                normative = NormativeSettings(
-                    excluded_terms=excluded_terms,
-                    is_policy_file=is_policy_file,
-                    first_person_patterns=first_person_patterns,
-                    subjective_terms=subjective_terms,
-                    secret_patterns=secret_patterns,
-                    scope_term=scope_term,
-                    scope_focus=scope_focus,
-                )
                 section_issues = review_section_text(
                     body, metadata, section_id, contract, template, strict, normative=normative,
                 )
@@ -127,13 +112,7 @@ class ReviewService:
         section_id: str,
         strict: bool = False,
         *,
-        excluded_terms: dict[str, str],
-        is_policy_file: bool,
-        first_person_patterns: list[str],
-        subjective_terms: list[str],
-        secret_patterns: list[str],
-        scope_term: str = "",
-        scope_focus: str = "",
+        normative: NormativeSettings,
     ) -> ReviewResult:
         section = next((s for s in template.sections if s.id == section_id), None)
         if section is None:
@@ -147,15 +126,6 @@ class ReviewService:
         resolved_section_id = metadata.get("section_id") or infer_section_id_from_path(section_path)
         contract = template.section_contracts.get(resolved_section_id, SectionContract())
 
-        normative = NormativeSettings(
-            excluded_terms=excluded_terms,
-            is_policy_file=is_policy_file,
-            first_person_patterns=first_person_patterns,
-            subjective_terms=subjective_terms,
-            secret_patterns=secret_patterns,
-            scope_term=scope_term,
-            scope_focus=scope_focus,
-        )
         issues = review_section_text(
             body, metadata, resolved_section_id, contract, template, strict, normative=normative,
         )

@@ -15,7 +15,7 @@ from docs.application.format_audit import FormatAuditService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.domain.models.template import Template
-from docs.domain.normative import resolve_normative_settings
+from docs.domain.normative import NormativeSettings, resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.evidence_repository import EvidenceRepository
@@ -172,11 +172,11 @@ class PipelineService:
             return True, f"{len(paths)} context packs + 1 documento"
 
         def stage_review_document() -> tuple[bool, str]:
-            normative = resolve_normative_settings(config)
+            normative = NormativeSettings(**resolve_normative_settings(config))
             manifest_exists, manifest_size = self.rules_manifest_state(config)
             result = self.review_service.review_document(
                 doc_id, template, strict=strict,
-                manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+                manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
             )
             return result.passed, result.to_markdown()
 
@@ -248,11 +248,11 @@ class PipelineService:
         issues: list[Issue] = []
         manifest_exists, manifest_size = self.rules_manifest_state(config)
         issues.extend(review_rules(template, manifest_exists, manifest_size, strict=strict).issues)
-        normative = resolve_normative_settings(config)
+        normative = NormativeSettings(**resolve_normative_settings(config))
         issues.extend(
             self.review_service.review_document(
                 doc_id, template, strict=strict,
-                manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+                manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
             ).issues
         )
         if docx_path is None:

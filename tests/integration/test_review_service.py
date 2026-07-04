@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from docs.domain.models.template import Section, SectionContract, Template
+from docs.domain.normative import NormativeSettings
 from docs.domain.workspace import Workspace
 from docs.application.review import ReviewService
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
@@ -35,6 +36,15 @@ def _template(**overrides) -> Template:
     return Template(**defaults)
 
 
+_NORMATIVE = NormativeSettings(
+    excluded_terms={},
+    is_policy_file=False,
+    first_person_patterns=[],
+    subjective_terms=[],
+    secret_patterns=[],
+)
+
+
 def _write_section(workspace: Workspace, doc_id: str, order: int, section_id: str, body: str, metadata: dict | None = None) -> Path:
     sections_dir = workspace.doc_root(doc_id) / "sections"
     sections_dir.mkdir(parents=True, exist_ok=True)
@@ -52,16 +62,7 @@ def _write_section(workspace: Workspace, doc_id: str, order: int, section_id: st
 def test_review_document_flags_missing_required_section(workspace: Workspace, service: ReviewService):
     template = _template()
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=False,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=False, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     codes = [issue.code for issue in result.issues]
     assert "structure.missing_section" in codes
@@ -70,16 +71,7 @@ def test_review_document_flags_missing_required_section(workspace: Workspace, se
 def test_review_document_flags_missing_sections_dir(workspace: Workspace, service: ReviewService):
     template = _template(sections=[])
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=False,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=False, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     codes = [issue.code for issue in result.issues]
     assert "structure.missing_sections_dir" in codes
@@ -95,16 +87,7 @@ def test_review_document_prefixes_section_issue_messages_with_filename(workspace
         metadata={"section_id": "introduccion"},
     )
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=False,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=False, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     title_issues = [i for i in result.issues if i.code == "structure.missing_title"]
     assert len(title_issues) == 1
@@ -121,16 +104,7 @@ def test_review_document_strict_flags_pendiente_at_document_level(workspace: Wor
         metadata={"section_id": "introduccion"},
     )
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=True,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=True, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     codes = [issue.code for issue in result.issues]
     assert "content.pending_not_allowed" in codes
@@ -146,16 +120,7 @@ def test_review_document_strict_flags_missing_flow_terms(workspace: Workspace, s
         metadata={"section_id": "introduccion"},
     )
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=True,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=True, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     flow_issues = [i for i in result.issues if i.code == "coherence.missing_flow"]
     assert len(flow_issues) == 1
@@ -167,16 +132,7 @@ def test_review_document_skips_optional_missing_section_without_error(workspace:
         sections=[Section(id="referencias", title="Referencias", order=2, required=False)]
     )
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=False,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=False, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     codes = [issue.code for issue in result.issues]
     assert "structure.missing_section" not in codes
@@ -200,16 +156,7 @@ def test_review_document_includes_cross_consistency_issues(workspace: Workspace,
         metadata={"section_id": "referencias"},
     )
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=False,
-        manifest_exists=True,
-        manifest_size=10,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=False, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
     )
     codes = [issue.code for issue in result.issues]
     assert "coherence.citation_without_global_reference" in codes
@@ -218,16 +165,7 @@ def test_review_document_includes_cross_consistency_issues(workspace: Workspace,
 def test_review_document_includes_rules_issues_when_manifest_missing(workspace: Workspace, service: ReviewService):
     template = _template(sections=[])
     result = service.review_document(
-        "doc-1",
-        template,
-        strict=False,
-        manifest_exists=False,
-        manifest_size=0,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
+        "doc-1", template, strict=False, manifest_exists=False, manifest_size=0, normative=_NORMATIVE,
     )
     messages = [issue.message for issue in result.issues]
     assert any("manual-rules.json" in message for message in messages)
@@ -242,17 +180,7 @@ def test_review_section_flags_issues_for_section_with_problems(workspace: Worksp
         body="Sin titulo principal.\n",
         metadata={"section_id": "introduccion"},
     )
-    result = service.review_section(
-        "doc-1",
-        template,
-        "introduccion",
-        strict=False,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
-    )
+    result = service.review_section("doc-1", template, "introduccion", strict=False, normative=_NORMATIVE)
     codes = [issue.code for issue in result.issues]
     assert "structure.missing_title" in codes
 
@@ -266,50 +194,20 @@ def test_review_section_no_issues_for_clean_section(workspace: Workspace, servic
         body="# Introducción\n\nTexto con suficiente contenido para la sección.\n",
         metadata={"section_id": "introduccion"},
     )
-    result = service.review_section(
-        "doc-1",
-        template,
-        "introduccion",
-        strict=False,
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
-    )
+    result = service.review_section("doc-1", template, "introduccion", strict=False, normative=_NORMATIVE)
     assert result.issues == []
 
 
 def test_review_section_raises_when_section_file_missing(workspace: Workspace, service: ReviewService):
     template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
     with pytest.raises(FileNotFoundError):
-        service.review_section(
-            "doc-1",
-            template,
-            "introduccion",
-            strict=False,
-            excluded_terms={},
-            is_policy_file=False,
-            first_person_patterns=[],
-            subjective_terms=[],
-            secret_patterns=[],
-        )
+        service.review_section("doc-1", template, "introduccion", strict=False, normative=_NORMATIVE)
 
 
 def test_review_section_raises_when_section_id_unknown(workspace: Workspace, service: ReviewService):
     template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
     with pytest.raises(FileNotFoundError):
-        service.review_section(
-            "doc-1",
-            template,
-            "no-existe",
-            strict=False,
-            excluded_terms={},
-            is_policy_file=False,
-            first_person_patterns=[],
-            subjective_terms=[],
-            secret_patterns=[],
-        )
+        service.review_section("doc-1", template, "no-existe", strict=False, normative=_NORMATIVE)
 
 
 def test_stamp_section_raises_when_section_file_missing(workspace, service):

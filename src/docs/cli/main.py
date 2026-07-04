@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from docs.cli._shared import Deps, ResolvedContext, emit_result
-from docs.domain.normative import resolve_normative_settings
+from docs.domain.normative import NormativeSettings, resolve_normative_settings
 from docs.domain.rules import review_rules as domain_review_rules
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
@@ -201,8 +201,8 @@ def review_section(
 ) -> None:
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    normative = resolve_normative_settings(resolved.config)
-    result = deps.review.review_section(resolved.doc_id, resolved.template, section, strict=strict, **normative)
+    normative = NormativeSettings(**resolve_normative_settings(resolved.config))
+    result = deps.review.review_section(resolved.doc_id, resolved.template, section, strict=strict, normative=normative)
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
 
@@ -215,11 +215,11 @@ def review_document(
 ) -> None:
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    normative = resolve_normative_settings(resolved.config)
+    normative = NormativeSettings(**resolve_normative_settings(resolved.config))
     manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
     result = deps.review.review_document(
         resolved.doc_id, resolved.template, strict=strict,
-        manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+        manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
     )
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
