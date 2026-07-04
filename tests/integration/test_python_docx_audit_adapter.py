@@ -88,6 +88,22 @@ def test_audit_no_table_warning_for_table_without_vertical_borders_or_shading(tm
     assert not any("bordes verticales" in issue.message for issue in issues)
 
 
+def test_check_table_borders_flags_vertical_borders_and_shading():
+    adapter = PythonDocxAuditAdapter()
+    document = Document()
+    table = document.add_table(rows=1, cols=2)
+    tbl_pr = table._tbl.tblPr
+    borders = OxmlElement("w:tblBorders")
+    left = OxmlElement("w:left")
+    left.set(qn("w:val"), "single")
+    borders.append(left)
+    tbl_pr.append(borders)
+
+    issues = adapter._check_table_borders(document)
+
+    assert any("bordes verticales" in issue.message for issue in issues)
+
+
 # --- strict-mode section margin mismatch ------------------------------------
 
 
