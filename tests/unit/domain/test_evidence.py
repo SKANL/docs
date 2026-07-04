@@ -1,5 +1,15 @@
 # tests/unit/domain/test_evidence.py
-from docs.domain.evidence import ManualFileFact, ManualHashFact, TraceabilityFact, build_manifest, build_rules_hash_payload
+from docs.domain.evidence import (
+    ManualFileFact,
+    ManualHashFact,
+    PromptHashFileFact,
+    SourceHashFileFact,
+    TraceabilityFact,
+    build_manifest,
+    build_prompt_hash_payload,
+    build_rules_hash_payload,
+    build_source_hash_payload,
+)
 
 
 def _manual_file(**overrides) -> ManualFileFact:
@@ -162,3 +172,44 @@ def test_build_rules_hash_payload_preserves_manual_files_order():
         manual_files=[first, second], section_contracts={}, format={}, apa7={}, structure=[], preliminaries={}
     )
     assert [f["path"] for f in payload["manual_dir"]] == [first.path, second.path]
+
+
+def test_build_source_hash_payload_assembles_files_and_config_sections():
+    fact = SourceHashFileFact(path="/repo/context/alumno.md", sha256="a" * 64)
+    payload = build_source_hash_payload(files=[fact], config_sections=[{"id": "intro"}])
+    assert payload == [
+        {"path": fact.path, "sha256": fact.sha256},
+        {"config_sections": [{"id": "intro"}]},
+    ]
+
+
+def test_build_source_hash_payload_empty_inputs():
+    payload = build_source_hash_payload(files=[], config_sections=[])
+    assert payload == [{"config_sections": []}]
+
+
+def test_build_source_hash_payload_preserves_file_order():
+    first = SourceHashFileFact(path="/repo/context/a.md", sha256="a" * 64)
+    second = SourceHashFileFact(path="/repo/manual/b.md", sha256="b" * 64)
+    payload = build_source_hash_payload(files=[first, second], config_sections=[])
+    assert [entry["path"] for entry in payload[:2]] == [first.path, second.path]
+
+
+def test_build_prompt_hash_payload_uses_bare_filename_under_path_key():
+    # Legacy quirk (intentional, verbatim from tesina_harness.py:433-439): the
+    # dict key is "path" but the value is the bare filename (path.name), not a
+    # full path — prompts are hashed by filename only, unlike source_hash's files.
+    fact = PromptHashFileFact(name="section-author.md", sha256="c" * 64)
+    payload = build_prompt_hash_payload(files=[fact])
+    assert payload == [{"path": "section-author.md", "sha256": fact.sha256}]
+
+
+def test_build_prompt_hash_payload_empty_inputs():
+    assert build_prompt_hash_payload(files=[]) == []
+
+
+def test_build_prompt_hash_payload_preserves_order():
+    first = PromptHashFileFact(name="a.md", sha256="a" * 64)
+    second = PromptHashFileFact(name="b.md", sha256="b" * 64)
+    payload = build_prompt_hash_payload(files=[first, second])
+    assert [entry["path"] for entry in payload] == ["a.md", "b.md"]

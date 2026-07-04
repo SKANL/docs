@@ -93,3 +93,30 @@ def build_rules_hash_payload(
         "structure": structure,
         "preliminaries": preliminaries,
     }
+
+
+@dataclass(frozen=True)
+class SourceHashFileFact:
+    path: str
+    sha256: str
+
+
+def build_source_hash_payload(
+    files: list[SourceHashFileFact], config_sections: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = [{"path": fact.path, "sha256": fact.sha256} for fact in files]
+    payload.append({"config_sections": config_sections})
+    return payload
+
+
+@dataclass(frozen=True)
+class PromptHashFileFact:
+    name: str
+    sha256: str
+
+
+def build_prompt_hash_payload(files: list[PromptHashFileFact]) -> list[dict[str, str]]:
+    # Legacy quirk (intentional, verbatim from tesina_harness.py:433-439): the
+    # dict key is "path" but the value is the bare filename (path.name), not a
+    # full path — prompts are hashed by filename only, unlike source_hash's files.
+    return [{"path": fact.name, "sha256": fact.sha256} for fact in files]
