@@ -238,3 +238,47 @@ class TestExtractHeadingBlock:
     def test_matching_is_case_insensitive(self):
         markdown = "# título\nlinea 1\n# Otro"
         assert _extract_heading_block(markdown, "Título") == "linea 1"
+
+
+class TestRenderContractScaffoldLegacyParity:
+    def test_matches_legacy_render_contract_scaffold_byte_for_byte(self):
+        # Transcribed line-by-line from tesina_harness.py:1342-1377's
+        # render_contract_scaffold(config, section, context) for a synthetic
+        # section exercising every optional block at once (context table row,
+        # required_content PENDIENTEs, apa_required, references_list). This is
+        # the parity proof Slice 17's design Goal 1 requires — it does not
+        # exercise new code, it proves the already-shipped port is correct.
+        contract = SectionContract(
+            required_content=["alcance", "objetivo"],
+            apa_required=True,
+            references_list=True,
+        )
+        context = {"alumno": "| **Campo** | Información |\n| **Nombre** | Ana |\n"}
+
+        body = render_contract_scaffold("Resultados", contract, context)
+
+        expected = "\n".join(
+            [
+                "# Resultados",
+                "",
+                "_Borrador inicial generado por el arnés. Esta sección no debe "
+                "considerarse lista hasta resolver todos los PENDIENTE con evidencia._",
+                "",
+                "## Contexto disponible",
+                "",
+                "- Nombre: Ana",
+                "",
+                "## Pendientes normativos",
+                "",
+                "- PENDIENTE: documentar alcance con evidencia del ledger, contexto o fuentes.",
+                "- PENDIENTE: documentar objetivo con evidencia del ledger, contexto o fuentes.",
+                "",
+                "## Fuentes APA 7",
+                "",
+                "- PENDIENTE: agregar citas autor-fecha y referencias APA 7 realmente consultadas.",
+                "",
+                "PENDIENTE: ordenar alfabéticamente todas las fuentes citadas en el cuerpo conforme a APA 7.",
+                "",
+            ]
+        )
+        assert body == expected
