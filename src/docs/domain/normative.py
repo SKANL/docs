@@ -65,7 +65,7 @@ class NormativeSettings:
     scope_focus: str = ""
 
 
-def resolve_normative_settings(config: dict[str, Any]) -> dict[str, Any]:
+def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
     """Extrae las kwargs normativas que review_section_text/review_document/
     pack_context(_document) requieren, con los mismos defaults que legacy
     review_section (1455-1458, 1473, 1477-1478). is_policy_file no se
@@ -74,12 +74,12 @@ def resolve_normative_settings(config: dict[str, Any]) -> dict[str, Any]:
     normative = config.get("normative", {})
     excluded = normative.get("excluded_front_matter", EXCLUDED_FRONT_MATTER)
     excluded_terms = excluded if isinstance(excluded, dict) else {term: "" for term in excluded}
-    return {
-        "excluded_terms": excluded_terms,
-        "is_policy_file": False,
-        "first_person_patterns": normative.get("first_person_patterns", FIRST_PERSON_PATTERNS),
-        "subjective_terms": normative.get("subjective_terms", SUBJECTIVE_TERMS),
-        "secret_patterns": SECRET_PATTERNS + list(config.get("privacy", {}).get("forbidden_in_body_patterns", [])),
-        "scope_term": normative.get("scope_term", ""),
-        "scope_focus": normative.get("scope_focus", ""),
-    }
+    return NormativeSettings(
+        excluded_terms=excluded_terms,
+        is_policy_file=False,
+        first_person_patterns=normative.get("first_person_patterns", FIRST_PERSON_PATTERNS),
+        subjective_terms=normative.get("subjective_terms", SUBJECTIVE_TERMS),
+        secret_patterns=SECRET_PATTERNS + list(config.get("privacy", {}).get("forbidden_in_body_patterns", [])),
+        scope_term=normative.get("scope_term", ""),
+        scope_focus=normative.get("scope_focus", ""),
+    )
