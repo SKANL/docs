@@ -153,17 +153,11 @@ def build_ledger(ctx: typer.Context) -> None:
     print(path)
 
 
-_BUILD_SECTION_UNAVAILABLE = (
-    "build-section requiere un renderer de borradores y source_hash/prompt_hash "
-    "aún no modelados en esta migración (ver Slice 6 y Slice 8, Design Decision 4)."
-)
-
-
 @app.command("build-section")
 def build_section(ctx: typer.Context, section_id: str = typer.Argument(...)) -> None:
-    # Judgment call 3: surface the unmodeled gap cleanly, do not fake hashes.
-    print(f"ERROR: {_BUILD_SECTION_UNAVAILABLE}", file=sys.stderr)
-    raise typer.Exit(code=1)
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    print(deps.pipeline.build_section(resolved.doc_id, resolved.template, section_id, resolved.config))
 
 
 @app.command("pack-context")

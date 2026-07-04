@@ -34,10 +34,14 @@ def ws(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_build_section_surfaces_unmodeled_gap_cleanly(ws):
+def test_build_section_writes_scaffold_and_prints_path(ws):
     result = runner.invoke(app, ["build-section", "introduccion"])
-    assert result.exit_code == 1
-    assert "build-section requiere" in result.output
+    assert result.exit_code == 0
+    path = Path(result.output.strip())
+    assert path.exists()
+    assert "PENDIENTE: documentar contexto con evidencia del ledger, contexto o fuentes." in path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_review_document_exit_1_when_required_section_missing(ws):
