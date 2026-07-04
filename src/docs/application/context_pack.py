@@ -47,13 +47,7 @@ class ContextPackService:
         section_id: str,
         config: dict[str, Any],
         *,
-        excluded_terms: dict[str, str],
-        is_policy_file: bool,
-        first_person_patterns: list[str],
-        subjective_terms: list[str],
-        secret_patterns: list[str],
-        scope_term: str = "",
-        scope_focus: str = "",
+        normative: NormativeSettings,
     ) -> Path:
         section = next(s for s in template.sections if s.id == section_id)
         contract = template.section_contracts.get(section_id, SectionContract())
@@ -124,15 +118,6 @@ class ContextPackService:
 
         if self.section_repository.section_exists(doc_id, section.order, section.id):
             _metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
-            normative = NormativeSettings(
-                excluded_terms=excluded_terms,
-                is_policy_file=is_policy_file,
-                first_person_patterns=first_person_patterns,
-                subjective_terms=subjective_terms,
-                secret_patterns=secret_patterns,
-                scope_term=scope_term,
-                scope_focus=scope_focus,
-            )
             review = self.review_service.review_section(doc_id, template, section_id, strict=False, normative=normative)
             lines.extend(["## Borrador actual", "", "```markdown", body.strip(), "```", ""])
             lines.extend(["## Hallazgos actuales (review-section)", ""])
@@ -164,13 +149,7 @@ class ContextPackService:
         *,
         manifest_exists: bool,
         manifest_size: int,
-        excluded_terms: dict[str, str],
-        is_policy_file: bool,
-        first_person_patterns: list[str],
-        subjective_terms: list[str],
-        secret_patterns: list[str],
-        scope_term: str = "",
-        scope_focus: str = "",
+        normative: NormativeSettings,
     ) -> Path:
         lines: list[str] = [
             "# Context pack — DOCUMENTO COMPLETO",
@@ -205,15 +184,6 @@ class ContextPackService:
             if content:
                 lines.extend([f"### {name}", "", content, ""])
 
-        normative = NormativeSettings(
-            excluded_terms=excluded_terms,
-            is_policy_file=is_policy_file,
-            first_person_patterns=first_person_patterns,
-            subjective_terms=subjective_terms,
-            secret_patterns=secret_patterns,
-            scope_term=scope_term,
-            scope_focus=scope_focus,
-        )
         review = self.review_service.review_document(
             doc_id, template, strict=False, manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
         )

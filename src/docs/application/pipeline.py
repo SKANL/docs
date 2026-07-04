@@ -159,15 +159,15 @@ class PipelineService:
             )
 
         def stage_pack_context() -> tuple[bool, str]:
-            normative = resolve_normative_settings(config)
+            normative = NormativeSettings(**resolve_normative_settings(config))
             manifest_exists, manifest_size = self.rules_manifest_state(config)
             paths = [
-                str(self.context_pack_service.pack_context(doc_id, template, section.id, config, **normative))
+                str(self.context_pack_service.pack_context(doc_id, template, section.id, config, normative=normative))
                 for section in template.sections
             ]
             self.context_pack_service.pack_context_document(
                 doc_id, template, config,
-                manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+                manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
             )
             return True, f"{len(paths)} context packs + 1 documento"
 

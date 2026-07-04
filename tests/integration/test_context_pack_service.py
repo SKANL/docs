@@ -7,11 +7,12 @@ from docs.application.context_pack import ContextPackService
 from docs.application.evidence import EvidenceService
 from docs.application.review import ReviewService
 from docs.domain.models.template import Section, SectionContract, Template
+from docs.domain.normative import NormativeSettings
 from docs.domain.workspace import Workspace
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
-_REVIEW_KWARGS = dict(
+_NORMATIVE = NormativeSettings(
     excluded_terms={},
     is_policy_file=False,
     first_person_patterns=[],
@@ -19,15 +20,7 @@ _REVIEW_KWARGS = dict(
     secret_patterns=[],
 )
 
-_REVIEW_DOCUMENT_KWARGS = dict(
-    manifest_exists=True,
-    manifest_size=10,
-    excluded_terms={},
-    is_policy_file=False,
-    first_person_patterns=[],
-    subjective_terms=[],
-    secret_patterns=[],
-)
+_REVIEW_DOCUMENT_KWARGS = dict(manifest_exists=True, manifest_size=10, normative=_NORMATIVE)
 
 
 @pytest.fixture
@@ -70,7 +63,7 @@ def _config(tmp_path: Path) -> dict:
 
 def test_pack_context_includes_required_content_checklist(tmp_path, workspace, service):
     out_path = service.pack_context(
-        "doc-1", _template(), "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", _template(), "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     text = out_path.read_text(encoding="utf-8")
     assert "- [ ] alcance" in text
@@ -78,7 +71,7 @@ def test_pack_context_includes_required_content_checklist(tmp_path, workspace, s
 
 def test_pack_context_writes_under_context_subdir(tmp_path, workspace, service):
     out_path = service.pack_context(
-        "doc-1", _template(), "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", _template(), "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     assert out_path == workspace.doc_root("doc-1") / "sections" / "_context" / "001-introduccion.context.md"
 
@@ -88,7 +81,7 @@ def test_pack_context_includes_role_prompt_content_when_present(tmp_path, worksp
     prompts_dir.mkdir()
     (prompts_dir / "section-author.md").write_text("Redacta con rigor.", encoding="utf-8")
     out_path = service.pack_context(
-        "doc-1", _template(), "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", _template(), "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     assert "Redacta con rigor." in out_path.read_text(encoding="utf-8")
 
@@ -104,7 +97,7 @@ def test_pack_context_includes_apa_prompt_only_when_apa_required(tmp_path, works
     prompts_dir.mkdir()
     (prompts_dir / "apa7-citation-auditor.md").write_text("Audita citas APA.", encoding="utf-8")
     out_path = service.pack_context(
-        "doc-1", template, "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", template, "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     assert "Audita citas APA." in out_path.read_text(encoding="utf-8")
 
@@ -117,7 +110,7 @@ def test_pack_context_filters_ledger_lines_by_keyword(tmp_path, workspace, servi
         encoding="utf-8",
     )
     out_path = service.pack_context(
-        "doc-1", _template(), "introduccion", config, **_REVIEW_KWARGS
+        "doc-1", _template(), "introduccion", config, normative=_NORMATIVE
     )
     text = out_path.read_text(encoding="utf-8")
     assert "El alcance está definido." in text
@@ -130,7 +123,7 @@ def test_pack_context_includes_manifest_facts_matching_keywords(tmp_path, worksp
         Path(config["paths"]["source_manifest"]),
         {"facts": [{"classification": "confirmado", "claim": "El alcance fue validado.", "source": "a"}]},
     )
-    out_path = service.pack_context("doc-1", _template(), "introduccion", config, **_REVIEW_KWARGS)
+    out_path = service.pack_context("doc-1", _template(), "introduccion", config, normative=_NORMATIVE)
     assert "El alcance fue validado." in out_path.read_text(encoding="utf-8")
 
 
@@ -138,7 +131,7 @@ def test_pack_context_caps_manifest_facts_at_40(tmp_path, workspace, service):
     config = _config(tmp_path)
     facts = [{"classification": "confirmado", "claim": f"Alcance hecho {i}"} for i in range(50)]
     service.evidence_repository.write_manifest(Path(config["paths"]["source_manifest"]), {"facts": facts})
-    out_path = service.pack_context("doc-1", _template(), "introduccion", config, **_REVIEW_KWARGS)
+    out_path = service.pack_context("doc-1", _template(), "introduccion", config, normative=_NORMATIVE)
     text = out_path.read_text(encoding="utf-8")
     assert text.count("Alcance hecho") == 40
 
@@ -148,7 +141,7 @@ def test_pack_context_includes_current_draft_and_findings_when_section_exists(tm
     sections_dir.mkdir(parents=True)
     (sections_dir / "001-introduccion.md").write_text("Sin titulo.\n", encoding="utf-8")
     out_path = service.pack_context(
-        "doc-1", _template(), "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", _template(), "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     text = out_path.read_text(encoding="utf-8")
     assert "## Borrador actual" in text
@@ -157,7 +150,7 @@ def test_pack_context_includes_current_draft_and_findings_when_section_exists(tm
 
 def test_pack_context_notes_missing_draft_when_section_absent(tmp_path, workspace, service):
     out_path = service.pack_context(
-        "doc-1", _template(), "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", _template(), "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     text = out_path.read_text(encoding="utf-8")
     assert "Aún no existe" in text
@@ -179,7 +172,7 @@ def test_pack_context_section_contract_model_dump_surfaces_extra_keys(tmp_path, 
         },
     )
     out_path = service.pack_context(
-        "doc-1", template, "introduccion", _config(tmp_path), **_REVIEW_KWARGS
+        "doc-1", template, "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     text = out_path.read_text(encoding="utf-8")
     assert '"custom_legacy_key": "valor-no-tipado"' in text

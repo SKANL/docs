@@ -170,16 +170,16 @@ def build_section(ctx: typer.Context, section_id: str = typer.Argument(...)) -> 
 def pack_context(ctx: typer.Context, section_id: str = typer.Argument(..., help="<id> | all | document")) -> None:
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    normative = resolve_normative_settings(resolved.config)
+    normative = NormativeSettings(**resolve_normative_settings(resolved.config))
     manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
 
     def pack_one(sid: str) -> Path:
-        return deps.context_pack.pack_context(resolved.doc_id, resolved.template, sid, resolved.config, **normative)
+        return deps.context_pack.pack_context(resolved.doc_id, resolved.template, sid, resolved.config, normative=normative)
 
     def pack_document() -> Path:
         return deps.context_pack.pack_context_document(
             resolved.doc_id, resolved.template, resolved.config,
-            manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
+            manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
         )
 
     if section_id == "all":
