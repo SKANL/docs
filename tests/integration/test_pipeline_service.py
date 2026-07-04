@@ -56,6 +56,90 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
     return service, workspace
 
 
+def test_build_section_renders_scaffold_gathers_six_hashes_and_writes_section_file(tmp_path: Path):
+    from docs.domain.models.template import ContextSchema, Field, Section, SectionContract, Topic
+
+    service, workspace = _service(tmp_path)
+    topic = Topic(id="alumno", title="Alumno", consumed_by=["introduccion"], fields=[Field(key="nombre", label="Nombre")])
+    template = Template(
+        type="tesina",
+        title="Tesina",
+        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)],
+        section_contracts={"introduccion": SectionContract(required_content=["alcance"])},
+        context_schema=ContextSchema(topics=[topic]),
+    )
+    service.context_repository.write_topic("doc-1", topic, {"nombre": "Ana"})
+    config = {
+        "paths": {
+            "manual_dir": str(tmp_path / "manual"),
+            "extracted_dir": str(tmp_path / "extracted"),
+            "rules_manifest": str(tmp_path / "manual-rules.json"),
+            "context_dir": str(tmp_path / "context"),
+            "prompts_dir": str(tmp_path / "prompts"),
+            "source_manifest": str(tmp_path / "source-manifest.json"),
+            "code_evidence_manifest": str(tmp_path / "code-evidence-manifest.json"),
+        },
+        "sections": [{"id": "introduccion"}],
+        "section_contracts": {"introduccion": {"required_content": ["alcance"]}},
+        "format": {},
+        "apa7": {},
+        "structure": [],
+        "preliminaries": {},
+    }
+
+    path = service.build_section("doc-1", template, "introduccion", config)
+
+    assert path.exists()
+    raw = path.read_text(encoding="utf-8")
+    assert "- Nombre: Ana" in raw
+    assert "PENDIENTE: documentar alcance con evidencia del ledger, contexto o fuentes." in raw
+    metadata = json.loads(raw.split("---\n")[1])
+    assert metadata["section_id"] == "introduccion"
+    assert len(metadata["source_hash"]) == 64
+    assert len(metadata["prompt_hash"]) == 64
+    assert len(metadata["rules_hash"]) == 64
+    assert len(metadata["contract_hash"]) == 64
+    assert metadata["source_manifest_hash"] == ""  # manifest never built -> manifest_hash("") sentinel
+    assert metadata["code_evidence_manifest_hash"] == ""
+
+
+def test_build_section_only_includes_context_topics_consumed_by_the_target_section(tmp_path: Path):
+    from docs.domain.models.template import ContextSchema, Section, SectionContract, Topic
+
+    service, workspace = _service(tmp_path)
+    other_topic = Topic(id="otro", title="Otro", consumed_by=["otra-seccion"], multiline=True)
+    template = Template(
+        type="tesina",
+        title="Tesina",
+        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)],
+        section_contracts={"introduccion": SectionContract()},
+        context_schema=ContextSchema(topics=[other_topic]),
+    )
+    service.context_repository.write_topic("doc-1", other_topic, "Texto no relacionado con introduccion.")
+    config = {
+        "paths": {
+            "manual_dir": str(tmp_path / "manual"),
+            "extracted_dir": str(tmp_path / "extracted"),
+            "rules_manifest": str(tmp_path / "manual-rules.json"),
+            "context_dir": str(tmp_path / "context"),
+            "prompts_dir": str(tmp_path / "prompts"),
+            "source_manifest": str(tmp_path / "source-manifest.json"),
+            "code_evidence_manifest": str(tmp_path / "code-evidence-manifest.json"),
+        },
+        "sections": [{"id": "introduccion"}],
+        "section_contracts": {},
+        "format": {},
+        "apa7": {},
+        "structure": [],
+        "preliminaries": {},
+    }
+
+    path = service.build_section("doc-1", template, "introduccion", config)
+
+    raw = path.read_text(encoding="utf-8")
+    assert "Texto no relacionado" not in raw
+
+
 def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(tmp_path, monkeypatch):
     # rules_path is never created on disk: a Path.stat()-direct implementation
     # would see it as absent (exists=False, size=0) and could not possibly

@@ -14,7 +14,8 @@ from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
-from docs.domain.models.template import Template
+from docs.domain.models.template import SectionContract, Template
+from docs.domain.section_rendering import render_section_draft
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
@@ -116,6 +117,29 @@ class PipelineService:
                 snippet = values.strip()[:160]
                 lines.append(f"{topic.title or topic.id}: {snippet}")
         return lines
+
+    def build_section(self, doc_id: str, template: Template, section_id: str, config: dict[str, Any]) -> Path:
+        section = next(s for s in template.sections if s.id == section_id)
+        contract = template.section_contracts.get(section_id, SectionContract())
+        context: dict[str, str] = {}
+        for topic in template.context_schema.topics:
+            if section_id not in topic.consumed_by:
+                continue
+            if self.context_repository.topic_exists(doc_id, topic.id):
+                context[topic.id] = self.context_repository.read_topic_raw(doc_id, topic.id)
+        keyword_bold_terms = config.get("format", {}).get("keyword_bold_terms", {}).get(section_id, [])
+        body = render_section_draft(section_id, section.title, contract, context, keyword_bold_terms)
+        return self.review_service.build_section(
+            doc_id, template, section_id, body,
+            source_hash=self.evidence_service.source_hash(config),
+            source_manifest_hash=self.evidence_service.manifest_hash(config["paths"].get("source_manifest")),
+            code_evidence_manifest_hash=self.evidence_service.manifest_hash(
+                config["paths"].get("code_evidence_manifest")
+            ),
+            rules_hash=self.evidence_service.rules_hash(config),
+            contract_hash=self.evidence_service.contract_hash(config, section_id),
+            prompt_hash=self.evidence_service.prompt_hash(config),
+        )
 
     def _stage_callables(
         self, doc_id: str, template: Template, config: dict[str, Any], repo_root: Path, strict: bool
