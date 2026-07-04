@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 EXCLUDED_FRONT_MATTER: dict[str, str] = {
@@ -45,6 +46,23 @@ SECRET_PATTERNS: list[str] = [
     r"\bpassword\s*[:=]\s*['\"]?[^'\"\s]{8,}",
     r"\btoken\s*[:=]\s*['\"]?[A-Za-z0-9_\-.]{24,}",
 ]
+
+
+@dataclass(frozen=True)
+class NormativeSettings:
+    """Bundles the 7 normative kwargs review_section_text/review_document/
+    review_section/pack_context(_document) each required loose before Slice
+    16. Built by resolve_normative_settings(config); downstream code passes
+    the whole object instead of unpacking 7 parameters at every call site
+    (Slice 16 tech-debt remediation, finding 4)."""
+
+    excluded_terms: dict[str, str]
+    is_policy_file: bool
+    first_person_patterns: list[str]
+    subjective_terms: list[str]
+    secret_patterns: list[str]
+    scope_term: str = ""
+    scope_focus: str = ""
 
 
 def resolve_normative_settings(config: dict[str, Any]) -> dict[str, Any]:

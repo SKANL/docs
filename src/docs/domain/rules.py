@@ -14,6 +14,7 @@ from docs.domain.markdown_text import (
     strip_frontmatter_and_markdown,
 )
 from docs.domain.models.template import SectionContract, StrictPolicyBlock, Template
+from docs.domain.normative import NormativeSettings
 from docs.domain.review import Issue, ReviewResult
 
 _WORD_RE = re.compile(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ-]+\b")
@@ -173,26 +174,8 @@ def review_apa7_text(text: str, apa7_enabled: bool, strict_policy: StrictPolicyB
     return issues
 
 
-def review_section_text(
-    text: str,
-    metadata: dict,
-    section_id: str,
-    contract: SectionContract,
-    template: Template,
-    strict: bool,
-    *,
-    excluded_terms: dict[str, str],
-    is_policy_file: bool,
-    first_person_patterns: list[str],
-    subjective_terms: list[str],
-    secret_patterns: list[str],
-    scope_term: str = "",
-    scope_focus: str = "",
-) -> list[Issue]:
-    lowered = text.lower()
+def _check_excluded_terms(lowered: str, is_policy_file: bool, excluded_terms: dict[str, str]) -> list[Issue]:
     issues: list[Issue] = []
-    strict_policy = template.strict_policy.strict if strict else template.strict_policy.draft
-
     if not is_policy_file:
         for term, reason in excluded_terms.items():
             if term in lowered:
@@ -203,7 +186,11 @@ def review_section_text(
                         code="scope.excluded_section",
                     )
                 )
+    return issues
 
+
+def _check_first_person(lowered: str, first_person_patterns: list[str]) -> list[Issue]:
+    issues: list[Issue] = []
     for pattern in first_person_patterns:
         if re.search(pattern, lowered):
             issues.append(
@@ -213,7 +200,11 @@ def review_section_text(
                     code="voice.first_person",
                 )
             )
+    return issues
 
+
+def _check_subjective_terms(lowered: str, subjective_terms: list[str]) -> list[Issue]:
+    issues: list[Issue] = []
     for term in subjective_terms:
         if re.search(rf"\b{re.escape(term)}\b", lowered):
             issues.append(
@@ -223,7 +214,11 @@ def review_section_text(
                     code="voice.subjective_term",
                 )
             )
+    return issues
 
+
+def _check_secret_patterns(text: str, secret_patterns: list[str]) -> list[Issue]:
+    issues: list[Issue] = []
     for pattern in secret_patterns:
         if re.search(pattern, text, flags=re.IGNORECASE):
             issues.append(
@@ -233,46 +228,84 @@ def review_section_text(
                     code="privacy.sensitive_data",
                 )
             )
+    return issues
 
+
+def _check_scope_delimitation(lowered: str, scope_term: str, scope_focus: str) -> list[Issue]:
     if scope_term and scope_focus and scope_term in lowered and scope_focus not in lowered:
-        issues.append(
+        return [
             Issue(
                 "warning",
                 f"Menciona `{scope_term}` sin delimitar el alcance a `{scope_focus}`.",
                 code="scope.undelimited_ecosystem",
             )
-        )
+        ]
+    return []
 
+
+def _check_title(text: str, is_policy_file: bool) -> list[Issue]:
     if not is_policy_file and not _TITLE_RE.search(text):
-        issues.append(Issue("error", "La sección no tiene título principal Markdown.", code="structure.missing_title"))
+        return [Issue("error", "La sección no tiene título principal Markdown.", code="structure.missing_title")]
+    return []
 
+
+def _check_contract_dispatch(
+    text: str, section_id: str, contract: SectionContract, strict_policy: StrictPolicyBlock, strict: bool, is_policy_file: bool
+) -> list[Issue]:
     if contract != SectionContract() and not is_policy_file:
-        issues.extend(review_section_contract(text, section_id, contract, strict_policy, strict))
+        return review_section_contract(text, section_id, contract, strict_policy, strict)
+    return []
 
+
+def _check_pending_marker(lowered: str, is_policy_file: bool, strict_policy: StrictPolicyBlock, contract: SectionContract) -> list[Issue]:
     pending_allowed = strict_policy.allow_pending and contract.pending_allowed_in_draft
     if not is_policy_file and "pendiente" in lowered and not pending_allowed:
-        issues.append(
+        return [
             Issue(
                 "error",
                 "Contiene PENDIENTE en modo estricto o en una sección que no permite pendientes.",
                 code="content.pending_not_allowed",
             )
-        )
+        ]
+    return []
 
-    issues.extend(review_apa7_text(text, template.apa7.enabled, strict_policy))
 
-    if (
-        _RESULTS_RE.search(lowered)
-        and "pendiente" not in lowered
-        and not _RESULTS_EVIDENCE_RE.search(lowered)
-    ):
-        issues.append(
+def _check_results_evidence(lowered: str) -> list[Issue]:
+    if _RESULTS_RE.search(lowered) and "pendiente" not in lowered and not _RESULTS_EVIDENCE_RE.search(lowered):
+        return [
             Issue(
                 "warning",
                 "Menciona resultados sin evidencia detectable ni marcador PENDIENTE.",
                 code="evidence.results_without_evidence",
             )
-        )
+        ]
+    return []
+
+
+def review_section_text(
+    text: str,
+    metadata: dict,
+    section_id: str,
+    contract: SectionContract,
+    template: Template,
+    strict: bool,
+    *,
+    normative: NormativeSettings,
+) -> list[Issue]:
+    lowered = text.lower()
+    strict_policy = template.strict_policy.strict if strict else template.strict_policy.draft
+    issues: list[Issue] = []
+
+    issues.extend(_check_excluded_terms(lowered, normative.is_policy_file, normative.excluded_terms))
+    issues.extend(_check_first_person(lowered, normative.first_person_patterns))
+    issues.extend(_check_subjective_terms(lowered, normative.subjective_terms))
+    issues.extend(_check_secret_patterns(text, normative.secret_patterns))
+    issues.extend(_check_scope_delimitation(lowered, normative.scope_term, normative.scope_focus))
+    issues.extend(_check_title(text, normative.is_policy_file))
+    issues.extend(_check_contract_dispatch(text, section_id, contract, strict_policy, strict, normative.is_policy_file))
+    issues.extend(_check_pending_marker(lowered, normative.is_policy_file, strict_policy, contract))
+    issues.extend(review_apa7_text(text, template.apa7.enabled, strict_policy))
+    issues.extend(_check_results_evidence(lowered))
 
     return issues
 

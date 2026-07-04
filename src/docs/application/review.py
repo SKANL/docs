@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 
 from docs.domain.models.template import SectionContract, Template
+from docs.domain.normative import NormativeSettings
 from docs.domain.ports.section_repository import SectionRepository
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_cross_consistency, review_rules, review_section_text
@@ -64,13 +65,7 @@ class ReviewService:
                 section_id = metadata.get("section_id") or infer_section_id_from_path(section_path)
                 contract = template.section_contracts.get(section_id, SectionContract())
 
-                section_issues = review_section_text(
-                    body,
-                    metadata,
-                    section_id,
-                    contract,
-                    template,
-                    strict,
+                normative = NormativeSettings(
                     excluded_terms=excluded_terms,
                     is_policy_file=is_policy_file,
                     first_person_patterns=first_person_patterns,
@@ -78,6 +73,9 @@ class ReviewService:
                     secret_patterns=secret_patterns,
                     scope_term=scope_term,
                     scope_focus=scope_focus,
+                )
+                section_issues = review_section_text(
+                    body, metadata, section_id, contract, template, strict, normative=normative,
                 )
                 for issue in section_issues:
                     issues.append(
@@ -149,13 +147,7 @@ class ReviewService:
         resolved_section_id = metadata.get("section_id") or infer_section_id_from_path(section_path)
         contract = template.section_contracts.get(resolved_section_id, SectionContract())
 
-        issues = review_section_text(
-            body,
-            metadata,
-            resolved_section_id,
-            contract,
-            template,
-            strict,
+        normative = NormativeSettings(
             excluded_terms=excluded_terms,
             is_policy_file=is_policy_file,
             first_person_patterns=first_person_patterns,
@@ -163,6 +155,9 @@ class ReviewService:
             secret_patterns=secret_patterns,
             scope_term=scope_term,
             scope_focus=scope_focus,
+        )
+        issues = review_section_text(
+            body, metadata, resolved_section_id, contract, template, strict, normative=normative,
         )
         return ReviewResult(issues)
 

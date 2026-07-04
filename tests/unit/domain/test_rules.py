@@ -1,3 +1,5 @@
+import pytest
+
 from docs.domain.models.template import SectionContract, StrictPolicyBlock
 from docs.domain.rules import requirement_present, review_apa7_text, review_section_contract
 
@@ -208,7 +210,22 @@ def test_review_apa7_text_no_citations_no_references_no_issues():
 
 
 from docs.domain.models.template import Template
+from docs.domain.normative import NormativeSettings
 from docs.domain.rules import review_section_text
+
+
+def test_normative_settings_is_a_frozen_dataclass_with_expected_defaults():
+    settings = NormativeSettings(
+        excluded_terms={},
+        is_policy_file=False,
+        first_person_patterns=[],
+        subjective_terms=[],
+        secret_patterns=[],
+    )
+    assert settings.scope_term == ""
+    assert settings.scope_focus == ""
+    with pytest.raises(Exception):
+        settings.scope_term = "changed"  # frozen dataclass raises FrozenInstanceError
 
 
 def _template(**overrides) -> Template:
@@ -233,7 +250,7 @@ def _call(text, contract=None, template=None, strict=False, **kwargs):
         contract or SectionContract(),
         template or _template(),
         strict,
-        **defaults,
+        normative=NormativeSettings(**defaults),
     )
 
 
@@ -363,6 +380,30 @@ def test_review_section_text_results_with_pendiente_no_warning():
     text = "# Título\n\nLos resultados están PENDIENTE de evaluación."
     issues = _call(text)
     assert not any(i.code == "evidence.results_without_evidence" for i in issues)
+
+
+from docs.domain.rules import _check_excluded_terms
+
+
+def test_check_excluded_terms_flags_error_with_reason_when_not_policy_file():
+    issues = _check_excluded_terms(
+        "este texto contiene plagio detectado",
+        is_policy_file=False,
+        excluded_terms={"plagio": "No se permite contenido plagiado."},
+    )
+    assert len(issues) == 1
+    assert issues[0].severity == "error"
+    assert issues[0].code == "scope.excluded_section"
+    assert issues[0].message == "Contiene apartado excluido: `plagio`. No se permite contenido plagiado."
+
+
+def test_check_excluded_terms_skipped_for_policy_file():
+    issues = _check_excluded_terms(
+        "este texto contiene plagio detectado",
+        is_policy_file=True,
+        excluded_terms={"plagio": "x"},
+    )
+    assert issues == []
 
 
 from docs.domain.rules import review_rules
