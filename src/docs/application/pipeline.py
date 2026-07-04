@@ -176,11 +176,8 @@ class PipelineService:
             return True, str(path)
 
         def stage_build_sections() -> tuple[bool, str]:
-            raise NotImplementedError(
-                "build-section requiere un renderer de borradores y source_hash/"
-                "prompt_hash aún no modelados en esta migración (ver Slice 6 y "
-                "Slice 8, Design Decision 4)."
-            )
+            paths = [str(self.build_section(doc_id, template, section.id, config)) for section in template.sections]
+            return True, f"{len(paths)} secciones"
 
         def stage_pack_context() -> tuple[bool, str]:
             normative = resolve_normative_settings(config)

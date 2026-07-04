@@ -359,26 +359,34 @@ def _patch_doctor_tools(monkeypatch) -> None:
     )
 
 
-def test_run_pipeline_prep_reports_build_sections_as_a_failed_stage(tmp_path, monkeypatch):
+def test_run_pipeline_prep_build_sections_succeeds_and_writes_the_section_file(tmp_path, monkeypatch):
     Path(tmp_path / "context").mkdir()
     service, _ = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: None)  # gh unavailable -> collect-issues "omitido"
     summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
     stage = next(s for s in summary["stages"] if s["stage"] == "build-sections")
-    assert stage["ok"] is False
-    assert "NotImplementedError" not in stage["detail"]  # detail is the exception message, not its type
-    assert "build-section requiere" in stage["detail"]
+    assert stage["ok"] is True
+    assert stage["detail"] == "1 secciones"
+    section_path = service.review_service.repository.section_path("doc1", 1, "introduccion")
+    assert section_path.exists()
+    assert "PENDIENTE: documentar algo con evidencia del ledger, contexto o fuentes." in section_path.read_text(
+        encoding="utf-8"
+    )
 
 
-def test_run_pipeline_prep_does_not_fail_fast_after_build_sections(tmp_path, monkeypatch):
+def test_run_pipeline_prep_runs_pack_context_after_build_sections(tmp_path, monkeypatch):
+    # build-sections now succeeds (Task 5); this test only confirms the stage
+    # ordering/continuation still holds, not a failure-recovery scenario.
     Path(tmp_path / "context").mkdir()
     service, _ = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: None)
     summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
     stage_names = [s["stage"] for s in summary["stages"]]
-    assert "pack-context" in stage_names  # ran despite build-sections failing (fail_fast=False)
+    assert "pack-context" in stage_names
+    pack_context_stage = next(s for s in summary["stages"] if s["stage"] == "pack-context")
+    assert pack_context_stage["ok"] is True
 
 
 def test_run_pipeline_stops_at_first_fail_fast_failure(tmp_path):
