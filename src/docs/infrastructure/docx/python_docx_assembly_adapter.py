@@ -369,9 +369,6 @@ class PythonDocxAssemblyAdapter:
 
     def _build_main_document(self, config: dict[str, Any], body_docx: Path, cover_asset_path: Path | None):
         from docx import Document
-        from docx.enum.section import WD_SECTION_START
-        from docx.enum.text import WD_BREAK
-        from docx.shared import Pt, RGBColor
 
         parts = structure_parts(config)
         sections_index = self._sections_index(parts)
@@ -381,6 +378,16 @@ class PythonDocxAssemblyAdapter:
         has_cover_from_asset_part = any(p.get("type") == "cover_from_asset" for p in leading)
         cover = self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
         body = Document(str(body_docx))
+
+        self._configure_preliminary_pagination(cover, sections_part, config)
+        self._render_leading_parts(cover, config, leading)
+        self._transfer_body_paragraphs(cover, body, sections_part, config)
+        self._transfer_body_tables(cover, body)
+
+        return cover
+
+    def _configure_preliminary_pagination(self, cover: Any, sections_part: dict[str, Any], config: dict[str, Any]) -> None:
+        from docx.enum.section import WD_SECTION_START
 
         prelim_pag = sections_part.get("preliminary_pagination", {})
         prelim_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
@@ -392,6 +399,9 @@ class PythonDocxAssemblyAdapter:
                 )
         else:
             configure_unnumbered_section(prelim_section, config)
+
+    def _render_leading_parts(self, cover: Any, config: dict[str, Any], leading: list[dict[str, Any]]) -> None:
+        from docx.enum.text import WD_BREAK
 
         for part in leading:
             kind = part.get("type")
@@ -405,6 +415,11 @@ class PythonDocxAssemblyAdapter:
                 else:
                     add_fixed_text_page(cover, resolve_part_text(config, part))
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    def _transfer_body_paragraphs(self, cover: Any, body: Any, sections_part: dict[str, Any], config: dict[str, Any]) -> None:
+        from docx.enum.section import WD_SECTION_START
+        from docx.enum.text import WD_BREAK
+        from docx.shared import Pt, RGBColor
 
         restart_id = sections_part.get("body_restart_section", "")
         restart_heading = ""
@@ -445,13 +460,12 @@ class PythonDocxAssemblyAdapter:
                 new_run.font.size = Pt(12)
                 new_run.font.color.rgb = RGBColor(0, 0, 0)
 
+    def _transfer_body_tables(self, cover: Any, body: Any) -> None:
         for table in body.tables:
             new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
             for row_idx, row in enumerate(table.rows):
                 for col_idx, cell in enumerate(row.cells):
                     new_table.cell(row_idx, col_idx).text = cell.text
-
-        return cover
 
     def assemble(
         self,
