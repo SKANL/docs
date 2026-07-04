@@ -56,16 +56,26 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
     return service, workspace
 
 
-def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(tmp_path):
+def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(tmp_path, monkeypatch):
+    # rules_path is never created on disk: a Path.stat()-direct implementation
+    # would see it as absent (exists=False, size=0) and could not possibly
+    # reproduce the values below. The injected evidence_repository fake
+    # reports contradictory values (exists=True, size=999) for that same
+    # missing path. If rules_manifest_state() still returns (True, 999), the
+    # only way that is possible is that it called through
+    # self.evidence_repository.file_exists/file_size rather than touching the
+    # filesystem itself.
     service, workspace = _service(tmp_path)
     rules_path = tmp_path / "manual-rules.json"
-    rules_path.write_text('{"schema": 1}', encoding="utf-8")
+    assert not rules_path.exists()
+    monkeypatch.setattr(service.evidence_repository, "file_exists", lambda path: True)
+    monkeypatch.setattr(service.evidence_repository, "file_size", lambda path: 999)
     config = {"paths": {"rules_manifest": str(rules_path)}}
 
     exists, size = service.rules_manifest_state(config)
 
     assert exists is True
-    assert size == rules_path.stat().st_size
+    assert size == 999
 
 
 def test_rules_manifest_state_reports_absent_manifest(tmp_path):
