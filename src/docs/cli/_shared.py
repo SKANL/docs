@@ -10,7 +10,6 @@ from typing import Any
 from docs.application.asset import AssetService
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
-from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.application.context_pack import ContextPackService
 from docs.application.corrections import CorrectionsService
 from docs.application.doctor import DoctorService
@@ -27,6 +26,7 @@ from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
