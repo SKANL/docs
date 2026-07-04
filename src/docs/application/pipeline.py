@@ -119,7 +119,9 @@ class PipelineService:
         return lines
 
     def build_section(self, doc_id: str, template: Template, section_id: str, config: dict[str, Any]) -> Path:
-        section = next(s for s in template.sections if s.id == section_id)
+        section = next((s for s in template.sections if s.id == section_id), None)
+        if section is None:
+            raise FileNotFoundError(f"No existe sección: {section_id}")
         contract = template.section_contracts.get(section_id, SectionContract())
         context: dict[str, str] = {}
         for topic in template.context_schema.topics:

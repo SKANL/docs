@@ -140,6 +140,14 @@ def test_build_section_only_includes_context_topics_consumed_by_the_target_secti
     assert "Texto no relacionado" not in raw
 
 
+def test_build_section_raises_file_not_found_for_unknown_section_id(tmp_path: Path):
+    service, _ = _service(tmp_path)
+    template = Template(type="tesina", title="Tesina", sections=[])
+
+    with pytest.raises(FileNotFoundError, match="No existe sección: no-existe"):
+        service.build_section("doc-1", template, "no-existe", {"paths": {}})
+
+
 def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(tmp_path, monkeypatch):
     # rules_path is never created on disk: a Path.stat()-direct implementation
     # would see it as absent (exists=False, size=0) and could not possibly
