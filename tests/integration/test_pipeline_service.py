@@ -56,6 +56,28 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
     return service, workspace
 
 
+def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(tmp_path):
+    service, workspace = _service(tmp_path)
+    rules_path = tmp_path / "manual-rules.json"
+    rules_path.write_text('{"schema": 1}', encoding="utf-8")
+    config = {"paths": {"rules_manifest": str(rules_path)}}
+
+    exists, size = service.rules_manifest_state(config)
+
+    assert exists is True
+    assert size == rules_path.stat().st_size
+
+
+def test_rules_manifest_state_reports_absent_manifest(tmp_path):
+    service, workspace = _service(tmp_path)
+    config = {"paths": {"rules_manifest": str(tmp_path / "missing.json")}}
+
+    exists, size = service.rules_manifest_state(config)
+
+    assert exists is False
+    assert size == 0
+
+
 def test_log_run_writes_a_json_record_under_the_document_runs_dir(tmp_path):
     service, workspace = _service(tmp_path)
     config = {"paths": {}}

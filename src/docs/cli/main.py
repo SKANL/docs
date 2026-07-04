@@ -122,7 +122,7 @@ def build_rules(ctx: typer.Context) -> None:
 def review_rules(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), as_json: bool = typer.Option(False, "--json")) -> None:
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    manifest_exists, manifest_size = _rules_manifest_state(deps, resolved.config)
+    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
     result = domain_review_rules(resolved.template, manifest_exists, manifest_size, strict=strict)
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
@@ -153,12 +153,6 @@ def build_ledger(ctx: typer.Context) -> None:
     print(path)
 
 
-def _rules_manifest_state(deps: Deps, config: dict) -> tuple[bool, int]:
-    rules_path = Path(config["paths"]["rules_manifest"])
-    exists = rules_path.exists()
-    return exists, (rules_path.stat().st_size if exists else 0)
-
-
 _BUILD_SECTION_UNAVAILABLE = (
     "build-section requiere un renderer de borradores y source_hash/prompt_hash "
     "aún no modelados en esta migración (ver Slice 6 y Slice 8, Design Decision 4)."
@@ -177,7 +171,7 @@ def pack_context(ctx: typer.Context, section_id: str = typer.Argument(..., help=
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
-    manifest_exists, manifest_size = _rules_manifest_state(deps, resolved.config)
+    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
 
     def pack_one(sid: str) -> Path:
         return deps.context_pack.pack_context(resolved.doc_id, resolved.template, sid, resolved.config, **normative)
@@ -222,7 +216,7 @@ def review_document(
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
-    manifest_exists, manifest_size = _rules_manifest_state(deps, resolved.config)
+    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
     result = deps.review.review_document(
         resolved.doc_id, resolved.template, strict=strict,
         manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,

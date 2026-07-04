@@ -91,7 +91,7 @@ class PipelineService:
             return Path(configured)
         return self.workspace.doc_root(doc_id) / "runs"
 
-    def _rules_manifest_state(self, config: dict[str, Any]) -> tuple[bool, int]:
+    def rules_manifest_state(self, config: dict[str, Any]) -> tuple[bool, int]:
         rules_path = Path(config["paths"]["rules_manifest"])
         exists = self.evidence_repository.file_exists(rules_path)
         size = self.evidence_repository.file_size(rules_path) if exists else 0
@@ -128,7 +128,7 @@ class PipelineService:
             return True, str(self.evidence_service.build_rules(config))
 
         def stage_review_rules() -> tuple[bool, str]:
-            manifest_exists, manifest_size = self._rules_manifest_state(config)
+            manifest_exists, manifest_size = self.rules_manifest_state(config)
             result = review_rules(template, manifest_exists, manifest_size, strict=strict)
             return result.passed, result.to_markdown()
 
@@ -160,7 +160,7 @@ class PipelineService:
 
         def stage_pack_context() -> tuple[bool, str]:
             normative = resolve_normative_settings(config)
-            manifest_exists, manifest_size = self._rules_manifest_state(config)
+            manifest_exists, manifest_size = self.rules_manifest_state(config)
             paths = [
                 str(self.context_pack_service.pack_context(doc_id, template, section.id, config, **normative))
                 for section in template.sections
@@ -173,7 +173,7 @@ class PipelineService:
 
         def stage_review_document() -> tuple[bool, str]:
             normative = resolve_normative_settings(config)
-            manifest_exists, manifest_size = self._rules_manifest_state(config)
+            manifest_exists, manifest_size = self.rules_manifest_state(config)
             result = self.review_service.review_document(
                 doc_id, template, strict=strict,
                 manifest_exists=manifest_exists, manifest_size=manifest_size, **normative,
@@ -246,7 +246,7 @@ class PipelineService:
         strict: bool = True,
     ) -> ReviewResult:
         issues: list[Issue] = []
-        manifest_exists, manifest_size = self._rules_manifest_state(config)
+        manifest_exists, manifest_size = self.rules_manifest_state(config)
         issues.extend(review_rules(template, manifest_exists, manifest_size, strict=strict).issues)
         normative = resolve_normative_settings(config)
         issues.extend(
