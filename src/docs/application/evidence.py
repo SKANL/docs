@@ -5,7 +5,17 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.collection import dedupe_facts
-from docs.domain.evidence import ManualFileFact, ManualHashFact, TraceabilityFact, build_manifest, build_rules_hash_payload
+from docs.domain.evidence import (
+    ManualFileFact,
+    ManualHashFact,
+    PromptHashFileFact,
+    SourceHashFileFact,
+    TraceabilityFact,
+    build_manifest,
+    build_prompt_hash_payload,
+    build_rules_hash_payload,
+    build_source_hash_payload,
+)
 from docs.domain.markdown_text import clean_markdown_text, dedupe_strings, extract_markdown_headings
 from docs.domain.ports.evidence_repository import EvidenceRepository
 
@@ -129,6 +139,33 @@ class EvidenceService:
     def contract_hash(self, config: dict[str, Any], section_id: str) -> str:
         section_contracts = config.get("section_contracts", {})
         return self.repository.hash_json(section_contracts.get(section_id, {}))
+
+    def source_hash(self, config: dict[str, Any]) -> str:
+        relevant: list[Path] = []
+        for key in ["context_dir", "manual_dir"]:
+            value = config["paths"].get(key)
+            if not value:
+                continue
+            root = Path(value)
+            if self.repository.file_exists(root):
+                relevant.extend(self.repository.list_manual_files(root))
+        files = [
+            SourceHashFileFact(path=path.resolve().as_posix(), sha256=self.repository.hash_file(path))
+            for path in relevant
+        ]
+        payload = build_source_hash_payload(files, config.get("sections", []))
+        return self.repository.hash_json(payload)
+
+    def prompt_hash(self, config: dict[str, Any]) -> str:
+        prompts_dir = Path(config["paths"]["prompts_dir"])
+        files: list[PromptHashFileFact] = []
+        if self.repository.file_exists(prompts_dir):
+            files = [
+                PromptHashFileFact(name=path.name, sha256=self.repository.hash_file(path))
+                for path in self.repository.list_manual_files(prompts_dir)
+            ]
+        payload = build_prompt_hash_payload(files)
+        return self.repository.hash_json(payload)
 
     def manifest_hash(self, path_value: str | None) -> str:
         if not path_value:

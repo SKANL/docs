@@ -414,3 +414,61 @@ def test_render_fact_ledger_covers_all_six_categories_when_reachable(tmp_path: P
     ]
     positions = [ledger.index(h) for h in headings]
     assert positions == sorted(positions)
+
+
+def test_source_hash_hashes_context_and_manual_markdown_files_plus_config_sections(tmp_path: Path, service):
+    context_dir = tmp_path / "context"
+    context_dir.mkdir()
+    (context_dir / "alumno.md").write_text("# Alumno", encoding="utf-8")
+    config = _config(tmp_path, paths={"context_dir": str(context_dir)}, sections=[{"id": "intro"}])
+    manual_dir = Path(config["paths"]["manual_dir"])
+    (manual_dir / "00-intro.md").write_text("# Intro", encoding="utf-8")
+
+    result = service.source_hash(config)
+
+    context_file = context_dir / "alumno.md"
+    manual_file = manual_dir / "00-intro.md"
+    expected_payload = [
+        {"path": context_file.resolve().as_posix(), "sha256": hashlib.sha256(context_file.read_bytes()).hexdigest()},
+        {"path": manual_file.resolve().as_posix(), "sha256": hashlib.sha256(manual_file.read_bytes()).hexdigest()},
+        {"config_sections": [{"id": "intro"}]},
+    ]
+    expected = hashlib.sha256(
+        json.dumps(expected_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert result == expected
+
+
+def test_source_hash_skips_missing_context_dir_and_defaults_config_sections_to_empty(tmp_path: Path, service):
+    config = _config(tmp_path, paths={"context_dir": str(tmp_path / "does-not-exist")})
+    # manual_dir exists (from _config) but is empty; only the "config_sections"
+    # sentinel entry survives, matching the "no sections in config" default.
+    result = service.source_hash(config)
+    expected_payload = [{"config_sections": []}]
+    expected = hashlib.sha256(
+        json.dumps(expected_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert result == expected
+
+
+def test_prompt_hash_hashes_markdown_files_under_prompts_dir(tmp_path: Path, service):
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "section-author.md").write_text("Eres un redactor.", encoding="utf-8")
+    config = _config(tmp_path, paths={"prompts_dir": str(prompts_dir)})
+
+    result = service.prompt_hash(config)
+
+    prompt_file = prompts_dir / "section-author.md"
+    expected_payload = [{"path": "section-author.md", "sha256": hashlib.sha256(prompt_file.read_bytes()).hexdigest()}]
+    expected = hashlib.sha256(
+        json.dumps(expected_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    assert result == expected
+
+
+def test_prompt_hash_empty_payload_when_prompts_dir_missing(tmp_path: Path, service):
+    config = _config(tmp_path, paths={"prompts_dir": str(tmp_path / "missing-prompts")})
+    result = service.prompt_hash(config)
+    expected = hashlib.sha256(json.dumps([], ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    assert result == expected
