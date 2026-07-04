@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 from docs.domain.apa import (
     citation_author_key,
@@ -310,40 +311,56 @@ def review_section_text(
     return issues
 
 
-def review_rules(
-    template: Template, manifest_exists: bool, manifest_size: int, strict: bool = False
-) -> ReviewResult:
+def _check_manifest_state(manifest_exists: bool, manifest_size: int, strict: bool) -> list[Issue]:
     issues: list[Issue] = []
-    extra = template.model_extra or {}
-
     if not manifest_exists:
         issues.append(Issue("error" if strict else "warning", "No existe manual-rules.json; ejecuta `build-rules`."))
     elif manifest_size == 0:
         issues.append(Issue("error", "manual-rules.json existe pero está vacío."))
+    return issues
 
+
+def _check_missing_section_contracts(template: Template) -> list[Issue]:
     section_ids = {s.id for s in template.sections}
     contract_ids = set(template.section_contracts)
     missing_contracts = sorted(section_ids - contract_ids)
     if missing_contracts:
-        issues.append(Issue("error", f"Faltan contratos de sección: {', '.join(missing_contracts)}."))
+        return [Issue("error", f"Faltan contratos de sección: {', '.join(missing_contracts)}.")]
+    return []
 
+
+def _check_extracted_dir_policy(extra: dict[str, Any]) -> list[Issue]:
     paths = extra.get("paths", {}) or {}
     if paths.get("extracted_dir_policy") != "rules_traceability_only":
-        issues.append(Issue("error", "La política de extracted debe ser `rules_traceability_only`."))
+        return [Issue("error", "La política de extracted debe ser `rules_traceability_only`.")]
+    return []
 
+
+def _check_source_priority_excludes_extracted(extra: dict[str, Any]) -> list[Issue]:
     project = extra.get("project", {}) or {}
     if any("tesina/extracted" in source for source in project.get("source_priority", [])):
-        issues.append(Issue("error", "`tesina/extracted` no debe aparecer en source_priority como fuente activa."))
+        return [Issue("error", "`tesina/extracted` no debe aparecer en source_priority como fuente activa.")]
+    return []
 
+
+def _check_apa7_enabled(template: Template) -> list[Issue]:
     if not template.apa7.enabled:
-        issues.append(Issue("error", "APA 7 debe estar habilitado."))
+        return [Issue("error", "APA 7 debe estar habilitado.")]
+    return []
 
+
+def _check_preliminaries_pagination(extra: dict[str, Any]) -> list[Issue]:
+    issues: list[Issue] = []
     preliminaries = extra.get("preliminaries", {}) or {}
     if not preliminaries.get("roman_pagination", {}).get("enabled"):
         issues.append(Issue("error", "La paginación romana de preliminares debe estar habilitada."))
     if preliminaries.get("body_pagination_start", {}).get("section_id") != "introduccion":
         issues.append(Issue("error", "La paginación arábiga debe iniciar en INTRODUCCIÓN."))
+    return issues
 
+
+def _check_margins_and_cover_policy(extra: dict[str, Any]) -> list[Issue]:
+    issues: list[Issue] = []
     margin_contract = (extra.get("format", {}) or {}).get("page_margins_cm", {}) or {}
     non_cover_margins = margin_contract.get("non_cover", {}) or {}
     bad_margins = [
@@ -358,13 +375,20 @@ def review_rules(
         )
     if bad_margins:
         issues.append(Issue("error", "El contrato de layout debe fijar márgenes de 2.5 cm en toda sección no-portada."))
+    return issues
 
+
+def _check_margin_advisor_override_active(extra: dict[str, Any]) -> list[Issue]:
     active_overrides = {
         item.get("id") for item in extra.get("advisor_overrides", []) if item.get("status") == "active"
     }
     if "margins-2-5cm-non-cover" not in active_overrides:
-        issues.append(Issue("error", "Falta el advisor_override activo para márgenes de 2.5 cm excepto portada."))
+        return [Issue("error", "Falta el advisor_override activo para márgenes de 2.5 cm excepto portada.")]
+    return []
 
+
+def _check_section_contracts_content(template: Template) -> list[Issue]:
+    issues: list[Issue] = []
     for section_id, contract in template.section_contracts.items():
         if not contract.required_content:
             issues.append(Issue("error", f"El contrato `{section_id}` no define contenido obligatorio."))
@@ -372,7 +396,23 @@ def review_rules(
         # real legacy behavior (review_rules never deduplicates), preserve it.
         if contract.apa_required and not template.apa7.enabled:
             issues.append(Issue("error", f"El contrato `{section_id}` requiere APA pero APA 7 está deshabilitado."))
+    return issues
 
+
+def review_rules(
+    template: Template, manifest_exists: bool, manifest_size: int, strict: bool = False
+) -> ReviewResult:
+    extra = template.model_extra or {}
+    issues: list[Issue] = []
+    issues.extend(_check_manifest_state(manifest_exists, manifest_size, strict))
+    issues.extend(_check_missing_section_contracts(template))
+    issues.extend(_check_extracted_dir_policy(extra))
+    issues.extend(_check_source_priority_excludes_extracted(extra))
+    issues.extend(_check_apa7_enabled(template))
+    issues.extend(_check_preliminaries_pagination(extra))
+    issues.extend(_check_margins_and_cover_policy(extra))
+    issues.extend(_check_margin_advisor_override_active(extra))
+    issues.extend(_check_section_contracts_content(template))
     return ReviewResult(issues)
 
 

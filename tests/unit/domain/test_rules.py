@@ -407,6 +407,7 @@ def test_check_excluded_terms_skipped_for_policy_file():
 
 
 from docs.domain.rules import review_rules
+from docs.domain.rules import _check_apa7_enabled
 
 
 def _valid_extra() -> dict:
@@ -429,6 +430,18 @@ def _valid_extra() -> dict:
 
 def _valid_template(**overrides) -> Template:
     return Template.model_validate({"type": "x", "title": "X", **_valid_extra(), **overrides})
+
+
+def test_check_apa7_enabled_flags_when_disabled():
+    template = Template.model_validate({"type": "x", "title": "X", "apa7": {"enabled": False}, **_valid_extra()})
+    issues = _check_apa7_enabled(template)
+    assert len(issues) == 1
+    assert issues[0].message == "APA 7 debe estar habilitado."
+
+
+def test_check_apa7_enabled_no_issues_when_enabled():
+    template = _valid_template()
+    assert _check_apa7_enabled(template) == []
 
 
 def test_review_rules_all_valid_no_issues():
