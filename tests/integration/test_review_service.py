@@ -254,7 +254,7 @@ def test_stamp_section_synthesizes_metadata_when_file_has_no_frontmatter(workspa
     result_path = service.stamp_section("doc-1", template, "introduccion", "agent-x", now="2026-06-21T00:00:00")
     metadata_json = result_path.read_text(encoding="utf-8").split("---\n")[1]
     metadata = json.loads(metadata_json)
-    assert metadata["managed_by"] == "tesina-harness"
+    assert metadata["managed_by"] == "docs-harness"
     assert metadata["schema"] == 3
     assert metadata["section_id"] == "introduccion"
     assert metadata["title"] == "Introducción"
@@ -303,7 +303,7 @@ def test_build_section_writes_new_section_when_absent(workspace, service):
     text = result_path.read_text(encoding="utf-8")
     metadata_json = text.split("---\n")[1]
     metadata = json.loads(metadata_json)
-    assert metadata["managed_by"] == "tesina-harness"
+    assert metadata["managed_by"] == "docs-harness"
     assert metadata["authored_by"] == "harness-scaffold"
     assert metadata["section_id"] == "introduccion"
     assert metadata["title"] == "Introducción"
@@ -324,7 +324,7 @@ def test_build_section_overwrites_when_managed_unchanged_with_metadata_drift(wor
         workspace, "doc-1", 1, "introduccion",
         body=body,
         metadata={
-            "managed_by": "tesina-harness",
+            "managed_by": "docs-harness",
             "schema": 3,
             "section_id": "introduccion",
             "title": "Título viejo",
@@ -354,7 +354,7 @@ def test_build_section_no_op_when_managed_unchanged_and_metadata_identical(works
     body = "# Introducción\n\nTexto estable.\n"
     body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
     metadata = {
-        "managed_by": "tesina-harness",
+        "managed_by": "docs-harness",
         "authored_by": "harness-scaffold",
         "schema": 3,
         "section_id": "introduccion",
@@ -440,7 +440,7 @@ def test_build_section_writes_new_section_when_no_frontmatter_and_body_matches(w
     assert result_path == written_path
     text = written_path.read_text(encoding="utf-8")
     metadata = json.loads(text.split("---\n")[1])
-    assert metadata["managed_by"] == "tesina-harness"
+    assert metadata["managed_by"] == "docs-harness"
     assert text.endswith(body)
 
 

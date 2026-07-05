@@ -1,4 +1,7 @@
 # tests/unit/domain/test_section_rendering.py
+import inspect
+
+from docs.domain import section_rendering as section_rendering_module
 from docs.domain.models.template import SectionContract
 from docs.domain.section_rendering import (
     _extract_heading_block,
@@ -9,6 +12,10 @@ from docs.domain.section_rendering import (
     render_section_draft,
     render_toc_section,
 )
+
+
+def test_module_source_has_no_tesina_literal():
+    assert "tesina" not in inspect.getsource(section_rendering_module).lower()
 
 
 class TestApplyKeywordBold:

@@ -1,4 +1,7 @@
 # tests/unit/domain/test_evidence.py
+import inspect
+
+from docs.domain import evidence as evidence_module
 from docs.domain.evidence import (
     ManualFileFact,
     ManualHashFact,
@@ -10,6 +13,10 @@ from docs.domain.evidence import (
     build_rules_hash_payload,
     build_source_hash_payload,
 )
+
+
+def test_module_source_has_no_tesina_literal():
+    assert "tesina" not in inspect.getsource(evidence_module).lower()
 
 
 def _manual_file(**overrides) -> ManualFileFact:
@@ -51,7 +58,7 @@ def _call(**overrides):
 def test_build_manifest_schema_and_fixed_policy_fields():
     manifest = _call()
     assert manifest["schema"] == 1
-    assert manifest["policy"]["normative_source"] == "tesina/guides/manual-estadia-tic"
+    assert manifest["policy"]["normative_source"] == "docs/guides/manual-estadia-tic"
     assert manifest["policy"]["pdf_and_extracted_use"] == "rules_traceability_only"
     assert manifest["policy"]["apa_style"] == "APA 7"
 

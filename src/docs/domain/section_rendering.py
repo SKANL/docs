@@ -17,7 +17,7 @@ def apply_keyword_bold(markdown: str, terms: list[str]) -> str:
     placeholders: dict[str, str] = {}
 
     def protect(match: re.Match[str]) -> str:
-        key = f"@@TESINA_BOLD_{len(placeholders)}@@"
+        key = f"@@BOLD_{len(placeholders)}@@"
         placeholders[key] = match.group(0)
         return key
 

@@ -1,4 +1,11 @@
+import inspect
+
+from docs.domain import review as review_module
 from docs.domain.review import Issue, ReviewResult
+
+
+def test_module_source_has_no_tesina_literal():
+    assert "tesina" not in inspect.getsource(review_module).lower()
 
 
 def test_issue_default_code_is_empty_string():

@@ -1,8 +1,10 @@
 # tests/unit/domain/test_sections.py
+import inspect
 from pathlib import Path
 
 import pytest
 
+from docs.domain import sections as sections_module
 from docs.domain.sections import (
     apply_stamp,
     default_section_metadata,
@@ -11,6 +13,10 @@ from docs.domain.sections import (
     section_by_id,
     with_frontmatter,
 )
+
+
+def test_module_source_has_no_tesina_literal():
+    assert "tesina" not in inspect.getsource(sections_module).lower()
 
 
 def test_infer_section_id_strips_leading_digits_and_hyphen():
@@ -52,7 +58,7 @@ def test_with_frontmatter_formats_metadata_and_body():
 def test_default_section_metadata_shape():
     metadata = default_section_metadata("introduccion", "Introducción")
     assert metadata == {
-        "managed_by": "tesina-harness",
+        "managed_by": "docs-harness",
         "schema": 3,
         "section_id": "introduccion",
         "title": "Introducción",
@@ -70,7 +76,7 @@ def test_apply_stamp_synthesizes_default_metadata_when_empty():
         model="",
         stamped_at="2026-06-21T00:00:00",
     )
-    assert result["managed_by"] == "tesina-harness"
+    assert result["managed_by"] == "docs-harness"
     assert result["schema"] == 3
     assert result["section_id"] == "introduccion"
     assert result["title"] == "Introducción"
@@ -81,7 +87,7 @@ def test_apply_stamp_synthesizes_default_metadata_when_empty():
 
 
 def test_apply_stamp_preserves_existing_metadata_fields():
-    existing = {"managed_by": "tesina-harness", "schema": 3, "section_id": "introduccion", "title": "Introducción", "custom": "kept"}
+    existing = {"managed_by": "docs-harness", "schema": 3, "section_id": "introduccion", "title": "Introducción", "custom": "kept"}
     result = apply_stamp(
         metadata=existing,
         section_id="introduccion",
@@ -98,7 +104,7 @@ def test_apply_stamp_preserves_existing_metadata_fields():
 
 def test_apply_stamp_sets_model_when_provided():
     result = apply_stamp(
-        metadata={"managed_by": "tesina-harness", "schema": 3, "section_id": "x", "title": "X"},
+        metadata={"managed_by": "docs-harness", "schema": 3, "section_id": "x", "title": "X"},
         section_id="x",
         title="X",
         body="texto",
@@ -111,7 +117,7 @@ def test_apply_stamp_sets_model_when_provided():
 
 
 def test_apply_stamp_empty_model_does_not_delete_existing_model_key():
-    existing = {"managed_by": "tesina-harness", "schema": 3, "section_id": "x", "title": "X", "model": "previous-model"}
+    existing = {"managed_by": "docs-harness", "schema": 3, "section_id": "x", "title": "X", "model": "previous-model"}
     result = apply_stamp(
         metadata=existing,
         section_id="x",
@@ -127,7 +133,7 @@ def test_apply_stamp_empty_model_does_not_delete_existing_model_key():
 
 def test_apply_stamp_always_overwrites_body_hash_and_stamped_at():
     existing = {
-        "managed_by": "tesina-harness", "schema": 3, "section_id": "x", "title": "X",
+        "managed_by": "docs-harness", "schema": 3, "section_id": "x", "title": "X",
         "body_hash": "stale", "stamped_at": "2020-01-01T00:00:00",
     }
     result = apply_stamp(
