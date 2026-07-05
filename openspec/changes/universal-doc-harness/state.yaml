@@ -29,7 +29,7 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR4
+    next_slice: PR5
     note: >-
       Task checkboxes in tasks.md are the source of truth for slice
       progress; merge apply-progress in engram, never overwrite.
@@ -81,10 +81,11 @@ phases:
           added — out of scope, zero ingest commands exist yet (PR5/PR6
           own that). --help output diffed byte-identical before/after.
       PR4:
-        status: implemented_not_pushed
+        status: merged
         branch: refactor/pr4-renderer-registry-stage-plan
         tasks: 4.1-4.10 complete
         tests: 818 passed, 7 skipped (baseline was 799/7; 812/7 before remediation)
+        pr: https://github.com/SKANL/docs/pull/5
         commits:
           - 763b37c refactor(render) introduce renderer port and registry, make assemble stage plan data-driven
           - 5c8dc31 feat(cli) resolve output renderer from config in the pipeline command
@@ -132,8 +133,18 @@ phases:
           references reworded in document_renderer_port.py and
           tool_resolver_adapter.py; the private-helper-only output-name test
           augmented with a behavior-level build() test. Final: 818 passed, 7
-          skipped. Still not pushed — awaiting fresh-context re-review.
-          Awaiting fresh-context review before push/PR per PR rule.
+          skipped. Fresh-context re-review of the final branch (2026-07-05):
+          MERGE-READY, zero findings; reviewer proved the CRITICAL fix is
+          load-bearing by reverting the core_app.py wiring in a disposable
+          worktree and observing the unregistered-format test fail. Every
+          commit verified green in a clean worktree (812/7 -> 813/7 -> 818/7
+          -> 818/7). Merged to main 2026-07-05 via GitHub PR #5 (merge
+          commit 7777e4f, branch deleted); main verified green post-merge
+          (818 passed, 7 skipped). Review budget 538 total changed lines
+          (465 excluding openspec bookkeeping) — over the 400 budget; the
+          overage is the review remediation belonging to this work unit,
+          recorded as size:exception in the PR body per maintainer
+          instruction under auto-chain.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
