@@ -27,6 +27,24 @@ def multi_kind_service(workspace: Workspace) -> AssetService:
     )
 
 
+@pytest.fixture
+def single_pdf_kind_service(workspace: Workspace) -> AssetService:
+    return AssetService(
+        FilesystemAssetRepository(),
+        workspace,
+        asset_kinds={"pdf": (".pdf",)},
+    )
+
+
+@pytest.fixture
+def overlapping_docx_kinds_service(workspace: Workspace) -> AssetService:
+    return AssetService(
+        FilesystemAssetRepository(),
+        workspace,
+        asset_kinds={"word": (".docx",), "plantilla": (".docx",)},
+    )
+
+
 def test_add_asset_copies_file_and_appends_docx_suffix(tmp_path, workspace, service):
     source = tmp_path / "cover.docx"
     source.write_bytes(b"docx-bytes")
@@ -155,7 +173,7 @@ def test_remove_asset_raises_when_bare_stem_ambiguous_across_multiple_kinds(tmp_
     pdf_source.write_bytes(b"y")
     multi_kind_service.add_asset("doc-1", str(docx_source), name="portada")
     multi_kind_service.add_asset("doc-1", str(pdf_source), name="portada")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="más de un tipo configurado"):
         multi_kind_service.remove_asset("doc-1", "portada")
     # Ambiguous resolution must not delete anything.
     assert sorted(multi_kind_service.list_assets("doc-1", kind="docx") + multi_kind_service.list_assets("doc-1", kind="pdf")) == [
@@ -165,8 +183,33 @@ def test_remove_asset_raises_when_bare_stem_ambiguous_across_multiple_kinds(tmp_
 
 
 def test_remove_asset_raises_when_bare_stem_not_found_under_multiple_kinds(multi_kind_service):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="No se encontró el asset"):
         multi_kind_service.remove_asset("doc-1", "no-existe")
+
+
+def test_remove_asset_resolves_bare_stem_when_only_kind_configured_is_non_docx(
+    tmp_path, workspace, single_pdf_kind_service
+):
+    # Regression for CRITICAL finding: a single non-docx configured kind must resolve
+    # the bare stem to that kind's own extension, not fall through to asset_path's
+    # hardcoded ".docx" default (which silently no-ops the removal).
+    source = tmp_path / "cover.pdf"
+    source.write_bytes(b"pdf-bytes")
+    single_pdf_kind_service.add_asset("doc-1", str(source), name="portada")
+    single_pdf_kind_service.remove_asset("doc-1", "portada")
+    assert single_pdf_kind_service.list_assets("doc-1", kind="pdf") == []
+
+
+def test_remove_asset_dedupes_matches_when_kinds_overlap_same_extension(
+    tmp_path, workspace, overlapping_docx_kinds_service
+):
+    # Regression for WARNING finding: two configured kinds sharing the same extension
+    # must not double-count a single real file as an ambiguous match.
+    source = tmp_path / "src.docx"
+    source.write_bytes(b"x")
+    overlapping_docx_kinds_service.add_asset("doc-1", str(source), name="unico")
+    overlapping_docx_kinds_service.remove_asset("doc-1", "unico")
+    assert overlapping_docx_kinds_service.list_assets("doc-1", kind="word") == []
 
 
 def test_remove_asset_deletes_with_explicit_extension_under_multiple_kinds(tmp_path, workspace, multi_kind_service):
