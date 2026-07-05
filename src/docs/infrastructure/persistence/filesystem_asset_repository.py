@@ -14,8 +14,8 @@ class FilesystemAssetRepository:
     def copy_file(self, src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
 
-    def glob_docx(self, directory: Path) -> list[Path]:
-        return sorted(directory.glob("*.docx"))
+    def list_assets(self, directory: Path, kind: str) -> list[Path]:
+        return sorted(directory.glob(f"*.{kind}"))
 
     def remove_file(self, path: Path) -> None:
         if path.exists():

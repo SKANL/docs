@@ -27,12 +27,32 @@ def test_copy_file_copies_bytes_and_metadata(tmp_path: Path):
     assert dest.read_bytes() == b"docx-bytes"
 
 
-def test_glob_docx_returns_sorted_docx_files_only(tmp_path: Path):
+def test_list_assets_returns_sorted_files_matching_kind(tmp_path: Path):
     repo = FilesystemAssetRepository()
     (tmp_path / "b.docx").write_bytes(b"")
     (tmp_path / "a.docx").write_bytes(b"")
     (tmp_path / "c.txt").write_bytes(b"")
-    assert [p.name for p in repo.glob_docx(tmp_path)] == ["a.docx", "b.docx"]
+    assert [p.name for p in repo.list_assets(tmp_path, "docx")] == ["a.docx", "b.docx"]
+
+
+def test_list_assets_docx_only_config_still_rejects_non_docx(tmp_path: Path):
+    repo = FilesystemAssetRepository()
+    (tmp_path / "a.docx").write_bytes(b"")
+    (tmp_path / "b.pdf").write_bytes(b"")
+    assert [p.name for p in repo.list_assets(tmp_path, "docx")] == ["a.docx"]
+
+
+def test_list_assets_generalizes_to_other_configured_kinds(tmp_path: Path):
+    repo = FilesystemAssetRepository()
+    (tmp_path / "a.docx").write_bytes(b"")
+    (tmp_path / "b.pdf").write_bytes(b"")
+    assert [p.name for p in repo.list_assets(tmp_path, "pdf")] == ["b.pdf"]
+
+
+def test_list_assets_returns_empty_list_when_no_file_matches_kind(tmp_path: Path):
+    repo = FilesystemAssetRepository()
+    (tmp_path / "a.docx").write_bytes(b"")
+    assert repo.list_assets(tmp_path, "pdf") == []
 
 
 def test_remove_file_is_noop_when_absent(tmp_path: Path):
