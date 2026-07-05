@@ -29,7 +29,7 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR5
+    next_slice: PR6
     note: >-
       Task checkboxes in tasks.md are the source of truth for slice
       progress; merge apply-progress in engram, never overwrite.
@@ -145,6 +145,70 @@ phases:
           overage is the review remediation belonging to this work unit,
           recorded as size:exception in the PR body per maintainer
           instruction under auto-chain.
+      PR5:
+        status: implemented
+        branch: feat/pr5-ingest-detection-routing
+        tasks: 5.1-5.8 complete (5.1 spike completed 2026-07-04 ahead of slice)
+        tests: 839 passed, 7 skipped (baseline was 818/7; 835/7 before fresh-review remediation)
+        commits:
+          - 46ff2cf feat(ingest) detect source type by magic bytes with extension fallback
+          - 1585a69 feat(ingest) route detected sources through SourceIngestPort with unsupported reporting
+          - bbf0b10 test(ingest) lock in skip-re-ingest-by-content-hash idempotency contract
+          - 89c4e6c fix(ingest) key idempotency identity on stem+kind+hash to prevent cross-kind collisions
+          - 8a0de48 fix(ingest) isolate per-file exceptions so one failure does not abort the whole scan
+          - plus the chore(sdd) commit carrying this state.yaml/tasks.md update
+        note: >-
+          New domain/ports/source_type_detector_port.py (SourceTypeDetectorPort)
+          and source_ingest_port.py (SourceIngestPort); new
+          infrastructure/ingest/ package with FiletypeDetectorAdapter
+          (filetype lib magic-byte sniffing + .md/.txt extension fallback,
+          verified empirically that docx/pdf are magic-byte detectable and
+          md/txt are not); new application/ingest.py IngestService
+          (detect -> route -> ingest, writes deterministic
+          inbox/_detection.json with sort_keys=True and no timestamps,
+          skips "_"-prefixed inbox entries so its own report is never
+          re-scanned as a source). DEVIATION: the sha256/sha8 idempotency
+          skip-if-output-exists check (task 5.6) was implemented directly
+          inside 5.5's IngestService rather than as a separate later change
+          — the deterministic <stem>-<sha8>.md path check on disk already
+          satisfies "already recorded with matching hash" without a
+          separate manifest lookup. test_ingest_idempotency.py locks this
+          in with a naming-convention-faithful fake handler (unchanged
+          source not re-invoked; changed content produces a fresh path
+          without touching the prior output; partially-processed inbox
+          only converts the new file) — passed on first run, same
+          test-locks-existing-contract precedent as PR4 tasks 4.7-4.8.
+          Confirmed via grep: zero references to IngestService/
+          SourceIngestPort/SourceTypeDetectorPort/FiletypeDetectorAdapter in
+          application/pipeline.py, domain/pipeline.py, or cli/_shared.py —
+          PR6 (adapters) and PR8 (pipeline/CLI wiring) own that, so
+          reverting PR5 has zero blast radius. No real pandoc/
+          opendataloader-pdf calls made this slice (stub/fake handlers
+          only, per design's routing-infra-first plan). Review budget: 411
+          added lines across 8 files (all new files, no existing-file
+          edits), slightly over the ~260-line forecast but not requiring a
+          delivery_strategy escalation (test-heavy per strict TDD, no
+          production wiring risk). FRESH-CONTEXT REVIEW REMEDIATION
+          (2026-07-05, same branch): verdict MERGE-READY with 2 WARNINGs
+          fixed before push. WARNING 1 (identity collision) — the
+          stem+sha8-only skip key let readme.md/readme.txt with
+          byte-identical bodies collide (same stem, same hash); reviewer's
+          repro reproduced live (txt handler invoked 0 times, wrongly
+          "skipped"). Fixed by extending the deterministic output naming to
+          <stem>-<kind>-<sha8>.md, keying identity on (stem, kind, hash);
+          locked in by test_same_stem_and_hash_but_different_kind_are_not_conflated.
+          WARNING 2 (batch-fatal per-file errors) — detect/read/ingest had
+          no exception isolation; one vanished/unreadable file or a failing
+          handler aborted the whole scan and _detection.json was never
+          written even for already-processed files. Fixed by wrapping each
+          file's processing in IngestService._ingest_one_safely: any
+          exception is caught and reported as status "error" with a
+          deterministic cause (str(exc), no traceback/timestamp), the scan
+          continues, and _detection.json is always written. Scoped
+          narrowly — does not implement PR6 task 6.3's configured
+          fail-fast for real adapters. Both fixes RED-confirmed against
+          live reproductions before implementation, tests added
+          alongside each fix commit.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
