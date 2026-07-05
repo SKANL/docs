@@ -29,7 +29,7 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR6
+    next_slice: PR7
     note: >-
       Task checkboxes in tasks.md are the source of truth for slice
       progress; merge apply-progress in engram, never overwrite.
@@ -224,6 +224,61 @@ phases:
           Final review budget: 546 code insertions (all-new files, unwired,
           ~60% tests) — size:exception recorded in the PR body per
           maintainer instruction under auto-chain.
+      PR6:
+        status: merged
+        branch: feat/pr6-ingest-adapters
+        pr: https://github.com/SKANL/docs/pull/7
+        tasks: 6.1-6.10 complete
+        tests: 873 passed, 7 skipped (baseline was 839/7; 869/7 before fresh-review remediation)
+        commits:
+          - b8f7cdd fix(ingest) preserve detected kind in error entries; extract shared naming helper
+          - 1b8168c feat(ingest) add pandoc adapter for docx/odt with atomic media extraction
+          - 79cdfc3 feat(ingest) add opendataloader-pdf adapter with batched JVM conversion
+          - 9f22c8c feat(ingest) add md/txt normalize adapter and wire all three into Deps
+          - e52058c test(ingest) prove byte-identical determinism across repeated runs
+          - 0faca2d fix(ingest) thread detector-resolved kind through SourceIngestPort
+        note: >-
+          Three SourceIngestPort adapters delivered: PandocIngestAdapter
+          (docx/odt, --extract-media, explicit -f reader), OpendataloaderPdfAdapter
+          (Java via ToolResolverPort.resolve_java with Spanish error message,
+          ONE batched convert() per inbox scan verified by spy test,
+          hybrid/image_output off for determinism per 5.1 spike conditions,
+          inputs staged as .pdf-suffixed scratch copies because the tool's CLI
+          independently validates by extension), MdNormalizeAdapter (reuses
+          split_frontmatter). Shared domain/ingest_naming.py and
+          infrastructure/ingest/atomic_ingest_write.py (temp-then-atomic-rename)
+          satisfy PR5 carry-forward (a); error entries preserving the
+          detector-resolved kind satisfy carry-forward (b) — both closed on
+          PR6 task 6.3 as bound. Fresh-context review round 1: NOT-READY —
+          1 CRITICAL (adapters derived kind from src.suffix instead of the
+          detected kind: a real DOCX named .doc detected/routed correctly but
+          failed pandoc conversion permanently AND its suffix-derived output
+          name broke the (stem, kind, sha8) skip-check identity) and 1 WARNING
+          (two-step finalize could orphan a media dir and break the retry with
+          directory-not-empty). Remediation 0faca2d: SourceIngestPort.ingest
+          grew a required kind parameter (additive port deviation documented
+          in tasks.md 6.7) so the router's resolved kind is the single source
+          of identity for naming and format decisions; the RED test for the
+          pdf naming case surfaced a second real bug (opendataloader-pdf's CLI
+          rejects non-.pdf-named input), fixed via scratch-copy staging;
+          pandoc retry reconciles stale orphaned media dirs before
+          re-finalize. Round 2: MERGE-READY, zero blocking findings —
+          reviewer independently re-reproduced every round-1 scenario with
+          real pandoc 3.10 + OpenJDK 17, verified per-commit greenness of all
+          8 commits, hexagonal boundaries, determinism invariants, and
+          additive-only planning-artifact edits. SUGGESTION deferred:
+          extract shared Java-resolution module (noted in tasks.md 6.4).
+          Informational: test_doctor_service.py ToolResolverPort fake lacks
+          resolve_java (harmless today, would fail loudly); design.md:81
+          still shows the pre-deviation 2-arg ingest sketch (frozen-artifact
+          convention). Merged to main 2026-07-05 via GitHub PR #7 (merge
+          commit 2efbda5, branch deleted); main verified green post-merge
+          (873 passed, 7 skipped). Review budget: 1,201 insertions / 34
+          deletions across 20 files — size:exception recorded in the PR body
+          per maintainer decision at the interactive slice-close checkpoint
+          (overage ~60% real-external-tool integration tests, all-new files,
+          remediation entangles the port signature across all three adapters
+          making a post-hoc split require history surgery).
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
