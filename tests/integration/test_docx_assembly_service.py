@@ -174,9 +174,9 @@ def test_assemble_raises_when_embed_asset_missing(tmp_path, service):
 
 
 def test_assemble_resolves_and_passes_embed_paths_to_port(tmp_path, workspace, service):
-    # docxcompose is not installed in this environment; a successful resolution
-    # (no FileNotFoundError) reaching the port's docxcompose-missing error
-    # confirms doc_id-threaded asset resolution worked correctly.
+    # docxcompose is now a declared, installed dependency (PR1 quick-debt fix);
+    # embedding the front asset must succeed end-to-end, proving doc_id-threaded
+    # asset resolution reaches real docxcompose composition without error.
     assets_dir = workspace.assets_dir("doc-1")
     assets_dir.mkdir(parents=True)
     Document().save(assets_dir / "front.docx")
@@ -186,8 +186,10 @@ def test_assemble_resolves_and_passes_embed_paths_to_port(tmp_path, workspace, s
     Document().save(body)
     output = tmp_path / "out.docx"
 
-    with pytest.raises(RuntimeError, match="docxcompose"):
-        service.assemble("doc-1", config, body, output)
+    service.assemble("doc-1", config, body, output)
+
+    assert output.exists()
+    Document(str(output))  # must open without raising
 
 
 # --- _strip_frontmatter_to_temp -------------------------------------------------
