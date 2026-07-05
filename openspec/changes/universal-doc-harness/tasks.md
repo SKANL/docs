@@ -96,7 +96,7 @@ Base: `main` (after PR5, gated on 5.1 verification passing). Covers: document-in
 
 - [ ] 6.1 RED: `tests/integration/test_pandoc_ingest_adapter.py` — DOCX/ODT source -> pandoc `--extract-media` -> markdown + per-doc media dir; missing pandoc reports clear error via `ToolResolverPort`, no partial output.
 - [ ] 6.2 GREEN: `infrastructure/ingest/pandoc_ingest_adapter.py` implementing `SourceIngestPort` for docx/odt.
-- [ ] 6.3 RED: `tests/integration/test_opendataloader_pdf_adapter.py` — PDF -> markdown; conversion failure reports cause per-file and applies configured fail-fast.
+- [ ] 6.3 RED: `tests/integration/test_opendataloader_pdf_adapter.py` — PDF -> markdown; conversion failure reports cause per-file and applies configured fail-fast. NOTE (carried from PR5 fresh-review round 2, binding on all PR6 adapters): (a) adapters MUST write temp-then-atomic-rename or otherwise guarantee that a handler failing mid-write leaves no partial file at `sections/ingested/<stem>-<kind>-<sha8>.md` — otherwise IngestService's skip check permanently accepts the corrupt output as "skipped" on the next run (proven empirically against PR5's routing infra); (b) restructure error entries so a kind already resolved by the detector survives into the `status: "error"` entry instead of the current unconditional `"kind": "unknown"`.
 - [ ] 6.4 GREEN: `infrastructure/ingest/opendataloader_pdf_adapter.py` implementing `SourceIngestPort` for pdf (only after 5.1 sign-off).
 - [ ] 6.5 RED: `tests/unit/infrastructure/test_md_normalize_adapter.py` — md/txt frontmatter normalization, reuse `split_frontmatter`.
 - [ ] 6.6 GREEN: `infrastructure/ingest/md_normalize_adapter.py` implementing `SourceIngestPort` for md/txt.
