@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Protocol
 
 from docs.domain.models.document import Document, DocumentSummary
-from docs.domain.ports.document_repository import (
-    DocumentExistsError, DocumentRepository,
-)
+from docs.domain.ports.document_repository import DocumentExistsError, DocumentRepository
+from docs.domain.ports.registry_repository import RegistryRepository
+from docs.domain.ports.template_repository import TemplateRepository
 from docs.domain.slug import validate_slug
+
+
+class DocumentLifecycleRepository(RegistryRepository, DocumentRepository, TemplateRepository, Protocol):
+    """Composed port for `DocumentService`: its lifecycle operations
+    (create/list/current/use/rename/delete) genuinely span registry,
+    document-content, and template access, so it depends on the union of
+    the three narrow ports rather than reintroducing one fat protocol.
+    Narrower consumers (e.g. `ContextService`) depend on just
+    `DocumentRepository`."""
+
 
 _SUBDIRS = (
     "context", "assets", "sections",
@@ -23,7 +33,7 @@ def _now() -> str:
 class DocumentService:
     def __init__(
         self,
-        repository: DocumentRepository,
+        repository: DocumentLifecycleRepository,
         clock: Callable[[], str] = _now,
     ) -> None:
         self.repository = repository
