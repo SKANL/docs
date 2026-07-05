@@ -21,22 +21,33 @@ class _FixedKindDetector:
 
 
 class _HashNamingHandler:
-    def __init__(self) -> None:
+    """Mimics the real `<stem>-<kind>-<sha8>.md` naming convention future
+    per-kind adapters (PR6) will use — each handler is registered for exactly
+    one kind, so it already knows the kind label to embed without needing it
+    threaded through the `SourceIngestPort.ingest(src, out_dir)` signature."""
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
         self.calls: list[Path] = []
 
     def ingest(self, src: Path, out_dir: Path) -> Path:
         self.calls.append(src)
         sha8 = hashlib.sha256(src.read_bytes()).hexdigest()[:8]
-        target = out_dir / f"{src.stem}-{sha8}.md"
+        target = out_dir / f"{src.stem}-{self.kind}-{sha8}.md"
         target.write_text(f"# {src.name}", encoding="utf-8")
         return target
+
+
+class _KindByExtensionDetector:
+    def detect(self, path: Path) -> str:
+        return path.suffix.lstrip(".")
 
 
 def test_unchanged_source_is_not_re_ingested_on_second_run(tmp_path: Path):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "a.docx").write_bytes(b"stable content")
-    handler = _HashNamingHandler()
+    handler = _HashNamingHandler("docx")
     service = IngestService(_FixedKindDetector(), {"docx": handler})
 
     first = service.ingest_inbox(inbox, tmp_path / "sections")
@@ -53,7 +64,7 @@ def test_changed_content_triggers_fresh_ingest_without_touching_prior_output(tmp
     inbox.mkdir()
     src = inbox / "a.docx"
     src.write_bytes(b"version one")
-    handler = _HashNamingHandler()
+    handler = _HashNamingHandler("docx")
     service = IngestService(_FixedKindDetector(), {"docx": handler})
 
     first = service.ingest_inbox(inbox, tmp_path / "sections")
@@ -76,7 +87,7 @@ def test_partially_processed_inbox_only_converts_unprocessed_files(tmp_path: Pat
     inbox.mkdir()
     (inbox / "already.docx").write_bytes(b"already ingested content")
     (inbox / "new.docx").write_bytes(b"brand new content")
-    handler = _HashNamingHandler()
+    handler = _HashNamingHandler("docx")
     service = IngestService(_FixedKindDetector(), {"docx": handler})
 
     service.ingest_inbox(inbox, tmp_path / "sections")
@@ -91,3 +102,28 @@ def test_partially_processed_inbox_only_converts_unprocessed_files(tmp_path: Pat
     assert statuses["already.docx"] == "skipped"
     assert statuses["new.docx"] == "skipped"
     assert statuses["new2.docx"] == "ingested"
+
+
+def test_same_stem_and_hash_but_different_kind_are_not_conflated(tmp_path: Path):
+    # Fresh-context review repro: readme.md and readme.txt with byte-identical
+    # bodies share `stem` AND `sha8`. Keying the skip-check on `stem+sha8`
+    # alone silently drops the second file as a false "skipped" — its handler
+    # is never invoked. Identity must be (stem, detected kind, content hash).
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    body = b"identical body, only the extension differs"
+    (inbox / "readme.md").write_bytes(body)
+    (inbox / "readme.txt").write_bytes(body)
+    md_handler = _HashNamingHandler("md")
+    txt_handler = _HashNamingHandler("txt")
+    service = IngestService(_KindByExtensionDetector(), {"md": md_handler, "txt": txt_handler})
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    assert len(md_handler.calls) == 1, "the .md source must be ingested"
+    assert len(txt_handler.calls) == 1, "the .txt source must ALSO be ingested, not silently skipped"
+    statuses = {entry["file"]: entry["status"] for entry in report["files"]}
+    assert statuses["readme.md"] == "ingested"
+    assert statuses["readme.txt"] == "ingested"
+    outputs = {entry["file"]: entry["output"] for entry in report["files"]}
+    assert outputs["readme.md"] != outputs["readme.txt"], "same stem+hash across kinds must not collide"

@@ -58,7 +58,7 @@ class IngestService:
                 "sha256": sha256,
             }
         ingested_dir = sections_dir / "ingested"
-        existing = self._existing_output(ingested_dir, src.stem, sha256[:8])
+        existing = self._existing_output(ingested_dir, src.stem, kind, sha256[:8])
         if existing is not None:
             return {
                 "file": src.name,
@@ -77,8 +77,13 @@ class IngestService:
             "output": str(output),
         }
 
-    def _existing_output(self, ingested_dir: Path, stem: str, sha8: str) -> Path | None:
-        candidate = ingested_dir / f"{stem}-{sha8}.md"
+    def _existing_output(self, ingested_dir: Path, stem: str, kind: str, sha8: str) -> Path | None:
+        # Identity is (stem, kind, content hash), not just (stem, hash): two
+        # files with the same stem and byte-identical bodies but different
+        # detected kinds (e.g. readme.md / readme.txt) are distinct sources
+        # and must not collide on the same output path (fresh-review fix —
+        # a `stem+sha8`-only key silently skipped the second file's handler).
+        candidate = ingested_dir / f"{stem}-{kind}-{sha8}.md"
         return candidate if candidate.exists() else None
 
     def _write_detection_report(self, inbox_dir: Path, report: dict[str, Any]) -> None:
