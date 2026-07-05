@@ -12,11 +12,34 @@ from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 
 
-class DocxAssemblyService:
+_DEFAULT_DRAFT_DOCX_NAME = "tesina-draft.docx"
+_DEFAULT_BODY_DOCX_NAME = "tesina-body.docx"
+
+
+class DocxRendererAdapter:
+    """`DocumentRendererPort` implementation for DOCX output (PR4 rename of
+    the former `DocxAssemblyService` — behavior unchanged, only the hardcoded
+    draft/body doc names now come from `config["output"]`)."""
+
+    output_format = "docx"
+
     def __init__(self, port: DocxAssemblyPort, asset_service: AssetService, tool_resolver: ToolResolverPort) -> None:
         self.port = port
         self.asset_service = asset_service
         self.tool_resolver = tool_resolver
+
+    def stage_plan(self) -> list[tuple[str, bool]]:
+        return [
+            ("build-docx", True),
+            ("format-audit-docx", True),
+            ("qa-docx", True),
+        ]
+
+    def _draft_docx_name(self, config: dict[str, Any]) -> str:
+        return config.get("output", {}).get("draft_name", _DEFAULT_DRAFT_DOCX_NAME)
+
+    def _body_docx_name(self, config: dict[str, Any]) -> str:
+        return config.get("output", {}).get("body_name", _DEFAULT_BODY_DOCX_NAME)
 
     def _sections_index(self, parts: list[dict[str, Any]]) -> int:
         return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))
@@ -74,8 +97,8 @@ class DocxAssemblyService:
 
         output_dir = Path(config["paths"]["output_draft_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output or output_dir / "tesina-draft.docx"
-        body_docx = output_dir / "tesina-body.docx"
+        output = output or output_dir / self._draft_docx_name(config)
+        body_docx = output_dir / self._body_docx_name(config)
 
         # Legacy strips YAML/JSON frontmatter from each section before invoking
         # pandoc. `split_frontmatter` (docs.domain.markdown_text) already matches

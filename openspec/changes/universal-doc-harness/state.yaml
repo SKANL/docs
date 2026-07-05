@@ -80,6 +80,60 @@ phases:
           could not fail before the split). No ingest placeholder module
           added — out of scope, zero ingest commands exist yet (PR5/PR6
           own that). --help output diffed byte-identical before/after.
+      PR4:
+        status: implemented_not_pushed
+        branch: refactor/pr4-renderer-registry-stage-plan
+        tasks: 4.1-4.10 complete
+        tests: 818 passed, 7 skipped (baseline was 799/7; 812/7 before remediation)
+        commits:
+          - 763b37c refactor(render) introduce renderer port and registry, make assemble stage plan data-driven
+          - 5c8dc31 feat(cli) resolve output renderer from config in the pipeline command
+          - d08bc08 test(application) prove renderer extensibility with a fake txt renderer
+          - plus the chore(sdd) commit carrying this state.yaml/tasks.md update
+        note: >-
+          domain/pipeline.py:pipeline_stage_plan now takes the assemble
+          stage tuple as a caller-supplied argument instead of a hardcoded
+          _ASSEMBLE_STAGES constant; _PREP_STAGES stays a domain constant
+          (format-agnostic, no deviation there). DocxAssemblyService renamed
+          in place to DocxRendererAdapter (same module path) implementing
+          DocumentRendererPort; tesina-draft.docx/tesina-body.docx became
+          config["output"]["draft_name"/"body_name"] with backward-compatible
+          defaults. cli/_shared.py Deps builds a self.renderers registry and
+          exposes resolve_renderer()/Deps.resolve_renderer(config), raising a
+          clear Spanish error on an unregistered format (no silent DOCX
+          fallback). Extensibility proven by a test-only fake "txt" renderer
+          in tests/unit/application/test_renderer_registry.py — zero edits to
+          domain/pipeline.py. Determinism re-verified via double-run script
+          (two independent Deps instances, identical 13-stage output).
+          REMEDIATION (fresh-context review, same branch, 2026-07-04): 1
+          CRITICAL fixed — the renderer registry was built but never
+          consulted at runtime (PipelineService was fixed-wired to the DOCX
+          renderer regardless of config["output"]["format"]); wired
+          deps.resolve_renderer(config) into core_app.py's pipeline command
+          and threaded the resolved renderer through
+          PipelineService.run_pipeline/_stage_callables. 3 WARNINGs fixed —
+          (a) format-audit-docx/qa-docx/verify_all now read the actual built
+          path (or a config-driven draft_name fallback) instead of
+          re-deriving the hardcoded default, so a custom draft_name no
+          longer risks a missing-file error or a stale-file audit; (b)
+          pipeline_stage_plan raises ValueError when assemble/all is called
+          without an assemble argument instead of silently returning an
+          empty/short stage list; (c) history rewritten (git reset --soft +
+          re-commit, branch never pushed) so every commit on the branch now
+          has a green suite — the prior four-way split shipped tests
+          importing resolve_renderer before it existed; because the rename,
+          the registry in cli/_shared.py and the renderer threading are
+          mutually import-coupled, the rewrite groups them as one
+          refactor(render) work unit followed by feat(cli) wiring and the
+          test(application) extensibility proof. 3 SUGGESTIONs
+          addressed — tasks.md 4.6/4.7 original wording restored with
+          remediation notes appended (not overwritten); stale
+          "RENDERERS registry in cli/_shared.py" / "DocxAssemblyService"
+          references reworded in document_renderer_port.py and
+          tool_resolver_adapter.py; the private-helper-only output-name test
+          augmented with a behavior-level build() test. Final: 818 passed, 7
+          skipped. Still not pushed — awaiting fresh-context re-review.
+          Awaiting fresh-context review before push/PR per PR rule.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report

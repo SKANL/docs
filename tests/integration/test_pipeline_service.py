@@ -11,7 +11,7 @@ from docx import Document
 from docs.application.collection import CollectionService
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
-from docs.application.docx_assembly import DocxAssemblyService
+from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.pipeline import PipelineService
@@ -44,7 +44,7 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
     review_service = ReviewService(section_repo)
     collection_service = CollectionService(source_repo, evidence_repo)
     context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
-    docx_assembly_service = DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+    docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
     format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
     qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
     doctor_service = DoctorService(evidence_repo, asset_service, SystemToolResolverAdapter())
@@ -425,6 +425,47 @@ def test_run_pipeline_unknown_stage_set_raises_value_error(tmp_path):
         service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "bogus", repo_root=tmp_path)
 
 
+def test_run_pipeline_assemble_threads_custom_draft_name_to_audit_and_qa(tmp_path, monkeypatch):
+    # Remediation (fresh-context review, WARNING): a custom
+    # config["output"]["draft_name"] must reach format-audit-docx/qa-docx too
+    # -- not just build-docx -- otherwise those stages look for the wrong
+    # (missing, or worse, stale) hardcoded "tesina-draft.docx".
+    class _FakeDocxRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True), ("format-audit-docx", True), ("qa-docx", True)]
+
+        def build(self, doc_id, config, output=None):
+            output_dir = Path(config["paths"]["output_draft_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            name = config.get("output", {}).get("draft_name", "tesina-draft.docx")
+            path = output or (output_dir / name)
+            Document().save(path)
+            return path
+
+    service, _ = _service(tmp_path)
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
+        lambda paths: None,
+    )
+    config = _pipeline_config(tmp_path)
+    draft_dir = tmp_path / "draft"
+    config["paths"]["output_draft_dir"] = str(draft_dir)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    config["output"] = {"draft_name": "custom-draft.docx"}
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeDocxRenderer()
+    )
+
+    audit_stage = next(s for s in summary["stages"] if s["stage"] == "format-audit-docx")
+    assert "No existe DOCX para auditar" not in audit_stage["detail"]
+    # The correct custom-named file was produced; the stale default name never was.
+    assert (draft_dir / "custom-draft.docx").exists()
+    assert not (draft_dir / "tesina-draft.docx").exists()
+
+
 # --- Task 6: verify_all --------------------------------------------------
 #
 # NOTE: `verify_all` takes no `repo_root` parameter -- confirmed against the
@@ -476,6 +517,32 @@ def test_verify_all_appends_qa_failed_issue_when_libreoffice_unavailable(tmp_pat
         lambda paths: None,
     )
     result = service.verify_all("doc1", _template(), config, strict=False)
+    assert any(issue.code == "qa.failed" for issue in result.issues)
+
+
+def test_verify_all_finds_docx_at_configured_draft_name(tmp_path, monkeypatch):
+    # Remediation (fresh-context review, WARNING): verify_all's default-draft
+    # lookup must honor config["output"]["draft_name"] too, not just the
+    # hardcoded "tesina-draft.docx" -- otherwise a custom name makes verify_all
+    # silently skip DOCX checks (candidate.exists() is False for the wrong name).
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    draft_dir = tmp_path / "draft"
+    draft_dir.mkdir()
+    config["paths"]["output_draft_dir"] = str(draft_dir)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    config["output"] = {"draft_name": "custom-draft.docx"}
+    Document().save(draft_dir / "custom-draft.docx")
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
+        lambda paths: None,
+    )
+
+    result = service.verify_all("doc1", _template(), config, strict=False)
+
+    # It found and audited the custom-named file (qa.failed comes from the
+    # QA stage running against it, not from "no docx found at all").
     assert any(issue.code == "qa.failed" for issue in result.issues)
 
 

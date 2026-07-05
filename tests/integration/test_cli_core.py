@@ -89,3 +89,20 @@ def test_pipeline_unknown_stage_set_errors_cleanly(workspace):
     result = runner.invoke(app, ["pipeline", "bogus"])
     assert result.exit_code == 1
     assert "Conjunto de etapas desconocido" in (result.output + str(result.exception or ""))
+
+
+def test_pipeline_unregistered_output_format_errors_cleanly_no_silent_docx(workspace):
+    # Remediation (fresh-context review, CRITICAL): the renderer registry
+    # must actually be consulted at runtime — an unregistered output.format
+    # must raise the clear Spanish error instead of silently building DOCX.
+    templates_dir = workspace / "templates"
+    pdf_template = dict(_TEMPLATE, output={"format": "pdf"})
+    (templates_dir / "tesina-pdf.json").write_text(json.dumps(pdf_template), encoding="utf-8")
+    Deps().documents.create("doc-pdf", "tesina-pdf")
+
+    result = runner.invoke(app, ["pipeline", "assemble"])
+
+    combined = result.output + str(result.exception or "")
+    assert result.exit_code == 1
+    assert "Formato de salida no registrado" in combined
+    assert "pdf" in combined

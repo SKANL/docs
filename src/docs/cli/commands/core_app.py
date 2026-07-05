@@ -36,8 +36,10 @@ def pipeline(
 ) -> None:
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
+    renderer = deps.resolve_renderer(resolved.config)
     summary = deps.pipeline.run_pipeline(
-        resolved.doc_id, resolved.template, resolved.config, stage_set, repo_root=repo_root, strict=strict
+        resolved.doc_id, resolved.template, resolved.config, stage_set,
+        repo_root=repo_root, strict=strict, renderer=renderer,
     )
     if as_json:
         print(json.dumps(summary, ensure_ascii=False, indent=2))

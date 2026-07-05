@@ -9,7 +9,8 @@ import pytest
 from docx import Document
 
 from docs.application.asset import AssetService
-from docs.application.docx_assembly import DocxAssemblyService
+from docs.application.docx_assembly import DocxRendererAdapter
+from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
@@ -43,8 +44,42 @@ def asset_service(workspace: Workspace) -> AssetService:
 
 
 @pytest.fixture
-def service(asset_service: AssetService) -> DocxAssemblyService:
-    return DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+def service(asset_service: AssetService) -> DocxRendererAdapter:
+    return DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+
+
+# --- DocumentRendererPort contract ----------------------------------------------
+
+
+def test_docx_renderer_adapter_declares_docx_output_format(service):
+    assert service.output_format == "docx"
+
+
+def test_docx_renderer_adapter_satisfies_document_renderer_port(service: DocumentRendererPort):
+    assert service.output_format == "docx"
+    assert service.stage_plan() == [
+        ("build-docx", True),
+        ("format-audit-docx", True),
+        ("qa-docx", True),
+    ]
+
+
+def test_docx_renderer_adapter_resolves_via_registry_by_format(asset_service):
+    from docs.cli._shared import resolve_renderer
+
+    adapter = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+    registry = {"docx": adapter}
+    resolved = resolve_renderer(registry, "docx")
+    assert resolved is adapter
+
+
+def test_resolve_renderer_raises_clear_error_on_unregistered_format(asset_service):
+    from docs.cli._shared import resolve_renderer
+
+    adapter = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+    registry = {"docx": adapter}
+    with pytest.raises(ValueError, match="pdf"):
+        resolve_renderer(registry, "pdf")
 
 
 # --- _resolve_cover_asset_path ------------------------------------------------
@@ -243,6 +278,60 @@ def test_build_raises_when_no_markdown_sections_exist(tmp_path, service):
     (tmp_path / "sections").mkdir()
     with pytest.raises(RuntimeError, match="No hay secciones"):
         service.build("doc-1", config)
+
+
+# --- config-driven output names (PR4: move hardcoded doc names to config) ------
+
+
+def test_build_default_output_names_are_backward_compatible(tmp_path, service):
+    # No config["output"] key at all — existing fixtures/callers keep working
+    # with the same "tesina-draft.docx"/"tesina-body.docx" defaults as before.
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {"sections_dir": str(tmp_path / "sections"), "output_draft_dir": str(tmp_path / "draft")},
+    }
+    (tmp_path / "sections").mkdir()
+    with pytest.raises(RuntimeError, match="No hay secciones"):
+        service.build("doc-1", config)
+    assert service._draft_docx_name(config) == "tesina-draft.docx"
+    assert service._body_docx_name(config) == "tesina-body.docx"
+
+
+def test_build_uses_configured_output_names_when_present(service):
+    config = {"output": {"draft_name": "custom-draft.docx", "body_name": "custom-body.docx"}}
+    assert service._draft_docx_name(config) == "custom-draft.docx"
+    assert service._body_docx_name(config) == "custom-body.docx"
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_produces_docx_at_configured_draft_and_body_names(tmp_path, service):
+    # Behavior-level proof for the config-driven output names (fresh-context
+    # review finding: the private-helper-only test above would not have
+    # caught application/pipeline.py's audit/QA stages still hardcoding the
+    # default name — this test exercises the real build() end-to-end).
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    draft_dir = tmp_path / "draft"
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nContenido.\n", encoding="utf-8")
+    template = _pandoc_styled_docx(tmp_path, "Plantilla.", "template.docx")
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(draft_dir),
+            "template_docx": str(template),
+        },
+        "output": {"draft_name": "custom-draft.docx", "body_name": "custom-body.docx"},
+    }
+
+    output = service.build("doc-1", config)
+
+    assert output == draft_dir / "custom-draft.docx"
+    assert output.exists()
+    assert (draft_dir / "custom-body.docx").exists()
+    assert not (draft_dir / "tesina-draft.docx").exists()
+    assert not (draft_dir / "tesina-body.docx").exists()
 
 
 @pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
