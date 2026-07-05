@@ -29,12 +29,10 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR2
+    next_slice: PR3
     note: >-
-      User approved starting PR1 (sentinel rename + asset generalization).
-      No implementation has begun yet. Task checkboxes in tasks.md are the
-      source of truth for slice progress; merge apply-progress in engram,
-      never overwrite.
+      Task checkboxes in tasks.md are the source of truth for slice
+      progress; merge apply-progress in engram, never overwrite.
     slices:
       PR1:
         status: implemented
@@ -48,6 +46,21 @@ phases:
           current docx-only wiring): remove_asset resolves bare stems to
           .docx under multi-kind configs — track before PR5/PR6 configure
           a second asset kind.
+      PR2:
+        status: implemented_not_pushed
+        branch: refactor/pr2-repository-port-segregation
+        tasks: 2.1-2.6 complete
+        tests: 790 passed, 7 skipped (baseline was 787/7)
+        commits:
+          - 8acb700 refactor(ports) segregate fat DocumentRepository into three narrow ports
+          - b714efe chore(sdd) mark PR2 tasks 2.1-2.6 complete
+        note: >-
+          Awaiting fresh-context review before push/PR per PR rule.
+          docx_assembly.py/context_pack.py never actually imported the fat
+          port (design.md's mention didn't match current code); only
+          documents.py and context.py did. DocumentService depends on a
+          composed DocumentLifecycleRepository protocol (all three narrow
+          ports) since it genuinely needs registry+content+template access.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
