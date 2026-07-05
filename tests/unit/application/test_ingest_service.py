@@ -20,7 +20,7 @@ class _FakeHandler:
     def __init__(self) -> None:
         self.calls: list[tuple[Path, Path]] = []
 
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         self.calls.append((src, out_dir))
         target = out_dir / f"{src.stem}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -31,7 +31,7 @@ class _FakeHandler:
 class _RaisingHandler:
     """Simulates a real per-type adapter (PR6) failing mid-conversion."""
 
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         raise RuntimeError("boom: tool failed mid-conversion")
 
 

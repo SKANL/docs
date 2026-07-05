@@ -14,8 +14,6 @@ from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
 
-_KIND = "pdf"
-
 
 def resolve_java_executable(paths: dict[str, Any]) -> str | None:
     """Mirrors `resolve_pandoc_executable`'s PATH-then-config-fallback shape
@@ -61,6 +59,13 @@ class OpendataloaderPdfAdapter:
     them in ONE `convert()` call, caching results so subsequent `ingest()`
     calls for those siblings within the same scan are free. Hybrid AI/OCR
     backends stay off (`hybrid="off"`) for local-only, deterministic output.
+
+    `kind` is the value `IngestService` already resolved via the detector
+    for the seed file (fresh-review FINDING 1) - used for output naming
+    instead of a hardcoded constant, so identity always tracks the router's
+    decision. Only "pdf" is ever routed here today, but batch-discovered
+    sibling `.pdf` files share that same resolved kind since they are only
+    ever pulled in from this same single-kind handler registration.
     """
 
     def __init__(self, tool_resolver: ToolResolverPort, paths: dict[str, Any] | None = None) -> None:
@@ -68,17 +73,17 @@ class OpendataloaderPdfAdapter:
         self.paths = paths or {}
         self._results: dict[Path, Path | Exception] = {}
 
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         src = Path(src).resolve()
         out_dir = Path(out_dir)
         if src not in self._results:
-            self._convert_batch(src, out_dir)
+            self._convert_batch(src, out_dir, kind)
         result = self._results[src]
         if isinstance(result, Exception):
             raise result
         return result
 
-    def _discover_candidates(self, seed_src: Path, out_dir: Path) -> list[Path]:
+    def _discover_candidates(self, seed_src: Path, out_dir: Path, kind: str) -> list[Path]:
         inbox_dir = seed_src.parent
         candidates = [
             path
@@ -86,17 +91,17 @@ class OpendataloaderPdfAdapter:
             if path.is_file()
             and not path.name.startswith("_")
             and path.suffix.lower() == ".pdf"
-            and not self._already_ingested(path, out_dir)
+            and not self._already_ingested(path, out_dir, kind)
         ]
         if seed_src not in candidates:
             candidates.insert(0, seed_src)
         return candidates
 
-    def _already_ingested(self, path: Path, out_dir: Path) -> bool:
+    def _already_ingested(self, path: Path, out_dir: Path, kind: str) -> bool:
         sha8 = sha256_hex(path.read_bytes())[:8]
-        return ingested_output_path(out_dir, path.stem, _KIND, sha8).exists()
+        return ingested_output_path(out_dir, path.stem, kind, sha8).exists()
 
-    def _convert_batch(self, seed_src: Path, out_dir: Path) -> None:
+    def _convert_batch(self, seed_src: Path, out_dir: Path, kind: str) -> None:
         java = self.tool_resolver.resolve_java(self.paths)
         if not java:
             error = RuntimeError(
@@ -106,7 +111,7 @@ class OpendataloaderPdfAdapter:
             self._results[seed_src] = error
             return
 
-        candidates = self._discover_candidates(seed_src, out_dir)
+        candidates = self._discover_candidates(seed_src, out_dir, kind)
 
         # Temp-then-atomic-rename (binding constraint carried from PR5
         # fresh-review round 2): conversion runs entirely inside a scratch
@@ -114,11 +119,25 @@ class OpendataloaderPdfAdapter:
         # Markdown output are moved into their final, deterministic path.
         # A file that failed conversion never touches `out_dir`.
         with scratch_dir(out_dir) as tmp_dir:
+            # The underlying `opendataloader-pdf` CLI validates its own input
+            # by file EXTENSION ("'paper.txt' is not a PDF file"), so a real
+            # PDF with a misleading extension must be staged under a
+            # `.{kind}`-suffixed copy before conversion (fresh-review
+            # FINDING 1) — the tool's extension check is independent of, and
+            # must not override, the kind IngestService already resolved.
+            staging_dir = tmp_dir / "_staged_input"
+            staging_dir.mkdir()
+            staged_by_candidate = {
+                candidate: staging_dir / f"{candidate.stem}.{kind}" for candidate in candidates
+            }
+            for candidate, staged in staged_by_candidate.items():
+                shutil.copyfile(candidate, staged)
+
             batch_error: subprocess.CalledProcessError | None = None
             try:
                 with _java_on_path(java):
                     opendataloader_pdf.convert(
-                        input_path=[str(c) for c in candidates],
+                        input_path=[str(staged) for staged in staged_by_candidate.values()],
                         output_dir=str(tmp_dir),
                         format="markdown",
                         image_output="off",
@@ -132,7 +151,7 @@ class OpendataloaderPdfAdapter:
                 tmp_output = tmp_dir / f"{candidate.stem}.md"
                 if tmp_output.exists():
                     sha8 = sha256_hex(candidate.read_bytes())[:8]
-                    final = ingested_output_path(out_dir, candidate.stem, _KIND, sha8)
+                    final = ingested_output_path(out_dir, candidate.stem, kind, sha8)
                     self._results[candidate] = atomic_finalize(tmp_output, final)
                 else:
                     cause = (batch_error.stdout or str(batch_error)) if batch_error else (

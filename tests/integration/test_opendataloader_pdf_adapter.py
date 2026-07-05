@@ -108,7 +108,7 @@ def test_missing_java_reports_clear_error_and_leaves_no_partial_output(tmp_path:
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(None))
 
     with pytest.raises(RuntimeError, match="[Jj]ava"):
-        adapter.ingest(src, out_dir)
+        adapter.ingest(src, out_dir, "pdf")
 
     assert list(out_dir.iterdir()) == []
 
@@ -122,12 +122,31 @@ def test_pdf_source_produces_markdown(tmp_path: Path):
     out_dir.mkdir()
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(shutil.which("java")))
 
-    output = adapter.ingest(src, out_dir)
+    output = adapter.ingest(src, out_dir, "pdf")
 
     assert output.exists()
     assert output.parent == out_dir
     assert output.name.startswith("report-pdf-")
     assert "Hello Ingest Test" in output.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(not _HAS_JAVA, reason="Java not installed")
+def test_output_naming_uses_passed_kind_not_source_extension(tmp_path: Path):
+    # FRESH-REVIEW FINDING 1 unit-level check: a source with a misleading
+    # extension (here `.txt` on a real PDF) must still be named using the
+    # `kind` IngestService passes in, not any suffix derived from the file
+    # itself.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    src = _write_pdf(inbox / "paper.txt", "Mismatched Extension")
+    out_dir = tmp_path / "ingested"
+    out_dir.mkdir()
+    adapter = OpendataloaderPdfAdapter(_FakeToolResolver(shutil.which("java")))
+
+    output = adapter.ingest(src, out_dir, "pdf")
+
+    assert output.name.startswith("paper-pdf-")
+    assert "Mismatched Extension" in output.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(not _HAS_JAVA, reason="Java not installed")
@@ -152,9 +171,9 @@ def test_batches_all_pending_pdfs_in_one_convert_call(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(mod.opendataloader_pdf, "convert", _spy_convert)
 
-    output_a = adapter.ingest(src_a, out_dir)
-    output_b = adapter.ingest(src_b, out_dir)
-    output_c = adapter.ingest(src_c, out_dir)
+    output_a = adapter.ingest(src_a, out_dir, "pdf")
+    output_b = adapter.ingest(src_b, out_dir, "pdf")
+    output_c = adapter.ingest(src_c, out_dir, "pdf")
 
     assert len(calls) == 1, "all three pending PDFs must be converted in a single convert() call"
     assert len(calls[0]) == 3
@@ -172,12 +191,12 @@ def test_one_corrupt_pdf_in_a_batch_does_not_abort_its_siblings(tmp_path: Path):
     out_dir.mkdir()
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(shutil.which("java")))
 
-    good_output = adapter.ingest(good, out_dir)
+    good_output = adapter.ingest(good, out_dir, "pdf")
     assert good_output.exists()
     assert "Good Doc" in good_output.read_text(encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="bad.pdf"):
-        adapter.ingest(bad, out_dir)
+        adapter.ingest(bad, out_dir, "pdf")
 
     # the failed file must leave no partial output anywhere under out_dir
     assert not any(p.stem.startswith("bad-pdf-") for p in out_dir.iterdir())
@@ -194,6 +213,6 @@ def test_conversion_failure_leaves_no_partial_output_for_failed_file(tmp_path: P
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(shutil.which("java")))
 
     with pytest.raises(RuntimeError):
-        adapter.ingest(bad, out_dir)
+        adapter.ingest(bad, out_dir, "pdf")
 
     assert list(out_dir.iterdir()) == []

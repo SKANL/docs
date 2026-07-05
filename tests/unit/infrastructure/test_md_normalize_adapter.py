@@ -15,7 +15,7 @@ def test_md_source_with_json_frontmatter_is_reformatted_canonically(tmp_path: Pa
     out_dir.mkdir()
     adapter = MdNormalizeAdapter()
 
-    output = adapter.ingest(src, out_dir)
+    output = adapter.ingest(src, out_dir, "md")
 
     assert output.exists()
     assert output.parent == out_dir
@@ -32,7 +32,7 @@ def test_md_source_without_frontmatter_passes_body_through_unchanged(tmp_path: P
     out_dir.mkdir()
     adapter = MdNormalizeAdapter()
 
-    output = adapter.ingest(src, out_dir)
+    output = adapter.ingest(src, out_dir, "md")
 
     assert output.read_text(encoding="utf-8") == "# Heading\n\nJust content.\n"
 
@@ -44,10 +44,26 @@ def test_txt_source_uses_txt_kind_in_output_name(tmp_path: Path):
     out_dir.mkdir()
     adapter = MdNormalizeAdapter()
 
-    output = adapter.ingest(src, out_dir)
+    output = adapter.ingest(src, out_dir, "txt")
 
     assert output.name.startswith("readme-txt-")
     assert output.read_text(encoding="utf-8") == "Just plain text, no frontmatter.\n"
+
+
+def test_output_naming_uses_passed_kind_not_source_extension(tmp_path: Path):
+    # FRESH-REVIEW FINDING 1 unit-level check: identity must come from the
+    # `kind` IngestService passes in (the detector-resolved value), not be
+    # re-derived from the source's own extension — a source named
+    # `readme.txt` whose detected kind is "md" must be named with "md".
+    src = tmp_path / "readme.txt"
+    src.write_text("Body only, no frontmatter.\n", encoding="utf-8")
+    out_dir = tmp_path / "ingested"
+    out_dir.mkdir()
+    adapter = MdNormalizeAdapter()
+
+    output = adapter.ingest(src, out_dir, "md")
+
+    assert output.name.startswith("readme-md-")
 
 
 def test_malformed_frontmatter_falls_back_to_raw_text_unchanged(tmp_path: Path):
@@ -61,7 +77,7 @@ def test_malformed_frontmatter_falls_back_to_raw_text_unchanged(tmp_path: Path):
     out_dir.mkdir()
     adapter = MdNormalizeAdapter()
 
-    output = adapter.ingest(src, out_dir)
+    output = adapter.ingest(src, out_dir, "md")
 
     assert output.read_text(encoding="utf-8") == raw
 
@@ -73,9 +89,9 @@ def test_reingesting_unchanged_source_produces_byte_identical_output(tmp_path: P
     out_dir.mkdir()
     adapter = MdNormalizeAdapter()
 
-    first = adapter.ingest(src, out_dir)
+    first = adapter.ingest(src, out_dir, "md")
     first_bytes = first.read_bytes()
     # Second adapter instance, simulating a fresh process run.
-    second = MdNormalizeAdapter().ingest(src, tmp_path / "ingested2")
+    second = MdNormalizeAdapter().ingest(src, tmp_path / "ingested2", "md")
 
     assert second.read_bytes() == first_bytes

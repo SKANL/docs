@@ -15,12 +15,12 @@ class _KindByExtensionDetector:
 
 
 class _RaisingHandler:
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         raise RuntimeError("boom: conversion tool exploded")
 
 
 class _WorkingHandler:
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         target = out_dir / f"{src.stem}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"# {src.name}", encoding="utf-8")

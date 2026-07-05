@@ -88,7 +88,7 @@ class IngestService:
                 "output": str(existing),
             }
         ingested_dir.mkdir(parents=True, exist_ok=True)
-        output = handler.ingest(src, ingested_dir)
+        output = handler.ingest(src, ingested_dir, kind)
         return {
             "file": src.name,
             "kind": kind,

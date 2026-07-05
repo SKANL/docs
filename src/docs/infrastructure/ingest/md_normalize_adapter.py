@@ -16,13 +16,15 @@ class MdNormalizeAdapter:
     into a canonical, sorted-key form and pass the body through untouched
     (document-ingest spec: `Type-Based Ingest Routing` scenario
     "Markdown/TXT normalized"). Registered under both `"md"` and `"txt"` in
-    `IngestService`'s handler table — `kind` is re-derived from the
-    source's own extension, matching `PandocIngestAdapter`'s approach."""
+    `IngestService`'s handler table. `kind` is the value `IngestService`
+    already resolved via the detector (fresh-review FINDING 1) — NOT
+    re-derived from the source's own extension, so a source whose extension
+    disagrees with its detected kind is still named by what the router
+    actually resolved."""
 
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         src = Path(src)
         out_dir = Path(out_dir)
-        kind = src.suffix.lstrip(".").lower()
         sha8 = sha256_hex(src.read_bytes())[:8]
         final = ingested_output_path(out_dir, src.stem, kind, sha8)
 
