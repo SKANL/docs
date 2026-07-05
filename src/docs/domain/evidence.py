@@ -38,7 +38,7 @@ def build_manifest(
     return {
         "schema": 1,
         "policy": {
-            "normative_source": "tesina/guides/manual-estadia-tic",
+            "normative_source": "docs/guides/manual-estadia-tic",
             "pdf_and_extracted_use": "rules_traceability_only",
             "apa_style": "APA 7",
             # Legacy quirk (intentional, not a bug): advisor_overrides is duplicated
@@ -116,7 +116,8 @@ class PromptHashFileFact:
 
 
 def build_prompt_hash_payload(files: list[PromptHashFileFact]) -> list[dict[str, str]]:
-    # Legacy quirk (intentional, verbatim from tesina_harness.py:433-439): the
-    # dict key is "path" but the value is the bare filename (path.name), not a
-    # full path — prompts are hashed by filename only, unlike source_hash's files.
+    # Legacy quirk (intentional, verbatim from the original single-file harness
+    # script, lines 433-439): the dict key is "path" but the value is the bare
+    # filename (path.name), not a full path — prompts are hashed by filename
+    # only, unlike source_hash's files.
     return [{"path": fact.name, "sha256": fact.sha256} for fact in files]

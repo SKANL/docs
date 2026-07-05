@@ -1,12 +1,19 @@
 # tests/unit/domain/test_collection.py
+import inspect
+
 import pytest
 
+from docs.domain import collection as collection_module
 from docs.domain.collection import (
     classify_source,
     dedupe_facts,
     extract_github_repo,
     parse_gh_issues,
 )
+
+
+def test_module_source_has_no_tesina_literal():
+    assert "tesina" not in inspect.getsource(collection_module).lower()
 
 
 @pytest.mark.parametrize(

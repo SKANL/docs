@@ -36,16 +36,16 @@ Strict TDD is active (`uv run pytest`): every implementation task is preceded by
 ## PR1 — Sentinel Rename + Asset Generalization (Foundation)
 Base: `main`. Covers: document-pipeline (`No hardcoded format identifiers remain`, deps/error-handling reqs), asset-management (both requirements).
 
-- [ ] 1.1 RED: add/adjust tests in `tests/unit/domain/test_evidence.py`, `test_collection.py`, `test_rules.py`, `test_sections.py`, `test_review.py`, `test_section_rendering.py` asserting no `"tesina"` literal remains.
-- [ ] 1.2 GREEN: remove `"tesina"` sentinel identifiers from `domain/evidence.py`, `collection.py`, `rules.py`, `sections.py`, `review.py`, `section_rendering.py`; keep `managed_by` gate semantics, atomic single-slice rename.
-- [ ] 1.3 RED: `tests/unit/infrastructure/test_filesystem_asset_repository.py` — asset-kind allow/reject scenarios (docx-only config still rejects non-docx).
-- [ ] 1.4 GREEN: `domain/ports/asset_repository.py` add `list_assets(directory, kind)` replacing `glob_docx`; `application/asset.py` validate by configurable asset-kind map.
-- [ ] 1.5 GREEN: `infrastructure/persistence/filesystem_asset_repository.py` implement kind-agnostic listing.
-- [ ] 1.6 GREEN: `pyproject.toml` — declare `docxcompose`, `filetype`, `opendataloader-pdf`.
-- [ ] 1.7 RED: `tests/unit/infrastructure/test_filesystem_source_repository.py` — git-helper failure surfaced (logged/raised), not swallowed.
-- [ ] 1.8 GREEN: `infrastructure/persistence/filesystem_source_repository.py` — replace silent `except Exception` with logged/re-raised error.
-- [ ] 1.9 Verify: `uv run pytest` green; grep confirms zero `"tesina"` literals in `src/docs/`.
-- [ ] 1.10 Rollback: revert PR1 commit range; no data migration, no downstream dependents yet.
+- [x] 1.1 RED: add/adjust tests in `tests/unit/domain/test_evidence.py`, `test_collection.py`, `test_rules.py`, `test_sections.py`, `test_review.py`, `test_section_rendering.py` asserting no `"tesina"` literal remains.
+- [x] 1.2 GREEN: remove `"tesina"` sentinel identifiers from `domain/evidence.py`, `collection.py`, `rules.py`, `sections.py`, `review.py`, `section_rendering.py`; keep `managed_by` gate semantics, atomic single-slice rename.
+- [x] 1.3 RED: `tests/unit/infrastructure/test_filesystem_asset_repository.py` — asset-kind allow/reject scenarios (docx-only config still rejects non-docx).
+- [x] 1.4 GREEN: `domain/ports/asset_repository.py` add `list_assets(directory, kind)` replacing `glob_docx`; `application/asset.py` validate by configurable asset-kind map.
+- [x] 1.5 GREEN: `infrastructure/persistence/filesystem_asset_repository.py` implement kind-agnostic listing.
+- [x] 1.6 GREEN: `pyproject.toml` — declare `docxcompose`, `filetype`, `opendataloader-pdf`.
+- [x] 1.7 RED: `tests/unit/infrastructure/test_filesystem_source_repository.py` — git-helper failure surfaced (logged/raised), not swallowed.
+- [x] 1.8 GREEN: `infrastructure/persistence/filesystem_source_repository.py` — replace silent `except Exception` with logged/re-raised error.
+- [x] 1.9 Verify: `uv run pytest` green; grep confirms zero `"tesina"` literals in `src/docs/` domain layer swept by 1.1-1.2 (`evidence.py`, `collection.py`, `rules.py`, `sections.py`, `review.py`, `section_rendering.py`) plus the coupled `application/review.py` managed_by gate. `application/docx_assembly.py`'s `tesina-draft.docx`/`tesina-body.docx`, `application/pipeline.py`'s `_DRAFT_DOCX_NAME`, and `application/collection.py`'s `"tesina/context"` tag remain — they are explicitly owned by PR4/PR8 per design.md's file-changes table and are out of scope for this slice.
+- [x] 1.10 Rollback: revert PR1 commit range; no data migration, no downstream dependents yet.
 
 ## PR2 — Repository Port Segregation (ISP)
 Base: `main` (after PR1). Covers: document-pipeline (`Repository Port Segregation`).

@@ -1,7 +1,14 @@
+import inspect
+
 import pytest
 
+from docs.domain import rules as rules_module
 from docs.domain.models.template import SectionContract, StrictPolicyBlock
 from docs.domain.rules import requirement_present, review_apa7_text, review_section_contract
+
+
+def test_module_source_has_no_tesina_literal():
+    assert "tesina" not in inspect.getsource(rules_module).lower()
 
 
 def _policy(**overrides) -> StrictPolicyBlock:
@@ -492,9 +499,9 @@ def test_review_rules_extracted_dir_policy_wrong():
     assert any("rules_traceability_only" in i.message for i in result.issues)
 
 
-def test_review_rules_tesina_extracted_in_source_priority():
+def test_review_rules_docs_extracted_in_source_priority():
     extra = _valid_extra()
-    extra["project"]["source_priority"] = ["tesina/extracted/foo"]
+    extra["project"]["source_priority"] = ["docs/extracted/foo"]
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
     assert any("source_priority" in i.message for i in result.issues)

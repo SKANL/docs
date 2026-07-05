@@ -338,8 +338,8 @@ def _check_extracted_dir_policy(extra: dict[str, Any]) -> list[Issue]:
 
 def _check_source_priority_excludes_extracted(extra: dict[str, Any]) -> list[Issue]:
     project = extra.get("project", {}) or {}
-    if any("tesina/extracted" in source for source in project.get("source_priority", [])):
-        return [Issue("error", "`tesina/extracted` no debe aparecer en source_priority como fuente activa.")]
+    if any("docs/extracted" in source for source in project.get("source_priority", [])):
+        return [Issue("error", "`docs/extracted` no debe aparecer en source_priority como fuente activa.")]
     return []
 
 

@@ -170,7 +170,7 @@ class ReviewService:
         section = next(s for s in template.sections if s.id == section_id)
         body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
         metadata = {
-            "managed_by": "tesina-harness",
+            "managed_by": "docs-harness",
             "authored_by": "harness-scaffold",
             "schema": 3,
             "section_id": section_id,
@@ -192,7 +192,7 @@ class ReviewService:
             if not current_metadata and current_body == body:
                 self.repository.write_section(doc_id, section.order, section.id, generated)
                 return section_path
-            is_managed = current_metadata.get("managed_by") == "tesina-harness"
+            is_managed = current_metadata.get("managed_by") == "docs-harness"
             current_body_hash = hashlib.sha256(current_body.encode("utf-8")).hexdigest()
             is_unchanged = current_metadata.get("body_hash") == current_body_hash
             if is_managed and is_unchanged:

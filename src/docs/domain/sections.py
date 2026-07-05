@@ -19,7 +19,7 @@ def with_frontmatter(body: str, metadata: dict[str, Any]) -> str:
 
 def default_section_metadata(section_id: str, title: str) -> dict[str, Any]:
     return {
-        "managed_by": "tesina-harness",
+        "managed_by": "docs-harness",
         "schema": 3,
         "section_id": section_id,
         "title": title,

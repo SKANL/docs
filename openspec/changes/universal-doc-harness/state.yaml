@@ -27,14 +27,27 @@ phases:
     artifact: tasks.md
     engram_topic: sdd/universal-doc-harness/tasks
   apply:
-    status: pending
+    status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR1
+    next_slice: PR2
     note: >-
       User approved starting PR1 (sentinel rename + asset generalization).
       No implementation has begun yet. Task checkboxes in tasks.md are the
       source of truth for slice progress; merge apply-progress in engram,
       never overwrite.
+    slices:
+      PR1:
+        status: implemented
+        branch: refactor/pr1-sentinel-rename-asset-generalization
+        tasks: 1.1-1.10 complete
+        tests: 787 passed, 7 skipped (baseline was 771/7)
+        review: >-
+          Fresh-context review found 1 WARNING (asset-kind generalization
+          incomplete); remediated in commit efca3fc; re-review verdict
+          MERGE-READY. Residual follow-up (pre-existing, unreachable in
+          current docx-only wiring): remove_asset resolves bare stems to
+          .docx under multi-kind configs — track before PR5/PR6 configure
+          a second asset kind.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report

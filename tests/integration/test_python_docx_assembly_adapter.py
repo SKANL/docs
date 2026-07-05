@@ -261,7 +261,13 @@ def test_assemble_raises_runtime_error_when_docxcompose_missing_with_front_asset
     front_asset = tmp_path / "front.docx"
     Document().save(front_asset)
     output = tmp_path / "out.docx"
-    monkeypatch.setitem(__import__("sys").modules, "docxcompose", None)
+    # docxcompose is now a real installed dependency, so its submodule may already
+    # be cached in sys.modules from an earlier test in this session; patching only
+    # the parent package name to None would not stop a cached "docxcompose.composer"
+    # from resolving. Patch the exact imported dotted name instead — the import
+    # system short-circuits to ImportError when that entry is None, regardless of
+    # what is cached under the parent package.
+    monkeypatch.setitem(__import__("sys").modules, "docxcompose.composer", None)
     with pytest.raises(RuntimeError, match="docxcompose"):
         PythonDocxAssemblyAdapter().assemble(
             {}, body, output, cover_asset_path=None, embed_front_paths=[front_asset], embed_back_paths=[]
@@ -273,7 +279,7 @@ def test_assemble_raises_runtime_error_when_docxcompose_missing_with_back_asset(
     back_asset = tmp_path / "back.docx"
     Document().save(back_asset)
     output = tmp_path / "out.docx"
-    monkeypatch.setitem(__import__("sys").modules, "docxcompose", None)
+    monkeypatch.setitem(__import__("sys").modules, "docxcompose.composer", None)
     with pytest.raises(RuntimeError, match="docxcompose"):
         PythonDocxAssemblyAdapter().assemble(
             {}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[back_asset]
