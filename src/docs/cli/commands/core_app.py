@@ -1,0 +1,96 @@
+# src/docs/cli/commands/core_app.py
+"""Core pipeline commands: doctor, pipeline, verify, history, stamp.
+
+Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted flat
+(no name prefix) on the root app so the command surface stays identical.
+"""
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from pathlib import Path
+
+import typer
+
+from docs.cli._shared import _ctx, emit_result
+
+core_app = typer.Typer()
+
+
+@core_app.command()
+def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), as_json: bool = typer.Option(False, "--json")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    result = deps.doctor.run_doctor(resolved.doc_id, resolved.config, strict=strict)
+    emit_result(result, as_json)
+    raise typer.Exit(code=0 if result.passed else 2)
+
+
+@core_app.command()
+def pipeline(
+    ctx: typer.Context,
+    stage_set: str = typer.Argument(..., help="prep | assemble | all"),
+    strict: bool = typer.Option(False, "--strict"),
+    as_json: bool = typer.Option(False, "--json"),
+    repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
+) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    summary = deps.pipeline.run_pipeline(
+        resolved.doc_id, resolved.template, resolved.config, stage_set, repo_root=repo_root, strict=strict
+    )
+    if as_json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    else:
+        lines = [f"# Pipeline `{summary['stage_set']}` (strict={summary['strict']})", ""]
+        for stage in summary["stages"]:
+            marker = "OK" if stage["ok"] else "FAIL"
+            head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+            lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
+        lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])
+        print("\n".join(lines))
+    raise typer.Exit(code=0 if summary["passed"] else 1)
+
+
+@core_app.command()
+def verify(
+    ctx: typer.Context,
+    docx: str = typer.Argument("", help="DOCX opcional; por defecto el draft."),
+    strict: bool = typer.Option(False, "--strict"),
+    as_json: bool = typer.Option(False, "--json"),
+    repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
+) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    docx_path = Path(docx) if docx else None
+    result = deps.pipeline.verify_all(resolved.doc_id, resolved.template, resolved.config, docx_path=docx_path, strict=strict)
+    deps.pipeline.log_run(
+        resolved.doc_id, resolved.config, repo_root, "verify",
+        {"strict": strict, "passed": result.passed, "issues": [i.to_dict() for i in result.issues]},
+    )
+    emit_result(result, as_json)
+    raise typer.Exit(code=0 if result.passed else 1)
+
+
+@core_app.command()
+def history(ctx: typer.Context, limit: int = typer.Option(20, "--limit"), as_json: bool = typer.Option(False, "--json")) -> None:
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    records = deps.pipeline.list_runs(resolved.doc_id, resolved.config, limit=limit)
+    if as_json:
+        print(json.dumps(records, ensure_ascii=False, indent=2))
+        return
+    if not records:
+        print("Sin corridas registradas en runs/.")
+        return
+    lines = ["# Historial de corridas", ""]
+    for record in records:
+        status = record.get("passed")
+        marker = "OK" if status else ("FAIL" if status is False else "·")
+        lines.append(f"- {record.get('timestamp', '')} {marker} `{record.get('command', '')}` @ {record.get('git_commit', '')}")
+    print("\n".join(lines))
+
+
+@core_app.command()
+def stamp() -> None:
+    print(datetime.now().isoformat(timespec="seconds"))

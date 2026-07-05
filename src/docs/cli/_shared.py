@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from docs.application.asset import AssetService
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
@@ -40,6 +42,13 @@ class ResolvedContext:
     doc_id: str
     config: dict[str, Any]
     template: Template
+
+
+def _ctx(ctx: typer.Context) -> tuple[Deps, str]:
+    """Shared `ctx.obj` unpacking helper (moved from cli/main.py during the
+    PR3 composition-root split — cli/commands/*_app.py modules import this
+    instead of main.py to avoid a main.py <-> commands.* import cycle)."""
+    return ctx.obj["deps"], ctx.obj["doc"]
 
 
 def build_workspace() -> Workspace:
