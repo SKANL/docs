@@ -115,7 +115,7 @@ class Deps:
         self.format_audit = format_audit_service
         self.qa = qa_service
         self.doctor = doctor_service
-        self.documents = DocumentService(document_repo)
+        self.documents = DocumentService(document_repo, self.workspace)
         self.corrections = CorrectionsService(section_repo, evidence_repo)
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
         self.pipeline = PipelineService(
