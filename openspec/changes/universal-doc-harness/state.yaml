@@ -146,8 +146,9 @@ phases:
           recorded as size:exception in the PR body per maintainer
           instruction under auto-chain.
       PR5:
-        status: implemented
+        status: merged
         branch: feat/pr5-ingest-detection-routing
+        pr: https://github.com/SKANL/docs/pull/6
         tasks: 5.1-5.8 complete (5.1 spike completed 2026-07-04 ahead of slice)
         tests: 839 passed, 7 skipped (baseline was 818/7; 835/7 before fresh-review remediation)
         commits:
@@ -209,6 +210,20 @@ phases:
           fail-fast for real adapters. Both fixes RED-confirmed against
           live reproductions before implementation, tests added
           alongside each fix commit.
+        merge: >-
+          Merged to main 2026-07-05 via GitHub PR #6 (merge commit 2b0690f,
+          branch deleted); main verified green post-merge (839 passed, 7
+          skipped). Fresh-context review round 2: MERGE-READY, zero blocking
+          findings — both original failure scenarios re-run and confirmed
+          closed, new tests mutation-checked (3 mutations, all killed),
+          per-commit greenness verified across the branch. Two non-blocking
+          carry-forwards recorded as a binding note on PR6 task 6.3 (commit
+          eb039d0): (a) temp-then-atomic-rename or skip-check invalidation
+          so partial outputs from failed handlers are never accepted as
+          "skipped"; (b) preserve detector-resolved kind in error entries.
+          Final review budget: 546 code insertions (all-new files, unwired,
+          ~60% tests) — size:exception recorded in the PR body per
+          maintainer instruction under auto-chain.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
