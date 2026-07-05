@@ -50,12 +50,12 @@ Base: `main`. Covers: document-pipeline (`No hardcoded format identifiers remain
 ## PR2 — Repository Port Segregation (ISP)
 Base: `main` (after PR1). Covers: document-pipeline (`Repository Port Segregation`).
 
-- [ ] 2.1 RED: `tests/unit/domain` — new tests asserting narrow ports (`RegistryRepository.active_id`, `DocumentRepository.read_document`, `TemplateRepository.load_template`) each usable independently.
-- [ ] 2.2 GREEN: split `domain/ports/document_repository.py` into `registry_repository.py`, `document_repository.py`, `template_repository.py`.
-- [ ] 2.3 GREEN: update `infrastructure/persistence/json_repository.py` to implement all three narrow ports on one adapter class.
-- [ ] 2.4 GREEN: update consumers (`application/documents.py`, `docx_assembly.py`, `context_pack.py`, others importing the old fat port) to depend on the narrow port they use.
-- [ ] 2.5 Verify: `uv run pytest` green (existing `tests/integration/test_json_repository.py`, `test_document_service.py` unchanged behavior).
-- [ ] 2.6 Rollback: revert PR2; PR1 unaffected since it has no port dependency.
+- [x] 2.1 RED: `tests/unit/domain` — new tests asserting narrow ports (`RegistryRepository.active_id`, `DocumentRepository.read_document`, `TemplateRepository.load_template`) each usable independently.
+- [x] 2.2 GREEN: split `domain/ports/document_repository.py` into `registry_repository.py`, `document_repository.py`, `template_repository.py`.
+- [x] 2.3 GREEN: update `infrastructure/persistence/json_repository.py` to implement all three narrow ports on one adapter class.
+- [x] 2.4 GREEN: update consumers (`application/documents.py`, `docx_assembly.py`, `context_pack.py`, others importing the old fat port) to depend on the narrow port they use. Verified via grep + CodeGraph blast-radius: the only actual importers of the fat port are `application/documents.py` and `application/context.py`; `docx_assembly.py`/`context_pack.py` never imported `DocumentRepository` (design.md's generic mention did not match current code). `context.py` needed zero changes — it already only calls `.exists()`, satisfied by the narrow `DocumentRepository`. `DocumentService` (documents.py) genuinely spans all three ports (registry+content+template), so it depends on a locally-defined `DocumentLifecycleRepository(RegistryRepository, DocumentRepository, TemplateRepository, Protocol)` composed type instead of reintroducing one fat protocol — zero call-site changes needed in `cli/_shared.py` or existing tests.
+- [x] 2.5 Verify: `uv run pytest` green (existing `tests/integration/test_json_repository.py`, `test_document_service.py` unchanged behavior). Full suite: 790 passed, 7 skipped (787 baseline + 3 new port-segregation tests).
+- [x] 2.6 Rollback: revert PR2; PR1 unaffected since it has no port dependency.
 
 ## PR3 — CLI Composition Root Split
 Base: `main` (after PR2). Covers: document-pipeline (`CLI Composition Root Segregation`).

@@ -6,12 +6,17 @@ from pathlib import Path
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import Template
 from docs.domain.ports.document_repository import (
-    DocumentExistsError, DocumentNotFoundError, Registry,
+    DocumentExistsError, DocumentNotFoundError, DocumentRepository,
 )
+from docs.domain.ports.registry_repository import Registry, RegistryRepository
+from docs.domain.ports.template_repository import TemplateRepository
 from docs.domain.workspace import Workspace
 
 
-class JsonDocumentRepository:
+class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRepository):
+    """Single adapter implementing all three segregated ports (ISP). Consumers
+    should depend on the narrow port they actually use, not on this class."""
+
     def __init__(self, workspace: Workspace) -> None:
         self.workspace = workspace
 
