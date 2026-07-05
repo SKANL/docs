@@ -1,0 +1,48 @@
+change: universal-doc-harness
+project: docs
+artifact_store: hybrid
+execution_mode: interactive
+delivery_strategy: auto-chain
+chain_strategy: stacked-to-main
+strict_tdd: true
+test_command: uv run pytest
+phases:
+  explore:
+    status: done
+    engram_topic: sdd/universal-doc-harness/explore
+  propose:
+    status: done
+    artifact: proposal.md
+    engram_topic: sdd/universal-doc-harness/proposal
+  spec:
+    status: done
+    artifact: specs/
+    engram_topic: sdd/universal-doc-harness/spec
+  design:
+    status: done
+    artifact: design.md
+    engram_topic: sdd/universal-doc-harness/design
+  tasks:
+    status: done
+    artifact: tasks.md
+    engram_topic: sdd/universal-doc-harness/tasks
+  apply:
+    status: pending
+    engram_topic: sdd/universal-doc-harness/apply-progress
+    next_slice: PR1
+    note: >-
+      User approved starting PR1 (sentinel rename + asset generalization).
+      No implementation has begun yet. Task checkboxes in tasks.md are the
+      source of truth for slice progress; merge apply-progress in engram,
+      never overwrite.
+  verify:
+    status: pending
+    engram_topic: sdd/universal-doc-harness/verify-report
+  archive:
+    status: pending
+    engram_topic: sdd/universal-doc-harness/archive-report
+notes:
+  - Slice PR5 task 5.1 (opendataloader-pdf maturity spike) is a blocking gate
+    before any task that locks the PDF dependency (5.6, 6.3, 6.4).
+  - Each slice PR merges to main in order; main must stay green after every merge.
+  - Fresh-context review required before each commit/PR (PR rule).
