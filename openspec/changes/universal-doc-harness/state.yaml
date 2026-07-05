@@ -286,6 +286,26 @@ phases:
     status: pending
     engram_topic: sdd/universal-doc-harness/archive-report
 notes:
+  - Technical-debt closeout slice merged 2026-07-05 (user-ordered, ahead of
+    PR7) via GitHub PR #8 (merge commit 88423c9, branch
+    fix/tech-debt-closeout-pre-pr7 deleted); main verified green post-merge
+    (877 passed, 7 skipped). Cleared ALL recorded PR1-PR6 debt in 5
+    work-unit commits, fresh-context review MERGE-READY zero findings,
+    per-commit greenness verified. D1 application/output_names.py is the
+    single source of default draft/body DOCX names (_DRAFT_DOCX_NAME
+    dropped — early completion of PR8 task 8.1's second half, noted
+    additively on 8.1; ingest-wiring half remains). D2 DocumentService
+    takes Workspace explicitly (undeclared repository.workspace access
+    removed). D3 asset stem-matching casefolds + dedups by exact path
+    string (Windows PureWindowsPath equality is case-insensitive) —
+    NOTE for the PR that wires a second asset kind: the ambiguity path is
+    only reachable from the CLI once asset_kinds has more than one kind;
+    it is already covered by tests (case-only collisions raise a
+    deterministic ambiguity error). D4 test_doctor_service.py
+    ToolResolverPort fake completed with resolve_java. D5 Java resolution
+    extracted to infrastructure/tools/java_resolution.py (deferred PR6
+    SUGGESTION resolved, noted on 6.4). D6 additive design.md note on the
+    3-arg SourceIngestPort.ingest contract.
   - Slice PR5 task 5.1 (opendataloader-pdf maturity spike) is a blocking gate
     before any task that locks the PDF dependency (5.6, 6.3, 6.4).
   - Task 5.1 spike COMPLETED 2026-07-04 (user-ordered, ahead of PR5) — GATE
