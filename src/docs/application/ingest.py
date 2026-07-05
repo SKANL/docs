@@ -1,11 +1,11 @@
 # src/docs/application/ingest.py
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
+from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
 
@@ -55,14 +55,20 @@ class IngestService:
         # cause, and the scan continues so `_detection.json` always reflects
         # everything scanned. This is distinct from PR6 task 6.3's configured
         # fail-fast for real per-type adapters, which this does not implement.
+        # Detection runs outside the inner try so a kind resolved before a
+        # later failure (e.g. the handler itself raising) survives into the
+        # error entry instead of being reported as "unknown" (PR6 fresh-review
+        # carry-forward (b) — detection succeeding is independent evidence
+        # from ingestion succeeding).
+        kind = ""
         try:
-            return self._ingest_one(src, sections_dir)
+            kind = self.detector.detect(src)
+            return self._ingest_one(src, sections_dir, kind)
         except Exception as exc:
-            return {"file": src.name, "kind": "unknown", "status": "error", "cause": str(exc)}
+            return {"file": src.name, "kind": kind or "unknown", "status": "error", "cause": str(exc)}
 
-    def _ingest_one(self, src: Path, sections_dir: Path) -> dict[str, Any]:
-        kind = self.detector.detect(src)
-        sha256 = hashlib.sha256(src.read_bytes()).hexdigest()
+    def _ingest_one(self, src: Path, sections_dir: Path, kind: str) -> dict[str, Any]:
+        sha256 = sha256_hex(src.read_bytes())
         handler = self.handlers.get(kind)
         if handler is None:
             return {
@@ -82,7 +88,7 @@ class IngestService:
                 "output": str(existing),
             }
         ingested_dir.mkdir(parents=True, exist_ok=True)
-        output = handler.ingest(src, ingested_dir)
+        output = handler.ingest(src, ingested_dir, kind)
         return {
             "file": src.name,
             "kind": kind,
@@ -97,7 +103,7 @@ class IngestService:
         # detected kinds (e.g. readme.md / readme.txt) are distinct sources
         # and must not collide on the same output path (fresh-review fix —
         # a `stem+sha8`-only key silently skipped the second file's handler).
-        candidate = ingested_dir / f"{stem}-{kind}-{sha8}.md"
+        candidate = ingested_output_path(ingested_dir, stem, kind, sha8)
         return candidate if candidate.exists() else None
 
     def _write_detection_report(self, inbox_dir: Path, report: dict[str, Any]) -> None:

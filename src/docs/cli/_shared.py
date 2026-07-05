@@ -19,16 +19,22 @@ from docs.application.documents import DocumentService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
+from docs.application.ingest import IngestService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
+from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
+from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
+from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
+from docs.infrastructure.ingest.pandoc_ingest_adapter import PandocIngestAdapter
 from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
@@ -87,6 +93,18 @@ class Deps:
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
         qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
         doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
+
+        pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
+        pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
+        md_ingest_adapter = MdNormalizeAdapter()
+        ingest_handlers: dict[str, SourceIngestPort] = {
+            "docx": pandoc_ingest_adapter,
+            "odt": pandoc_ingest_adapter,
+            "pdf": pdf_ingest_adapter,
+            "md": md_ingest_adapter,
+            "txt": md_ingest_adapter,
+        }
+        self.ingest = IngestService(FiletypeDetectorAdapter(), ingest_handlers)
 
         self.assets = asset_service
         self.evidence = evidence_service

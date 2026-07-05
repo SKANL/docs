@@ -21,19 +21,20 @@ class _FixedKindDetector:
 
 
 class _HashNamingHandler:
-    """Mimics the real `<stem>-<kind>-<sha8>.md` naming convention future
-    per-kind adapters (PR6) will use — each handler is registered for exactly
-    one kind, so it already knows the kind label to embed without needing it
-    threaded through the `SourceIngestPort.ingest(src, out_dir)` signature."""
+    """Mimics the real `<stem>-<kind>-<sha8>.md` naming convention every
+    per-kind adapter (PR6) uses — `kind` is the detector-resolved value
+    `SourceIngestPort.ingest(src, out_dir, kind)` passes in (fresh-review
+    FINDING 1: identity must come from the router's resolved kind, not be
+    re-derived from the source's own extension)."""
 
     def __init__(self, kind: str) -> None:
         self.kind = kind
         self.calls: list[Path] = []
 
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         self.calls.append(src)
         sha8 = hashlib.sha256(src.read_bytes()).hexdigest()[:8]
-        target = out_dir / f"{src.stem}-{self.kind}-{sha8}.md"
+        target = out_dir / f"{src.stem}-{kind}-{sha8}.md"
         target.write_text(f"# {src.name}", encoding="utf-8")
         return target
 

@@ -20,12 +20,19 @@ class _FakeHandler:
     def __init__(self) -> None:
         self.calls: list[tuple[Path, Path]] = []
 
-    def ingest(self, src: Path, out_dir: Path) -> Path:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
         self.calls.append((src, out_dir))
         target = out_dir / f"{src.stem}.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"# {src.name}", encoding="utf-8")
         return target
+
+
+class _RaisingHandler:
+    """Simulates a real per-type adapter (PR6) failing mid-conversion."""
+
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
+        raise RuntimeError("boom: tool failed mid-conversion")
 
 
 def test_routes_detected_kind_to_matching_handler_stub(tmp_path: Path):
@@ -101,6 +108,23 @@ def test_writes_detection_report_to_inbox_with_stable_key_ordering(tmp_path: Pat
     assert "generated_at" not in raw  # determinism: no timestamps
     payload = json.loads(raw)
     assert payload["processed"] == 1
+
+
+def test_handler_failure_preserves_detected_kind_in_error_entry(tmp_path: Path):
+    # PR6 fresh-review carry-forward (b): a kind already resolved by the
+    # detector must survive into the `status: "error"` entry instead of the
+    # unconditional `"kind": "unknown"` the pre-PR6 code produced.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "broken.pdf").write_bytes(b"pdf-bytes")
+    service = IngestService(_FakeDetector({"broken.pdf": "pdf"}), {"pdf": _RaisingHandler()})
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    entry = report["files"][0]
+    assert entry["status"] == "error"
+    assert entry["kind"] == "pdf"
+    assert "boom" in entry["cause"]
 
 
 def test_rescan_ignores_previously_written_detection_report(tmp_path: Path):
