@@ -29,7 +29,7 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR3
+    next_slice: PR4
     note: >-
       Task checkboxes in tasks.md are the source of truth for slice
       progress; merge apply-progress in engram, never overwrite.
@@ -47,20 +47,32 @@ phases:
           .docx under multi-kind configs — track before PR5/PR6 configure
           a second asset kind.
       PR2:
-        status: implemented_not_pushed
+        status: merged
         branch: refactor/pr2-repository-port-segregation
         tasks: 2.1-2.6 complete
         tests: 790 passed, 7 skipped (baseline was 787/7)
+        pr: https://github.com/SKANL/docs/pull/2
         commits:
           - 8acb700 refactor(ports) segregate fat DocumentRepository into three narrow ports
           - b714efe chore(sdd) mark PR2 tasks 2.1-2.6 complete
         note: >-
-          Awaiting fresh-context review before push/PR per PR rule.
           docx_assembly.py/context_pack.py never actually imported the fat
           port (design.md's mention didn't match current code); only
           documents.py and context.py did. DocumentService depends on a
           composed DocumentLifecycleRepository protocol (all three narrow
           ports) since it genuinely needs registry+content+template access.
+      PR3:
+        status: implemented_not_pushed
+        branch: refactor/pr3-cli-composition-root-split
+        tasks: 3.1-3.5 complete
+        tests: 793 passed, 7 skipped (baseline was 790/7)
+        note: >-
+          Awaiting fresh-context review before push/PR per PR rule. New
+          tests/integration/test_cli_composition_root.py is the genuine RED
+          anchor for this slice (test_cli_core.py already pre-existed and
+          could not fail before the split). No ingest placeholder module
+          added — out of scope, zero ingest commands exist yet (PR5/PR6
+          own that). --help output diffed byte-identical before/after.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
