@@ -135,3 +135,47 @@ def test_add_asset_docx_only_config_still_rejects_non_docx_with_configured_kinds
     source.write_bytes(b"x")
     with pytest.raises(ValueError):
         service.add_asset("doc-1", str(source))
+
+
+def test_remove_asset_resolves_bare_stem_to_only_configured_non_docx_kind(tmp_path, workspace, multi_kind_service):
+    # A multi-kind config with a single existing match for the stem must resolve to
+    # that match, not silently append ".docx" (the pre-fix behavior).
+    source = tmp_path / "cover.pdf"
+    source.write_bytes(b"pdf-bytes")
+    multi_kind_service.add_asset("doc-1", str(source), name="portada")
+    multi_kind_service.remove_asset("doc-1", "portada")
+    assert multi_kind_service.list_assets("doc-1", kind="pdf") == []
+    assert not (workspace.assets_dir("doc-1") / "portada.docx").exists()
+
+
+def test_remove_asset_raises_when_bare_stem_ambiguous_across_multiple_kinds(tmp_path, workspace, multi_kind_service):
+    docx_source = tmp_path / "src.docx"
+    docx_source.write_bytes(b"x")
+    pdf_source = tmp_path / "cover.pdf"
+    pdf_source.write_bytes(b"y")
+    multi_kind_service.add_asset("doc-1", str(docx_source), name="portada")
+    multi_kind_service.add_asset("doc-1", str(pdf_source), name="portada")
+    with pytest.raises(ValueError):
+        multi_kind_service.remove_asset("doc-1", "portada")
+    # Ambiguous resolution must not delete anything.
+    assert sorted(multi_kind_service.list_assets("doc-1", kind="docx") + multi_kind_service.list_assets("doc-1", kind="pdf")) == [
+        "portada",
+        "portada",
+    ]
+
+
+def test_remove_asset_raises_when_bare_stem_not_found_under_multiple_kinds(multi_kind_service):
+    with pytest.raises(ValueError):
+        multi_kind_service.remove_asset("doc-1", "no-existe")
+
+
+def test_remove_asset_deletes_with_explicit_extension_under_multiple_kinds(tmp_path, workspace, multi_kind_service):
+    docx_source = tmp_path / "src.docx"
+    docx_source.write_bytes(b"x")
+    pdf_source = tmp_path / "cover.pdf"
+    pdf_source.write_bytes(b"y")
+    multi_kind_service.add_asset("doc-1", str(docx_source), name="portada")
+    multi_kind_service.add_asset("doc-1", str(pdf_source), name="portada")
+    multi_kind_service.remove_asset("doc-1", "portada.pdf")
+    assert multi_kind_service.list_assets("doc-1", kind="pdf") == []
+    assert multi_kind_service.list_assets("doc-1", kind="docx") == ["portada"]
