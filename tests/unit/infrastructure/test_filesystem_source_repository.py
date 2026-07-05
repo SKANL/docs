@@ -1,4 +1,5 @@
 # tests/unit/infrastructure/test_filesystem_source_repository.py
+import logging
 import subprocess
 from pathlib import Path
 
@@ -95,6 +96,17 @@ def test_run_git_log_returns_none_on_any_exception(tmp_path: Path, repo, monkeyp
     assert repo.run_git_log(tmp_path / "file.py", tmp_path) is None
 
 
+def test_run_git_log_logs_warning_on_any_exception(tmp_path: Path, repo, monkeypatch, caplog):
+    def fake_run(args, **kwargs):
+        raise OSError("git not found")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with caplog.at_level(logging.WARNING):
+        repo.run_git_log(tmp_path / "file.py", tmp_path)
+    assert any("git not found" in record.message for record in caplog.records)
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
 def test_detect_github_remote_returns_stripped_stdout(tmp_path: Path, repo, monkeypatch):
     def fake_run(args, **kwargs):
         return subprocess.CompletedProcess(args, 0, stdout="git@github.com:org/repo.git\n", stderr="")
@@ -111,6 +123,17 @@ def test_detect_github_remote_returns_empty_string_on_any_exception(tmp_path: Pa
     assert repo.detect_github_remote(tmp_path) == ""
 
 
+def test_detect_github_remote_logs_warning_on_any_exception(tmp_path: Path, repo, monkeypatch, caplog):
+    def fake_run(args, **kwargs):
+        raise OSError("git not found")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with caplog.at_level(logging.WARNING):
+        repo.detect_github_remote(tmp_path)
+    assert any("git not found" in record.message for record in caplog.records)
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
 def test_run_git_rev_parse_head_returns_stripped_stdout(tmp_path: Path, repo, monkeypatch):
     def fake_run(args, **kwargs):
         return subprocess.CompletedProcess(args, 0, stdout="abc1234\n", stderr="")
@@ -125,3 +148,14 @@ def test_run_git_rev_parse_head_returns_empty_string_on_any_exception(tmp_path: 
 
     monkeypatch.setattr("subprocess.run", fake_run)
     assert repo.run_git_rev_parse_head(tmp_path) == ""
+
+
+def test_run_git_rev_parse_head_logs_warning_on_any_exception(tmp_path: Path, repo, monkeypatch, caplog):
+    def fake_run(args, **kwargs):
+        raise OSError("git not found")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with caplog.at_level(logging.WARNING):
+        repo.run_git_rev_parse_head(tmp_path)
+    assert any("git not found" in record.message for record in caplog.records)
+    assert any(record.levelno == logging.WARNING for record in caplog.records)

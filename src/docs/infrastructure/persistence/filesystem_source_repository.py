@@ -1,11 +1,13 @@
 # src/docs/infrastructure/persistence/filesystem_source_repository.py
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 from pathlib import Path
 
 _RUN_KWARGS = {"check": True, "capture_output": True, "text": True, "encoding": "utf-8"}
+logger = logging.getLogger(__name__)
 
 
 class FilesystemSourceRepository:
@@ -54,7 +56,8 @@ class FilesystemSourceRepository:
                 cwd=repo_root,
                 **_RUN_KWARGS,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("git log failed for %s in %s: %s", path, repo_root, exc)
             return None
         return proc.stdout
 
@@ -65,7 +68,8 @@ class FilesystemSourceRepository:
                 cwd=repo_root,
                 **_RUN_KWARGS,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("git remote get-url origin failed in %s: %s", repo_root, exc)
             return ""
         return proc.stdout.strip()
 
@@ -76,6 +80,7 @@ class FilesystemSourceRepository:
                 cwd=repo_root,
                 **_RUN_KWARGS,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("git rev-parse --short HEAD failed in %s: %s", repo_root, exc)
             return ""
         return proc.stdout.strip()
