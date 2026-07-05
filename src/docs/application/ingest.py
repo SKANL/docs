@@ -16,9 +16,11 @@ class IngestService:
     """Detects, routes, and ingests source files from an inbox directory into
     deterministic Markdown under `sections/ingested/` (document-ingest spec:
     `File-Type Detection`, `Type-Based Ingest Routing`, `Deterministic and
-    Idempotent Ingest`). Unsupported or unrouted types are reported in
-    `inbox/_detection.json`, never raised (`Empty inbox` / unsupported-type
-    scenarios)."""
+    Idempotent Ingest`, `Tool-Failure Reporting`). Unsupported/unrouted types
+    are reported as `status: "unsupported"`; any exception raised during
+    detect/read/ingest for a given file is caught and reported as
+    `status: "error"` with a `cause` field — never raised, never batch-fatal
+    (`Empty inbox` / unsupported-type / per-file-error scenarios)."""
 
     def __init__(
         self,
@@ -41,10 +43,22 @@ class IngestService:
                 for path in inbox_dir.iterdir()
                 if path.is_file() and not path.name.startswith("_")
             )
-            entries = [self._ingest_one(path, sections_dir) for path in sources]
+            entries = [self._ingest_one_safely(path, sections_dir) for path in sources]
         report = {"processed": len(entries), "files": entries}
         self._write_detection_report(inbox_dir, report)
         return report
+
+    def _ingest_one_safely(self, src: Path, sections_dir: Path) -> dict[str, Any]:
+        # A single unreadable/vanished file or a failing handler must not
+        # abort the whole scan (fresh-review fix, scoped narrowly): any
+        # exception from detect/read/ingest is caught, reported with its
+        # cause, and the scan continues so `_detection.json` always reflects
+        # everything scanned. This is distinct from PR6 task 6.3's configured
+        # fail-fast for real per-type adapters, which this does not implement.
+        try:
+            return self._ingest_one(src, sections_dir)
+        except Exception as exc:
+            return {"file": src.name, "kind": "unknown", "status": "error", "cause": str(exc)}
 
     def _ingest_one(self, src: Path, sections_dir: Path) -> dict[str, Any]:
         kind = self.detector.detect(src)
