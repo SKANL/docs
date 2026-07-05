@@ -45,7 +45,12 @@ phases:
           MERGE-READY. Residual follow-up (pre-existing, unreachable in
           current docx-only wiring): remove_asset resolves bare stems to
           .docx under multi-kind configs — track before PR5/PR6 configure
-          a second asset kind.
+          a second asset kind. RESOLVED 2026-07-04 (user-ordered, ahead of
+          PR4) via fix branch fix/remove-asset-multi-kind-stems (commits
+          aa31e9b + 137c8ec): bare stems resolve across configured kinds,
+          single-kind non-docx configs resolve to their own extension,
+          overlapping-kind matches deduped; fresh-context review verdict
+          MERGE-READY after one remediation round (799 passed / 7 skipped).
       PR2:
         status: merged
         branch: refactor/pr2-repository-port-segregation
@@ -62,12 +67,14 @@ phases:
           composed DocumentLifecycleRepository protocol (all three narrow
           ports) since it genuinely needs registry+content+template access.
       PR3:
-        status: implemented_not_pushed
+        status: merged
         branch: refactor/pr3-cli-composition-root-split
         tasks: 3.1-3.5 complete
         tests: 793 passed, 7 skipped (baseline was 790/7)
+        pr: https://github.com/SKANL/docs/pull/3
         note: >-
-          Awaiting fresh-context review before push/PR per PR rule. New
+          Merged via GitHub PR #3 (merge commit 9a95ca4) after fresh-context
+          review with zero findings. New
           tests/integration/test_cli_composition_root.py is the genuine RED
           anchor for this slice (test_cli_core.py already pre-existed and
           could not fail before the split). No ingest placeholder module
@@ -82,5 +89,10 @@ phases:
 notes:
   - Slice PR5 task 5.1 (opendataloader-pdf maturity spike) is a blocking gate
     before any task that locks the PDF dependency (5.6, 6.3, 6.4).
+  - Task 5.1 spike COMPLETED 2026-07-04 (user-ordered, ahead of PR5) — GATE
+    PASS with conditions; v2.4.7 Apache-2.0, requires Java 11+ (resolve via
+    ToolResolverPort), one batched convert() call per inbox scan (JVM spawn
+    cost), hybrid/OCR modes must stay off for determinism. Details in
+    tasks.md 5.1 and Engram topic sdd/universal-doc-harness/pdf-spike.
   - Each slice PR merges to main in order; main must stay green after every merge.
   - Fresh-context review required before each commit/PR (PR rule).
