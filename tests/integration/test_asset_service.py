@@ -18,6 +18,15 @@ def service(workspace: Workspace) -> AssetService:
     return AssetService(FilesystemAssetRepository(), workspace)
 
 
+@pytest.fixture
+def multi_kind_service(workspace: Workspace) -> AssetService:
+    return AssetService(
+        FilesystemAssetRepository(),
+        workspace,
+        asset_kinds={"docx": (".docx",), "pdf": (".pdf",)},
+    )
+
+
 def test_add_asset_copies_file_and_appends_docx_suffix(tmp_path, workspace, service):
     source = tmp_path / "cover.docx"
     source.write_bytes(b"docx-bytes")
@@ -97,3 +106,32 @@ def test_add_asset_list_remove_round_trip(tmp_path, service):
     assert service.list_assets("doc-1") == ["portada"]
     service.remove_asset("doc-1", "portada")
     assert service.list_assets("doc-1") == []
+
+
+def test_add_asset_stores_configured_non_docx_kind_with_its_own_suffix(tmp_path, workspace, multi_kind_service):
+    # A multi-kind config must derive the stored suffix from the source's actual kind,
+    # not hardcode ".docx" — otherwise PDF bytes end up mislabeled as a .docx file.
+    source = tmp_path / "cover.pdf"
+    source.write_bytes(b"pdf-bytes")
+    target = multi_kind_service.add_asset("doc-1", str(source), name="portada")
+    assert target == workspace.assets_dir("doc-1") / "portada.pdf"
+    assert target.read_bytes() == b"pdf-bytes"
+
+
+def test_list_assets_returns_files_for_configured_pdf_kind(tmp_path, multi_kind_service):
+    docx_source = tmp_path / "src.docx"
+    docx_source.write_bytes(b"x")
+    pdf_source = tmp_path / "cover.pdf"
+    pdf_source.write_bytes(b"y")
+    multi_kind_service.add_asset("doc-1", str(docx_source), name="anexo")
+    multi_kind_service.add_asset("doc-1", str(pdf_source), name="portada")
+    assert multi_kind_service.list_assets("doc-1", kind="pdf") == ["portada"]
+
+
+def test_add_asset_docx_only_config_still_rejects_non_docx_with_configured_kinds(tmp_path, service):
+    # Regression guard: the docx-only default config must keep rejecting non-docx sources
+    # after generalizing suffix derivation to other kinds.
+    source = tmp_path / "cover.pdf"
+    source.write_bytes(b"x")
+    with pytest.raises(ValueError):
+        service.add_asset("doc-1", str(source))

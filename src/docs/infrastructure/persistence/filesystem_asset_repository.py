@@ -14,8 +14,12 @@ class FilesystemAssetRepository:
     def copy_file(self, src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
 
-    def list_assets(self, directory: Path, kind: str) -> list[Path]:
-        return sorted(directory.glob(f"*.{kind}"))
+    def list_assets(self, directory: Path, extensions: tuple[str, ...]) -> list[Path]:
+        matches: set[Path] = set()
+        for ext in extensions:
+            pattern = ext if ext.startswith(".") else f".{ext}"
+            matches.update(directory.glob(f"*{pattern}"))
+        return sorted(matches)
 
     def remove_file(self, path: Path) -> None:
         if path.exists():

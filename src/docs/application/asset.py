@@ -27,8 +27,12 @@ class AssetService:
             allowed.update(extensions)
         return allowed
 
-    def asset_path(self, doc_id: str, name: str) -> Path:
-        safe = name if name.lower().endswith(".docx") else f"{name}.docx"
+    def asset_path(self, doc_id: str, name: str, suffix: str | None = None) -> Path:
+        known_extensions = self._allowed_extensions()
+        if any(name.lower().endswith(ext) for ext in known_extensions):
+            safe = name
+        else:
+            safe = f"{name}{suffix if suffix is not None else '.docx'}"
         return self.workspace.assets_dir(doc_id) / safe
 
     def add_asset(self, doc_id: str, src: str, name: str = "") -> Path:
@@ -39,7 +43,7 @@ class AssetService:
         if suffix not in self._allowed_extensions():
             raise ValueError(f"Tipo de asset no permitido: {source.name} ({suffix or 'sin extensión'})")
         target_name = name or source.stem
-        target = self.asset_path(doc_id, target_name)
+        target = self.asset_path(doc_id, target_name, suffix=suffix)
         self.repository.ensure_dir(target.parent)
         self.repository.copy_file(source, target)
         return target
@@ -48,7 +52,10 @@ class AssetService:
         directory = self.workspace.assets_dir(doc_id)
         if not self.repository.file_exists(directory):
             return []
-        return [path.stem for path in self.repository.list_assets(directory, kind)]
+        extensions = self.asset_kinds.get(kind)
+        if extensions is None:
+            raise ValueError(f"Tipo de asset no configurado: {kind}")
+        return [path.stem for path in self.repository.list_assets(directory, extensions)]
 
     def remove_asset(self, doc_id: str, name: str) -> None:
         target = self.asset_path(doc_id, name)
