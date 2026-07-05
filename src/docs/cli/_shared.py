@@ -16,13 +16,14 @@ from docs.application.context_pack import ContextPackService
 from docs.application.corrections import CorrectionsService
 from docs.application.doctor import DoctorService
 from docs.application.documents import DocumentService
-from docs.application.docx_assembly import DocxAssemblyService
+from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.domain.models.template import Template
+from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
@@ -81,7 +82,8 @@ class Deps:
         collection_service = CollectionService(source_repo, evidence_repo)
         context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
         tool_resolver = SystemToolResolverAdapter()
-        docx_assembly_service = DocxAssemblyService(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
+        docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
+        self.renderers: dict[str, DocumentRendererPort] = {docx_assembly_service.output_format: docx_assembly_service}
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
         qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
         doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
@@ -104,6 +106,12 @@ class Deps:
             format_audit_service, qa_service, self.workspace,
         )
 
+    def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
+        """Resolve the active `DocumentRendererPort` from `config["output"]["format"]`
+        (default `"docx"`) against the `renderers` registry built at construction."""
+        output_format = config.get("output", {}).get("format", "docx")
+        return resolve_renderer(self.renderers, output_format)
+
     # ── config assembly (migrated resolve_config / load_document) ──────────
     def resolve_context(self, doc: str = "") -> ResolvedContext:
         doc_id = doc or self.document_repository.active_id()
@@ -120,6 +128,20 @@ class Deps:
         merged["paths"] = paths
         merged["doc_id"] = doc_id
         return ResolvedContext(doc_id=doc_id, config=merged, template=Template.model_validate(merged))
+
+
+def resolve_renderer(renderers: dict[str, DocumentRendererPort], output_format: str) -> DocumentRendererPort:
+    """Format-registry resolution at the composition root (document-render
+    spec: `Format-Registry Resolution at Composition Root`). Raises a clear
+    error naming the unsupported format — never falls back to DOCX silently."""
+    renderer = renderers.get(output_format)
+    if renderer is None:
+        available = ", ".join(sorted(renderers)) or "ninguno"
+        raise ValueError(
+            f"Formato de salida no registrado: '{output_format}'. "
+            f"Formatos disponibles: {available}."
+        )
+    return renderer
 
 
 def _deep_merge(base: Any, override: Any) -> Any:

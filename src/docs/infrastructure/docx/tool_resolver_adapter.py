@@ -10,8 +10,9 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_pandoc
 class SystemToolResolverAdapter:
     """Wraps the two already-correct free functions that resolve build/QA
     tool executables from PATH or config fallbacks, so DoctorService and
-    DocxAssemblyService depend on ToolResolverPort instead of importing
-    infrastructure directly (Slice 16 tech-debt remediation, finding 1)."""
+    DocxRendererAdapter (formerly DocxAssemblyService, renamed PR4) depend on
+    ToolResolverPort instead of importing infrastructure directly (Slice 16
+    tech-debt remediation, finding 1)."""
 
     def resolve_pandoc(self, paths: dict[str, Any]) -> str | None:
         return resolve_pandoc_executable(paths)

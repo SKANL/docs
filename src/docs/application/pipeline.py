@@ -9,7 +9,6 @@ from typing import Any, Callable
 from docs.application.collection import CollectionService
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
-from docs.application.docx_assembly import DocxAssemblyService
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.qa import QaService
@@ -19,6 +18,7 @@ from docs.domain.section_rendering import render_section_draft
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
+from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.source_repository import SourceRepository
 from docs.domain.review import Issue, ReviewResult
@@ -39,7 +39,7 @@ class PipelineService:
         review_service: ReviewService,
         context_pack_service: ContextPackService,
         context_repository: ContextRepository,
-        docx_assembly_service: DocxAssemblyService,
+        docx_assembly_service: DocumentRendererPort,
         format_audit_service: FormatAuditService,
         qa_service: QaService,
         workspace: Workspace,
@@ -143,9 +143,28 @@ class PipelineService:
             prompt_hash=self.evidence_service.prompt_hash(config),
         )
 
+    def _resolve_draft_docx_name(self, config: dict[str, Any]) -> str:
+        return config.get("output", {}).get("draft_name", _DRAFT_DOCX_NAME)
+
     def _stage_callables(
-        self, doc_id: str, template: Template, config: dict[str, Any], repo_root: Path, strict: bool
+        self,
+        doc_id: str,
+        template: Template,
+        config: dict[str, Any],
+        repo_root: Path,
+        strict: bool,
+        renderer: DocumentRendererPort,
     ) -> dict[str, Callable[[], tuple[bool, str]]]:
+        # Populated by stage_build_docx once it runs; format-audit/qa read the
+        # actual built path from here instead of re-deriving a hardcoded name,
+        # so a custom config["output"]["draft_name"] is honored end-to-end.
+        built_docx_path: dict[str, Path] = {}
+
+        def _draft_docx_path() -> Path:
+            return built_docx_path.get("path") or (
+                Path(config["paths"]["output_draft_dir"]) / self._resolve_draft_docx_name(config)
+            )
+
         def stage_doctor() -> tuple[bool, str]:
             result = self.doctor_service.run_doctor(doc_id, config, strict=strict)
             return result.passed, result.to_markdown()
@@ -204,15 +223,17 @@ class PipelineService:
             return result.passed, result.to_markdown()
 
         def stage_build_docx() -> tuple[bool, str]:
-            return True, str(self.docx_assembly_service.build(doc_id, config))
+            path = renderer.build(doc_id, config)
+            built_docx_path["path"] = path
+            return True, str(path)
 
         def stage_format_audit() -> tuple[bool, str]:
-            docx_path = Path(config["paths"]["output_draft_dir"]) / _DRAFT_DOCX_NAME
+            docx_path = _draft_docx_path()
             result = self.format_audit_service.audit_format(docx_path, config, strict=strict)
             return result.passed, result.to_markdown()
 
         def stage_qa_docx() -> tuple[bool, str]:
-            docx_path = Path(config["paths"]["output_draft_dir"]) / _DRAFT_DOCX_NAME
+            docx_path = _draft_docx_path()
             return True, str(self.qa_service.qa_docx(config, docx_path, strict=strict))
 
         return {
@@ -239,9 +260,16 @@ class PipelineService:
         stage_set: str,
         repo_root: Path,
         strict: bool = False,
+        renderer: DocumentRendererPort | None = None,
     ) -> dict[str, Any]:
-        stages = pipeline_stage_plan(stage_set)
-        callables = self._stage_callables(doc_id, template, config, repo_root, strict)
+        # `renderer` should be resolved by the composition root via
+        # `Deps.resolve_renderer(config)` (format-registry resolution) and
+        # passed in here; falling back to the constructor-injected renderer
+        # only preserves compatibility for callers that build PipelineService
+        # directly without going through the CLI composition root.
+        renderer = renderer or self.docx_assembly_service
+        stages = pipeline_stage_plan(stage_set, renderer.stage_plan())
+        callables = self._stage_callables(doc_id, template, config, repo_root, strict, renderer)
         results: list[dict[str, Any]] = []
         passed = True
         for name, fail_fast in stages:
@@ -279,7 +307,7 @@ class PipelineService:
             ).issues
         )
         if docx_path is None:
-            candidate = Path(config["paths"]["output_draft_dir"]) / _DRAFT_DOCX_NAME
+            candidate = Path(config["paths"]["output_draft_dir"]) / self._resolve_draft_docx_name(config)
             docx_path = candidate if candidate.exists() else None
         if docx_path and docx_path.exists():
             issues.extend(self.format_audit_service.audit_format(docx_path, config, strict=strict).issues)
