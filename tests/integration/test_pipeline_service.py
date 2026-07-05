@@ -466,6 +466,20 @@ def test_run_pipeline_assemble_threads_custom_draft_name_to_audit_and_qa(tmp_pat
     assert not (draft_dir / "tesina-draft.docx").exists()
 
 
+def test_pipeline_and_renderer_resolve_draft_name_from_one_shared_default(tmp_path, monkeypatch):
+    # D1 (tech-debt closeout): pipeline.py and docx_assembly.py each used to
+    # declare their own "tesina-draft.docx" literal. Both must now resolve
+    # the default from a single shared definition (docs.application.output_names)
+    # -- patching that one place must change what BOTH modules resolve.
+    monkeypatch.setattr("docs.application.output_names.DEFAULT_DRAFT_DOCX_NAME", "patched-draft.docx")
+    service, workspace = _service(tmp_path)
+    asset_service = AssetService(FilesystemAssetRepository(), workspace)
+    renderer = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+
+    assert service._resolve_draft_docx_name({}) == "patched-draft.docx"
+    assert renderer._draft_docx_name({}) == "patched-draft.docx"
+
+
 # --- Task 6: verify_all --------------------------------------------------
 #
 # NOTE: `verify_all` takes no `repo_root` parameter -- confirmed against the

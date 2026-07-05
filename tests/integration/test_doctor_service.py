@@ -35,6 +35,9 @@ def test_run_doctor_uses_injected_tool_resolver_not_shutil_which(tmp_path, monke
         def resolve_libreoffice(self, paths):
             return None
 
+        def resolve_java(self, paths):
+            return None
+
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     service = DoctorService(JsonEvidenceRepository(), asset_service, _FakeToolResolver())

@@ -24,10 +24,8 @@ from typing import Any
 
 import pytest
 
-from docs.infrastructure.ingest.opendataloader_pdf_adapter import (
-    OpendataloaderPdfAdapter,
-    resolve_java_executable,
-)
+from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
+from docs.infrastructure.tools.java_resolution import resolve_java_executable
 
 _HAS_JAVA = shutil.which("java") is not None
 

@@ -79,6 +79,9 @@ class SourceTypeDetectorPort(Protocol):
 
 class SourceIngestPort(Protocol):
     def ingest(self, src: Path, out_dir: Path) -> Path: ...      # → deterministic .md path
+    # [ADDITIVE NOTE, tech-debt closeout D6: PR6 fresh-review remediation grew
+    # a required third `kind: str` parameter — the port's actual, tested
+    # contract is `ingest(src, out_dir, kind)`. See tasks.md task 6.7.]
 
 # domain/pipeline.py — pure ordering, no format literals
 def pipeline_stage_plan(stage_set, prep, assemble, ingest) -> list[tuple[str, bool]]: ...

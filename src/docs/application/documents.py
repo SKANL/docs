@@ -8,6 +8,7 @@ from docs.domain.ports.document_repository import DocumentExistsError, DocumentR
 from docs.domain.ports.registry_repository import RegistryRepository
 from docs.domain.ports.template_repository import TemplateRepository
 from docs.domain.slug import validate_slug
+from docs.domain.workspace import Workspace
 
 
 class DocumentLifecycleRepository(RegistryRepository, DocumentRepository, TemplateRepository, Protocol):
@@ -34,9 +35,11 @@ class DocumentService:
     def __init__(
         self,
         repository: DocumentLifecycleRepository,
+        workspace: Workspace,
         clock: Callable[[], str] = _now,
     ) -> None:
         self.repository = repository
+        self.workspace = workspace
         self._clock = clock
 
     def create(self, doc_id: str, template_name: str, title: str = "") -> Document:
@@ -44,7 +47,7 @@ class DocumentService:
         template = self.repository.load_template(template_name)
         if self.repository.exists(doc_id):
             raise DocumentExistsError(f"Document `{doc_id}` already exists.")
-        doc_root = self.repository.workspace.doc_root(doc_id)
+        doc_root = self.workspace.doc_root(doc_id)
         for sub in _SUBDIRS:
             (doc_root / sub).mkdir(parents=True, exist_ok=True)
         document = Document(

@@ -6,14 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.asset import AssetService
+from docs.application.output_names import resolve_body_docx_name, resolve_draft_docx_name
 from docs.domain.docx_structure import structure_parts
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
-
-
-_DEFAULT_DRAFT_DOCX_NAME = "tesina-draft.docx"
-_DEFAULT_BODY_DOCX_NAME = "tesina-body.docx"
 
 
 class DocxRendererAdapter:
@@ -36,10 +33,10 @@ class DocxRendererAdapter:
         ]
 
     def _draft_docx_name(self, config: dict[str, Any]) -> str:
-        return config.get("output", {}).get("draft_name", _DEFAULT_DRAFT_DOCX_NAME)
+        return resolve_draft_docx_name(config)
 
     def _body_docx_name(self, config: dict[str, Any]) -> str:
-        return config.get("output", {}).get("body_name", _DEFAULT_BODY_DOCX_NAME)
+        return resolve_body_docx_name(config)
 
     def _sections_index(self, parts: list[dict[str, Any]]) -> int:
         return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))

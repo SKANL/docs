@@ -222,3 +222,50 @@ def test_remove_asset_deletes_with_explicit_extension_under_multiple_kinds(tmp_p
     multi_kind_service.remove_asset("doc-1", "portada.pdf")
     assert multi_kind_service.list_assets("doc-1", kind="pdf") == []
     assert multi_kind_service.list_assets("doc-1", kind="docx") == ["portada"]
+
+
+def test_remove_asset_stem_matching_finds_asset_regardless_of_case(tmp_path, workspace, multi_kind_service):
+    # D3 (tech-debt closeout): on Windows, `asset_path`'s direct suffixed lookup
+    # resolves case-insensitively via the OS filesystem, but stem-matching in
+    # `_resolve_ambiguous_stem` used to compare names case-sensitively in
+    # Python -- so the same logical asset resolved differently depending on
+    # which path handled it. Stem matching must casefold before comparing.
+    assets_dir = workspace.assets_dir("doc-1")
+    assets_dir.mkdir(parents=True)
+    (assets_dir / "Logo.docx").write_bytes(b"x")
+
+    multi_kind_service.remove_asset("doc-1", "logo")
+
+    assert not (assets_dir / "Logo.docx").exists()
+
+
+class _CaseCollisionRepository:
+    """Fake `AssetRepository` returning two paths whose stems differ only by
+    case -- simulates a case-sensitive filesystem where both `Portada.docx`
+    and `portada.docx` genuinely coexist (impossible to create directly on
+    Windows' case-insensitive filesystem)."""
+
+    def __init__(self, paths: list[Path]) -> None:
+        self._paths = paths
+
+    def file_exists(self, path: Path) -> bool:
+        return True
+
+    def list_assets(self, directory: Path, extensions: tuple[str, ...]) -> list[Path]:
+        return [p for p in self._paths if p.suffix in extensions]
+
+    def remove_file(self, path: Path) -> None:  # pragma: no cover - must not be reached
+        raise AssertionError("remove_file must not be called for an ambiguous match")
+
+
+def test_remove_asset_treats_case_only_stem_collision_as_ambiguous(tmp_path, workspace):
+    # D3: after casefold-normalizing stem matching, two files differing only
+    # by case must surface as an ambiguous match rather than one silently
+    # shadowing the other.
+    assets_dir = workspace.assets_dir("doc-1")
+    paths = [assets_dir / "Portada.docx", assets_dir / "portada.docx"]
+    repo = _CaseCollisionRepository(paths)
+    service = AssetService(repo, workspace, asset_kinds={"docx": (".docx",), "pdf": (".pdf",)})
+
+    with pytest.raises(ValueError, match="más de un tipo configurado"):
+        service.remove_asset("doc-1", "portada")

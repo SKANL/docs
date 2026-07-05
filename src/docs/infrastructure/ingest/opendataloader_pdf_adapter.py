@@ -1,50 +1,17 @@
 # src/docs/infrastructure/ingest/opendataloader_pdf_adapter.py
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import opendataloader_pdf
 
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
-
-
-def resolve_java_executable(paths: dict[str, Any]) -> str | None:
-    """Mirrors `resolve_pandoc_executable`'s PATH-then-config-fallback shape
-    (5.1 spike condition: resolve Java via the existing `ToolResolverPort`
-    pattern). `opendataloader_pdf`'s bundled runner always invokes the bare
-    `"java"` command, so a configured `java_bin`/`java_fallbacks` entry only
-    takes effect when its directory is temporarily prepended to `PATH`
-    (see `_java_on_path` below) for the duration of the conversion call."""
-    resolved = shutil.which("java")
-    if resolved:
-        return resolved
-    configured = paths.get("java_bin")
-    if configured and Path(configured).exists() and Path(configured).is_file():
-        return str(configured)
-    for candidate in paths.get("java_fallbacks", []):
-        candidate_path = Path(candidate)
-        if candidate_path.exists() and candidate_path.is_file():
-            return str(candidate_path)
-    return None
-
-
-@contextmanager
-def _java_on_path(java_executable: str) -> Iterator[None]:
-    java_dir = str(Path(java_executable).parent)
-    original = os.environ.get("PATH", "")
-    if java_dir and java_dir not in original.split(os.pathsep):
-        os.environ["PATH"] = java_dir + os.pathsep + original
-    try:
-        yield
-    finally:
-        os.environ["PATH"] = original
+from docs.infrastructure.tools.java_resolution import java_on_path
 
 
 class OpendataloaderPdfAdapter:
@@ -135,7 +102,7 @@ class OpendataloaderPdfAdapter:
 
             batch_error: subprocess.CalledProcessError | None = None
             try:
-                with _java_on_path(java):
+                with java_on_path(java):
                     opendataloader_pdf.convert(
                         input_path=[str(staged) for staged in staged_by_candidate.values()],
                         output_dir=str(tmp_dir),

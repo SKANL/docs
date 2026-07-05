@@ -11,6 +11,7 @@ from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
+from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.domain.models.template import SectionContract, Template
@@ -24,8 +25,6 @@ from docs.domain.ports.source_repository import SourceRepository
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_rules
 from docs.domain.workspace import Workspace
-
-_DRAFT_DOCX_NAME = "tesina-draft.docx"
 
 
 class PipelineService:
@@ -144,7 +143,7 @@ class PipelineService:
         )
 
     def _resolve_draft_docx_name(self, config: dict[str, Any]) -> str:
-        return config.get("output", {}).get("draft_name", _DRAFT_DOCX_NAME)
+        return resolve_draft_docx_name(config)
 
     def _stage_callables(
         self,
