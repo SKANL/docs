@@ -58,5 +58,38 @@ class AssetService:
         return [path.stem for path in self.repository.list_assets(directory, extensions)]
 
     def remove_asset(self, doc_id: str, name: str) -> None:
-        target = self.asset_path(doc_id, name)
+        target = self._resolve_remove_target(doc_id, name)
         self.repository.remove_file(target)
+
+    def _resolve_remove_target(self, doc_id: str, name: str) -> Path:
+        known_extensions = self._allowed_extensions()
+        has_explicit_extension = any(name.lower().endswith(ext) for ext in known_extensions)
+        if has_explicit_extension:
+            return self.asset_path(doc_id, name)
+        if len(self.asset_kinds) == 1:
+            (only_extensions,) = self.asset_kinds.values()
+            if len(only_extensions) == 1:
+                return self.asset_path(doc_id, name, suffix=only_extensions[0])
+        return self._resolve_ambiguous_stem(doc_id, name)
+
+    def _resolve_ambiguous_stem(self, doc_id: str, name: str) -> Path:
+        directory = self.workspace.assets_dir(doc_id)
+        matches: list[Path] = []
+        if self.repository.file_exists(directory):
+            for extensions in self.asset_kinds.values():
+                matches.extend(
+                    path for path in self.repository.list_assets(directory, extensions) if path.stem == name
+                )
+        unique_matches = sorted(set(matches))
+        if len(unique_matches) == 1:
+            return unique_matches[0]
+        if not unique_matches:
+            example_ext = sorted(self._allowed_extensions())[0] if self._allowed_extensions() else ".docx"
+            raise ValueError(
+                f"No se encontró el asset `{name}` en ningún tipo configurado. "
+                f"Especifique la extensión (por ejemplo, `{name}{example_ext}`)."
+            )
+        raise ValueError(
+            f"El asset `{name}` existe en más de un tipo configurado. "
+            "Especifique la extensión para eliminar el archivo correcto."
+        )
