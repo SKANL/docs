@@ -73,14 +73,31 @@ class AssetService:
         return self._resolve_ambiguous_stem(doc_id, name)
 
     def _resolve_ambiguous_stem(self, doc_id: str, name: str) -> Path:
+        """Matches `name` against each configured kind's assets by stem,
+        casefolded so the Python-level comparison agrees with the
+        case-insensitive filesystem semantics `asset_path`'s direct suffixed
+        lookup already gets "for free" on Windows (D3, tech-debt closeout).
+        Dedup/ambiguity handling runs AFTER normalization, so two files that
+        differ only by case (possible on a case-sensitive filesystem) still
+        surface as ambiguous instead of one silently shadowing the other."""
         directory = self.workspace.assets_dir(doc_id)
+        target = name.casefold()
         matches: list[Path] = []
         if self.repository.file_exists(directory):
             for extensions in self.asset_kinds.values():
                 matches.extend(
-                    path for path in self.repository.list_assets(directory, extensions) if path.stem == name
+                    path
+                    for path in self.repository.list_assets(directory, extensions)
+                    if path.stem.casefold() == target
                 )
-        unique_matches = sorted(set(matches))
+        # Dedup by exact (case-sensitive) string, not `Path.__eq__` -- on
+        # Windows, `PureWindowsPath` equality/hashing is itself
+        # case-insensitive, which would silently collapse two distinct-case
+        # matches back into one and defeat the ambiguity check above.
+        seen_by_exact_str: dict[str, Path] = {}
+        for path in matches:
+            seen_by_exact_str.setdefault(str(path), path)
+        unique_matches = sorted(seen_by_exact_str.values(), key=str)
         if len(unique_matches) == 1:
             return unique_matches[0]
         if not unique_matches:
