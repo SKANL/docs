@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from docs.application.collection import CollectionService
+from docs.application.context_files import CONCERNS, CURATED_INDEX_FILENAME, build_context_files, build_context_index
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
+from docs.application.ingest import IngestService
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
@@ -42,6 +44,7 @@ class PipelineService:
         format_audit_service: FormatAuditService,
         qa_service: QaService,
         workspace: Workspace,
+        ingest_service: IngestService,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -55,6 +58,7 @@ class PipelineService:
         self.format_audit_service = format_audit_service
         self.qa_service = qa_service
         self.workspace = workspace
+        self.ingest_service = ingest_service
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -235,6 +239,50 @@ class PipelineService:
             docx_path = _draft_docx_path()
             return True, str(self.qa_service.qa_docx(config, docx_path, strict=strict))
 
+        def stage_ingest() -> tuple[bool, str]:
+            inbox_dir = Path(config["paths"]["inbox_dir"])
+            sections_dir = Path(config["paths"]["sections_dir"])
+            report = self.ingest_service.ingest_inbox(inbox_dir, sections_dir)
+            errors = [f for f in report["files"] if f.get("status") == "error"]
+            detail = f"{report['processed']} archivos procesados"
+            if errors:
+                detail += f"; {len(errors)} con error"
+            return not errors, detail
+
+        def stage_build_context_files() -> tuple[bool, str]:
+            context_dir = Path(config["paths"]["context_dir"])
+            ingested_dir = Path(config["paths"]["sections_dir"]) / "ingested"
+            ingested_texts = (
+                {path.stem: path.read_text(encoding="utf-8") for path in sorted(ingested_dir.glob("*.md"))}
+                if ingested_dir.is_dir()
+                else {}
+            )
+            existing_files = {
+                concern: (context_dir / f"{concern}.md").read_text(encoding="utf-8")
+                for concern in CONCERNS
+                if (context_dir / f"{concern}.md").exists()
+            }
+            files = build_context_files(ingested_texts, existing_files)
+            context_dir.mkdir(parents=True, exist_ok=True)
+            for concern, content in files.items():
+                (context_dir / f"{concern}.md").write_text(content, encoding="utf-8")
+            return True, f"{len(files)} archivos de contexto"
+
+        def stage_build_context_index() -> tuple[bool, str]:
+            # Reads only the known CONCERNS files (never a wildcard glob of
+            # `context_dir`) so the pre-existing Topic/Q&A subsystem's own
+            # per-topic files never get mistaken for curated-concern content.
+            context_dir = Path(config["paths"]["context_dir"])
+            concern_files = {
+                concern: (context_dir / f"{concern}.md").read_text(encoding="utf-8")
+                for concern in CONCERNS
+                if (context_dir / f"{concern}.md").exists()
+            }
+            index_text = build_context_index(concern_files)
+            index_path = context_dir / CURATED_INDEX_FILENAME
+            index_path.write_text(index_text, encoding="utf-8")
+            return True, str(index_path)
+
         return {
             "doctor": stage_doctor,
             "build-rules": stage_build_rules,
@@ -248,6 +296,9 @@ class PipelineService:
             "review-document": stage_review_document,
             "build-docx": stage_build_docx,
             "format-audit-docx": stage_format_audit,
+            "ingest": stage_ingest,
+            "build-context-files": stage_build_context_files,
+            "build-context-index": stage_build_context_index,
             "qa-docx": stage_qa_docx,
         }
 

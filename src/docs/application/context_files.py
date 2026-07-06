@@ -14,6 +14,18 @@ import re
 
 from docs.domain.markdown_text import dedupe_strings, extract_markdown_headings, keyword_set
 
+# PR8 task 8.1 (index.md collision, binding note carried from PR7's fresh
+# review): the pre-existing, unrelated `JsonContextRepository.regenerate_index`
+# (Topic/Q&A context-schema subsystem) already writes `context/index.md` (a
+# topic-status table) plus `context/index.json`. This module's progressive-
+# disclosure index is a different, incompatible format for a different
+# purpose (curated ingest-source summary, not per-document Q&A status) --
+# consolidating the two was explicitly ruled out of scope in 7.6's own
+# additive note. Namespaced under a distinct filename so neither writer can
+# ever clobber the other's most recent write; see `application/pipeline.py`'s
+# `stage_build_context_index`, which is the only writer of this filename.
+CURATED_INDEX_FILENAME = "curated-index.md"
+
 CONCERNS: tuple[str, ...] = (
     "formatting-rules",
     "keywords",

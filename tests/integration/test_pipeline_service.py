@@ -14,15 +14,21 @@ from docs.application.doctor import DoctorService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
+from docs.application.ingest import IngestService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
-from docs.domain.models.template import Template
+from docs.domain.context import TopicStatus
+from docs.domain.models.template import ContextSchema, Template, Topic
 from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
+from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
+from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
+from docs.infrastructure.ingest.pandoc_ingest_adapter import PandocIngestAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
@@ -44,14 +50,28 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
     review_service = ReviewService(section_repo)
     collection_service = CollectionService(source_repo, evidence_repo)
     context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
-    docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+    tool_resolver = SystemToolResolverAdapter()
+    docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
     format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
     qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
-    doctor_service = DoctorService(evidence_repo, asset_service, SystemToolResolverAdapter())
+    doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
+    pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
+    pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
+    md_ingest_adapter = MdNormalizeAdapter()
+    ingest_service = IngestService(
+        FiletypeDetectorAdapter(),
+        {
+            "docx": pandoc_ingest_adapter,
+            "odt": pandoc_ingest_adapter,
+            "pdf": pdf_ingest_adapter,
+            "md": md_ingest_adapter,
+            "txt": md_ingest_adapter,
+        },
+    )
     service = PipelineService(
         doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
         review_service, context_pack_service, context_repo, docx_assembly_service,
-        format_audit_service, qa_service, workspace,
+        format_audit_service, qa_service, workspace, ingest_service,
     )
     return service, workspace
 
@@ -558,6 +578,51 @@ def test_verify_all_finds_docx_at_configured_draft_name(tmp_path, monkeypatch):
     # It found and audited the custom-named file (qa.failed comes from the
     # QA stage running against it, not from "no docx found at all").
     assert any(issue.code == "qa.failed" for issue in result.issues)
+
+
+# --- Task 8.1: ingest stage_set wiring -----------------------------------
+
+
+def _ingest_stage_config(workspace: Workspace, doc_id: str) -> dict:
+    doc_root = workspace.doc_root(doc_id)
+    return {
+        "paths": {
+            "inbox_dir": str(doc_root / "inbox"),
+            "sections_dir": str(doc_root / "sections"),
+            "context_dir": str(doc_root / "context"),
+        },
+    }
+
+
+def test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_topic_qa_index(tmp_path):
+    # Binding note carried from PR7's fresh review: `JsonContextRepository.
+    # regenerate_index` (Topic/Q&A subsystem) and this module's new curated
+    # progressive-disclosure index both target `context/`. Wiring must
+    # namespace them under distinct filenames so neither writer clobbers
+    # the other's most recent write.
+    service, workspace = _service(tmp_path)
+    doc_id = "doc1"
+    topic = Topic(id="alumno", title="Alumno", required=True)
+    schema = ContextSchema(topics=[topic])
+    status = TopicStatus(id="alumno", title="Alumno", required=True, exists=False, missing=["(texto)"])
+    service.context_repository.regenerate_index(doc_id, schema, [status])
+
+    context_dir = workspace.doc_root(doc_id) / "context"
+    topic_index_before = (context_dir / "index.md").read_text(encoding="utf-8")
+    assert "Alumno" in topic_index_before  # sanity: the Topic/Q&A writer ran
+
+    template = Template(type="doc", title="Doc")
+    config = _ingest_stage_config(workspace, doc_id)
+
+    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
+
+    assert summary["passed"] is True
+    topic_index_after = (context_dir / "index.md").read_text(encoding="utf-8")
+    assert topic_index_after == topic_index_before  # untouched by the curation writer
+
+    curated_index = (context_dir / "curated-index.md").read_text(encoding="utf-8")
+    assert curated_index.startswith("# Context Index")
+    assert curated_index != topic_index_after
 
 
 @pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")

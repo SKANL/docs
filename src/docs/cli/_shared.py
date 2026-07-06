@@ -121,7 +121,7 @@ class Deps:
         self.pipeline = PipelineService(
             doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
             review_service, context_pack_service, context_repo, docx_assembly_service,
-            format_audit_service, qa_service, self.workspace,
+            format_audit_service, qa_service, self.workspace, self.ingest,
         )
 
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
@@ -202,6 +202,7 @@ def _computed_paths(doc_root: Path) -> dict[str, str]:
         "context_index": str(context / "index.json"),
         "context_requests": str(context / "_requests.md"),
         "assets_dir": str(doc_root / "assets"),
+        "inbox_dir": str(doc_root / "inbox"),
         "sections_dir": str(sections),
         "source_manifest": str(sections / "source-manifest.json"),
         "issues_manifest": str(sections / "issues-manifest.json"),
