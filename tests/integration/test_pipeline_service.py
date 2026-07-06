@@ -625,6 +625,52 @@ def test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_top
     assert curated_index != topic_index_after
 
 
+# --- Task 8.6: full-pipeline determinism (proposal success criterion) ---
+
+
+def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_path, monkeypatch):
+    # Proposal success criterion: "Full pipeline reproducible: same inputs
+    # -> identical outputs." Runs ingest -> assemble twice over the same
+    # fixture inbox/sections and asserts every artifact (ingested markdown,
+    # context-curation files, and the built DOCX) is byte-identical.
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
+        lambda paths: None,
+    )
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    sections_dir = tmp_path / "sections"
+    draft_dir = tmp_path / "draft"
+    config["paths"]["sections_dir"] = str(sections_dir)
+    config["paths"]["inbox_dir"] = str(tmp_path / "inbox")
+    config["paths"]["output_draft_dir"] = str(draft_dir)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+
+    inbox = Path(config["paths"]["inbox_dir"])
+    inbox.mkdir(parents=True)
+    (inbox / "note.md").write_text("# Heading\n\nBody text.\n", encoding="utf-8")
+
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    (sections_dir / "001-introduccion.md").write_text(
+        "---\n{}\n---\n# Introducción\n\nContenido de la sección.\n", encoding="utf-8"
+    )
+
+    def run_once() -> tuple[bytes, dict[str, bytes], dict[str, bytes]]:
+        service.run_pipeline("doc1", _template(), config, "ingest", repo_root=tmp_path)
+        service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path)
+        docx_bytes = (draft_dir / "tesina-draft.docx").read_bytes()
+        context_bytes = {p.name: p.read_bytes() for p in Path(config["paths"]["context_dir"]).glob("*.md")}
+        ingested_bytes = {p.name: p.read_bytes() for p in (sections_dir / "ingested").glob("*.md")}
+        return docx_bytes, context_bytes, ingested_bytes
+
+    first_docx, first_context, first_ingested = run_once()
+    second_docx, second_context, second_ingested = run_once()
+
+    assert first_ingested and first_ingested == second_ingested
+    assert first_context and first_context == second_context
+    assert first_docx == second_docx
+
+
 @pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")
 def test_verify_all_completes_qa_without_qa_failed_when_libreoffice_available(tmp_path):
     Path(tmp_path / "context").mkdir()
