@@ -2,13 +2,17 @@
 
 Format-agnostic, deterministic document-creation harness (hexagonal
 architecture). The harness does all mechanical work; the AI model only fills
-structured cognitive slots. Currently mid-refactor under the SDD change
-`universal-doc-harness`.
+structured cognitive slots. The founding refactor (SDD change
+`universal-doc-harness`, 10 PRs) is complete and archived; the capability
+contract now lives in `openspec/specs/`.
 
 ## Commands
 
 - Test: `uv run pytest` (strict TDD — write the failing test first, always)
 - Run CLI: `uv run python -m docs.cli.main --help`
+- Pipeline stage sets: `pipeline <prep|ingest|assemble|all>` — `ingest` must
+  run before `assemble`/`all` when sources exist in `inbox/` (`all` does NOT
+  include ingest stages, by design).
 - Lint/typecheck: `ruff check .` / `mypy src` (ambient tools, not yet declared)
 
 ## Layout
@@ -28,14 +32,36 @@ structured cognitive slots. Currently mid-refactor under the SDD change
 - Determinism: same inputs must produce identical outputs; no timestamps or
   randomness in generated artifacts.
 
-## Active work — read on demand (do not @import)
+## Determinism & collision gotchas (learned the hard way)
 
-- `openspec/changes/universal-doc-harness/state.yaml` — current SDD phase and
-  session config. Start here when resuming work.
-- `openspec/changes/universal-doc-harness/tasks.md` — task checklist; the
-  checkboxes are the source of truth for implementation progress.
-- `openspec/changes/universal-doc-harness/{proposal.md,design.md,specs/}` —
-  planning artifacts (frozen; additive updates only).
+- Any new `.docx`/zip writer MUST end in
+  `infrastructure/docx/deterministic_zip.py:normalize_docx_zip_timestamps` —
+  stdlib zip stamps wall-clock entry times at 2s DOS granularity, so a
+  "flaky" byte-identity test is a product bug, not test noise.
+- Any new reader or writer of `context/` MUST use
+  `domain/context_index_files.py:is_context_content_filename` — never
+  re-declare index/`_`-prefix skip rules locally (a writer-side rename once
+  leaked the curated index into the evidence pipeline via the readers).
+- Generated indexes: Topic/Q&A owns `context/index.md`; context curation
+  owns `context/curated-index.md`. Do not consolidate or re-target.
+- `SourceIngestPort.ingest(src, out_dir, kind)` — kind comes from the
+  detector/router, never re-derive it from `src.suffix`.
+- Ingest output identity: `<stem>-<kind>-<sha8>.md` via
+  `domain/ingest_naming.py`; adapters write temp-then-atomic-rename
+  (`infrastructure/ingest/atomic_ingest_write.py`) so failures never leave
+  a partial file the skip-check would accept.
+
+## Specs & planning — read on demand (do not @import)
+
+- `openspec/specs/<capability>/spec.md` — the CURRENT contract (5
+  capabilities: document-pipeline, document-render, document-ingest,
+  context-curation, asset-management). New SDD changes delta against these.
+- `openspec/changes/<change>/` — active SDD changes, if any (none right
+  now). `state.yaml` is the phase record; tasks.md checkboxes are the truth
+  of progress; planning artifacts are frozen, additive edits only.
+- `openspec/changes/archive/2026-07-06-universal-doc-harness/` — full audit
+  trail of the founding refactor (proposal/design/tasks/state +
+  archive-report.md with the PR ledger).
 - `RESUME.md` — session-resume prompt and tool authority hierarchy
   (OpenSpec > Gentle AI/SDD > superpowers > engram/codegraph/context7/rtk).
 - `.atl/skill-registry.md` — skill index for sub-agent launches.
