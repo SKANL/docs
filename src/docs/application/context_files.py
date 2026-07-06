@@ -44,12 +44,18 @@ _INSTRUCTIONS: dict[str, str] = {
     ),
 }
 
-_FILL_MARKER_TEMPLATE = "AGENT-FILL:{concern}-content"
+# Naming matches design.md's illustrative example (`AGENT-FILL:curated-keywords`),
+# extrapolated to the same `curated-<concern>` prefix for all five concerns.
+_FILL_MARKER_TEMPLATE = "AGENT-FILL:curated-{concern}"
 
 
 def _fill_block(concern: str, content: str = "") -> str:
     marker = _FILL_MARKER_TEMPLATE.format(concern=concern)
     return f"<!-- {marker} START -->\n{content}<!-- {marker} END -->\n"
+
+
+def _agent_fill_start_marker(concern: str) -> str:
+    return f"<!-- {_FILL_MARKER_TEMPLATE.format(concern=concern)} START -->"
 
 
 def _agent_fill_pattern(concern: str) -> re.Pattern[str]:
@@ -117,13 +123,34 @@ def merge_context_file(concern: str, new_skeleton: str, existing_text: str | Non
     across regeneration. If no existing text is given, or the existing
     file's `AGENT-FILL` block is still empty, the fresh skeleton is
     returned unchanged.
+
+    `existing_text` line endings are normalized to `\\n` before matching,
+    so CRLF/CR input (e.g. from an editor that rewrites line endings)
+    does not break the marker regex and silently discard agent content.
+
+    A START marker present without its matching END marker is a
+    malformed file. Per this module's existing convention of failing
+    loudly instead of silently producing/accepting a malformed file
+    (see `build_context_file_skeleton`'s `ValueError` on an unknown
+    concern), and per the spec's "MUST NOT overwrite or discard existing
+    agent-authored content" requirement, this raises `ValueError` rather
+    than guessing at recovery or falling back to the fresh skeleton.
     """
     if not existing_text:
         return new_skeleton
 
+    normalized_existing = existing_text.replace("\r\n", "\n").replace("\r", "\n")
+
     pattern = _agent_fill_pattern(concern)
-    match = pattern.search(existing_text)
+    match = pattern.search(normalized_existing)
     if not match:
+        if _agent_fill_start_marker(concern) in normalized_existing:
+            raise ValueError(
+                f"Malformed AGENT-FILL block for concern {concern!r}: a START "
+                "marker was found without a matching END marker. Refusing to "
+                "silently discard agent-authored content — fix or remove the "
+                "malformed block before regenerating."
+            )
         return new_skeleton
 
     existing_content = match.group(1)

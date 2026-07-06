@@ -12,9 +12,11 @@ from docs.application.context_files import (
 
 
 def _fill_marker(concern: str) -> tuple[str, str]:
+    # Marker naming matches design.md's illustrative example
+    # (`AGENT-FILL:curated-keywords`), extrapolated to all five concerns.
     return (
-        f"<!-- AGENT-FILL:{concern}-content START -->",
-        f"<!-- AGENT-FILL:{concern}-content END -->",
+        f"<!-- AGENT-FILL:curated-{concern} START -->",
+        f"<!-- AGENT-FILL:curated-{concern} END -->",
     )
 
 
@@ -109,6 +111,27 @@ def test_same_inputs_same_output():
     second = build_context_files(ingested)
 
     assert first == second
+
+
+def test_malformed_unterminated_agent_fill_block_raises_instead_of_silently_discarding():
+    concern = "tone"
+    start, _end = _fill_marker(concern)
+    existing = f"# Tone\n\n{start}\nUnterminated content\n"
+    fresh_skeleton = build_context_file_skeleton(concern, {})
+
+    with pytest.raises(ValueError):
+        merge_context_file(concern, fresh_skeleton, existing)
+
+
+def test_merge_handles_crlf_line_endings_without_losing_agent_content():
+    concern = "tone"
+    start, end = _fill_marker(concern)
+    existing = f"# Tone\r\n\r\n{start}\r\nKeep a formal, academic tone.\r\n{end}\r\n"
+    fresh_skeleton = build_context_file_skeleton(concern, {})
+
+    merged = merge_context_file(concern, fresh_skeleton, existing)
+
+    assert "Keep a formal, academic tone." in merged
 
 
 def test_no_agent_process_invoked_on_completion(monkeypatch):
