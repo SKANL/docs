@@ -29,7 +29,7 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR7
+    next_slice: PR8
     note: >-
       Task checkboxes in tasks.md are the source of truth for slice
       progress; merge apply-progress in engram, never overwrite.
@@ -279,6 +279,54 @@ phases:
           (overage ~60% real-external-tool integration tests, all-new files,
           remediation entangles the port signature across all three adapters
           making a post-hoc split require history surgery).
+      PR7:
+        status: implemented
+        branch: feat/pr7-context-files-index
+        tasks: 7.1-7.10 complete
+        tests: 895 passed, 7 skipped (baseline was 877/7; 893/7 before fresh-review remediation)
+        commits:
+          - 9849397 feat(context-curation) add deterministic context-file skeletons and progressive-disclosure index
+          - 0e5ef8f fix(context-curation) harden AGENT-FILL merge and align marker naming with design
+          - plus the chore(sdd) commit carrying this state.yaml update
+        note: >-
+          New application/context_files.py (pure functions, zero infrastructure
+          imports, additive and unwired — zero references from
+          application/pipeline.py, domain/pipeline.py, or cli/_shared.py;
+          wiring is PR8's job per the PR5/PR6 precedent). Deterministic
+          skeletons with one AGENT-FILL block per concern
+          (keywords/tone/structure/writing-style/formatting-rules), idempotent
+          merge preserving agent content on regeneration, 3-level
+          progressive-disclosure context/index.md builder reusing
+          read_context_texts skip rules, determinism and no-auto-invoke tests.
+          SCOPE DECISION (validated by both review rounds): the pre-existing
+          JsonContextRepository.regenerate_index (Topic/Q&A subsystem) was NOT
+          migrated — the context-curation spec is silent on it and design.md's
+          File Changes table lists context_files.py as Create only. CARRY-
+          FORWARD recorded as binding note on task 8.1: that subsystem already
+          writes its own context/index.md (topic-status table) at the SAME
+          path build_context_index targets with an incompatible 3-level
+          format; PR8's wiring MUST resolve the collision (consolidate or
+          namespace). FRESH-REVIEW ROUND 1 (MERGE-READY, 3 SUGGESTIONs +
+          1 WARNING) remediated in 0e5ef8f: malformed AGENT-FILL block
+          (START without END) now raises a deterministic ValueError instead
+          of silently discarding agent content (fail-loud reading of the
+          spec's MUST NOT discard, consistent with the module's existing
+          unknown-concern convention); CRLF/CR input normalized to LF before
+          marker matching (output stays LF-only); marker naming aligned to
+          design.md's literal AGENT-FILL:curated-<concern> example across all
+          five concerns (old marker string has zero surviving references).
+          ROUND 2 (2026-07-05): MERGE-READY, all four findings CLOSED with
+          live repros, zero new findings; per-commit greenness verified in
+          disposable worktrees (893/7 -> 895/7); ValueError message confirmed
+          deterministic. TDD self-correction disclosed by implementer:
+          build_context_index was initially written before its 7.5 RED test,
+          removed, RED re-confirmed genuinely, then restored as 7.6's GREEN.
+          Review budget: 454 total changed lines (444 insertions + 10
+          deletions; ~40 of them openspec bookkeeping) — modestly over the
+          400 budget; both review rounds ruled size:exception defensible
+          (single cohesive unwired module, splitting would fragment a unit
+          reviewed together anyway), recorded in the PR body per maintainer
+          instruction under auto-chain.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
