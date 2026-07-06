@@ -66,6 +66,45 @@ Slot skeleton (deterministic; agent edits only inside the block):
 ```
 `index.md` reuses the existing `read_context_texts` convention (skips `index.md` and `_`-prefixed files), replacing the JSON-only `context/index.json` with an agent-readable markdown index.
 
+> [ADDITIVE NOTE, PR8 task 8.1: the literal filename above is aspirational and
+> was NOT what shipped. `application/context_files.py:build_context_index`
+> and the pre-existing, unrelated `JsonContextRepository.regenerate_index`
+> (Topic/Q&A context-schema subsystem behind `context status/elicit/ingest/
+> set/rm`) both targeted `context/index.md` with two incompatible formats —
+> a collision flagged by PR7's fresh-context review. PR8 namespaces rather
+> than consolidates: the Topic/Q&A subsystem keeps `context/index.md`
+> untouched; the new progressive-disclosure index writes to
+> `context/curated-index.md` (`CURATED_INDEX_FILENAME`). Consolidating the
+> two was explicitly out of scope (see tasks.md 7.6's own additive note) —
+> they serve different purposes with incompatible content shapes. Locked in
+> by `tests/integration/test_pipeline_service.py::
+> test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_topic_qa_index`.]
+
+> [ADDITIVE NOTE, PR8 remediation (fresh-context review CRITICAL): namespacing
+> the writer alone was not enough — the READER side (`application/collection.py`'s
+> `collect_sources` glob loop and `infrastructure/persistence/
+> filesystem_source_repository.py:read_context_texts`) still only skipped
+> `_`-prefixed files and the literal `index.md`, so `curated-index.md` was
+> collected into `source-manifest.json` as a `"confirmado"` approved-context
+> source and its body was scanned for `contradiccion`/`dato_sensible` facts —
+> reproducible with a planted term. Fixed by extracting the skip rule into a
+> new domain-level module, `domain/context_index_files.py`
+> (`TOPIC_QA_INDEX_FILENAME`, `CURATED_INDEX_FILENAME`,
+> `is_context_content_filename`), consumed by all three call sites: the
+> writer's `context_files.py:_is_indexable` now delegates to it instead of
+> re-declaring the rule, and both readers call it directly. Concern files
+> (`keywords.md`/`tone.md`/`structure.md`/`writing-style.md`/
+> `formatting-rules.md`) are unaffected and remain collected as approved
+> context — the Data Flow above and this section's own layout already place
+> them in `context/` as agent-curated content meant to be read downstream,
+> unlike the two purely-generated index files. Locked in by
+> `tests/unit/domain/test_context_index_files.py`,
+> `tests/integration/test_collection_service.py::
+> test_collect_sources_excludes_curated_index_from_sources_and_facts` (+ a
+> sibling test confirming concern files still collect), and
+> `tests/unit/infrastructure/test_filesystem_source_repository.py::
+> test_read_context_texts_skips_curated_index_file`.]
+
 ## Interfaces / Contracts
 
 ```python
@@ -85,6 +124,16 @@ class SourceIngestPort(Protocol):
 
 # domain/pipeline.py — pure ordering, no format literals
 def pipeline_stage_plan(stage_set, prep, assemble, ingest) -> list[tuple[str, bool]]: ...
+# [ADDITIVE NOTE, PR8 task 8.1: this signature sketch was NOT what shipped.
+# `prep` never became a parameter (PR4 already fixed it as a module
+# constant, `_PREP_STAGES`), and `ingest` landed the same way: a second
+# module constant, `_INGEST_STAGES`, returned directly for
+# `pipeline_stage_plan("ingest")`. Ingest/context-file stage names are just
+# as format-agnostic as `prep` -- they never vary by output format -- so a
+# caller-supplied parameter would have been unnecessary indirection. Only
+# `assemble` is genuinely caller-supplied (it varies by the resolved
+# `DocumentRendererPort`). The actual, tested signature stayed
+# `pipeline_stage_plan(stage_set, assemble=None)`.]
 ```
 Asset generalization: `AssetRepository.glob_docx` → `glob_assets(kind)`; `AssetService` validates by configurable asset-kind, not hardcoded `.docx`.
 
@@ -108,6 +157,7 @@ Asset generalization: `AssetRepository.glob_docx` → `glob_assets(kind)`; `Asse
 | Sentinel strings (`evidence.py`, `collection.py`, `rules.py`, `sections.py`, `review.py`, `section_rendering.py`) | Modify | Remove `"tesina"` identifiers |
 | `pyproject.toml` | Modify | Declare `docxcompose`; add `filetype`, `opendataloader-pdf` |
 | root `main.py` | Delete | Dead entrypoint |
+| `infrastructure/docx/deterministic_zip.py` | Create | ADDITIVE (PR8 bugfix, post-verify): `normalize_docx_zip_timestamps` — rewrites every `.docx` zip entry's `date_time` to a fixed sentinel (`1980-01-01`), fixing an intermittent full-pipeline-determinism failure caused by `python-docx`/`docxcompose` stamping zip entries with wall-clock time at 2-second DOS granularity on every `Document.save()`. Applied at `python_docx_assembly_adapter.py`'s three terminal write sites (`assemble()`'s no-embed and embed branches, `insert_toc_field`'s found-placeholder path); see `tasks.md` task 8.6 for the full root-cause note. |
 
 ## Testing Strategy
 
@@ -116,6 +166,7 @@ Asset generalization: `AssetRepository.glob_docx` → `glob_assets(kind)`; `Asse
 | Unit | IngestService routing, detector ext-fallback, registry resolution, skeleton builder | fake ports, `uv run pytest`, strict TDD (test first) |
 | Extensibility | second format proves open-closed | register a fake `"txt"` renderer in a test registry; pipeline resolves its stage plan without editing `domain/pipeline.py` |
 | Determinism | same sources → identical bytes | double-run byte comparison of ingested `.md` and context skeletons |
+| Determinism (DOCX zip metadata) | same document content → byte-identical `.docx` regardless of wall-clock time | `test_docx_zip_determinism.py` monkeypatches `time.time` across a forced 2-second DOS-timestamp boundary between two builds |
 | Regression | DOCX path unchanged | existing integration tests (`test_docx_assembly_service`) must stay green |
 
 ## Migration / Rollout

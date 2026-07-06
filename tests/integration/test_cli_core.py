@@ -84,6 +84,16 @@ def test_pipeline_prep_runs_and_reports_a_summary(workspace, monkeypatch):
     assert "Pipeline `prep`" in result.output
 
 
+def test_pipeline_help_lists_ingest_stage_set(workspace):
+    # Regression (fresh-context review WARNING, PR8 remediation): the `ingest`
+    # stage_set has been live since PR5/PR8, and design.md's data flow
+    # requires running it before `assemble`/`all`, but the CLI `--help` text
+    # only ever advertised `prep | assemble | all` -- undiscoverable.
+    result = runner.invoke(app, ["pipeline", "--help"])
+    assert result.exit_code == 0
+    assert "ingest" in result.output
+
+
 def test_pipeline_unknown_stage_set_errors_cleanly(workspace):
     _new_doc()
     result = runner.invoke(app, ["pipeline", "bogus"])

@@ -33,6 +33,17 @@ def test_read_context_texts_skips_underscore_and_index_files(tmp_path: Path, rep
     assert texts == {"scope": "alcance del proyecto"}
 
 
+def test_read_context_texts_skips_curated_index_file(tmp_path: Path, repo):
+    # Regression (fresh-context review CRITICAL, PR8 remediation): the new
+    # progressive-disclosure `curated-index.md` (PR8's stage_build_context_index)
+    # was not covered by this skip rule, so its body leaked into the fact-
+    # detection text corpus scanned by `CollectionService.collect_sources`.
+    (tmp_path / "scope.md").write_text("alcance del proyecto")
+    (tmp_path / "curated-index.md").write_text("indice curado generado")
+    texts = repo.read_context_texts(tmp_path)
+    assert texts == {"scope": "alcance del proyecto"}
+
+
 def test_glob_pattern_sorted_under_root(tmp_path: Path, repo):
     (tmp_path / "b.py").write_text("b")
     (tmp_path / "a.py").write_text("a")

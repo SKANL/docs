@@ -11,8 +11,9 @@ from typing import Any
 
 from defusedxml.ElementTree import parse as safe_parse
 
-from docs.domain.docx_structure import resolve_part_text, structure_parts
+from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
+from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
 
 
@@ -313,6 +314,7 @@ def insert_toc_field(docx_path: Path, placeholder: str = "[[TOC]]", levels: str 
     run._r.append(fld_end)
     document.save(str(docx_path))
     set_update_fields_on_open(docx_path)
+    normalize_docx_zip_timestamps(docx_path)
     return True
 
 
@@ -371,9 +373,9 @@ class PythonDocxAssemblyAdapter:
         from docx import Document
 
         parts = structure_parts(config)
-        sections_index = self._sections_index(parts)
-        sections_part = parts[sections_index] if sections_index < len(parts) else {"type": "sections"}
-        leading = parts[:sections_index]
+        idx = sections_index(parts)
+        sections_part = parts[idx] if idx < len(parts) else {"type": "sections"}
+        leading = parts[:idx]
 
         has_cover_from_asset_part = any(p.get("type") == "cover_from_asset" for p in leading)
         cover = self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
@@ -482,13 +484,14 @@ class PythonDocxAssemblyAdapter:
         output_docx.parent.mkdir(parents=True, exist_ok=True)
         parts = structure_parts(config)
         has_cover_from_asset = any(
-            p.get("type") == "cover_from_asset" for p in parts[: self._sections_index(parts)]
+            p.get("type") == "cover_from_asset" for p in parts[: sections_index(parts)]
         )
         main = self._build_main_document(config, body_docx, cover_asset_path if has_cover_from_asset else None)
 
         if not embed_front_paths and not embed_back_paths:
             main.save(str(output_docx))
             ensure_bullet_numbering_part(output_docx)
+            normalize_docx_zip_timestamps(output_docx)
             return
 
         with tempfile.TemporaryDirectory(prefix="docs_assemble_") as tmp:
@@ -508,7 +511,4 @@ class PythonDocxAssemblyAdapter:
             for piece in ordered[1:]:
                 composer.append(Document(str(piece)))
             composer.save(str(output_docx))
-
-    @staticmethod
-    def _sections_index(parts: list[dict[str, Any]]) -> int:
-        return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))
+            normalize_docx_zip_timestamps(output_docx)

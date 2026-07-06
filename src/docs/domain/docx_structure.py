@@ -73,3 +73,13 @@ def margins_match(actual: dict[str, int], expected: dict[str, int], tolerance: i
         key in actual and key in expected and abs(actual[key] - expected[key]) <= tolerance
         for key in expected
     )
+
+
+def sections_index(parts: list[dict[str, Any]]) -> int:
+    """Locate the "sections" part within an assembled document's ordered
+    part list. Single shared implementation (PR8 de-duplication,
+    document-pipeline spec: `Single _sections_index implementation`) --
+    `DocxRendererAdapter` (application layer) and `PythonDocxAssemblyAdapter`
+    (infrastructure layer) each used to carry their own byte-identical
+    private copy of this exact logic; both now call this domain function."""
+    return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))

@@ -7,7 +7,7 @@ from typing import Any
 
 from docs.application.asset import AssetService
 from docs.application.output_names import resolve_body_docx_name, resolve_draft_docx_name
-from docs.domain.docx_structure import structure_parts
+from docs.domain.docx_structure import sections_index, structure_parts
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
@@ -38,19 +38,16 @@ class DocxRendererAdapter:
     def _body_docx_name(self, config: dict[str, Any]) -> str:
         return resolve_body_docx_name(config)
 
-    def _sections_index(self, parts: list[dict[str, Any]]) -> int:
-        return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))
-
     def _resolve_cover_asset_path(self, doc_id: str, parts: list[dict[str, Any]]) -> Path | None:
-        leading = parts[: self._sections_index(parts)]
+        leading = parts[: sections_index(parts)]
         for part in leading:
             if part.get("type") == "cover_from_asset":
                 return self.asset_service.asset_path(doc_id, part.get("asset", "cover"))
         return None
 
     def _resolve_embed_paths(self, doc_id: str, parts: list[dict[str, Any]], region: str) -> list[Path]:
-        sections_index = self._sections_index(parts)
-        chosen = parts[:sections_index] if region == "front" else parts[sections_index + 1 :]
+        idx = sections_index(parts)
+        chosen = parts[:idx] if region == "front" else parts[idx + 1 :]
         paths: list[Path] = []
         for part in chosen:
             if part.get("type") != "embed_docx":

@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from docs.domain.context_index_files import is_context_content_filename
+
 _RUN_KWARGS = {"check": True, "capture_output": True, "text": True, "encoding": "utf-8"}
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class FilesystemSourceRepository:
         if not context_dir.exists():
             return context
         for path in sorted(context_dir.glob("*.md")):
-            if path.name.startswith("_") or path.name == "index.md":
+            if not is_context_content_filename(path.name):
                 continue
             context[path.stem] = path.read_text(encoding="utf-8")
         return context
