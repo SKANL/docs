@@ -29,7 +29,7 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
 @core_app.command()
 def pipeline(
     ctx: typer.Context,
-    stage_set: str = typer.Argument(..., help="prep | assemble | all"),
+    stage_set: str = typer.Argument(..., help="prep | ingest | assemble | all"),
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
     repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
