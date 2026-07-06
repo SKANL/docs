@@ -27,7 +27,7 @@ phases:
     artifact: tasks.md
     engram_topic: sdd/universal-doc-harness/tasks
   apply:
-    status: in_progress
+    status: done
     engram_topic: sdd/universal-doc-harness/apply-progress
     next_slice: none (all 8 slices done; next phase is verify)
     note: >-
@@ -280,8 +280,13 @@ phases:
           remediation entangles the port signature across all three adapters
           making a post-hoc split require history surgery).
       PR7:
-        status: implemented
+        status: merged
         branch: feat/pr7-context-files-index
+        pr: https://github.com/SKANL/docs/pull/9
+        merge: >-
+          Merged to main 2026-07-05 via GitHub PR #9 (merge commit 6830231,
+          branch deleted); main verified green post-merge (895 passed, 7
+          skipped) and codegraph sync run.
         tasks: 7.1-7.10 complete
         tests: 895 passed, 7 skipped (baseline was 877/7; 893/7 before fresh-review remediation)
         commits:
@@ -328,8 +333,14 @@ phases:
           reviewed together anyway), recorded in the PR body per maintainer
           instruction under auto-chain.
       PR8:
-        status: implemented
+        status: merged
         branch: feat/pr8-pipeline-wiring
+        pr: https://github.com/SKANL/docs/pull/10
+        merge: >-
+          Merged to main 2026-07-06 via GitHub PR #10 (merge commit 236bcac,
+          branch deleted); main verified green post-merge (923 passed, 7
+          skipped) and codegraph sync run. Apply phase complete — all 8
+          slices merged in order, main stayed green after every merge.
         tasks: 8.1-8.8 complete
         tests: 923 passed, 7 skipped (baseline was 895/7; 911/7 before remediation rounds)
         commits:
