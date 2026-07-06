@@ -13,6 +13,7 @@ from defusedxml.ElementTree import parse as safe_parse
 
 from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
+from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
 
 
@@ -313,6 +314,7 @@ def insert_toc_field(docx_path: Path, placeholder: str = "[[TOC]]", levels: str 
     run._r.append(fld_end)
     document.save(str(docx_path))
     set_update_fields_on_open(docx_path)
+    normalize_docx_zip_timestamps(docx_path)
     return True
 
 
@@ -489,6 +491,7 @@ class PythonDocxAssemblyAdapter:
         if not embed_front_paths and not embed_back_paths:
             main.save(str(output_docx))
             ensure_bullet_numbering_part(output_docx)
+            normalize_docx_zip_timestamps(output_docx)
             return
 
         with tempfile.TemporaryDirectory(prefix="docs_assemble_") as tmp:
@@ -508,3 +511,4 @@ class PythonDocxAssemblyAdapter:
             for piece in ordered[1:]:
                 composer.append(Document(str(piece)))
             composer.save(str(output_docx))
+            normalize_docx_zip_timestamps(output_docx)

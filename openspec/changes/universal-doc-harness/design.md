@@ -157,6 +157,7 @@ Asset generalization: `AssetRepository.glob_docx` → `glob_assets(kind)`; `Asse
 | Sentinel strings (`evidence.py`, `collection.py`, `rules.py`, `sections.py`, `review.py`, `section_rendering.py`) | Modify | Remove `"tesina"` identifiers |
 | `pyproject.toml` | Modify | Declare `docxcompose`; add `filetype`, `opendataloader-pdf` |
 | root `main.py` | Delete | Dead entrypoint |
+| `infrastructure/docx/deterministic_zip.py` | Create | ADDITIVE (PR8 bugfix, post-verify): `normalize_docx_zip_timestamps` — rewrites every `.docx` zip entry's `date_time` to a fixed sentinel (`1980-01-01`), fixing an intermittent full-pipeline-determinism failure caused by `python-docx`/`docxcompose` stamping zip entries with wall-clock time at 2-second DOS granularity on every `Document.save()`. Applied at `python_docx_assembly_adapter.py`'s three terminal write sites (`assemble()`'s no-embed and embed branches, `insert_toc_field`'s found-placeholder path); see `tasks.md` task 8.6 for the full root-cause note. |
 
 ## Testing Strategy
 
@@ -165,6 +166,7 @@ Asset generalization: `AssetRepository.glob_docx` → `glob_assets(kind)`; `Asse
 | Unit | IngestService routing, detector ext-fallback, registry resolution, skeleton builder | fake ports, `uv run pytest`, strict TDD (test first) |
 | Extensibility | second format proves open-closed | register a fake `"txt"` renderer in a test registry; pipeline resolves its stage plan without editing `domain/pipeline.py` |
 | Determinism | same sources → identical bytes | double-run byte comparison of ingested `.md` and context skeletons |
+| Determinism (DOCX zip metadata) | same document content → byte-identical `.docx` regardless of wall-clock time | `test_docx_zip_determinism.py` monkeypatches `time.time` across a forced 2-second DOS-timestamp boundary between two builds |
 | Regression | DOCX path unchanged | existing integration tests (`test_docx_assembly_service`) must stay green |
 
 ## Migration / Rollout
