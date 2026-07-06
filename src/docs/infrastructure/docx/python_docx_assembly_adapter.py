@@ -11,7 +11,7 @@ from typing import Any
 
 from defusedxml.ElementTree import parse as safe_parse
 
-from docs.domain.docx_structure import resolve_part_text, structure_parts
+from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
 
@@ -371,9 +371,9 @@ class PythonDocxAssemblyAdapter:
         from docx import Document
 
         parts = structure_parts(config)
-        sections_index = self._sections_index(parts)
-        sections_part = parts[sections_index] if sections_index < len(parts) else {"type": "sections"}
-        leading = parts[:sections_index]
+        idx = sections_index(parts)
+        sections_part = parts[idx] if idx < len(parts) else {"type": "sections"}
+        leading = parts[:idx]
 
         has_cover_from_asset_part = any(p.get("type") == "cover_from_asset" for p in leading)
         cover = self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
@@ -482,7 +482,7 @@ class PythonDocxAssemblyAdapter:
         output_docx.parent.mkdir(parents=True, exist_ok=True)
         parts = structure_parts(config)
         has_cover_from_asset = any(
-            p.get("type") == "cover_from_asset" for p in parts[: self._sections_index(parts)]
+            p.get("type") == "cover_from_asset" for p in parts[: sections_index(parts)]
         )
         main = self._build_main_document(config, body_docx, cover_asset_path if has_cover_from_asset else None)
 
@@ -508,7 +508,3 @@ class PythonDocxAssemblyAdapter:
             for piece in ordered[1:]:
                 composer.append(Document(str(piece)))
             composer.save(str(output_docx))
-
-    @staticmethod
-    def _sections_index(parts: list[dict[str, Any]]) -> int:
-        return next((i for i, p in enumerate(parts) if p.get("type") == "sections"), len(parts))

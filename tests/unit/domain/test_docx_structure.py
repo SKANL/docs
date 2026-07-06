@@ -4,6 +4,7 @@ from docs.domain.docx_structure import (
     margins_match,
     non_cover_margin_emu,
     resolve_part_text,
+    sections_index,
     structure_parts,
 )
 
@@ -146,3 +147,28 @@ def test_margins_match_false_when_key_missing_from_actual():
 
 def test_margins_match_true_when_expected_is_empty():
     assert margins_match({"top": 1}, {}) is True
+
+
+# --- Task 8.4/8.5: single shared _sections_index implementation ---------
+#
+# `DocxRendererAdapter` (application layer) and `PythonDocxAssemblyAdapter`
+# (infrastructure layer) each used to carry their own byte-identical private
+# `_sections_index` method. Both now delegate to this one domain-layer
+# function instead.
+
+
+def test_sections_index_locates_the_sections_part():
+    parts = [{"type": "cover_from_template"}, {"type": "sections"}, {"type": "embed_docx"}]
+    assert sections_index(parts) == 1
+
+
+def test_sections_index_defaults_to_end_when_no_sections_part_present():
+    assert sections_index([{"type": "cover_from_template"}]) == 1
+
+
+def test_sections_index_is_the_single_shared_implementation():
+    from docs.application.docx_assembly import DocxRendererAdapter
+    from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+
+    assert not hasattr(DocxRendererAdapter, "_sections_index")
+    assert not hasattr(PythonDocxAssemblyAdapter, "_sections_index")
