@@ -104,7 +104,7 @@ class CollectionService:
                             f"El contexto aprobado contiene el campo sensible `{field}`; "
                             "no debe pasar al cuerpo sin instrucción explícita."
                         ),
-                        "source": "tesina/context",
+                        "source": "context",
                     }
                 )
 
