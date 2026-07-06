@@ -56,8 +56,29 @@ def test_pipeline_stage_plan_all_is_prep_plus_review_document_plus_assemble():
 
 
 def test_pipeline_stage_plan_unknown_stage_set_raises_value_error():
-    with pytest.raises(ValueError, match="Conjunto de etapas desconocido: bogus. Usa prep, assemble o all."):
+    with pytest.raises(ValueError, match="Conjunto de etapas desconocido: bogus. Usa prep, assemble, all o ingest."):
         pipeline_stage_plan("bogus")
+
+
+def test_pipeline_stage_plan_ingest_has_three_stages_in_order():
+    # Format-agnostic like `prep`: ingest/context-file generation stage names
+    # never vary by output format, so they stay a module constant here
+    # rather than a caller-supplied parameter (PR8 task 8.1).
+    stages = pipeline_stage_plan("ingest")
+    assert [name for name, _ in stages] == ["ingest", "build-context-files", "build-context-index"]
+
+
+def test_pipeline_stage_plan_ingest_fail_fast_flags_are_all_true():
+    stages = dict(pipeline_stage_plan("ingest"))
+    assert stages == {"ingest": True, "build-context-files": True, "build-context-index": True}
+
+
+def test_pipeline_stage_plan_ingest_deterministic_across_repeated_calls():
+    first = pipeline_stage_plan("ingest")
+    second = pipeline_stage_plan("ingest")
+    assert first == second
+    first.append(("mutated", False))
+    assert second == [("ingest", True), ("build-context-files", True), ("build-context-index", True)]
 
 
 def test_pipeline_stage_plan_assemble_without_stages_raises_value_error():
