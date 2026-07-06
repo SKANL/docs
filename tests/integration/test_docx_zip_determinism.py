@@ -1,13 +1,15 @@
 # tests/integration/test_docx_zip_determinism.py
 from __future__ import annotations
 
+import shutil
 import time as time_module
 import zipfile
 from pathlib import Path
 
+import pytest
 from docx import Document
 
-from docs.infrastructure.docx.deterministic_zip import SENTINEL_DATE_TIME
+from docs.infrastructure.docx.deterministic_zip import SENTINEL_CORE_XML_DATETIME, SENTINEL_DATE_TIME
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 
 
@@ -103,3 +105,48 @@ def test_assemble_embed_branch_normalizes_zip_timestamps_and_is_deterministic(tm
     with zipfile.ZipFile(tmp_path / "first.docx") as archive:
         timestamps = {info.date_time for info in archive.infolist()}
     assert timestamps == {SENTINEL_DATE_TIME}
+
+
+# --- render_pandoc (body docx written directly by the pandoc subprocess) ------
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_render_pandoc_output_is_deterministic_by_construction(tmp_path):
+    # Root cause: pandoc is an external subprocess that writes the .docx
+    # itself -- unlike the three python-docx write sites this module already
+    # normalizes, nothing ever called `normalize_docx_zip_timestamps` on
+    # `render_pandoc`'s output. pandoc stamps every zip entry's `date_time`
+    # with the wall clock AND writes a real `dcterms:created`/
+    # `dcterms:modified` value into docProps/core.xml, so the resulting body
+    # .docx violated this harness's same-inputs -> byte-identical-outputs
+    # invariant on both zip metadata and payload bytes.
+    markdown = tmp_path / "section.md"
+    markdown.write_text("# Titulo\n\nCuerpo del texto de prueba.\n", encoding="utf-8")
+    output = tmp_path / "body.docx"
+    PythonDocxAssemblyAdapter().render_pandoc(shutil.which("pandoc"), [markdown], output)
+
+    with zipfile.ZipFile(output) as archive:
+        timestamps = {info.date_time for info in archive.infolist()}
+        core_xml = archive.read("docProps/core.xml").decode("utf-8")
+
+    assert timestamps == {SENTINEL_DATE_TIME}
+    assert core_xml.count(SENTINEL_CORE_XML_DATETIME) == 2  # dcterms:created + dcterms:modified
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_render_pandoc_output_is_byte_identical_across_a_real_wall_clock_gap(tmp_path):
+    # pandoc's wall clock is read inside a separate subprocess, so unlike the
+    # python-docx write sites (which monkeypatch `time.time`), it cannot be
+    # faked from this process. This is the one test in the suite that uses a
+    # real sleep to prove byte-identity across an actual elapsed time gap.
+    markdown = tmp_path / "section.md"
+    markdown.write_text("# Titulo\n\nCuerpo del texto de prueba.\n", encoding="utf-8")
+    pandoc_path = shutil.which("pandoc")
+
+    first = tmp_path / "first.docx"
+    PythonDocxAssemblyAdapter().render_pandoc(pandoc_path, [markdown], first)
+    time_module.sleep(2.1)
+    second = tmp_path / "second.docx"
+    PythonDocxAssemblyAdapter().render_pandoc(pandoc_path, [markdown], second)
+
+    assert first.read_bytes() == second.read_bytes()

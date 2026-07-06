@@ -350,7 +350,15 @@ def set_update_fields_on_open(docx_path: Path) -> None:
 
 class PythonDocxAssemblyAdapter:
     def render_pandoc(self, pandoc_path: str, inputs: list[Path], output: Path) -> None:
+        # pandoc is an external subprocess that writes `output` itself, so
+        # (unlike the three write sites below that go through python-docx)
+        # this harness never controls the zip entry timestamps or
+        # docProps/core.xml dcterms values pandoc stamps into the file.
+        # Normalize immediately after the subprocess succeeds so the body
+        # .docx is deterministic like every other artifact this adapter
+        # produces.
         subprocess.run([pandoc_path, *map(str, inputs), "-o", str(output)], check=True)
+        normalize_docx_zip_timestamps(output)
 
     def insert_toc_field(self, docx_path: Path, placeholder: str = "[[TOC]]", levels: str = "1-3") -> bool:
         return insert_toc_field(docx_path, placeholder=placeholder, levels=levels)

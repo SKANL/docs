@@ -655,10 +655,15 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
         "---\n{}\n---\n# Introducción\n\nContenido de la sección.\n", encoding="utf-8"
     )
 
-    def run_once() -> tuple[bytes, dict[str, bytes], dict[str, bytes]]:
+    def run_once() -> tuple[dict[str, bytes], dict[str, bytes], dict[str, bytes]]:
         service.run_pipeline("doc1", _template(), config, "ingest", repo_root=tmp_path)
         service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path)
-        docx_bytes = (draft_dir / "tesina-draft.docx").read_bytes()
+        # Coverage gap closed here: this used to read only tesina-draft.docx,
+        # so it never caught the body docx (tesina-body.docx, written
+        # directly by the pandoc subprocess) being non-deterministic --
+        # every .docx persisted anywhere under the doc's output tree must be
+        # byte-identical across runs, not just the final draft.
+        docx_bytes = {str(p.relative_to(tmp_path)): p.read_bytes() for p in sorted(tmp_path.rglob("*.docx"))}
         context_bytes = {p.name: p.read_bytes() for p in Path(config["paths"]["context_dir"]).glob("*.md")}
         ingested_bytes = {p.name: p.read_bytes() for p in (sections_dir / "ingested").glob("*.md")}
         return docx_bytes, context_bytes, ingested_bytes
@@ -668,7 +673,8 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
 
     assert first_ingested and first_ingested == second_ingested
     assert first_context and first_context == second_context
-    assert first_docx == second_docx
+    assert first_docx and first_docx == second_docx
+    assert {Path(name).name for name in first_docx} == {"tesina-draft.docx", "tesina-body.docx"}
 
 
 @pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")

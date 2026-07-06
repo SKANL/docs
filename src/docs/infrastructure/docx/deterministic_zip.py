@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import zipfile
 from pathlib import Path
@@ -23,10 +24,44 @@ from pathlib import Path
 # considered complete.
 SENTINEL_DATE_TIME = (1980, 1, 1, 0, 0, 0)
 
+# python-docx's own template (`docx/templates/default.docx`) stamps
+# docProps/core.xml with this fixed `dcterms:created`/`dcterms:modified`
+# value, so every harness-produced .docx already agrees on it. pandoc, by
+# contrast, writes its own real wall-clock value into that file when it
+# authors a .docx directly (see `render_pandoc`'s body-write path) -- a
+# payload diff that zip-entry timestamp normalization alone cannot catch.
+SENTINEL_CORE_XML_DATETIME = "2013-12-23T23:15:00Z"
+
+_CORE_PROPS_ARCNAME = "docProps/core.xml"
+# Matches both python-docx's multi-line, indented core.xml (already the
+# sentinel value) and pandoc's single-line core.xml (a real wall-clock
+# value), regardless of attribute order -- a targeted value replacement,
+# not a reformat of the surrounding markup.
+_DCTERMS_VALUE_PATTERN = re.compile(
+    rb"(<dcterms:(?:created|modified)\b[^>]*>)[^<]*(</dcterms:(?:created|modified)>)"
+)
+
+
+def _neutralize_core_properties(arcname: str, data: bytes) -> bytes:
+    """Rewrite `docProps/core.xml`'s `dcterms:created`/`dcterms:modified`
+    values to a fixed sentinel, leaving every other byte of the payload
+    untouched. No-op for every other zip entry.
+
+    python-docx's own template already stamps this same sentinel value, so
+    this is a no-op on python-docx-authored files -- it only changes bytes
+    when an external tool (pandoc) wrote its own real timestamp.
+    """
+    if arcname != _CORE_PROPS_ARCNAME:
+        return data
+    replacement = SENTINEL_CORE_XML_DATETIME.encode("ascii")
+    return _DCTERMS_VALUE_PATTERN.sub(lambda match: match.group(1) + replacement + match.group(2), data)
+
 
 def normalize_docx_zip_timestamps(docx_path: Path) -> None:
-    """Rewrite every zip entry's `date_time` to a fixed sentinel value,
-    leaving entry order, compression settings, and payload bytes untouched.
+    """Rewrite every zip entry's `date_time` to a fixed sentinel value and
+    neutralize `docProps/core.xml`'s `dcterms:created`/`dcterms:modified`
+    values, leaving entry order, compression settings, and every other
+    payload byte untouched.
 
     Call this as the last step whenever a `.docx` file produced by this
     adapter is considered finished, so the on-disk artifact is fully
@@ -35,7 +70,10 @@ def normalize_docx_zip_timestamps(docx_path: Path) -> None:
     """
     docx_path = Path(docx_path)
     with zipfile.ZipFile(docx_path, "r") as archive:
-        entries = [(info, archive.read(info.filename)) for info in archive.infolist()]
+        entries = [
+            (info, _neutralize_core_properties(info.filename, archive.read(info.filename)))
+            for info in archive.infolist()
+        ]
 
     fd, tmp_name = tempfile.mkstemp(dir=str(docx_path.parent), prefix=".docx-normalize-", suffix=".docx")
     os.close(fd)
