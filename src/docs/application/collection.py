@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.collection import classify_source, dedupe_facts, extract_github_repo, parse_gh_issues
+from docs.domain.context_index_files import is_context_content_filename
 from docs.domain.markdown_text import clean_markdown_text
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.source_repository import SourceRepository
@@ -43,7 +44,7 @@ class CollectionService:
 
         context_dir = Path(config["paths"]["context_dir"])
         for path in self.source_repository.glob_markdown(context_dir):
-            if path.name.startswith("_") or path.name == "index.md":
+            if not is_context_content_filename(path.name):
                 continue
             add_file(path, "approved_context", "contexto aprobado del documento")
 

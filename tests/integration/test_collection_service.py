@@ -121,6 +121,49 @@ def test_collect_sources_injects_sensitive_field_fact_when_table_row_present(tmp
     assert any(f["classification"] == "dato_sensible" and "DNI" in f["claim"] for f in manifest["facts"])
 
 
+def test_collect_sources_excludes_curated_index_from_sources_and_facts(tmp_path: Path, service):
+    # Regression (fresh-context review CRITICAL, PR8 remediation): PR8's
+    # `stage_build_context_index` writes `context/curated-index.md`, but the
+    # reader side (this method) only skipped `_`-prefixed files and the
+    # literal `index.md` -- so the new curated index leaked in as a
+    # "confirmado" approved-context source, AND its body text was scanned
+    # for contradiction/sensitive-field facts, producing false positives.
+    # Real CollectionService + FilesystemSourceRepository, no mocks.
+    config = _config(
+        tmp_path,
+        evidence_sources={"scope_contradiction_terms": ["fuera de alcance original"]},
+    )
+    context_dir = Path(config["paths"]["context_dir"])
+    (context_dir / "scope.md").write_text("Alcance del proyecto.")
+    (context_dir / "curated-index.md").write_text(
+        "# Context Index\n\nBoilerplate mentioning Fuera De Alcance Original.\n"
+    )
+    path = service.collect_sources(config)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    source_names = [Path(s["path"]).name for s in manifest["sources"]]
+    assert "curated-index.md" not in source_names
+    assert manifest["source_count"] == 1  # only scope.md
+    assert manifest["facts"] == []  # curated-index.md boilerplate must not surface a false-positive fact
+
+
+def test_collect_sources_still_includes_curated_concern_files_as_approved_context(tmp_path: Path, service):
+    # Contract lock (not RED-first, existing/unchanged behavior): design.md's
+    # Context Layout places keywords.md/tone.md/structure.md/writing-style.md/
+    # formatting-rules.md in the same `context/` directory as approved
+    # context, and its Data Flow routes them through the same [agent fills
+    # slots] step before rendering -- they ARE meant to be collected as
+    # "approved_context" sources, unlike the purely-generated index files.
+    config = _config(tmp_path)
+    context_dir = Path(config["paths"]["context_dir"])
+    (context_dir / "keywords.md").write_text("# Keywords\n\n- alcance\n")
+    (context_dir / "curated-index.md").write_text("# Context Index\n\n- [Keywords](keywords.md)\n")
+    path = service.collect_sources(config)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    by_name = {Path(s["path"]).name: s["type"] for s in manifest["sources"]}
+    assert by_name.get("keywords.md") == "approved_context"
+    assert "curated-index.md" not in by_name
+
+
 def test_collect_sources_carries_scope_policy(tmp_path: Path, service):
     config = _config(tmp_path, project={"scope_policy": "alcance institucional"})
     path = service.collect_sources(config)

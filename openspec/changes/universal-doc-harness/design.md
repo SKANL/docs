@@ -80,6 +80,31 @@ Slot skeleton (deterministic; agent edits only inside the block):
 > by `tests/integration/test_pipeline_service.py::
 > test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_topic_qa_index`.]
 
+> [ADDITIVE NOTE, PR8 remediation (fresh-context review CRITICAL): namespacing
+> the writer alone was not enough — the READER side (`application/collection.py`'s
+> `collect_sources` glob loop and `infrastructure/persistence/
+> filesystem_source_repository.py:read_context_texts`) still only skipped
+> `_`-prefixed files and the literal `index.md`, so `curated-index.md` was
+> collected into `source-manifest.json` as a `"confirmado"` approved-context
+> source and its body was scanned for `contradiccion`/`dato_sensible` facts —
+> reproducible with a planted term. Fixed by extracting the skip rule into a
+> new domain-level module, `domain/context_index_files.py`
+> (`TOPIC_QA_INDEX_FILENAME`, `CURATED_INDEX_FILENAME`,
+> `is_context_content_filename`), consumed by all three call sites: the
+> writer's `context_files.py:_is_indexable` now delegates to it instead of
+> re-declaring the rule, and both readers call it directly. Concern files
+> (`keywords.md`/`tone.md`/`structure.md`/`writing-style.md`/
+> `formatting-rules.md`) are unaffected and remain collected as approved
+> context — the Data Flow above and this section's own layout already place
+> them in `context/` as agent-curated content meant to be read downstream,
+> unlike the two purely-generated index files. Locked in by
+> `tests/unit/domain/test_context_index_files.py`,
+> `tests/integration/test_collection_service.py::
+> test_collect_sources_excludes_curated_index_from_sources_and_facts` (+ a
+> sibling test confirming concern files still collect), and
+> `tests/unit/infrastructure/test_filesystem_source_repository.py::
+> test_read_context_texts_skips_curated_index_file`.]
+
 ## Interfaces / Contracts
 
 ```python
