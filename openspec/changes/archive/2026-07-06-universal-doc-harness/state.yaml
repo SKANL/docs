@@ -426,8 +426,24 @@ phases:
       demonstrably satisfied/resolved (frozen artifacts — recorded here and
       in the archive report instead of edited).
   archive:
-    status: pending
+    status: done
     engram_topic: sdd/universal-doc-harness/archive-report
+    archived_to: openspec/changes/archive/2026-07-06-universal-doc-harness/
+    note: >-
+      Archived 2026-07-06. The 5 capability delta specs merged into main
+      specs under openspec/specs/ (reflecting the as-built, tested contract
+      including accepted deviations: 3-arg SourceIngestPort.ingest,
+      context/curated-index.md namespacing, zip-timestamp normalization,
+      module-constant _INGEST_STAGES). Change folder moved unchanged to the
+      archive path above with archive-report.md added. Verify verdict:
+      pass-with-warnings (two cosmetic frozen-artifact checkbox findings,
+      recorded in the archive report). INCIDENT NOTE: the first archive
+      attempt (haiku sub-agent) regenerated instead of copying —
+      truncating state.yaml/tasks.md and flipping a design.md checkbox in
+      the archived copies; caught by the orchestrator gate (diff vs
+      originals), repaired by re-copying originals byte-identical before
+      the move was committed. Merged main specs and archive-report
+      fresh-reviewed before commit.
 notes:
   - Technical-debt closeout slice merged 2026-07-05 (user-ordered, ahead of
     PR7) via GitHub PR #8 (merge commit 88423c9, branch
