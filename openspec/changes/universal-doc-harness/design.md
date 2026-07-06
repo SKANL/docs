@@ -66,6 +66,20 @@ Slot skeleton (deterministic; agent edits only inside the block):
 ```
 `index.md` reuses the existing `read_context_texts` convention (skips `index.md` and `_`-prefixed files), replacing the JSON-only `context/index.json` with an agent-readable markdown index.
 
+> [ADDITIVE NOTE, PR8 task 8.1: the literal filename above is aspirational and
+> was NOT what shipped. `application/context_files.py:build_context_index`
+> and the pre-existing, unrelated `JsonContextRepository.regenerate_index`
+> (Topic/Q&A context-schema subsystem behind `context status/elicit/ingest/
+> set/rm`) both targeted `context/index.md` with two incompatible formats —
+> a collision flagged by PR7's fresh-context review. PR8 namespaces rather
+> than consolidates: the Topic/Q&A subsystem keeps `context/index.md`
+> untouched; the new progressive-disclosure index writes to
+> `context/curated-index.md` (`CURATED_INDEX_FILENAME`). Consolidating the
+> two was explicitly out of scope (see tasks.md 7.6's own additive note) —
+> they serve different purposes with incompatible content shapes. Locked in
+> by `tests/integration/test_pipeline_service.py::
+> test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_topic_qa_index`.]
+
 ## Interfaces / Contracts
 
 ```python
@@ -85,6 +99,16 @@ class SourceIngestPort(Protocol):
 
 # domain/pipeline.py — pure ordering, no format literals
 def pipeline_stage_plan(stage_set, prep, assemble, ingest) -> list[tuple[str, bool]]: ...
+# [ADDITIVE NOTE, PR8 task 8.1: this signature sketch was NOT what shipped.
+# `prep` never became a parameter (PR4 already fixed it as a module
+# constant, `_PREP_STAGES`), and `ingest` landed the same way: a second
+# module constant, `_INGEST_STAGES`, returned directly for
+# `pipeline_stage_plan("ingest")`. Ingest/context-file stage names are just
+# as format-agnostic as `prep` -- they never vary by output format -- so a
+# caller-supplied parameter would have been unnecessary indirection. Only
+# `assemble` is genuinely caller-supplied (it varies by the resolved
+# `DocumentRendererPort`). The actual, tested signature stayed
+# `pipeline_stage_plan(stage_set, assemble=None)`.]
 ```
 Asset generalization: `AssetRepository.glob_docx` → `glob_assets(kind)`; `AssetService` validates by configurable asset-kind, not hardcoded `.docx`.
 
