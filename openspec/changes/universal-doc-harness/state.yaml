@@ -405,8 +405,26 @@ phases:
           with its slice; splitting would fragment the reviewable unit),
           recorded in the PR body per maintainer precedent under auto-chain.
   verify:
-    status: pending
+    status: done
     engram_topic: sdd/universal-doc-harness/verify-report
+    verdict: pass-with-warnings
+    note: >-
+      Verified 2026-07-06 against all 5 capability specs on main @ 4ed754f:
+      0 CRITICAL, 0 implementation WARNINGs. Suite run twice back-to-back by
+      the verifier (923 passed / 7 skipped both runs, zero flakes,
+      confirming the zip-timestamp determinism fix holds durably). All
+      determinism tests genuinely assert byte-identity; renderer
+      extensibility proven with zero domain/pipeline.py edits; grep
+      invariants clean (no tesina sentinels beyond output_names.py's two
+      documented backward-compat defaults, no dead main.py); 5.1 gate
+      conditions honored in the shipped opendataloader-pdf adapter
+      (ToolResolverPort Java resolution, single batched convert, hybrid/OCR
+      off); hexagonal dependency direction clean across src/; Spanish CLI
+      strings and no-silent-DOCX-fallback confirmed. Two cosmetic findings
+      for the archive report: proposal.md success-criteria checkboxes and
+      design.md Open Questions checkboxes remain unchecked despite being
+      demonstrably satisfied/resolved (frozen artifacts — recorded here and
+      in the archive report instead of edited).
   archive:
     status: pending
     engram_topic: sdd/universal-doc-harness/archive-report
