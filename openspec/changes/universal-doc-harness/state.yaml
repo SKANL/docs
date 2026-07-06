@@ -29,7 +29,7 @@ phases:
   apply:
     status: in_progress
     engram_topic: sdd/universal-doc-harness/apply-progress
-    next_slice: PR8
+    next_slice: none (all 8 slices done; next phase is verify)
     note: >-
       Task checkboxes in tasks.md are the source of truth for slice
       progress; merge apply-progress in engram, never overwrite.
@@ -327,6 +327,72 @@ phases:
           (single cohesive unwired module, splitting would fragment a unit
           reviewed together anyway), recorded in the PR body per maintainer
           instruction under auto-chain.
+      PR8:
+        status: implemented
+        branch: feat/pr8-pipeline-wiring
+        tasks: 8.1-8.8 complete
+        tests: 923 passed, 7 skipped (baseline was 895/7; 911/7 before remediation rounds)
+        commits:
+          - 9b0d023 refactor(document-pipeline) de-duplicate _sections_index into domain
+          - 6a7b759 fix(document-pipeline) drop last tesina literal from collection.py
+          - eea12fb feat(document-pipeline) add ingest stage_set to pipeline_stage_plan
+          - 9ae6f3b feat(document-pipeline) wire ingest/build-context-files/build-context-index
+          - b1fb2f2 test(document-pipeline) add missing unit tests for asset/context/pipeline
+          - 81d4717 test(document-pipeline) prove full pipeline determinism end to end
+          - 07a8c4f docs(sdd) close out PR8 tasks and record index.md collision resolution
+          - 4f0c86f fix(context-curation) stop curated-index.md leaking into evidence pipeline
+          - 1ce8a36 docs(cli) advertise ingest stage_set in pipeline --help text
+          - 8aeead6 fix(docx-assembly) normalize zip entry timestamps for determinism
+          - e24b729 test(docx-assembly) lock embed-branch zip timestamp normalization
+          - plus the chore(sdd) commit carrying this state.yaml update
+        note: >-
+          Final slice. domain/pipeline.py gained the ingest stage_set
+          (_INGEST_STAGES module constant, format-agnostic like _PREP_STAGES —
+          documented deviation from design.md's caller-supplied sketch);
+          PipelineService gained ingest_service and three stage callables
+          (ingest, build-context-files, build-context-index) wired in
+          cli/_shared.py; assemble/prep/all unchanged (all deliberately
+          excludes ingest stages for backward compat). index.md collision
+          resolved by NAMESPACING: Topic/Q&A keeps context/index.md, the
+          curated index writes context/curated-index.md. _sections_index
+          de-duplicated into domain/docx_structure.py:sections_index; last
+          tesina literal (collection.py "tesina/context" tag) fixed to
+          "context". App-layer unit-test gaps closed (asset/context/pipeline).
+          FRESH-REVIEW ROUND 1: NOT-READY — 1 CRITICAL (curated-index.md
+          leaked into the evidence pipeline: collect_sources and
+          read_context_texts skipped only "index.md"/_-prefixed, so the new
+          file was collected as a "confirmado" source and could trigger
+          false-positive contradiccion/dato_sensible facts; reviewer
+          reproduced live) + 1 WARNING (pipeline --help omitted ingest).
+          Remediated 4f0c86f: skip rule centralized in new
+          domain/context_index_files.py (TOPIC_QA_INDEX_FILENAME,
+          CURATED_INDEX_FILENAME, is_context_content_filename) consumed by
+          the writer and both readers; concern skeletons remain collected
+          (contract-backed by design.md Context Layout/Data Flow, locked by
+          test). 1ce8a36 fixed the help text. DETERMINISM BUG (orchestrator-
+          reproduced during recovery: task 8.6's full-pipeline byte-
+          determinism test failed intermittently in full-suite runs):
+          root-caused to python-docx's _ZipPkgWriter using ZipFile.writestr
+          with no ZipInfo — stdlib stamps each zip entry with wall-clock
+          date_time at 2-second DOS granularity (docProps/core.xml carries a
+          fixed sentinel; ONLY the zip headers varied). Fixed 8aeead6: new
+          infrastructure/docx/deterministic_zip.py normalize_docx_zip_
+          timestamps (sentinel 1980-1-1, order/compression/payload preserved,
+          temp-file + atomic replace) applied at all three terminal .docx
+          write sites in python_docx_assembly_adapter.py; RED test forces the
+          2-second boundary via monkeypatched time.time (no sleeps).
+          ROUND 2: MERGE-READY — all three findings CLOSED with live repros;
+          independent audit found no missed .docx write site and no missed
+          context_dir reader; 3x consecutive full-suite runs 922/7 zero
+          flakes; per-commit greenness verified for the remediation commits
+          in disposable worktrees. Round-2 SUGGESTION (embed-success path had
+          no automated normalization test) closed in e24b729 with a load-
+          bearing-proven test (neutering the normalize call fails it with
+          the same byte-index-10 DOS-timestamp signature). Review budget:
+          ~860 total changed lines vs the 400 budget — size:exception ruled
+          defensible by both rounds (final wiring slice; remediation belongs
+          with its slice; splitting would fragment the reviewable unit),
+          recorded in the PR body per maintainer precedent under auto-chain.
   verify:
     status: pending
     engram_topic: sdd/universal-doc-harness/verify-report
