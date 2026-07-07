@@ -160,4 +160,6 @@ def test_empty_inbox_completes_without_error_and_reports_zero_processed(tmp_path
 
     report = _real_ingest_service().ingest_inbox(inbox, tmp_path / "sections")
 
-    assert report == {"processed": 0, "files": []}
+    # media_cleanup added in Front B (design.md Decision 8 #13) -- always
+    # present, empty when there is no sections/ingested/ dir to scan yet.
+    assert report == {"processed": 0, "files": [], "media_cleanup": {"removed": [], "refused": []}}

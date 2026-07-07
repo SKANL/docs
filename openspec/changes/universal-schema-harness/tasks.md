@@ -181,10 +181,10 @@ blockquote was added.
 the design's slicing sketch, PR2 through PR7.
 ## Phase 6: Front B — orphan `_media/` cleanup
 
-- [ ] 6.1 [front:first-use-bugs] [spec: document-ingest "Re-ingesting a source removes its stale media directory"] Add failing test in new `tests/unit/application/test_media_cleanup.py`: content-addressed `_media/` orphan (no current output references it) is removed.
-- [ ] 6.2 [front:first-use-bugs] [spec: document-ingest "Referenced media is never deleted"] Add failing test in the same file: a file under `_media/` not matching the content-addressed pattern is refused (left in place, reported in `_detection.json.ignored`).
-- [ ] 6.3 [front:first-use-bugs] Implement orphan cleanup step in `application/ingest.py` (runs during the ingest scan): remove only content-addressed orphans with no current reference; refuse and report anything else. Run 6.1-6.2 — must pass.
-- [ ] 6.4 [front:first-use-bugs] Run determinism suite ×2 for Front B closeout.
+- [x] 6.1 [front:first-use-bugs] [spec: document-ingest "Re-ingesting a source removes its stale media directory"] Add failing test in new `tests/unit/application/test_media_cleanup.py`: content-addressed `_media/` orphan (no current output references it) is removed.
+- [x] 6.2 [front:first-use-bugs] [spec: document-ingest "Referenced media is never deleted"] Add failing test in the same file: a file under `_media/` not matching the content-addressed pattern is refused (left in place, reported in `_detection.json.ignored`).
+- [x] 6.3 [front:first-use-bugs] Implement orphan cleanup step in `application/ingest.py` (runs during the ingest scan): remove only content-addressed orphans with no current reference; refuse and report anything else. Run 6.1-6.2 — must pass.
+- [x] 6.4 [front:first-use-bugs] Run determinism suite ×2 for Front B closeout.
 
 ## Phase 7: Front C — recursive ingest + JVM look-ahead status + writer port
 

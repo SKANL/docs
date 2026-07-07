@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +12,15 @@ from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
 
 _DETECTION_REPORT_NAME = "_detection.json"
+
+# Content-addressed media-dir shape (document-ingest spec: "Orphan Media
+# Directory Cleanup"; design.md Decision 8 #13): pandoc's
+# `--extract-media=<stem>-<kind>-<sha8>_media` (PandocIngestAdapter) always
+# produces a dirname whose base (before `_media`) ends in a hyphen plus
+# exactly 8 lowercase hex chars -- the same `sha256_hex(...)[:8]` used for
+# the paired `.md` output's own identity. A dirname that does NOT match this
+# shape was never produced by this harness and must never be touched.
+_CONTENT_ADDRESSED_MEDIA_RE = re.compile(r"^(?P<base>.+-[0-9a-f]{8})_media$")
 
 
 class IngestService:
@@ -44,7 +55,11 @@ class IngestService:
                 if path.is_file() and not path.name.startswith("_")
             )
             entries = [self._ingest_one_safely(path, sections_dir) for path in sources]
-        report = {"processed": len(entries), "files": entries}
+        report = {
+            "processed": len(entries),
+            "files": entries,
+            "media_cleanup": self._clean_orphan_media(sections_dir / "ingested"),
+        }
         self._write_detection_report(inbox_dir, report)
         return report
 
@@ -105,6 +120,34 @@ class IngestService:
         # a `stem+sha8`-only key silently skipped the second file's handler).
         candidate = ingested_output_path(ingested_dir, stem, kind, sha8)
         return candidate if candidate.exists() else None
+
+    def _clean_orphan_media(self, ingested_dir: Path) -> dict[str, list[str]]:
+        # Runs as a step during every ingest scan (design.md Decision 8 #13;
+        # spec: document-ingest "Orphan Media Directory Cleanup"). Only
+        # content-addressed orphans are removed -- a `_media/` dir is deleted
+        # ONLY if its name matches the content-addressed shape AND no current
+        # ingested `.md` output references it (i.e. the paired output was
+        # removed, or re-ingesting the source produced a different sha8).
+        # Anything not matching that shape is refused (left in place) --
+        # this cleanup can never delete a human's file. Both outcomes are
+        # reported, never silent.
+        removed: list[str] = []
+        refused: list[str] = []
+        if ingested_dir.is_dir():
+            media_dirs = sorted(
+                path for path in ingested_dir.iterdir() if path.is_dir() and path.name.endswith("_media")
+            )
+            for media_dir in media_dirs:
+                match = _CONTENT_ADDRESSED_MEDIA_RE.match(media_dir.name)
+                if match is None:
+                    refused.append(media_dir.name)
+                    continue
+                paired_md = ingested_dir / f"{match.group('base')}.md"
+                if paired_md.exists():
+                    continue  # still referenced -- never delete
+                shutil.rmtree(media_dir)
+                removed.append(media_dir.name)
+        return {"removed": removed, "refused": refused}
 
     def _write_detection_report(self, inbox_dir: Path, report: dict[str, Any]) -> None:
         if not inbox_dir.is_dir():
