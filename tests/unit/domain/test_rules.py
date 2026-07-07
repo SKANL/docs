@@ -466,6 +466,7 @@ from docs.domain.rules import (
     _check_extracted_dir_policy,
     _check_margins_and_cover_policy,
     _check_preliminaries_pagination,
+    _check_source_priority_excludes_extracted,
 )
 
 
@@ -475,6 +476,15 @@ def _generic_template(**overrides) -> Template:
 
 def test_check_extracted_dir_policy_silent_when_extracted_dir_absent():
     assert _check_extracted_dir_policy(_generic_extra()) == []
+
+
+def test_check_source_priority_excludes_extracted_silent_when_extracted_dir_absent():
+    # SUGGESTION-1 (fresh-context verify, PR1 fix batch): symmetry with the
+    # other 3 "stays silent when block absent" tests -- this check gates on
+    # `paths.extracted_dir`, same as `_check_extracted_dir_policy` above.
+    extra = _generic_extra()
+    extra["project"] = {"source_priority": ["anything/at/all"]}
+    assert _check_source_priority_excludes_extracted(extra) == []
 
 
 def test_check_preliminaries_pagination_silent_when_preliminaries_absent():
@@ -643,6 +653,18 @@ def test_review_rules_margins_any_numeric_value_accepted():
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
     assert result.issues == []
+
+
+def test_review_rules_bad_margins_bool_value_rejected():
+    # SUGGESTION-3 (fresh-context verify, PR1 fix batch): `bool` is a Python
+    # `int` subclass, so `isinstance(value, (int, float))` alone would
+    # silently accept `True`/`False` as a "numeric" margin -- must be
+    # rejected explicitly, since a boolean is never a valid centimeter value.
+    extra = _estadia_extra()
+    extra["format"]["page_margins_cm"]["non_cover"]["top"] = True
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("centímetros" in i.message for i in result.issues)
 
 
 def test_review_rules_contract_without_required_content():

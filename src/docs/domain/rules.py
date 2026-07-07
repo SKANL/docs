@@ -405,7 +405,14 @@ def _check_margins_and_cover_policy(extra: dict[str, Any]) -> list[Issue]:
     if not non_cover_margins:
         return []
     issues: list[Issue] = []
-    bad_margins = [key for key in _MARGIN_KEYS if not isinstance(non_cover_margins.get(key), (int, float))]
+    bad_margins = [
+        key
+        for key in _MARGIN_KEYS
+        # SUGGESTION-3 (fresh-context verify, PR1 fix batch): `bool` is an
+        # `int` subclass in Python -- `isinstance(x, (int, float))` alone
+        # would silently accept True/False as a "numeric" margin.
+        if isinstance(non_cover_margins.get(key), bool) or not isinstance(non_cover_margins.get(key), (int, float))
+    ]
     if bad_margins:
         issues.append(
             Issue(
