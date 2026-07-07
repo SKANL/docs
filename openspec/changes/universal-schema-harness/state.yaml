@@ -1,0 +1,49 @@
+change: universal-schema-harness
+artifact_store: openspec
+created: 2026-07-06
+updated: 2026-07-06
+
+phases:
+  explore:
+    status: done
+    artifact: explore.md
+  propose:
+    status: done
+    artifact: proposal.md
+  spec:
+    status: done
+    artifact: specs/ (document-template new; document-pipeline, document-ingest, asset-management deltas)
+  design:
+    status: done
+    artifact: design.md
+  tasks:
+    status: done
+    artifact: tasks.md
+  apply:
+    status: in-progress
+    note: batch 1/7 done (Front A + characterization net, branch feat/usch-a-policy-dehardcode, 8 commits); verify-pr1 running
+  verify:
+    status: pending
+  archive:
+    status: pending
+
+next_recommended:
+  - resolve-delivery-decision   # Review Workload Guard fired: chained PRs recommended, chain strategy pending
+  - sdd-apply
+
+capabilities:
+  new:
+    - document-template
+  modified:
+    - document-pipeline
+    - document-ingest
+    - asset-management
+  unchanged:
+    - context-curation
+    - document-render
+
+delivery_strategy: ask-on-risk
+notes: >
+  Multi-front change; expect chained PRs (policy de-hardcoding; recursive
+  ingest + roles/duplicates; assets/figures; template init/validate + gap
+  report). PR boundaries deferred to sdd-tasks.
