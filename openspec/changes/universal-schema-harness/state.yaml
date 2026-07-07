@@ -1,0 +1,55 @@
+change: universal-schema-harness
+artifact_store: openspec
+created: 2026-07-06
+updated: 2026-07-06
+
+phases:
+  explore:
+    status: done
+    artifact: explore.md
+  propose:
+    status: done
+    artifact: proposal.md
+  spec:
+    status: done
+    artifact: specs/ (document-template new; document-pipeline, document-ingest, asset-management deltas)
+  design:
+    status: done
+    artifact: design.md
+  tasks:
+    status: done
+    artifact: tasks.md
+  apply:
+    status: in-progress
+    note: >
+      batch 1/7 COMPLETE: Front A + characterization net + verify fix batch,
+      branch feat/usch-a-policy-dehardcode (14 commits), verify passes 1+2
+      (needs-fixes -> ready-for-pr), PR #12 open (stacked-to-main).
+      Next batch: Front B (bootstrap, orphan _media cleanup) after PR #12 merges.
+      Follow-up recorded: application/doctor.py:43 sibling rules_traceability_only
+      literal (NEW-SUGGESTION-1, pre-existing, not in PR1 scope).
+  verify:
+    status: pending
+  archive:
+    status: pending
+
+next_recommended:
+  - resolve-delivery-decision   # Review Workload Guard fired: chained PRs recommended, chain strategy pending
+  - sdd-apply
+
+capabilities:
+  new:
+    - document-template
+  modified:
+    - document-pipeline
+    - document-ingest
+    - asset-management
+  unchanged:
+    - context-curation
+    - document-render
+
+delivery_strategy: ask-on-risk
+notes: >
+  Multi-front change; expect chained PRs (policy de-hardcoding; recursive
+  ingest + roles/duplicates; assets/figures; template init/validate + gap
+  report). PR boundaries deferred to sdd-tasks.

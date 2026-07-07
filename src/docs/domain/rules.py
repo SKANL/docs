@@ -29,8 +29,6 @@ _TITLE_RE = re.compile(r"^#\s+\S+", re.MULTILINE)
 _RESULTS_RE = re.compile(r"\bresultados?\b")
 _RESULTS_EVIDENCE_RE = re.compile(r"\b(evidencia|captura|prueba|medici[oó]n|issue|commit|anexo)\b")
 _MARGIN_KEYS = ("top", "right", "bottom", "left")
-_EXPECTED_MARGIN_CM = 2.5
-_MARGIN_TOLERANCE = 0.001
 
 
 def requirement_present(requirement: str, plain: str, detect: dict[str, list[str]]) -> bool:
@@ -330,61 +328,103 @@ def _check_missing_section_contracts(template: Template) -> list[Issue]:
 
 
 def _check_extracted_dir_policy(extra: dict[str, Any]) -> list[Issue]:
+    """Fires only when `paths.extracted_dir` is configured (mirrors
+    `doctor.py`'s own gating). Validates that a policy governing that path is
+    actually declared -- never compares the declared value against a
+    hardcoded expected literal (spec: document-pipeline "Extracted-dir policy
+    checked only when configured")."""
     paths = extra.get("paths", {}) or {}
-    if paths.get("extracted_dir_policy") != "rules_traceability_only":
-        return [Issue("error", "La política de extracted debe ser `rules_traceability_only`.")]
+    if not paths.get("extracted_dir"):
+        return []
+    policy = paths.get("extracted_dir_policy")
+    if not policy or not isinstance(policy, str):
+        return [
+            Issue(
+                "error",
+                "Debe declararse `paths.extracted_dir_policy` (texto) cuando "
+                "`paths.extracted_dir` está configurado.",
+            )
+        ]
     return []
 
 
 def _check_source_priority_excludes_extracted(extra: dict[str, Any]) -> list[Issue]:
+    """Fires only when `paths.extracted_dir` is configured; compares
+    `source_priority` against the template's OWN declared `extracted_dir`
+    value, never a hardcoded path literal."""
+    paths = extra.get("paths", {}) or {}
+    extracted_dir = paths.get("extracted_dir")
+    if not extracted_dir:
+        return []
     project = extra.get("project", {}) or {}
-    if any("docs/extracted" in source for source in project.get("source_priority", [])):
-        return [Issue("error", "`docs/extracted` no debe aparecer en source_priority como fuente activa.")]
+    if any(extracted_dir in source for source in project.get("source_priority", [])):
+        return [
+            Issue(
+                "error",
+                f"`{extracted_dir}` no debe aparecer en source_priority como fuente activa.",
+            )
+        ]
     return []
 
 
-def _check_apa7_enabled(template: Template) -> list[Issue]:
-    if not template.apa7.enabled:
-        return [Issue("error", "APA 7 debe estar habilitado.")]
-    return []
-
-
-def _check_preliminaries_pagination(extra: dict[str, Any]) -> list[Issue]:
+def _check_preliminaries_pagination(template: Template) -> list[Issue]:
+    """Fires only when `preliminaries` is declared. `body_pagination_start`
+    is validated against the template's OWN declared `sections` (never a
+    hardcoded section id); the roman-pagination sub-check runs only when
+    `roman_pagination` itself is declared (spec: document-pipeline
+    "Preliminaries checked only when declared")."""
+    extra = template.model_extra or {}
+    preliminaries = extra.get("preliminaries")
+    if not preliminaries:
+        return []
     issues: list[Issue] = []
-    preliminaries = extra.get("preliminaries", {}) or {}
-    if not preliminaries.get("roman_pagination", {}).get("enabled"):
+    roman = preliminaries.get("roman_pagination")
+    if roman and not roman.get("enabled"):
         issues.append(Issue("error", "La paginación romana de preliminares debe estar habilitada."))
-    if preliminaries.get("body_pagination_start", {}).get("section_id") != "introduccion":
-        issues.append(Issue("error", "La paginación arábiga debe iniciar en INTRODUCCIÓN."))
+    body_start = preliminaries.get("body_pagination_start") or {}
+    section_id = body_start.get("section_id")
+    declared_sections = {section.id for section in template.sections}
+    if section_id and declared_sections and section_id not in declared_sections:
+        issues.append(
+            Issue(
+                "error",
+                f"`body_pagination_start.section_id` (`{section_id}`) no existe en `sections`.",
+            )
+        )
     return issues
 
 
 def _check_margins_and_cover_policy(extra: dict[str, Any]) -> list[Issue]:
-    issues: list[Issue] = []
+    """Fires only when `format.page_margins_cm.non_cover` is declared;
+    validates the four margin keys hold numeric centimeter values, never a
+    specific required value. `cover_policy` (if declared) only needs to be a
+    string -- its meaning is document-type-specific, not enforced here (spec:
+    document-pipeline "Margins checked for shape, not value")."""
     margin_contract = (extra.get("format", {}) or {}).get("page_margins_cm", {}) or {}
-    non_cover_margins = margin_contract.get("non_cover", {}) or {}
+    non_cover_margins = margin_contract.get("non_cover")
+    if not non_cover_margins:
+        return []
+    issues: list[Issue] = []
     bad_margins = [
         key
         for key in _MARGIN_KEYS
-        if not isinstance(non_cover_margins.get(key), (int, float))
-        or abs(float(non_cover_margins.get(key)) - _EXPECTED_MARGIN_CM) > _MARGIN_TOLERANCE
+        # SUGGESTION-3 (fresh-context verify, PR1 fix batch): `bool` is an
+        # `int` subclass in Python -- `isinstance(x, (int, float))` alone
+        # would silently accept True/False as a "numeric" margin.
+        if isinstance(non_cover_margins.get(key), bool) or not isinstance(non_cover_margins.get(key), (int, float))
     ]
-    if margin_contract.get("cover_policy") != "preserve_template":
-        issues.append(
-            Issue("error", "La portada debe conservar el formato y márgenes de la plantilla (`preserve_template`).")
-        )
     if bad_margins:
-        issues.append(Issue("error", "El contrato de layout debe fijar márgenes de 2.5 cm en toda sección no-portada."))
+        issues.append(
+            Issue(
+                "error",
+                "Los márgenes declarados deben ser valores numéricos en centímetros: "
+                f"{', '.join(bad_margins)}.",
+            )
+        )
+    cover_policy = margin_contract.get("cover_policy")
+    if cover_policy is not None and not isinstance(cover_policy, str):
+        issues.append(Issue("error", "`cover_policy` debe ser una cadena de texto."))
     return issues
-
-
-def _check_margin_advisor_override_active(extra: dict[str, Any]) -> list[Issue]:
-    active_overrides = {
-        item.get("id") for item in extra.get("advisor_overrides", []) if item.get("status") == "active"
-    }
-    if "margins-2-5cm-non-cover" not in active_overrides:
-        return [Issue("error", "Falta el advisor_override activo para márgenes de 2.5 cm excepto portada.")]
-    return []
 
 
 def _check_section_contracts_content(template: Template) -> list[Issue]:
@@ -408,10 +448,8 @@ def review_rules(
     issues.extend(_check_missing_section_contracts(template))
     issues.extend(_check_extracted_dir_policy(extra))
     issues.extend(_check_source_priority_excludes_extracted(extra))
-    issues.extend(_check_apa7_enabled(template))
-    issues.extend(_check_preliminaries_pagination(extra))
+    issues.extend(_check_preliminaries_pagination(template))
     issues.extend(_check_margins_and_cover_policy(extra))
-    issues.extend(_check_margin_advisor_override_active(extra))
     issues.extend(_check_section_contracts_content(template))
     return ReviewResult(issues)
 

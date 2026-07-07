@@ -3,42 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-EXCLUDED_FRONT_MATTER: dict[str, str] = {
-    "portada": "La portada se toma desde la plantilla DOCX, no se redacta como sección.",
-    "hoja de guarda": "La hoja de guarda está excluida del arnés.",
-    "carta responsiva": "La carta responsiva está excluida del arnés.",
-    "carta de liberación": "Las cartas de liberación están excluidas del arnés.",
-    "carta de liberacion": "Las cartas de liberación están excluidas del arnés.",
-}
+# Document-type normative writing-pattern lexicons (excluded front matter,
+# first-person voice patterns, subjective terms) are evacuated to template
+# data (spec: document-template "No hardcoded document-type literal in
+# domain code") -- every document type MUST declare its own `normative` block
+# in its template. These defaults are intentionally EMPTY: an absent
+# declaration means no lexicon is enforced, never a hardcoded Spanish-thesis
+# fallback. `reporte-estadia-tic.json` already declares its own equivalent
+# blocks explicitly, so runtime behavior for that document type is
+# byte-identical (see `tests/unit/domain/test_rules_characterization.py`).
+EXCLUDED_FRONT_MATTER: dict[str, str] = {}
 
-FIRST_PERSON_PATTERNS: list[str] = [
-    r"\byo\b",
-    r"\bnosotros\b",
-    r"\bnosotras\b",
-    r"\bmi\b",
-    r"\bmis\b",
-    r"\bnuestro\b",
-    r"\bnuestra\b",
-    r"\bdesarrollé\b",
-    r"\bdesarrollamos\b",
-    r"\bconsidero\b",
-    r"\bcreemos\b",
-]
+FIRST_PERSON_PATTERNS: list[str] = []
 
-SUBJECTIVE_TERMS: list[str] = [
-    "excelente",
-    "impresionante",
-    "increíble",
-    "increible",
-    "claramente",
-    "obviamente",
-    "afortunadamente",
-    "lamentablemente",
-    "simplemente",
-    "éxito",
-    "exito",
-    "fracaso",
-]
+SUBJECTIVE_TERMS: list[str] = []
 
 SECRET_PATTERNS: list[str] = [
     r"\bapi[_-]?key\s*[:=]\s*['\"]?[A-Za-z0-9_\-]{20,}",

@@ -318,7 +318,7 @@ def test_context_confirmed_lines_skips_sensitive_fields_and_includes_regular_one
 
 
 def _valid_rules_extra() -> dict:
-    """Matches tests/unit/domain/test_rules.py::_valid_extra() -- the minimal
+    """Matches tests/unit/domain/test_rules.py::_estadia_extra() -- the minimal
     shape that makes review_rules() report zero "error" issues."""
     return {
         "preliminaries": {

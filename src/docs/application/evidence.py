@@ -42,21 +42,30 @@ class EvidenceService:
         self.repository = repository
 
     def build_rules(self, config: dict[str, Any]) -> Path:
-        manual_dir = Path(config["paths"]["manual_dir"])
-        extracted_dir = Path(config["paths"]["extracted_dir"])
+        # Guarded like `rules_hash` (line ~121): `manual_dir`/`extracted_dir` are
+        # OPTIONAL template-declared paths (spec: document-pipeline "Build-Rules
+        # Guards Absent Paths") -- an empty `paths` config (documento-generico)
+        # must not crash `build-rules`; a missing path is skipped and reported
+        # in the manifest, never silently ignored and never a hard failure.
+        skipped_paths: list[str] = []
+        manual_dir_str = config["paths"].get("manual_dir")
+        extracted_dir_str = config["paths"].get("extracted_dir")
 
         manual_files: list[ManualFileFact] = []
-        for path in self.repository.list_manual_files(manual_dir):
-            text = self.repository.read_text(path)
-            manual_files.append(
-                ManualFileFact(
-                    path=path.resolve().as_posix(),
-                    name=path.name,
-                    sha256=self.repository.hash_file(path),
-                    headings=extract_markdown_headings(text),
-                    excerpt=clean_markdown_text(text[:_EXCERPT_LENGTH]),
+        if manual_dir_str:
+            for path in self.repository.list_manual_files(Path(manual_dir_str)):
+                text = self.repository.read_text(path)
+                manual_files.append(
+                    ManualFileFact(
+                        path=path.resolve().as_posix(),
+                        name=path.name,
+                        sha256=self.repository.hash_file(path),
+                        headings=extract_markdown_headings(text),
+                        excerpt=clean_markdown_text(text[:_EXCERPT_LENGTH]),
+                    )
                 )
-            )
+        else:
+            skipped_paths.append("manual_dir")
 
         traceability: list[TraceabilityFact] = []
         for key, source_type in _TRACEABILITY_PATH_KEYS:
@@ -77,16 +86,20 @@ class EvidenceService:
                     )
                 )
 
-        if self.repository.file_exists(extracted_dir):
-            for path in self.repository.list_traceability_files(extracted_dir):
-                traceability.append(
-                    TraceabilityFact(
-                        path=path.resolve().as_posix(),
-                        type="extracted_traceability",
-                        sha256=self.repository.hash_file(path),
-                        size=self.repository.file_size(path),
+        if extracted_dir_str:
+            extracted_dir = Path(extracted_dir_str)
+            if self.repository.file_exists(extracted_dir):
+                for path in self.repository.list_traceability_files(extracted_dir):
+                    traceability.append(
+                        TraceabilityFact(
+                            path=path.resolve().as_posix(),
+                            type="extracted_traceability",
+                            sha256=self.repository.hash_file(path),
+                            size=self.repository.file_size(path),
+                        )
                     )
-                )
+        else:
+            skipped_paths.append("extracted_dir")
 
         section_contracts = config.get("section_contracts", {})
         contract_hashes = {
@@ -107,6 +120,9 @@ class EvidenceService:
             privacy=config.get("privacy", {}),
             section_contracts=section_contracts,
             contract_hashes=contract_hashes,
+            normative_source=config.get("normative", {}).get("normative_source", ""),
+            pdf_and_extracted_use=config["paths"].get("extracted_dir_policy", ""),
+            skipped_paths=skipped_paths,
         )
 
         path = Path(config["paths"]["rules_manifest"])

@@ -15,6 +15,7 @@
     "example_pdf": "{tesina_root}/example_tesina/RE-Ejemplo.pdf"
   },
   "normative": {
+    "normative_source": "docs/guides/manual-estadia-tic",
     "excluded_front_matter": {
       "carta responsiva": "La carta responsiva está excluida del arnés.",
       "carta de liberación": "Las cartas de liberación están excluidas del arnés.",

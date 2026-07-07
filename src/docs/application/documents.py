@@ -24,6 +24,10 @@ _SUBDIRS = (
     "context", "assets", "sections",
     "output/draft", "output/final", "output/qa",
     "runs", "corrections/inbox",
+    # spec: document-pipeline "Document Workspace Creation Includes Ingest
+    # Inbox" -- inbox/assets/ is created here too (front:assets-figures owns
+    # its contents, but bootstrap owns _SUBDIRS).
+    "inbox", "inbox/assets",
 )
 
 

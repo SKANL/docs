@@ -414,12 +414,29 @@ def test_check_excluded_terms_skipped_for_policy_file():
 
 
 from docs.domain.rules import review_rules
-from docs.domain.rules import _check_apa7_enabled
 
 
-def _valid_extra() -> dict:
+def _generic_extra() -> dict:
+    """Baseline for a document type that declares NONE of the optional policy
+    blocks (`preliminaries`, `format.page_margins_cm`, `paths.extracted_dir`,
+    margin `advisor_overrides`) — proves each converted check in Phase 3 stays
+    silent (no issue, not a default pass) when its block is simply absent."""
     return {
-        "paths": {"extracted_dir_policy": "rules_traceability_only"},
+        "paths": {},
+        "project": {},
+    }
+
+
+def _estadia_extra() -> dict:
+    """Renamed, value-for-value unchanged from the former single baseline
+    builder — the full estadía-shaped policy baseline. Proves each converted
+    check in Phase 3 still fires identically when its block IS present
+    (characterization proof, Decision 10.4)."""
+    return {
+        "paths": {
+            "extracted_dir_policy": "rules_traceability_only",
+            "extracted_dir": "docs/extracted",
+        },
         "project": {"source_priority": ["tesina/manual"]},
         "preliminaries": {
             "roman_pagination": {"enabled": True},
@@ -435,43 +452,76 @@ def _valid_extra() -> dict:
     }
 
 
-def _valid_template(**overrides) -> Template:
-    return Template.model_validate({"type": "x", "title": "X", **_valid_extra(), **overrides})
+def _estadia_template(**overrides) -> Template:
+    return Template.model_validate({"type": "x", "title": "X", **_estadia_extra(), **overrides})
 
 
-def test_check_apa7_enabled_flags_when_disabled():
-    template = Template.model_validate({"type": "x", "title": "X", "apa7": {"enabled": False}, **_valid_extra()})
-    issues = _check_apa7_enabled(template)
-    assert len(issues) == 1
-    assert issues[0].message == "APA 7 debe estar habilitado."
+# --- Optional-Block Absence Semantics (spec: document-template) ---------
+#
+# These prove each converted check stays SILENT (no issue at all, not a
+# default pass) when its optional policy block is simply absent from the
+# template's declared data.
+
+from docs.domain.rules import (
+    _check_extracted_dir_policy,
+    _check_margins_and_cover_policy,
+    _check_preliminaries_pagination,
+    _check_source_priority_excludes_extracted,
+)
 
 
-def test_check_apa7_enabled_no_issues_when_enabled():
-    template = _valid_template()
-    assert _check_apa7_enabled(template) == []
+def _generic_template(**overrides) -> Template:
+    return Template.model_validate({"type": "x", "title": "X", **_generic_extra(), **overrides})
+
+
+def test_check_extracted_dir_policy_silent_when_extracted_dir_absent():
+    assert _check_extracted_dir_policy(_generic_extra()) == []
+
+
+def test_check_source_priority_excludes_extracted_silent_when_extracted_dir_absent():
+    # SUGGESTION-1 (fresh-context verify, PR1 fix batch): symmetry with the
+    # other 3 "stays silent when block absent" tests -- this check gates on
+    # `paths.extracted_dir`, same as `_check_extracted_dir_policy` above.
+    extra = _generic_extra()
+    extra["project"] = {"source_priority": ["anything/at/all"]}
+    assert _check_source_priority_excludes_extracted(extra) == []
+
+
+def test_check_preliminaries_pagination_silent_when_preliminaries_absent():
+    assert _check_preliminaries_pagination(_generic_template()) == []
+
+
+def test_check_margins_and_cover_policy_silent_when_margins_absent():
+    assert _check_margins_and_cover_policy(_generic_extra()) == []
+
+
+# `_check_apa7_enabled` was DELETED (spec: document-pipeline "APA gate
+# respected") -- `review_apa7_text`'s existing `apa7.enabled` no-op gate is
+# sufficient; see `test_review_rules_apa7_disabled_is_not_forced_and_raises_no_issue`
+# below for the review_rules-level proof.
 
 
 def test_review_rules_all_valid_no_issues():
-    result = review_rules(_valid_template(), manifest_exists=True, manifest_size=10, strict=False)
+    result = review_rules(_estadia_template(), manifest_exists=True, manifest_size=10, strict=False)
     assert result.issues == []
     assert result.passed is True
 
 
 def test_review_rules_manifest_missing_warning_in_draft():
-    result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=False)
+    result = review_rules(_estadia_template(), manifest_exists=False, manifest_size=0, strict=False)
     issue = next(i for i in result.issues if "manual-rules.json" in i.message and "ejecuta" in i.message)
     assert issue.severity == "warning"
     assert issue.code == ""
 
 
 def test_review_rules_manifest_missing_error_in_strict():
-    result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=True)
+    result = review_rules(_estadia_template(), manifest_exists=False, manifest_size=0, strict=True)
     issue = next(i for i in result.issues if "manual-rules.json" in i.message and "ejecuta" in i.message)
     assert issue.severity == "error"
 
 
 def test_review_rules_manifest_empty_always_error():
-    result = review_rules(_valid_template(), manifest_exists=True, manifest_size=0, strict=False)
+    result = review_rules(_estadia_template(), manifest_exists=True, manifest_size=0, strict=False)
     issue = next(i for i in result.issues if "está vacío" in i.message)
     assert issue.severity == "error"
 
@@ -483,7 +533,7 @@ def test_review_rules_missing_section_contracts():
             "title": "X",
             "sections": [{"id": "intro", "title": "Intro"}, {"id": "resumen", "title": "Resumen"}],
             "section_contracts": {"intro": {}},
-            **_valid_extra(),
+            **_estadia_extra(),
         }
     )
     result = review_rules(template, manifest_exists=True, manifest_size=10)
@@ -491,66 +541,130 @@ def test_review_rules_missing_section_contracts():
     assert "resumen" in issue.message
 
 
-def test_review_rules_extracted_dir_policy_wrong():
-    extra = _valid_extra()
+def test_review_rules_extracted_dir_policy_missing_when_extracted_dir_configured():
+    extra = _estadia_extra()
+    extra["paths"]["extracted_dir_policy"] = ""
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("extracted_dir_policy" in i.message for i in result.issues)
+
+
+def test_review_rules_extracted_dir_policy_any_declared_string_accepted():
+    # No hardcoded expected value (spec: document-pipeline "Extracted-dir
+    # policy checked only when configured") -- any declared, internally
+    # consistent string passes; only a missing/empty declaration is an error.
+    extra = _estadia_extra()
     extra["paths"]["extracted_dir_policy"] = "anything_else"
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any("rules_traceability_only" in i.message for i in result.issues)
+    assert not any("extracted_dir_policy" in i.message for i in result.issues)
 
 
 def test_review_rules_docs_extracted_in_source_priority():
-    extra = _valid_extra()
+    extra = _estadia_extra()
     extra["project"]["source_priority"] = ["docs/extracted/foo"]
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
     assert any("source_priority" in i.message for i in result.issues)
 
 
-def test_review_rules_apa7_disabled():
-    template = Template.model_validate({"type": "x", "title": "X", "apa7": {"enabled": False}, **_valid_extra()})
+def test_review_rules_apa7_disabled_is_not_forced_and_raises_no_issue():
+    # spec: document-pipeline "APA gate respected" -- apa7.enabled=False must
+    # not be forced true; review_apa7_text's own no-op gate is sufficient.
+    template = Template.model_validate({"type": "x", "title": "X", "apa7": {"enabled": False}, **_estadia_extra()})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any(i.message == "APA 7 debe estar habilitado." for i in result.issues)
+    assert not any(i.message == "APA 7 debe estar habilitado." for i in result.issues)
+    assert result.passed is True
 
 
 def test_review_rules_roman_pagination_disabled():
-    extra = _valid_extra()
+    extra = _estadia_extra()
     extra["preliminaries"]["roman_pagination"]["enabled"] = False
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
     assert any("paginación romana" in i.message for i in result.issues)
 
 
-def test_review_rules_body_pagination_start_wrong_section():
-    extra = _valid_extra()
+def test_review_rules_body_pagination_start_section_not_declared():
+    # No hardcoded "introduccion" literal (spec: document-pipeline
+    # "Preliminaries checked only when declared") -- the check compares
+    # against the template's OWN declared `sections`, so any undeclared
+    # section id is rejected, not just a non-"introduccion" one.
+    extra = _estadia_extra()
+    extra["preliminaries"]["body_pagination_start"]["section_id"] = "no-declarada"
+    template = Template.model_validate(
+        {
+            "type": "x",
+            "title": "X",
+            "sections": [{"id": "introduccion", "title": "Introducción"}],
+            **extra,
+        }
+    )
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("no existe en" in i.message for i in result.issues)
+
+
+def test_review_rules_body_pagination_start_any_declared_section_accepted():
+    extra = _estadia_extra()
     extra["preliminaries"]["body_pagination_start"]["section_id"] = "resumen"
+    template = Template.model_validate(
+        {
+            "type": "x",
+            "title": "X",
+            "sections": [{"id": "resumen", "title": "Resumen"}],
+            **extra,
+        }
+    )
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert not any("no existe en" in i.message for i in result.issues)
+
+
+def test_review_rules_cover_policy_must_be_a_string_when_declared():
+    extra = _estadia_extra()
+    extra["format"]["page_margins_cm"]["cover_policy"] = 123
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any("INTRODUCCIÓN" in i.message for i in result.issues)
+    assert any("`cover_policy`" in i.message for i in result.issues)
 
 
-def test_review_rules_cover_policy_wrong():
-    extra = _valid_extra()
-    extra["format"]["page_margins_cm"]["cover_policy"] = "custom"
+def test_review_rules_cover_policy_any_declared_string_accepted():
+    # No hardcoded "preserve_template" literal (spec: document-pipeline
+    # "Margins checked for shape, not value").
+    extra = _estadia_extra()
+    extra["format"]["page_margins_cm"]["cover_policy"] = "custom_layout"
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any("preserve_template" in i.message for i in result.issues)
+    assert not any("`cover_policy`" in i.message for i in result.issues)
 
 
-def test_review_rules_bad_margins():
-    extra = _valid_extra()
+def test_review_rules_bad_margins_non_numeric_value_flagged():
+    extra = _estadia_extra()
+    extra["format"]["page_margins_cm"]["non_cover"]["top"] = "not-a-number"
+    template = Template.model_validate({"type": "x", "title": "X", **extra})
+    result = review_rules(template, manifest_exists=True, manifest_size=10)
+    assert any("centímetros" in i.message for i in result.issues)
+
+
+def test_review_rules_margins_any_numeric_value_accepted():
+    # No hardcoded 2.5cm literal (spec: document-pipeline "Margins checked
+    # for shape, not value") -- any numeric value passes.
+    extra = _estadia_extra()
     extra["format"]["page_margins_cm"]["non_cover"]["top"] = 3.0
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any("márgenes de 2.5 cm" in i.message for i in result.issues)
+    assert result.issues == []
 
 
-def test_review_rules_missing_active_advisor_override():
-    extra = _valid_extra()
-    extra["advisor_overrides"] = []
+def test_review_rules_bad_margins_bool_value_rejected():
+    # SUGGESTION-3 (fresh-context verify, PR1 fix batch): `bool` is a Python
+    # `int` subclass, so `isinstance(value, (int, float))` alone would
+    # silently accept `True`/`False` as a "numeric" margin -- must be
+    # rejected explicitly, since a boolean is never a valid centimeter value.
+    extra = _estadia_extra()
+    extra["format"]["page_margins_cm"]["non_cover"]["top"] = True
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any("advisor_override activo" in i.message for i in result.issues)
+    assert any("centímetros" in i.message for i in result.issues)
 
 
 def test_review_rules_contract_without_required_content():
@@ -559,32 +673,34 @@ def test_review_rules_contract_without_required_content():
             "type": "x",
             "title": "X",
             "section_contracts": {"intro": {"required_content": []}},
-            **_valid_extra(),
+            **_estadia_extra(),
         }
     )
     result = review_rules(template, manifest_exists=True, manifest_size=10)
     assert any("no define contenido obligatorio" in i.message for i in result.issues)
 
 
-def test_review_rules_contract_apa_required_but_apa7_disabled_duplicates_document_level_issue():
+def test_review_rules_contract_apa_required_but_apa7_disabled_flags_contract_level_only():
+    # `_check_apa7_enabled` was DELETED (spec: "APA gate respected") -- only
+    # the section-contract-level check fires now, no document-level duplicate.
     template = Template.model_validate(
         {
             "type": "x",
             "title": "X",
             "apa7": {"enabled": False},
             "section_contracts": {"intro": {"required_content": ["x"], "apa_required": True}},
-            **_valid_extra(),
+            **_estadia_extra(),
         }
     )
     result = review_rules(template, manifest_exists=True, manifest_size=10)
     document_level = [i for i in result.issues if i.message == "APA 7 debe estar habilitado."]
     contract_level = [i for i in result.issues if "requiere APA pero APA 7 está deshabilitado" in i.message]
-    assert len(document_level) == 1
+    assert document_level == []
     assert len(contract_level) == 1
 
 
 def test_review_rules_all_issues_have_empty_code():
-    result = review_rules(_valid_template(), manifest_exists=False, manifest_size=0, strict=True)
+    result = review_rules(_estadia_template(), manifest_exists=False, manifest_size=0, strict=True)
     assert all(i.code == "" for i in result.issues)
 
 

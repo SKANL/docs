@@ -37,6 +37,82 @@ def _config(tmp_path: Path, **overrides) -> dict:
     return config
 
 
+def test_build_rules_with_empty_paths_does_not_raise(tmp_path: Path, service):
+    # spec: document-pipeline "Empty paths config does not crash build-rules"
+    # -- documento-generico declares `"paths": {}`; only computed paths
+    # (rules_manifest) are ever guaranteed present.
+    config = {
+        "paths": {"rules_manifest": str(tmp_path / "manual-rules.json")},
+        "section_contracts": {},
+        "advisor_overrides": [],
+        "strict_policy": {},
+        "preliminaries": {},
+        "format": {},
+        "apa7": {},
+        "privacy": {},
+    }
+
+    path = service.build_rules(config)
+
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    assert manifest["manual_files"] == []
+    assert manifest["traceability"] == []
+    assert set(manifest["skipped_paths"]) == {"manual_dir", "extracted_dir"}
+
+
+_FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "templates"
+
+
+def test_build_rules_reporte_estadia_tic_preserves_its_declared_normative_source(tmp_path: Path, service):
+    # CRITICAL-1 regression proof (fresh-context verify, PR1 fix batch): before
+    # this front, normative_source was hardcoded to
+    # "docs/guides/manual-estadia-tic" for every document type -- wrong in
+    # general, but happened to be the correct value for reporte-estadia-tic.
+    # It must now come from the template's own declared data, not silently
+    # regress to "". Driven by the REAL fixture file, not synthetic params.
+    raw = json.loads((_FIXTURES_DIR / "reporte-estadia-tic.json").read_text(encoding="utf-8"))
+    paths = dict(raw.get("paths", {}))
+    paths["rules_manifest"] = str(tmp_path / "manual-rules.json")
+    raw["paths"] = paths
+
+    path = service.build_rules(raw)
+
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    assert manifest["policy"]["normative_source"] == "docs/guides/manual-estadia-tic"
+
+
+def test_build_rules_reporte_estadia_tic_preserves_its_declared_pdf_and_extracted_use(tmp_path: Path, service):
+    # WARNING-2 regression proof (fresh-context verify, PR1 fix batch):
+    # pdf_and_extracted_use must come from the template's own declared
+    # `paths.extracted_dir_policy` -- reporte-estadia-tic declares it, so its
+    # manifest must still carry that value.
+    raw = json.loads((_FIXTURES_DIR / "reporte-estadia-tic.json").read_text(encoding="utf-8"))
+    paths = dict(raw.get("paths", {}))
+    paths["rules_manifest"] = str(tmp_path / "manual-rules.json")
+    raw["paths"] = paths
+
+    path = service.build_rules(raw)
+
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    assert manifest["policy"]["pdf_and_extracted_use"] == "rules_traceability_only"
+
+
+def test_build_rules_pdf_and_extracted_use_empty_when_not_declared(tmp_path: Path, service):
+    # WARNING-2 (fresh-context verify, PR1 fix batch): a document type that
+    # does NOT declare `paths.extracted_dir_policy` (documento-generico) must
+    # never have a policy value invented for it -- de-hardcoding means
+    # "absent -> empty", not "absent -> the old estadía literal".
+    raw = json.loads((_FIXTURES_DIR / "documento-generico.json").read_text(encoding="utf-8"))
+    paths = dict(raw.get("paths", {}))
+    paths["rules_manifest"] = str(tmp_path / "manual-rules.json")
+    raw["paths"] = paths
+
+    path = service.build_rules(raw)
+
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    assert manifest["policy"]["pdf_and_extracted_use"] == ""
+
+
 def test_build_rules_returns_manifest_path(tmp_path: Path, service):
     config = _config(tmp_path)
     result_path = service.build_rules(config)
