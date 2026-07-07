@@ -78,8 +78,8 @@ If `feature-branch-chain` is chosen: PR 1 targets the tracker branch; PR 2 targe
 explicitly OUT of scope for this batch — it belongs to PR2 per the Suggested
 Work Units table (Unit 2).
 
-**Status**: 22/22 tasks in Phases 1-5 complete (`[x]`). Ready for `sdd-verify` /
-fresh-context review before push+PR.
+**Status**: 22/22 tasks in Phases 1-5 complete (`[x]`), PLUS the fix-verify
+round below. Ready for a second fresh-context review before push+PR.
 
 **Commits** (work units, oldest to newest):
 1. `73d5433` test(rules): add characterization net and no-literal guard for policy de-hardcoding (Phase 1)
@@ -89,20 +89,67 @@ fresh-context review before push+PR.
 5. `1228ac7` fix(evidence): guard absent paths and drop hardcoded normative_source (Phase 5.1-5.4)
 6. `5cd34e5` feat(documents): create inbox/ and inbox/assets/ on document creation (Phase 5.5-5.6)
 7. `77f7ecd` test(rules): add documento-generico falsifiable acceptance gate (extra, beyond numbered tasks — proves the proposal's success criterion end-to-end)
+8. `c77bd4d` docs(tasks): check off Phase 1-5 tasks and record PR1 apply-progress
 
-**Acceptance verification** (all confirmed):
-- Full suite green twice in a row: 942 passed, 0 failed, 7 skipped (both runs
+**Fix-verify round** (fresh-context `sdd-verify` returned needs-fixes; this
+round resolves every finding, same branch, strict TDD throughout):
+9. `d75ee83` fix(evidence): stop normative_source/pdf_and_extracted_use from silently regressing (CRITICAL-1 + WARNING-2)
+10. `ff159ad` test(rules): close quote-style and bare-value bypass gaps in no-literal guard (WARNING-1)
+11. `cef4b67` fix(rules): add missing silence test and reject bool margin values (SUGGESTION-1 + SUGGESTION-3)
+12. `a93acd0` docs(planning): commit universal-schema-harness SDD audit trail (item 7 — proposal/explore/design/specs/state.yaml/verify-report-pr1.md)
+13. (this commit) docs(tasks): record fix-verify round in apply-progress
+
+WARNING-3 (spec.md wording) was resolved as an ADDITIVE clarification note
+in `openspec/changes/universal-schema-harness/specs/document-pipeline/spec.md`
+under the "Extracted-dir policy checked only when configured" scenario,
+folded into commit `a93acd0` since it lives in the same previously-untracked
+planning-artifact tree — no scenario text was replaced, only a clarifying
+blockquote was added.
+
+**Fix-verify findings and resolutions**:
+- **CRITICAL-1** (normative_source silently regressed to `""` for the real
+  `reporte-estadia-tic` fixture): backfilled `normative.normative_source:
+  "docs/guides/manual-estadia-tic"` into the fixture (mirrors Decision 1d's
+  lexicon backfill). Failing-test-first: a REAL-fixture-driven integration
+  test in `tests/integration/test_evidence_service.py` plus a new
+  characterization-net test in `test_rules_characterization.py` that snapshots
+  `build_manifest`'s full `policy` block (closing the exact gap that let this
+  regression slip through — the original net only covered
+  `review_rules`/`review_section_text`).
+- **WARNING-2** (`"pdf_and_extracted_use": "rules_traceability_only"`
+  hardcoded in `domain/evidence.py`, outside the guard's scan scope): made it
+  a `build_manifest` parameter sourced from the template's own
+  `paths.extracted_dir_policy` (the same field `_check_extracted_dir_policy`
+  already validates) — `documento-generico` (no `extracted_dir_policy`
+  declared) now correctly gets `""`, not an invented value.
+- **WARNING-1** (no-literal guard bypass gaps): banned `"introduccion"` and
+  the margin value `2.5` as quote-agnostic bare substrings instead of a
+  double-quoted literal / constant-name-only match; added synthetic-source
+  tests (never touching production code) proving both bypasses are now caught.
+- **WARNING-3** (spec.md wording vs. two-function split): additive
+  clarification note added, planning artifact otherwise unchanged.
+- **SUGGESTION-1**: added the missing `_check_source_priority_excludes_extracted`
+  "stays silent when `paths.extracted_dir` absent" unit test, for symmetry
+  with the other 3 conditional checks.
+- **SUGGESTION-3**: `_check_margins_and_cover_policy` now explicitly rejects
+  `bool` margin values (Python's `bool` subclasses `int`, so the prior
+  `isinstance(x, (int, float))` silently accepted `True`/`False`).
+- **SUGGESTION-2** (diff-size overage note): no action required per the
+  verify report itself — informational only.
+
+**Acceptance verification** (all confirmed, post-fix-batch):
+- Full suite green twice in a row: 954 passed, 0 failed, 7 skipped (both runs
   byte-identical pass/fail counts — no flakes).
 - `documento-generico` passes `review-rules`, `build-rules`, and `doctor`'s
   `rules_config` check with zero errors — integration-tested in
   `tests/integration/test_documento_generico_acceptance.py` (not manually).
 - `reporte-estadia-tic` characterization snapshots
-  (`tests/unit/domain/test_rules_characterization.py`) stay byte-identical
-  through every Phase 3/4 edit.
+  (`tests/unit/domain/test_rules_characterization.py`, now including the
+  `build_manifest` policy-block snapshot) stay green.
 - Structural no-literal guard (`tests/unit/test_no_document_type_literal.py`)
-  passes for both `domain/rules.py` and `domain/normative.py`.
-- `ruff check .`: 16 errors, unchanged from main's baseline (0 net new;
-  2 unused imports introduced then removed during this batch).
+  passes for both `domain/rules.py` and `domain/normative.py`, with the
+  quote-style/bare-value bypass gaps closed and proven caught.
+- `ruff check .`: 16 errors, unchanged from main's baseline (0 net new).
 - `mypy src/docs/domain/rules.py src/docs/domain/normative.py
   src/docs/domain/evidence.py src/docs/application/evidence.py
   src/docs/application/documents.py`: no issues (main's pre-existing mypy
