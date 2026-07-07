@@ -178,13 +178,89 @@ blockquote was added.
   renamed `review_rules`-level tests instead.
 
 **Not started** (future batches): Phase 6 (Front B) onward — Fronts B-G per
-the design's slicing sketch, PR2 through PR7.
+the design's slicing sketch, PR2 through PR7. **UPDATE**: Phase 6 (Front B)
+is now done — see the "Apply Progress — PR2 batch" section below.
+
 ## Phase 6: Front B — orphan `_media/` cleanup
 
 - [x] 6.1 [front:first-use-bugs] [spec: document-ingest "Re-ingesting a source removes its stale media directory"] Add failing test in new `tests/unit/application/test_media_cleanup.py`: content-addressed `_media/` orphan (no current output references it) is removed.
 - [x] 6.2 [front:first-use-bugs] [spec: document-ingest "Referenced media is never deleted"] Add failing test in the same file: a file under `_media/` not matching the content-addressed pattern is refused (left in place, reported in `_detection.json.ignored`).
 - [x] 6.3 [front:first-use-bugs] Implement orphan cleanup step in `application/ingest.py` (runs during the ingest scan): remove only content-addressed orphans with no current reference; refuse and report anything else. Run 6.1-6.2 — must pass.
 - [x] 6.4 [front:first-use-bugs] Run determinism suite ×2 for Front B closeout.
+
+---
+
+## Apply Progress — PR2 batch (branch `feat/usch-b-bootstrap-media`)
+
+**Batch boundary**: Phase 6 only (Front B — orphan `_media/` cleanup), plus
+one additional item folded in per the orchestrator's instruction: NEW-SUGGESTION-1
+(`application/doctor.py`'s sibling hardcoded `extracted_dir_policy` literal,
+recorded in `state.yaml`/`verify-report-pr1.md` as a PR1 follow-up, not in
+PR1's own scope). Branched from `main` at merge commit `d7ad6b5` (PR #12,
+the PR1 slice). Front C (Phase 7) onward is explicitly OUT of scope.
+
+**Status**: 4/4 Phase 6 tasks complete (`[x]`), plus the NEW-SUGGESTION-1
+follow-up. Ready for fresh-context review before push+PR.
+
+**Commits** (work units, oldest to newest):
+1. `c7cd40e` feat(ingest): clean up orphaned content-addressed _media/ directories (Phase 6.1-6.4)
+2. `4e6d0bf` fix(doctor): de-hardcode extracted_dir_policy comparison in run_doctor (NEW-SUGGESTION-1)
+
+**Implementation notes**:
+- Media-dir identity: `PandocIngestAdapter` already names media directories
+  `<stem>-<kind>-<sha8>_media` (mirrors the paired `.md` output's own
+  `<stem>-<kind>-<sha8>.md` identity from `domain/ingest_naming.py`).
+  `_clean_orphan_media` matches that exact shape via regex
+  (`^(.+-[0-9a-f]{8})_media$`) rather than re-hashing directory contents —
+  cheap, deterministic, and the shape alone is sufficient because only this
+  harness's own adapter could have produced it.
+- Orphan = matches the content-addressed shape AND its paired `.md` sibling
+  no longer exists in `sections/ingested/`. Foreign = does not match the
+  shape at all (left in place, unconditionally refused, never descended
+  into or partially touched).
+- New `report["media_cleanup"] = {"removed": [...], "refused": [...]}`
+  field, always present (even empty) on every `ingest_inbox` call — required
+  updating 2 PRE-EXISTING tests that asserted `report == {"processed": 0,
+  "files": []}` by exact equality
+  (`tests/unit/application/test_ingest_service.py`,
+  `tests/integration/test_ingest_determinism.py`); both now assert the
+  additive field's empty-default shape too. This is the "every output the
+  touched code produces" lesson from PR1's CRITICAL-1 applied proactively —
+  the new field's presence was captured in a regression test immediately,
+  not discovered later by a reviewer.
+- NEW-SUGGESTION-1 fix mirrors `_check_extracted_dir_policy` exactly (a
+  policy must be declared as a non-empty string when `extracted_dir` is set;
+  never a hardcoded expected value). The no-literal structural guard's scan
+  scope was deliberately NOT extended to `application/doctor.py` — documented
+  inline in `tests/unit/test_no_document_type_literal.py`'s module docstring:
+  Decision 10.2 scopes the guard to `domain/rules.py` + `domain/normative.py`
+  specifically, and `application/doctor.py` is a different architectural
+  layer, matching the disposition WARNING-2 already established for
+  `domain/evidence.py`'s `pdf_and_extracted_use`. Widening the guard's file
+  list is a separately-reviewable decision, not something to fold in
+  silently alongside this bugfix.
+
+**Incident note (process, not code)**: while comparing ruff baselines against
+`main`, `git checkout main -- .` was run directly against the live working
+tree (the same mistake the PR1 verify report's reviewer made and documented).
+`git stash` had been run immediately before it, so no work was lost. Recovered
+via `git checkout HEAD -- .` followed by `git stash pop`; verified via
+`git diff --stat` (matched the pre-incident diff exactly) and a full
+`pytest` run (961 passed) before continuing. All subsequent `main`-baseline
+ruff comparisons were done via a disposable `git worktree` instead. No
+commits, pushes, or `state.yaml` changes were made during the incident or its
+recovery.
+
+**Acceptance verification** (all confirmed):
+- Full suite green twice in a row: 961 passed, 0 failed, 7 skipped (both runs
+  byte-identical pass/fail counts — no flakes).
+- `ruff check .`: 16 errors on `main` (re-checked via disposable worktree,
+  never by mutating the working tree after the incident above) and 16 on
+  this branch — 0 net new.
+- `mypy src/docs/application/doctor.py src/docs/application/ingest.py`: no
+  issues.
+
+**Not started** (future batches): Phase 7 (Front C) onward.
 
 ## Phase 7: Front C — recursive ingest + JVM look-ahead status + writer port
 
