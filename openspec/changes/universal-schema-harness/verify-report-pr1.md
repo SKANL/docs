@@ -275,3 +275,110 @@ passed) that the working tree was fully restored before continuing the
 review. All ruff-baseline comparisons were subsequently redone safely via a
 disposable git worktree rather than mutating the working tree. No commits,
 pushes, or state.yaml changes were made by this review.
+
+---
+
+# Re-verification (fix batch: d75ee83, ff159ad, cef4b67, a93acd0, cdad98c)
+
+Second fresh-context pass, targeted at closing the findings above. No code
+was changed by this review; only this report was appended to (working-tree
+only, not committed by this agent).
+
+## Per-finding status
+
+| Finding | Status | Evidence |
+|---------|--------|----------|
+| CRITICAL-1 (normative_source regression) | FIXED | Re-ran the exact original reproduction expression against the real reporte-estadia-tic.json -- now returns "docs/guides/manual-estadia-tic", not an empty string. Fixture backfilled with normative.normative_source (mirrors Decision 1d's lexicon backfill pattern). New REAL-fixture-driven integration test plus a build_manifest policy-block snapshot added to the characterization net, closing the exact scope gap that let the original regression slip through. |
+| WARNING-2 (pdf_and_extracted_use hardcoded literal, plus reuse-coupling judgment) | FIXED, reuse is SOUND | See judgment below. |
+| WARNING-1 (no-literal guard bypass gaps) | FIXED | Re-tried both original bypasses: a single-quoted section id literal and a bare margin value without the named constant. Both now caught -- the banned-literal list was changed from a quote-wrapped entry to a bare, quote-agnostic substring, and a bare numeric entry was added alongside the constant-name entry. New synthetic-source tests prove both catches without touching production code as the fixture. Ran the guard test file directly: 5 passed. |
+| WARNING-3 (spec.md wording vs. two-function split) | FIXED | An additive clarification blockquote was inserted under the relevant scenario in specs/document-pipeline/spec.md, explaining the scenario is satisfied by two independent, non-cross-referencing check functions per design.md Decision 1a. Original scenario prose was NOT rewritten (respects the frozen-planning-artifact, additive-only convention). |
+| SUGGESTION-1 (missing silence test for source_priority check) | FIXED | A silence test was added, asserting an empty result even when source_priority is populated, as long as extracted_dir is absent -- correct symmetry with the other 3 conditional-check silence tests. |
+| SUGGESTION-3 (bool accepted as numeric margin) | FIXED | The margin check now explicitly excludes bool before the int/float check. A new test sets a margin to a boolean and asserts it is rejected. |
+
+## WARNING-2 reuse judgment (specifically requested)
+
+The fix sources build_manifest's pdf_and_extracted_use parameter from the
+same field, paths.extracted_dir_policy, that _check_extracted_dir_policy in
+rules.py validates (must be a declared non-empty string when
+paths.extracted_dir is set).
+
+Verdict: this reuse is semantically sound, not a coupling smell.
+
+Reasoning:
+- Historically, before this PR, both fields were independently hardcoded to
+  the identical literal string for the same estadia-only policy -- two
+  separate copies of the same policy statement that had to be manually kept
+  in sync (and coincidentally were, since nobody had touched either in
+  isolation). Sourcing pdf_and_extracted_use from extracted_dir_policy
+  replaces an implicit, duplicated invariant with an explicit, single
+  source of truth -- a strict improvement over the prior state, not a new
+  risk.
+- The two consumers read the same field for the same underlying concept:
+  what is the declared policy governing extracted/traceability content.
+  _check_extracted_dir_policy validates the field is present and
+  well-shaped; build_manifest surfaces its value for audit/evidence
+  purposes. There is no case where these two would legitimately need
+  different values for the same template -- they are two views onto one
+  policy declaration, not two independent policies that happen to share a
+  name.
+- Checked for functional coupling risk: grepped src/ for the field name --
+  it is written into the manifest and never read back by any check or gate.
+  It is purely informational/audit metadata, so even if the reuse were ever
+  judged wrong for a future document type, the blast radius is limited to a
+  manifest field's display value, not a behavioral gate.
+- documento-generico (no extracted_dir_policy declared) correctly resolves
+  to an empty string for both fields -- verified via a new
+  real-fixture-driven test. No value is invented for a document type that
+  never declared one.
+- Minor naming note (non-blocking): the field name suggests it could also
+  describe manual_pdf/example_pdf usage, not just extracted_dir usage, but
+  no separate field exists for that narrower concept and none was ever
+  hardcoded for it either -- the field has always meant the
+  traceability-use policy, and extracted_dir_policy is exactly that
+  policy's template-declared home. The added code comment already states
+  this sourcing explicitly, which is sufficient documentation.
+
+## New findings from this pass
+
+### NEW-SUGGESTION-1 -- doctor.py has a sibling hardcoded literal, untouched by this branch
+
+- Where: src/docs/application/doctor.py line 43 -- a hardcoded comparison
+  of paths.extracted_dir_policy against the same fixed estadia-only policy
+  string.
+- Confirmed via git log that doctor.py was NOT touched anywhere in this
+  branch (last modified by an unrelated pre-existing commit, 11a92e0). This
+  literal predates PR1 entirely and is a sibling of the exact class of bug
+  WARNING-2 just fixed in domain/evidence.py -- doctor.py's rules_config
+  check still hardcodes the expected policy value instead of just checking
+  presence/shape, the way rules.py's own _check_extracted_dir_policy now
+  does.
+- Not blocking for PR1 (out of its diff, out of explore.md's original
+  inventory, and out of this targeted re-verification's requested scope),
+  but flagging for a future front/task since it is the same category of
+  hardcoding this whole change exists to remove.
+
+## Independent re-run evidence (this pass)
+
+- Full test suite run twice independently: 954 passed, 0 failed, 7 skipped
+  both times, byte-identical counts.
+- ruff check: 16 errors, identical set of file:line violations confirmed
+  against the main-baseline comparison already established in the original
+  review (0 net new).
+- mypy on the five touched src files: no issues found.
+- Isolated run of the acceptance gate, characterization net, no-literal
+  guard, and evidence/rules unit suites (162 tests): all pass.
+- Confirmed the original two review_rules/review_section_text
+  characterization tests (byte-identical since commit 73d5433) still pass
+  unmodified, and the new build_manifest policy-block snapshot added in
+  this fix batch also passes against the real fixture.
+- Confirmed no code was touched outside the fix-batch's own stated scope:
+  documento-generico.json and its acceptance test are untouched.
+
+## Re-verification Verdict
+
+ready-for-pr -- all 6 original findings (1 CRITICAL, 3 WARNING, 2
+SUGGESTION addressed directly; SUGGESTION-2 required no action per the
+original report) are genuinely, verifiably closed with real tests against
+real fixtures, not performative fixes. One new, non-blocking suggestion
+(doctor.py's sibling literal) is noted for a future task, out of this
+branch's diff and out of scope for PR1.
