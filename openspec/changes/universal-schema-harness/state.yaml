@@ -21,7 +21,13 @@ phases:
     artifact: tasks.md
   apply:
     status: in-progress
-    note: batch 1/7 done (Front A + characterization net, branch feat/usch-a-policy-dehardcode, 8 commits); verify-pr1 running
+    note: >
+      batch 1/7 COMPLETE: Front A + characterization net + verify fix batch,
+      branch feat/usch-a-policy-dehardcode (14 commits), verify passes 1+2
+      (needs-fixes -> ready-for-pr), PR #12 open (stacked-to-main).
+      Next batch: Front B (bootstrap, orphan _media cleanup) after PR #12 merges.
+      Follow-up recorded: application/doctor.py:43 sibling rules_traceability_only
+      literal (NEW-SUGGESTION-1, pre-existing, not in PR1 scope).
   verify:
     status: pending
   archive:
