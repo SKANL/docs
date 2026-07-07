@@ -134,6 +134,47 @@ def test_run_doctor_gh_check_required_only_when_strict(tmp_path):
     assert next(c for c in strict.checks if c.name == "gh").required is True
 
 
+def test_run_doctor_extracted_dir_policy_check_not_present_when_extracted_dir_absent(tmp_path):
+    # spec: document-pipeline "Extracted-dir policy checked only when
+    # configured" -- mirrors _check_extracted_dir_policy's own gating.
+    service = _service(tmp_path)
+    config = _config(tmp_path)
+
+    result = service.run_doctor("doc1", config)
+
+    names = {c.name for c in result.checks}
+    assert "extracted_dir_traceability_only" not in names
+
+
+def test_run_doctor_extracted_dir_policy_check_passes_for_any_declared_string(tmp_path):
+    # NEW-SUGGESTION-1 (verify follow-up on PR1's WARNING-2 sibling): the
+    # check must verify internal consistency (a policy IS declared), never
+    # compare against a hardcoded expected value like "rules_traceability_only".
+    (tmp_path / "extracted").mkdir()
+    service = _service(tmp_path)
+    config = _config(
+        tmp_path,
+        extracted_dir=str(tmp_path / "extracted"),
+        extracted_dir_policy="anything_else",
+    )
+
+    result = service.run_doctor("doc1", config)
+
+    check = next(c for c in result.checks if c.name == "extracted_dir_traceability_only")
+    assert check.ok is True
+
+
+def test_run_doctor_extracted_dir_policy_check_fails_when_not_declared(tmp_path):
+    (tmp_path / "extracted").mkdir()
+    service = _service(tmp_path)
+    config = _config(tmp_path, extracted_dir=str(tmp_path / "extracted"))
+
+    result = service.run_doctor("doc1", config)
+
+    check = next(c for c in result.checks if c.name == "extracted_dir_traceability_only")
+    assert check.ok is False
+
+
 def test_run_doctor_result_passed_reflects_rules_config_failure(tmp_path):
     service = _service(tmp_path)
     config = _config(tmp_path)

@@ -37,11 +37,19 @@ class DoctorService:
 
         if config["paths"].get("extracted_dir"):
             extracted = Path(config["paths"]["extracted_dir"])
+            # De-hardcoded (verify follow-up NEW-SUGGESTION-1, sibling of PR1's
+            # WARNING-2): was an unconditional comparison against a single
+            # fixed expected policy string. Mirrors domain/rules.py's
+            # _check_extracted_dir_policy exactly -- verifies a policy is
+            # DECLARED (internal consistency), never a hardcoded expected value
+            # (spec: document-pipeline "Extracted-dir policy checked only when
+            # configured").
+            extracted_dir_policy = config["paths"].get("extracted_dir_policy")
             checks.append(
                 Check(
                     "extracted_dir_traceability_only",
-                    config["paths"].get("extracted_dir_policy") == "rules_traceability_only",
-                    f"{extracted} ({config['paths'].get('extracted_dir_policy', 'missing')})",
+                    bool(extracted_dir_policy) and isinstance(extracted_dir_policy, str),
+                    f"{extracted} ({extracted_dir_policy or 'missing'})",
                     required=False,
                 )
             )
