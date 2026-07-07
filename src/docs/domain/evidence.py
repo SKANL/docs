@@ -34,11 +34,16 @@ def build_manifest(
     privacy: dict,
     section_contracts: dict[str, dict],
     contract_hashes: dict[str, str],
+    normative_source: str = "",
+    skipped_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema": 1,
         "policy": {
-            "normative_source": "docs/guides/manual-estadia-tic",
+            # Template-declared, never a hardcoded document-type literal (spec:
+            # document-template "No hardcoded document-type literal in domain
+            # code"; evidence.py #7). Default "" when the template declares none.
+            "normative_source": normative_source,
             "pdf_and_extracted_use": "rules_traceability_only",
             "apa_style": "APA 7",
             # Legacy quirk (intentional, not a bug): advisor_overrides is duplicated
@@ -68,6 +73,11 @@ def build_manifest(
         "privacy": privacy,
         "section_contracts": section_contracts,
         "contract_hashes": contract_hashes,
+        # Optional template-declared paths (`manual_dir`/`extracted_dir`) that
+        # were absent from `paths` config this run -- reported, never silently
+        # dropped and never a hard failure (spec: document-pipeline "Build-Rules
+        # Guards Absent Paths").
+        "skipped_paths": skipped_paths or [],
     }
 
 

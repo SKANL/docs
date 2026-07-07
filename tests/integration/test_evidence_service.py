@@ -37,6 +37,29 @@ def _config(tmp_path: Path, **overrides) -> dict:
     return config
 
 
+def test_build_rules_with_empty_paths_does_not_raise(tmp_path: Path, service):
+    # spec: document-pipeline "Empty paths config does not crash build-rules"
+    # -- documento-generico declares `"paths": {}`; only computed paths
+    # (rules_manifest) are ever guaranteed present.
+    config = {
+        "paths": {"rules_manifest": str(tmp_path / "manual-rules.json")},
+        "section_contracts": {},
+        "advisor_overrides": [],
+        "strict_policy": {},
+        "preliminaries": {},
+        "format": {},
+        "apa7": {},
+        "privacy": {},
+    }
+
+    path = service.build_rules(config)
+
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    assert manifest["manual_files"] == []
+    assert manifest["traceability"] == []
+    assert set(manifest["skipped_paths"]) == {"manual_dir", "extracted_dir"}
+
+
 def test_build_rules_returns_manifest_path(tmp_path: Path, service):
     config = _config(tmp_path)
     result_path = service.build_rules(config)

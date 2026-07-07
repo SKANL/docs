@@ -58,9 +58,21 @@ def _call(**overrides):
 def test_build_manifest_schema_and_fixed_policy_fields():
     manifest = _call()
     assert manifest["schema"] == 1
-    assert manifest["policy"]["normative_source"] == "docs/guides/manual-estadia-tic"
     assert manifest["policy"]["pdf_and_extracted_use"] == "rules_traceability_only"
     assert manifest["policy"]["apa_style"] == "APA 7"
+
+
+def test_build_manifest_normative_source_defaults_to_empty_string_not_hardcoded():
+    # spec: document-template "No hardcoded document-type literal in domain
+    # code" (evidence.py #7) -- normative_source is a template-declared
+    # parameter, never a fixed "docs/guides/manual-estadia-tic" literal.
+    manifest = _call()
+    assert manifest["policy"]["normative_source"] == ""
+
+
+def test_build_manifest_normative_source_comes_from_parameter():
+    manifest = _call(normative_source="docs/guides/manual-estadia-tic")
+    assert manifest["policy"]["normative_source"] == "docs/guides/manual-estadia-tic"
 
 
 def test_build_manifest_policy_carries_advisor_overrides_and_modes():
