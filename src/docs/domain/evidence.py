@@ -35,6 +35,7 @@ def build_manifest(
     section_contracts: dict[str, dict],
     contract_hashes: dict[str, str],
     normative_source: str = "",
+    pdf_and_extracted_use: str = "",
     skipped_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
@@ -44,7 +45,11 @@ def build_manifest(
             # document-template "No hardcoded document-type literal in domain
             # code"; evidence.py #7). Default "" when the template declares none.
             "normative_source": normative_source,
-            "pdf_and_extracted_use": "rules_traceability_only",
+            # De-hardcoded (WARNING-2, fresh-context verify, PR1 fix batch): was
+            # an unconditional "rules_traceability_only" literal regardless of
+            # template. Now sourced from the template's own declared
+            # `paths.extracted_dir_policy` -- default "" when not declared.
+            "pdf_and_extracted_use": pdf_and_extracted_use,
             "apa_style": "APA 7",
             # Legacy quirk (intentional, not a bug): advisor_overrides is duplicated
             # both here and at the manifest's top level (see below). Preserve as-is.

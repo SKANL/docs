@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from docs.domain.evidence import build_manifest
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.rules import review_rules, review_section_text
@@ -36,6 +37,40 @@ def test_review_rules_reporte_estadia_tic_draft_manifest_present_is_clean():
     result = review_rules(template, manifest_exists=True, manifest_size=42, strict=False)
     assert [issue.to_dict() for issue in result.issues] == []
     assert result.passed is True
+
+
+def test_build_manifest_policy_block_reporte_estadia_tic_snapshot():
+    # Extended scope (fresh-context verify, PR1 fix batch, CRITICAL-1): the
+    # original characterization net (task 1.1) covered only
+    # review_rules/review_section_text, so a real regression in build_manifest's
+    # "policy" block (normative_source silently dropping to "") slipped through
+    # undetected. This snapshot pins the FULL policy block, driven by the real
+    # fixture's own declared values (not synthetic hand-picked params) via the
+    # same resolution expressions `application/evidence.py` uses.
+    raw = _load_raw()
+    manifest = build_manifest(
+        manual_files=[],
+        traceability=[],
+        advisor_overrides=raw.get("advisor_overrides", []),
+        draft_mode=raw.get("strict_policy", {}).get("draft", {}),
+        strict_mode=raw.get("strict_policy", {}).get("strict", {}),
+        preliminaries=raw.get("preliminaries", {}),
+        format=raw.get("format", {}),
+        apa7=raw.get("apa7", {}),
+        privacy=raw.get("privacy", {}),
+        section_contracts={},
+        contract_hashes={},
+        normative_source=raw.get("normative", {}).get("normative_source", ""),
+        pdf_and_extracted_use=raw.get("paths", {}).get("extracted_dir_policy", ""),
+    )
+    assert manifest["policy"] == {
+        "normative_source": "docs/guides/manual-estadia-tic",
+        "pdf_and_extracted_use": "rules_traceability_only",
+        "apa_style": "APA 7",
+        "advisor_overrides": raw["advisor_overrides"],
+        "draft_mode": raw["strict_policy"]["draft"],
+        "strict_mode": raw["strict_policy"]["strict"],
+    }
 
 
 def test_review_rules_reporte_estadia_tic_strict_manifest_absent_snapshot():

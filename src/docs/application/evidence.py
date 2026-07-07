@@ -121,6 +121,7 @@ class EvidenceService:
             section_contracts=section_contracts,
             contract_hashes=contract_hashes,
             normative_source=config.get("normative", {}).get("normative_source", ""),
+            pdf_and_extracted_use=config["paths"].get("extracted_dir_policy", ""),
             skipped_paths=skipped_paths,
         )
 

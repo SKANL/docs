@@ -58,7 +58,6 @@ def _call(**overrides):
 def test_build_manifest_schema_and_fixed_policy_fields():
     manifest = _call()
     assert manifest["schema"] == 1
-    assert manifest["policy"]["pdf_and_extracted_use"] == "rules_traceability_only"
     assert manifest["policy"]["apa_style"] == "APA 7"
 
 
@@ -73,6 +72,19 @@ def test_build_manifest_normative_source_defaults_to_empty_string_not_hardcoded(
 def test_build_manifest_normative_source_comes_from_parameter():
     manifest = _call(normative_source="docs/guides/manual-estadia-tic")
     assert manifest["policy"]["normative_source"] == "docs/guides/manual-estadia-tic"
+
+
+def test_build_manifest_pdf_and_extracted_use_defaults_to_empty_string_not_hardcoded():
+    # WARNING-2 (fresh-context verify, PR1 fix batch) -- pdf_and_extracted_use
+    # was hardcoded to "rules_traceability_only" unconditionally; it is now a
+    # template-declared parameter, defaulting to "" when not declared.
+    manifest = _call()
+    assert manifest["policy"]["pdf_and_extracted_use"] == ""
+
+
+def test_build_manifest_pdf_and_extracted_use_comes_from_parameter():
+    manifest = _call(pdf_and_extracted_use="rules_traceability_only")
+    assert manifest["policy"]["pdf_and_extracted_use"] == "rules_traceability_only"
 
 
 def test_build_manifest_policy_carries_advisor_overrides_and_modes():
