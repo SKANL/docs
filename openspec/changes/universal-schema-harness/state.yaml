@@ -22,13 +22,15 @@ phases:
   apply:
     status: in-progress
     note: >
-      batch 2/7 COMPLETE: Front B (orphan _media cleanup with
-      refuse-on-unexpected-content hardening, doctor.py de-hardcode) on
-      branch feat/usch-b-bootstrap-media (8 commits), verify passes 1+2
-      (needs-fixes -> ready-for-pr). PR #12 (batch 1, Front A) MERGED at
-      d7ad6b5. Next batch: Front C (recursive ingest) after PR2 merges.
-      Open follow-ups: task 13.1 (no-literal guard scope), NEW-SUGGESTION-3
-      (empty nested subdir in orphan media dir silently swept).
+      batch 3/7 COMPLETE: Front C (recursive ingest, provenance,
+      honest status vocabulary, IngestArtifactWriter port) on branch
+      feat/usch-c-recursive-ingest (4 commits), verify pass 1: ready-for-pr
+      (first slice to pass without a fix cycle). PR #12 (A) and PR #13 (B)
+      MERGED. Next: Front D (roles/duplicates), folding in PR3's
+      non-blocking findings (harness_artifact ignored-reason,
+      inbox/assets boundary pinning test, sort-order doc note).
+      Open follow-ups: task 13.1 (guard scope), NEW-SUGGESTION-3
+      (empty nested subdir sweep).
   verify:
     status: pending
   archive:
