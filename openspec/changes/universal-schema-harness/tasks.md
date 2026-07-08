@@ -489,9 +489,9 @@ review before push+PR.
 
 ## Phase 9: Front E — near-duplicate detection
 
-- [ ] 9.1 [front:roles-duplicates] [spec: document-ingest "Higher-fidelity duplicate is kept"] Add failing test in new `tests/unit/domain/test_near_duplicate.py`: identical text, near-duplicate (one edit), and disjoint texts; assert 5-word-shingle Jaccard `>= 0.85` threshold boundary.
-- [ ] 9.2 [front:roles-duplicates] [spec: document-ingest "Distinct sources are not falsely merged"] Add failing test: fidelity ranking (`curated_md > docx_converted_md > pdf_extracted_md > txt_md`) picks the higher-fidelity member regardless of input order; tie-break by POSIX `relative_path`.
-- [ ] 9.3 [front:roles-duplicates] Implement `domain/near_duplicate.py` (`find_duplicates(docs) -> list[DuplicateDecision]`) reusing `markdown_text.clean_markdown_text` for normalization. Run 9.1-9.2 — must pass.
+- [x] 9.1 [front:roles-duplicates] [spec: document-ingest "Higher-fidelity duplicate is kept"] Add failing test in new `tests/unit/domain/test_near_duplicate.py`: identical text, near-duplicate (one edit), and disjoint texts; assert 5-word-shingle Jaccard `>= 0.85` threshold boundary.
+- [x] 9.2 [front:roles-duplicates] [spec: document-ingest "Distinct sources are not falsely merged"] Add failing test: fidelity ranking (`curated_md > docx_converted_md > pdf_extracted_md > txt_md`) picks the higher-fidelity member regardless of input order; tie-break by POSIX `relative_path`.
+- [x] 9.3 [front:roles-duplicates] Implement `domain/near_duplicate.py` (`find_duplicates(docs) -> list[DuplicateDecision]`) reusing `markdown_text.clean_markdown_text` for normalization. Run 9.1-9.2 — must pass.
 - [ ] 9.4 [front:roles-duplicates] [spec: document-ingest "Duplicate decision is reversible"] Add failing test: editing a `duplicates` manifest entry to reverse kept/superseded makes the previously suppressed source active on next run.
 - [ ] 9.5 [front:roles-duplicates] Wire near-dup pass into `application/ingest.py` as a post-ingest step over produced `ingested/` outputs; write `duplicates: [{kept, superseded, jaccard, reason}]` into `_source-manifest.json`. Run 9.4 — must pass.
 - [ ] 9.6 [front:roles-duplicates] Run determinism suite ×2 for Front E closeout.
