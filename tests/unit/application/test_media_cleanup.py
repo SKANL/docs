@@ -169,3 +169,68 @@ def test_orphan_dir_removal_error_is_reported_and_does_not_abort_scan(tmp_path: 
     refused = report["media_cleanup"]["refused"]
     assert [r["path"] for r in refused] == ["readme-md-a1b2c3d4_media"]
     assert "symbolic link" in refused[0]["cause"]
+
+
+# --- Front C composition: recursion must not change media-cleanup scope --
+
+
+class _NamedKindDetector:
+    def __init__(self, kind_by_name: dict[str, str]) -> None:
+        self.kind_by_name = kind_by_name
+
+    def detect(self, path: Path) -> str:
+        return self.kind_by_name.get(path.name, "")
+
+
+class _MediaProducingHandler:
+    """Mimics PandocIngestAdapter's real naming convention (`<stem>-<kind>-
+    <sha8>.md` + a paired `<stem>-<kind>-<sha8>_media/` sibling) closely
+    enough to exercise the orphan-detection path end-to-end."""
+
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
+        import hashlib
+
+        sha8 = hashlib.sha256(src.read_bytes()).hexdigest()[:8]
+        stem_tag = f"{src.stem}-{kind}-{sha8}"
+        target = out_dir / f"{stem_tag}.md"
+        target.write_text(f"# {src.name}", encoding="utf-8")
+        media_dir = out_dir / f"{stem_tag}_media"
+        media_dir.mkdir()
+        (media_dir / "image1.png").write_bytes(b"fake-png-bytes")
+        return target
+
+
+def test_media_cleanup_finds_orphan_left_by_a_source_that_lived_in_a_nested_subfolder(
+    tmp_path: Path,
+):
+    # design.md Decision 8 #13 composed with Front C's recursive walk:
+    # _clean_orphan_media scans the FLAT sections/ingested/ output
+    # directory, which recursion does not change -- output identity is
+    # content-hash only, never mirrors the inbox's folder structure. This
+    # proves a media dir left behind by a NESTED source is found and cleaned
+    # up exactly the same as a top-level one, once the source is removed and
+    # the inbox is rescanned.
+    inbox = tmp_path / "inbox"
+    nested = inbox / "docs" / "reports"
+    nested.mkdir(parents=True)
+    src = nested / "report.docx"
+    src.write_bytes(b"docx-bytes-v1")
+    handler = _MediaProducingHandler()
+    service = IngestService(_NamedKindDetector({"report.docx": "docx"}), {"docx": handler})
+
+    first = service.ingest_inbox(inbox, tmp_path / "sections")
+    entry = next(e for e in first["files"] if e["file"] == "report.docx")
+    assert entry["relative_path"] == "docs/reports/report.docx"
+    output_path = Path(entry["output"])
+    media_dir_name = f"{output_path.stem}_media"
+    assert (output_path.parent / media_dir_name).is_dir()
+
+    # The nested source is removed entirely (e.g. re-organized or deleted
+    # upstream) -- its paired output + media dir are now orphaned.
+    src.unlink()
+    output_path.unlink()
+
+    second = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    assert second["media_cleanup"]["removed"] == [media_dir_name]
+    assert not (output_path.parent / media_dir_name).exists()

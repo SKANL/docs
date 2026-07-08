@@ -215,3 +215,199 @@ def test_jvm_lookahead_batch_scoped_per_directory_not_whole_tree(tmp_path: Path)
     # batch reaches across to the other directory.
     assert statuses == {"one.pdf": "ingested", "two.pdf": "ingested"}
     assert len(handler.calls) == 2
+
+
+# --- inbox/assets/ exclusion + `_`-prefix tree-wide exclusion -----------
+
+
+def test_files_under_inbox_assets_are_excluded_from_source_walk_and_reported_ignored(
+    tmp_path: Path,
+):
+    # design.md Decision 6: inbox/assets/ is the verbatim-asset convention,
+    # excluded from the source walk entirely (routed elsewhere, reserved for
+    # Front F) -- but its presence is never silently dropped, only excluded.
+    inbox = tmp_path / "inbox"
+    (inbox / "assets").mkdir(parents=True)
+    (inbox / "assets" / "cover.png").write_bytes(b"fake-png-bytes")
+    (inbox / "notes.md").write_text("# Notes", encoding="utf-8")
+    service = IngestService(_FakeDetector({"notes.md": "md"}), {"md": _FakeHandler()})
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    reported_files = {e["file"] for e in report["files"]}
+    assert "cover.png" not in reported_files
+    assert report["ignored"] == [{"relative_path": "assets/cover.png", "reason": "assets_subtree"}]
+
+
+def test_underscore_prefixed_component_anywhere_in_tree_is_excluded_and_reported_ignored(
+    tmp_path: Path,
+):
+    # design.md Decision 2: the top-level `_`-prefix rule extends to ANY
+    # component anywhere in the tree, not just the inbox root. `sub/` also
+    # has a genuine, non-underscore source sibling so this test stays
+    # focused on the exclusion itself, not the separate empty_dir marker
+    # mechanic (see the dedicated empty_dir tests above).
+    inbox = tmp_path / "inbox"
+    (inbox / "sub" / "_drafts").mkdir(parents=True)
+    (inbox / "sub" / "_drafts" / "wip.md").write_text("# WIP", encoding="utf-8")
+    (inbox / "sub" / "final.md").write_text("# Final", encoding="utf-8")
+    service = IngestService(_FakeDetector({"final.md": "md"}), {"md": _FakeHandler()})
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    reported_files = {e.get("file") for e in report["files"]}
+    assert "wip.md" not in reported_files
+    assert "final.md" in reported_files
+    assert report["ignored"] == [
+        {"relative_path": "sub/_drafts/wip.md", "reason": "underscore_prefixed"}
+    ]
+
+
+def test_directory_with_only_underscore_prefixed_content_is_reported_empty_dir(tmp_path: Path):
+    # Edge case, explicitly pinned: a directory whose ONLY content is
+    # `_`-prefixed yields zero INGESTABLE files, so it is honestly reported
+    # as `empty_dir` in ADDITION to the underscore item's own `ignored`
+    # entry -- both are individually true and non-contradictory.
+    inbox = tmp_path / "inbox"
+    (inbox / "sub" / "_drafts").mkdir(parents=True)
+    (inbox / "sub" / "_drafts" / "wip.md").write_text("# WIP", encoding="utf-8")
+    service = IngestService(_FakeDetector({}), {})
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    assert report["ignored"] == [
+        {"relative_path": "sub/_drafts/wip.md", "reason": "underscore_prefixed"}
+    ]
+    empty_markers = [e["relative_path"] for e in report["files"] if e.get("status") == "empty_dir"]
+    assert empty_markers == ["sub/"]
+
+
+# --- Realistic acceptance shape (real-world drop, fixture not real files) -
+
+
+def test_realistic_multi_source_drop_produces_decisive_provenance_for_every_item(
+    tmp_path: Path,
+):
+    # Acceptance context: mirrors the shape of a real user's OneDrive inbox
+    # drop (example_tesina/ reference material, guides/manual-estadia-tic/
+    # policy .md files, extracted/ OCR artifacts mixing .md/.json/images,
+    # plus a top-level cover.docx) -- fixture tree, never the user's actual
+    # files. 60 PNGs reduced to 3 representative ones for test speed; the
+    # invariant under test is structural (every item gets a relative_path
+    # and a decisive status), not corpus size. Zero invisible items.
+    inbox = tmp_path / "inbox"
+    (inbox / "example_tesina").mkdir(parents=True)
+    (inbox / "example_tesina" / "ejemplo.pdf").write_bytes(b"pdf-bytes")
+
+    manual_dir = inbox / "guides" / "manual-estadia-tic"
+    manual_dir.mkdir(parents=True)
+    manual_names = [f"{i:02d}-seccion.md" for i in range(1, 9)]
+    for name in manual_names:
+        (manual_dir / name).write_text(f"# {name}", encoding="utf-8")
+
+    extracted_dir = inbox / "extracted"
+    extracted_dir.mkdir(parents=True)
+    (extracted_dir / "notes.md").write_text("# Notes", encoding="utf-8")
+    (extracted_dir / "data.json").write_text("{}", encoding="utf-8")
+    png_names = [f"page-{i}.png" for i in range(1, 4)]
+    for name in png_names:
+        (extracted_dir / name).write_bytes(b"fake-png-bytes")
+
+    (inbox / "cover.docx").write_bytes(b"docx-bytes")
+
+    kind_by_name = {
+        "ejemplo.pdf": "pdf",
+        **{name: "md" for name in manual_names},
+        "notes.md": "md",
+        "data.json": "json",
+        "cover.docx": "docx",
+        **{name: "png" for name in png_names},
+    }
+    # "json" and "png" kinds are intentionally UNROUTED (no handler
+    # registered) -- exactly like the real drop, where extraction sidecar
+    # data and images are not markdown-ingest sources; they must still be
+    # reported, just with status "unsupported", never silently dropped.
+    handler = _FakeHandler()
+    service = IngestService(
+        _FakeDetector(kind_by_name), {"pdf": handler, "md": handler, "docx": handler}
+    )
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    all_paths = {
+        "example_tesina/ejemplo.pdf",
+        *(f"guides/manual-estadia-tic/{name}" for name in manual_names),
+        "extracted/notes.md",
+        "extracted/data.json",
+        *(f"extracted/{name}" for name in png_names),
+        "cover.docx",
+    }
+    reported_paths = {e["relative_path"] for e in report["files"]}
+    assert reported_paths == all_paths, "every item must appear -- zero invisible items"
+
+    statuses = {e["relative_path"]: e["status"] for e in report["files"]}
+    assert statuses["example_tesina/ejemplo.pdf"] == "ingested"
+    assert statuses["cover.docx"] == "ingested"
+    for name in manual_names:
+        assert statuses[f"guides/manual-estadia-tic/{name}"] == "ingested"
+    assert statuses["extracted/notes.md"] == "ingested"
+    assert statuses["extracted/data.json"] == "unsupported"
+    for name in png_names:
+        assert statuses[f"extracted/{name}"] == "unsupported"
+
+    by_rel = {e["relative_path"]: e for e in report["files"]}
+    assert by_rel["cover.docx"]["source_dir"] == ""
+    assert by_rel["example_tesina/ejemplo.pdf"]["source_dir"] == "example_tesina"
+    assert by_rel[f"guides/manual-estadia-tic/{manual_names[0]}"]["source_dir"] == "guides/manual-estadia-tic"
+
+    assert report["ignored"] == []
+    assert report["processed"] == len(all_paths)
+
+
+# --- 7.9: determinism closeout (Front C) ---------------------------------
+
+
+def test_recursive_walk_report_ordering_is_byte_stable_across_two_independent_runs(
+    tmp_path: Path,
+):
+    # Front C closeout gate: `_detection.json` (via IngestArtifactWriter's
+    # sort_keys writer) must be byte-identical across two fully independent
+    # scans of the same nested tree -- same field set, same entry ordering,
+    # no timestamps or filesystem-iteration-order leakage.
+    inbox = tmp_path / "inbox"
+    (inbox / "z-dir").mkdir(parents=True)
+    (inbox / "a-dir" / "nested").mkdir(parents=True)
+    (inbox / "z-dir" / "one.md").write_text("# One", encoding="utf-8")
+    (inbox / "a-dir" / "nested" / "two.md").write_text("# Two", encoding="utf-8")
+    (inbox / "top.md").write_text("# Top", encoding="utf-8")
+    kind_by_name = {"one.md": "md", "two.md": "md", "top.md": "md"}
+
+    # Warm-up run: the very FIRST scan legitimately differs from every
+    # subsequent one (no `_detection.json`/`_source-manifest.json` exist yet
+    # to be found and reported under `ignored` -- once written, the walk
+    # correctly finds and reports them as `_`-prefixed on every later scan).
+    # Determinism is compared from the SECOND scan onward, once the inbox's
+    # own state has converged.
+    IngestService(_FakeDetector(kind_by_name), {"md": _FakeHandler()}).ingest_inbox(
+        inbox, tmp_path / "sections"
+    )
+
+    service_a = IngestService(_FakeDetector(kind_by_name), {"md": _FakeHandler()})
+    service_a.ingest_inbox(inbox, tmp_path / "sections")
+    first_bytes = (inbox / "_detection.json").read_bytes()
+    first_manifest_bytes = (inbox / "_source-manifest.json").read_bytes()
+
+    # A fully independent second IngestService instance (own fake
+    # detector/handler state) re-scans the same, now-converged tree.
+    service_b = IngestService(_FakeDetector(kind_by_name), {"md": _FakeHandler()})
+    service_b.ingest_inbox(inbox, tmp_path / "sections")
+    second_bytes = (inbox / "_detection.json").read_bytes()
+    second_manifest_bytes = (inbox / "_source-manifest.json").read_bytes()
+
+    assert first_bytes == second_bytes
+    assert first_manifest_bytes == second_manifest_bytes
+    assert b"generated_at" not in first_bytes
+    # Entries must appear in POSIX-sorted relative-path order, not
+    # filesystem-iteration order (a-dir before top.md before z-dir).
+    text = first_bytes.decode("utf-8")
+    assert text.index("a-dir/nested/two.md") < text.index("top.md") < text.index("z-dir/one.md")
