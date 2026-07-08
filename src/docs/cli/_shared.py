@@ -31,6 +31,7 @@ from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
 from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
@@ -104,7 +105,9 @@ class Deps:
             "md": md_ingest_adapter,
             "txt": md_ingest_adapter,
         }
-        self.ingest = IngestService(FiletypeDetectorAdapter(), ingest_handlers)
+        self.ingest = IngestService(
+            FiletypeDetectorAdapter(), ingest_handlers, writer=FilesystemIngestArtifactWriter()
+        )
 
         self.assets = asset_service
         self.evidence = evidence_service
