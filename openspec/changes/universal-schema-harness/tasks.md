@@ -350,8 +350,8 @@ new hardening follow-up, deliberately unimplemented).
 - [x] 7.4 [front:recursive-ingest] Add `relative_path`/`source_dir` fields to the detection report and source-manifest entries; add `"ignored": [...]` field summarizing skipped `_`-prefixed/`assets/` items.
 - [x] 7.5 [front:recursive-ingest] [spec: document-ingest "Batch sibling marked as converted-this-run" / "Prior-run file marked as already-present"] Add failing test in `tests/integration/test_ingest_recursive.py` with a fake PDF handler that finalizes siblings eagerly: assert first sibling `ingested`, second `batched`; re-run reports both `skipped`.
 - [x] 7.6 [front:recursive-ingest] In `application/ingest.py`, snapshot existing `ingested/` output paths once before any conversion this scan; resolve status (`ingested`/`batched`/`skipped`/`unsupported`/`error`) against that snapshot. No port-signature change. Run 7.5 — must pass.
-- [ ] 7.7 [front:recursive-ingest] Add new `domain/ports/ingest_artifact_writer.py` (`IngestArtifactWriter` port: atomic, `sort_keys` JSON writer) + `infrastructure/ingest/filesystem_ingest_artifact_writer.py` adapter. Add unit test with a fake writer proving atomic+sorted contract.
-- [ ] 7.8 [front:recursive-ingest] Replace `IngestService`'s inline `_write_detection_report` `write_text` call with the new `IngestArtifactWriter`; wire the adapter in `cli/_shared.py` `Deps.__init__`.
+- [x] 7.7 [front:recursive-ingest] Add new `domain/ports/ingest_artifact_writer.py` (`IngestArtifactWriter` port: atomic, `sort_keys` JSON writer) + `infrastructure/ingest/filesystem_ingest_artifact_writer.py` adapter. Add unit test with a fake writer proving atomic+sorted contract.
+- [x] 7.8 [front:recursive-ingest] Replace `IngestService`'s inline `_write_detection_report` `write_text` call with the new `IngestArtifactWriter`; wire the adapter in `cli/_shared.py` `Deps.__init__`.
 - [ ] 7.9 [front:recursive-ingest] Run determinism suite ×2: assert report ordering is byte-stable across two independent runs with identical field sets (Front C closeout gate).
 
 ## Phase 8: Front D — source-role classification

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
+from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
 
@@ -53,6 +54,25 @@ def _is_under_assets(relative_posix: str) -> bool:
     return relative_posix.split("/", 1)[0] == _ASSETS_DIR_NAME
 
 
+class _InlineJsonWriter:
+    """Default `IngestArtifactWriter` used when the composition root does
+    not inject one -- preserves `IngestService`'s pre-Front-C constructor
+    ergonomics (dozens of existing unit tests construct it with just a
+    detector + handlers) without `application/ingest.py` importing an
+    `infrastructure/` adapter (dependency-direction rule: cli -> application
+    -> domain; infrastructure implements domain ports, never the reverse).
+    NOT atomic -- the real `FilesystemIngestArtifactWriter` (wired in
+    `cli/_shared.py` `Deps.__init__`, design.md Decision 9) is; this
+    fallback exists only so `IngestService` stays usable standalone."""
+
+    def write_json(self, path: Path, payload: dict[str, Any]) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+
 class IngestService:
     """Detects, routes, and ingests source files from an inbox directory
     (recursively — document-ingest spec: `Recursive Inbox Scan with
@@ -72,9 +92,11 @@ class IngestService:
         self,
         detector: SourceTypeDetectorPort,
         handlers: dict[str, SourceIngestPort],
+        writer: IngestArtifactWriter | None = None,
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
+        self.writer: IngestArtifactWriter = writer or _InlineJsonWriter()
 
     def ingest_inbox(self, inbox_dir: Path, sections_dir: Path) -> dict[str, Any]:
         inbox_dir = Path(inbox_dir)
@@ -314,11 +336,9 @@ class IngestService:
     def _write_detection_report(self, inbox_dir: Path, report: dict[str, Any]) -> None:
         if not inbox_dir.is_dir():
             return
-        detection_path = inbox_dir / _DETECTION_REPORT_NAME
-        # Deterministic: stable key ordering, no timestamps or randomness.
-        detection_path.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        # Atomic, deterministic write via the injected IngestArtifactWriter
+        # port (design.md Decision 9) -- no direct write_text here anymore.
+        self.writer.write_json(inbox_dir / _DETECTION_REPORT_NAME, report)
 
     def _write_source_manifest(self, inbox_dir: Path, entries: list[dict[str, Any]]) -> None:
         # `inbox/_source-manifest.json` (design.md's artifact map): distinct
@@ -327,9 +347,6 @@ class IngestService:
         # these same entries with role/duplicate fields). `_`-prefixed, so
         # the recursive walk itself always skips it, same as
         # `_detection.json`.
-        manifest_path = inbox_dir / _SOURCE_MANIFEST_NAME
         sources = [entry for entry in entries if entry.get("status") != "empty_dir"]
         payload = {"schema": 1, "sources": sources}
-        manifest_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        self.writer.write_json(inbox_dir / _SOURCE_MANIFEST_NAME, payload)

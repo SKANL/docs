@@ -35,6 +35,22 @@ class _RaisingHandler:
         raise RuntimeError("boom: tool failed mid-conversion")
 
 
+class _FakeWriter:
+    """Fake `IngestArtifactWriter` (design.md Decision 9) proving
+    `IngestService` DELEGATES its JSON artifact writes through the injected
+    port instead of writing directly -- atomicity itself is
+    `FilesystemIngestArtifactWriter`'s own concern, tested separately in
+    tests/unit/infrastructure/test_filesystem_ingest_artifact_writer.py."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Path, dict]] = []
+
+    def write_json(self, path: Path, payload: dict) -> None:
+        self.calls.append((path, payload))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
 def test_routes_detected_kind_to_matching_handler_stub(tmp_path: Path):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
@@ -116,6 +132,47 @@ def test_writes_detection_report_to_inbox_with_stable_key_ordering(tmp_path: Pat
     assert "generated_at" not in raw  # determinism: no timestamps
     payload = json.loads(raw)
     assert payload["processed"] == 1
+
+
+def test_writes_source_manifest_with_provenance_entries(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    (inbox / "sub").mkdir(parents=True)
+    (inbox / "sub" / "a.docx").write_bytes(b"docx-bytes")
+    service = IngestService(_FakeDetector({"a.docx": "docx"}), {"docx": _FakeHandler()})
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    manifest_path = inbox / "_source-manifest.json"
+    assert manifest_path.exists()
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert payload["schema"] == 1
+    assert payload["sources"] == [
+        {
+            "file": "a.docx",
+            "relative_path": "sub/a.docx",
+            "source_dir": "sub",
+            "kind": "docx",
+            "status": "ingested",
+            "sha256": payload["sources"][0]["sha256"],
+            "output": payload["sources"][0]["output"],
+        }
+    ]
+
+
+def test_ingest_inbox_delegates_json_artifact_writes_to_injected_writer(tmp_path: Path):
+    # design.md Decision 9 (IngestArtifactWriter port) -- IngestService must
+    # DELEGATE its JSON artifact writes through an injected writer rather
+    # than always writing directly, so the atomic seam is real and testable.
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.docx").write_bytes(b"docx-bytes")
+    writer = _FakeWriter()
+    service = IngestService(_FakeDetector({"a.docx": "docx"}), {"docx": _FakeHandler()}, writer=writer)
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    written_names = {path.name for path, _ in writer.calls}
+    assert written_names == {"_detection.json", "_source-manifest.json"}
 
 
 def test_handler_failure_preserves_detected_kind_in_error_entry(tmp_path: Path):
