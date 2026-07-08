@@ -247,6 +247,14 @@ class PipelineService:
             detail = f"{report['processed']} archivos procesados"
             if errors:
                 detail += f"; {len(errors)} con error"
+            # SUGGESTION-2 (fresh-context verify, PR2 fix batch): media
+            # cleanup is computed on every ingest run -- surface it in the
+            # CLI-facing detail so it is never invisible activity.
+            media_cleanup = report.get("media_cleanup", {})
+            removed = media_cleanup.get("removed", [])
+            refused = media_cleanup.get("refused", [])
+            if removed or refused:
+                detail += f"; media: {len(removed)} eliminado(s), {len(refused)} rechazado(s)"
             return not errors, detail
 
         def stage_build_context_files() -> tuple[bool, str]:
