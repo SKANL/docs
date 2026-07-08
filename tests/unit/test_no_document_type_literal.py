@@ -16,6 +16,18 @@ via its former constant name `_EXPECTED_MARGIN_CM`, never the bare value
 recreating the named constant, would bypass it undetected). Both gaps are
 closed below and proven caught by `test_guard_catches_*` (synthetic-source
 tests that do NOT touch production code).
+
+Scan-scope decision (PR2/Front B fix batch, NEW-SUGGESTION-1): a sibling
+hardcoded `extracted_dir_policy` comparison was found (and fixed) in
+`application/doctor.py`. The guard's scan scope is deliberately NOT extended
+to that file: Decision 10.2 (design.md) scopes this guard to
+`domain/rules.py` + `domain/normative.py` specifically, and
+`application/doctor.py` is a different architectural layer (an application
+service, not domain policy-check code) -- the same disposition WARNING-2
+already established for `domain/evidence.py`'s `pdf_and_extracted_use`
+(also outside this guard's scope, per the original PR1 verify report).
+Widening this guard's file list is a deliberate, separately-reviewable
+decision, not something to fold in silently alongside an unrelated bugfix.
 """
 
 from __future__ import annotations

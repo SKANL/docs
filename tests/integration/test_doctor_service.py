@@ -1,6 +1,7 @@
 # tests/integration/test_doctor_service.py
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
+
+_FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "templates"
 
 _MINIMAL_TEMPLATE_FIELDS = {
     "type": "template",
@@ -132,6 +135,81 @@ def test_run_doctor_gh_check_required_only_when_strict(tmp_path):
 
     assert next(c for c in non_strict.checks if c.name == "gh").required is False
     assert next(c for c in strict.checks if c.name == "gh").required is True
+
+
+def test_run_doctor_extracted_dir_policy_check_not_present_when_extracted_dir_absent(tmp_path):
+    # spec: document-pipeline "Extracted-dir policy checked only when
+    # configured" -- mirrors _check_extracted_dir_policy's own gating.
+    service = _service(tmp_path)
+    config = _config(tmp_path)
+
+    result = service.run_doctor("doc1", config)
+
+    names = {c.name for c in result.checks}
+    assert "extracted_dir_traceability_only" not in names
+
+
+def test_run_doctor_extracted_dir_policy_check_passes_for_any_declared_string(tmp_path):
+    # NEW-SUGGESTION-1 (verify follow-up on PR1's WARNING-2 sibling): the
+    # check must verify internal consistency (a policy IS declared), never
+    # compare against a hardcoded expected value like "rules_traceability_only".
+    (tmp_path / "extracted").mkdir()
+    service = _service(tmp_path)
+    config = _config(
+        tmp_path,
+        extracted_dir=str(tmp_path / "extracted"),
+        extracted_dir_policy="anything_else",
+    )
+
+    result = service.run_doctor("doc1", config)
+
+    check = next(c for c in result.checks if c.name == "extracted_dir_traceability_only")
+    assert check.ok is True
+
+
+def test_run_doctor_extracted_dir_policy_check_fails_when_not_declared(tmp_path):
+    (tmp_path / "extracted").mkdir()
+    service = _service(tmp_path)
+    config = _config(tmp_path, extracted_dir=str(tmp_path / "extracted"))
+
+    result = service.run_doctor("doc1", config)
+
+    check = next(c for c in result.checks if c.name == "extracted_dir_traceability_only")
+    assert check.ok is False
+
+
+def test_run_doctor_extracted_dir_policy_check_passes_for_real_reporte_estadia_tic_fixture(tmp_path):
+    # WARNING-3 (fresh-context verify, PR2 fix batch) -- this is PR1's
+    # CRITICAL-1 lesson repeated: a template-declared field resolved
+    # correctly under synthetic unit-test parameters is NOT proof it works
+    # for the real, currently-shipping fixture. Driven by the REAL
+    # reporte-estadia-tic.json file, not hand-picked params.
+    raw = json.loads((_FIXTURES_DIR / "reporte-estadia-tic.json").read_text(encoding="utf-8"))
+    paths = dict(raw.get("paths", {}))
+    paths["rules_manifest"] = str(tmp_path / "manual-rules.json")
+    raw["paths"] = paths
+    service = _service(tmp_path)
+
+    result = service.run_doctor("reporte-estadia-tic-doc", raw)
+
+    check = next(c for c in result.checks if c.name == "extracted_dir_traceability_only")
+    assert check.ok is True
+
+
+def test_run_doctor_extracted_dir_policy_check_absent_for_real_documento_generico_fixture(tmp_path):
+    # documento-generico declares no paths.extracted_dir at all -- the check
+    # must not appear (conditional gate), matching the "checked only when
+    # configured" spec scenario for both real fixtures.
+    raw = json.loads((_FIXTURES_DIR / "documento-generico.json").read_text(encoding="utf-8"))
+    paths = dict(raw.get("paths", {}))
+    paths["rules_manifest"] = str(tmp_path / "manual-rules.json")
+    raw["paths"] = paths
+    service = _service(tmp_path)
+
+    result = service.run_doctor("documento-generico-doc", raw)
+
+    names = {c.name for c in result.checks}
+    assert "extracted_dir_traceability_only" not in names
 
 
 def test_run_doctor_result_passed_reflects_rules_config_failure(tmp_path):

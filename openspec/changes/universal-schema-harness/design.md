@@ -408,6 +408,24 @@ proceeds.
 foreign file refused); `tests/integration/test_evidence_service.py`
 (`documento-generico` `build-rules` succeeds with empty `paths`).
 
+> Clarification (fresh-context verify, PR2 fix batch, WARNING-2): the
+> implementation reports refused items under
+> `report["media_cleanup"]["refused"]` (a list of `{path, cause}` entries),
+> not a top-level `_detection.json.ignored` field as this decision's prose
+> literally says. Substance is unchanged (refused items are always written
+> into `_detection.json`, never silently dropped) -- only the field's name
+> and location differ. Reason: Front C (Phase 7, not yet implemented) is
+> expected to introduce its own shared top-level `ignored` field for skipped
+> `_`-prefixed/`assets/` items during the recursive walk (Decision 2);
+> keeping media-cleanup refusals scoped under their own `media_cleanup` key
+> avoids pre-empting that shape with a generically-named field only to
+> reconcile the two later. `refused` also grew richer semantics than a bare
+> `ignored` list would carry cleanly: each entry now needs a `cause` (shape
+> mismatch, unexpected content, or a filesystem error), used for the
+> WARNING-1/SUGGESTION-1 hardening in the same PR2 fix batch. Front C's own
+> apply-progress should explicitly reconcile (or deliberately keep separate)
+> its `ignored` field against this one when that front lands.
+
 ---
 
 ## Decision 9 — Layering (ports, adapters, wiring)

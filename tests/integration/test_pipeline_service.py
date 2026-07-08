@@ -625,6 +625,43 @@ def test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_top
     assert curated_index != topic_index_after
 
 
+def test_run_pipeline_ingest_stage_detail_surfaces_media_cleanup_activity(tmp_path):
+    # SUGGESTION-2 (fresh-context verify, PR2 fix batch) -- media cleanup is
+    # computed on every ingest run but was invisible in the CLI-facing stage
+    # detail string. Seed an orphan _media/ dir directly under
+    # sections/ingested/ (removed) and a foreign-shaped one (refused) so both
+    # counts must appear.
+    service, workspace = _service(tmp_path)
+    doc_id = "doc1"
+    config = _ingest_stage_config(workspace, doc_id)
+    ingested_dir = Path(config["paths"]["sections_dir"]) / "ingested"
+    orphan_media = ingested_dir / "readme-md-a1b2c3d4_media"
+    orphan_media.mkdir(parents=True)
+    (orphan_media / "image1.png").write_bytes(b"fake-png-bytes")
+    foreign_dir = ingested_dir / "manually_added_media"
+    foreign_dir.mkdir(parents=True)
+    (foreign_dir / "notes.txt").write_text("do not delete me", encoding="utf-8")
+
+    template = Template(type="doc", title="Doc")
+    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
+
+    stage = next(s for s in summary["stages"] if s["stage"] == "ingest")
+    assert "1 eliminado" in stage["detail"]
+    assert "1 rechazado" in stage["detail"]
+
+
+def test_run_pipeline_ingest_stage_detail_omits_media_cleanup_when_nothing_happened(tmp_path):
+    service, workspace = _service(tmp_path)
+    doc_id = "doc1"
+    config = _ingest_stage_config(workspace, doc_id)
+
+    template = Template(type="doc", title="Doc")
+    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
+
+    stage = next(s for s in summary["stages"] if s["stage"] == "ingest")
+    assert "media" not in stage["detail"].lower()
+
+
 # --- Task 8.6: full-pipeline determinism (proposal success criterion) ---
 
 
