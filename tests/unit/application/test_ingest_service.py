@@ -82,9 +82,15 @@ def test_empty_inbox_reports_zero_files_processed_no_error(tmp_path: Path):
 
     report = service.ingest_inbox(inbox, tmp_path / "sections")
 
-    # media_cleanup added in Front B (design.md Decision 8 #13) -- always
-    # present, empty when there is no sections/ingested/ dir to scan yet.
-    assert report == {"processed": 0, "files": [], "media_cleanup": {"removed": [], "refused": []}}
+    # media_cleanup added in Front B (design.md Decision 8 #13); ignored
+    # added in Front C (design.md Decision 2) -- both always present, empty
+    # when there is nothing to report.
+    assert report == {
+        "processed": 0,
+        "files": [],
+        "ignored": [],
+        "media_cleanup": {"removed": [], "refused": []},
+    }
 
 
 def test_missing_inbox_dir_reports_zero_files_processed_no_error(tmp_path: Path):
