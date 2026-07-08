@@ -479,9 +479,9 @@ review before push+PR.
 
 ## Phase 8: Front D — source-role classification
 
-- [ ] 8.1 [front:roles-duplicates] [spec: document-ingest "Deterministic signal classifies unambiguously"] Add failing test in new `tests/unit/domain/test_source_role.py`: folder-lexicon signal (`normativa`/`ejemplo`/`evidencia` families) classifies unambiguously; filename-pattern signal as lower-weight secondary.
-- [ ] 8.2 [front:roles-duplicates] [spec: document-ingest "Ambiguous source is queued, not defaulted"] Add failing test: unmatched path yields role `unknown`, confidence `low`, queued rather than defaulted.
-- [ ] 8.3 [front:roles-duplicates] Implement new `domain/source_role.py` (`classify(relative_path) -> (role, confidence, signals)`), pure function, bucketed confidence (`high`/`medium`/`low`). Run 8.1-8.2 — must pass.
+- [x] 8.1 [front:roles-duplicates] [spec: document-ingest "Deterministic signal classifies unambiguously"] Add failing test in new `tests/unit/domain/test_source_role.py`: folder-lexicon signal (`normativa`/`ejemplo`/`evidencia` families) classifies unambiguously; filename-pattern signal as lower-weight secondary.
+- [x] 8.2 [front:roles-duplicates] [spec: document-ingest "Ambiguous source is queued, not defaulted"] Add failing test: unmatched path yields role `unknown`, confidence `low`, queued rather than defaulted.
+- [x] 8.3 [front:roles-duplicates] Implement new `domain/source_role.py` (`classify(relative_path) -> (role, confidence, signals)`), pure function, bucketed confidence (`high`/`medium`/`low`). Run 8.1-8.2 — must pass.
 - [ ] 8.4 [front:roles-duplicates] Add failing determinism test for `inbox/_classification-queue.json` writer (two runs byte-identical, entries keyed by `relative_path`).
 - [ ] 8.5 [front:roles-duplicates] Wire classification into `application/ingest.py`: write `_classification-queue.json` via `IngestArtifactWriter`; merge external confirmation into `_source-manifest.json` under `confirmed_role`. Run 8.4 — must pass.
 - [ ] 8.6 [front:roles-duplicates] [spec: document-ingest "Confirmed role recorded and enforced"] Add failing service-layer test: unconfirmed role blocks in strict mode, admits with `PENDIENTE` gap in draft mode; confirmed role routes source correctly (`normative`/`example`/`evidence` downstream gating). Implement gating in `application/ingest.py`/consuming services. Run — must pass.
