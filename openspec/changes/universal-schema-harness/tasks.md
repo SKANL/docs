@@ -340,7 +340,8 @@ scope-crept cleanup of unrelated code).
   src/docs/application/pipeline.py`: no issues.
 
 **Not started** (future batches): Phase 7 (Front C) onward; Phase 13 (the
-new hardening follow-up, deliberately unimplemented).
+new hardening follow-up, deliberately unimplemented). **UPDATE**: Phase 7
+(Front C) is now done — see the "Apply Progress — PR3 batch" section below.
 
 ## Phase 7: Front C — recursive ingest + JVM look-ahead status + writer port
 
@@ -353,6 +354,128 @@ new hardening follow-up, deliberately unimplemented).
 - [x] 7.7 [front:recursive-ingest] Add new `domain/ports/ingest_artifact_writer.py` (`IngestArtifactWriter` port: atomic, `sort_keys` JSON writer) + `infrastructure/ingest/filesystem_ingest_artifact_writer.py` adapter. Add unit test with a fake writer proving atomic+sorted contract.
 - [x] 7.8 [front:recursive-ingest] Replace `IngestService`'s inline `_write_detection_report` `write_text` call with the new `IngestArtifactWriter`; wire the adapter in `cli/_shared.py` `Deps.__init__`.
 - [x] 7.9 [front:recursive-ingest] Run determinism suite ×2: assert report ordering is byte-stable across two independent runs with identical field sets (Front C closeout gate).
+
+---
+
+## Apply Progress — PR3 batch (branch `feat/usch-c-recursive-ingest`)
+
+**Batch boundary**: Phase 7 only (Front C — recursive ingest + JVM
+look-ahead status vocabulary + `IngestArtifactWriter` port). Branched from
+`main` at merge commit `7fbf044` (PR #13, the PR2/Front B slice). Front D
+(Phase 8) onward is explicitly OUT of scope.
+
+**Status**: 9/9 Phase 7 tasks complete (`[x]`). Ready for fresh-context
+review before push+PR.
+
+**Commits** (work units, oldest to newest):
+1. `8803aa5` feat(ingest): recursive inbox walk with provenance and JVM batch status vocabulary (7.1-7.6)
+2. `db3ad89` feat(ingest): add IngestArtifactWriter port for atomic JSON artifact writes (7.7-7.8)
+3. `f3c0b7d` test(ingest): prove media-cleanup composition, realistic drop shape, and determinism (7.9 + composition/acceptance coverage)
+4. (this commit) docs(tasks): check off Phase 7 and record PR3 apply-progress
+
+**Implementation notes**:
+- `IngestService.ingest_inbox` replaced its one-level `inbox_dir.iterdir()`
+  scan with `rglob("*")`, manually sorted by POSIX relative-path string (the
+  sort key, not the filesystem walker, owns cross-platform determinism, per
+  design.md Decision 2). Every file/manifest entry gained `relative_path`
+  (POSIX, relative to `inbox/`) and `source_dir` (its parent, `""` for
+  root); output identity (`<stem>-<kind>-<sha8>.md`) is unchanged —
+  content-hash only, never the folder.
+- **Zero adapter changes were needed for JVM look-ahead batching**
+  (Decision 3): `OpendataloaderPdfAdapter._discover_candidates` already
+  scoped its batch to `seed_src.parent` (the seed file's OWN directory) —
+  under the old flat scan that was always the top-level inbox; under the
+  new recursive walk it naturally becomes "same subdirectory," which is
+  exactly the per-directory batching scope the design commits to. Verified
+  by reading the adapter's source before touching anything and by a
+  dedicated test (`test_jvm_lookahead_batch_scoped_per_directory_not_whole_tree`)
+  proving two PDFs in different subfolders are never treated as batch
+  siblings.
+- The `batched`/`skipped` status vocabulary resolves purely against a
+  pre-scan snapshot of `sections/ingested/` (captured once, before any
+  conversion this scan) — this naturally and correctly classifies BOTH a
+  real JVM-batch side effect AND a byte-identical file reached in a
+  different subfolder as `batched` (the mechanism doesn't need to know
+  WHY the output appeared, only THAT it appeared during this same scan
+  without this specific file's own handler call producing it).
+- `_`-prefixed exclusion now extends tree-wide (any path component, not
+  just the inbox root) and is REPORTED under a new top-level `"ignored"`
+  field, never silently dropped — including `_detection.json`/
+  `_source-manifest.json` themselves on a rescan (deliberate, tested: see
+  `test_recursive_walk_report_ordering_is_byte_stable_across_two_independent_runs`'s
+  warm-up-run comment). `inbox/assets/` is excluded the same way (reason
+  `"assets_subtree"`), reserved for Front F.
+- Empty directories are reported as an honest
+  `{"relative_path": "<dir>/", "status": "empty_dir"}` marker in `files`
+  (not a separate list — same entry shape family), collapsed to the
+  OUTERMOST empty ancestor in a nested empty chain. A directory whose ONLY
+  content is `_`-prefixed is a pinned edge case: it gets BOTH its
+  `ignored` entry (for the excluded file) AND an `empty_dir` marker (zero
+  *ingestable* files) — non-contradictory, both individually true.
+- New `inbox/_source-manifest.json` (distinct from the collection stage's
+  `sections/source-manifest.json`, per design.md's artifact map) — Front
+  C writes ingest-time provenance entries only; Fronts D/E will extend
+  these same entries with `confirmed_role`/`duplicates` fields later.
+- New `IngestArtifactWriter` port (`domain/ports/ingest_artifact_writer.py`)
+  + `FilesystemIngestArtifactWriter` adapter (atomic temp-then-rename,
+  mirroring `atomic_ingest_write.py`'s existing convention for ingest
+  OUTPUT files, applied here to ingest ARTIFACTS). `IngestService`
+  defaults to a private, non-atomic `_InlineJsonWriter` fallback when no
+  writer is injected — this is NOT an infrastructure import from
+  `application/` (dependency-direction rule preserved); it exists purely
+  so the dozens of pre-existing `IngestService(detector, handlers)`
+  constructor calls across the test suite keep working unmodified. The
+  REAL, atomic adapter is explicitly wired in `cli/_shared.py`
+  `Deps.__init__`, so production always benefits from atomicity.
+- Sweep of `report[...]` consumers beyond `IngestService`'s own tests
+  (per the carried PR2 lesson): `application/pipeline.py`'s `stage_ingest`
+  reads only `report["files"]`/`report["processed"]`/`report["media_cleanup"]`
+  — an added `"ignored"` key never breaks existing key access, confirmed
+  by the full suite (`test_pipeline_service.py`'s ingest-stage tests still
+  pass unmodified). `application/collection.py` reads a completely
+  different config block, unrelated. Two PRE-EXISTING tests asserting the
+  empty-inbox report by exact dict equality needed a THIRD field added
+  this batch (`"ignored": []`, alongside PR2's `"media_cleanup"`):
+  `tests/unit/application/test_ingest_service.py`,
+  `tests/integration/test_ingest_determinism.py`.
+- Media cleanup (`_clean_orphan_media`, Front B) needed ZERO code changes
+  to compose with recursion — it scans the FLAT `sections/ingested/`
+  OUTPUT directory, which recursion does not touch (output identity/layout
+  is content-hash only, never mirrors the inbox's folder structure).
+  Extended with a dedicated composition test proving a media dir left
+  behind by a source that lived deep in a nested subfolder is found and
+  cleaned up identically to a top-level one.
+- Real-world acceptance context: added an integration test mirroring the
+  shape of the cited real drop (`example_tesina/`, `guides/manual-estadia-
+  tic/` with 8 `.md` files, `extracted/` mixing `.md`/`.json`/images, a
+  top-level `cover.docx`) using a fixture tree, never the user's actual
+  files. 60 PNGs reduced to 3 representative ones for test speed — the
+  invariant under test is structural (every item gets a `relative_path`
+  and a decisive status: `ingested` or `unsupported`, zero invisible
+  items), not corpus size.
+- **Carried-lesson note**: "every de-hardcoded/relocated value gets a
+  real-fixture test" (PR1/PR2 CRITICAL-1/WARNING-3 lesson) does not have a
+  direct analog in this front — Front C did not de-hardcode or relocate
+  any document-type policy literal (that class of change is Fronts A/B's
+  concern). The closest equivalent risk here (a report-shape change
+  silently breaking a consumer) was addressed by the consumer sweep above
+  instead.
+
+**Acceptance verification** (all confirmed):
+- Full suite green twice in a row: 988 passed, 0 failed, 7 skipped (both
+  runs byte-identical pass/fail counts — no flakes).
+- `ruff check .`: 15 errors on `main` (independently re-verified via a
+  disposable `git worktree`, added and removed cleanly, never touching the
+  live working tree — matches the coordinator's stated baseline exactly)
+  and 15 on this branch — 0 net new.
+- `mypy src/docs/application/ingest.py
+  src/docs/domain/ports/ingest_artifact_writer.py
+  src/docs/infrastructure/ingest/filesystem_ingest_artifact_writer.py`: no
+  issues. `mypy src/docs/cli/_shared.py` surfaces only PRE-EXISTING
+  transitive errors in unrelated files (confirmed identical on `main` via
+  the same disposable worktree).
+
+**Not started** (future batches): Phase 8 (Front D) onward.
 
 ## Phase 8: Front D — source-role classification
 
