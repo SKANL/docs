@@ -15,6 +15,12 @@ from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
 _DETECTION_REPORT_NAME = "_detection.json"
 _SOURCE_MANIFEST_NAME = "_source-manifest.json"
 
+# PR3 verify follow-up (finding a): these are the harness's OWN
+# `_`-prefixed bookkeeping files, always written at `inbox_dir` root --
+# a rescan finding them gets a distinct `"harness_artifact"` ignored-reason,
+# never conflated with a genuine user `_`-prefixed file.
+_HARNESS_ARTIFACT_NAMES = frozenset({_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME})
+
 # `inbox/assets/` is the verbatim-asset convention (design.md Decision 6) --
 # excluded from the recursive source walk entirely (routed elsewhere, not a
 # markdown-ingest concern), but its presence is still reported (never
@@ -138,6 +144,14 @@ class IngestService:
         # (anywhere in the tree, extending the pre-existing top-level rule)
         # and the whole `inbox/assets/` subtree (Decision 6) are excluded
         # from the source walk but reported under `ignored`, never silent.
+        # PR3 verify follow-up (finding c, reader-facing note): sorting is
+        # CASE-SENSITIVE (plain Python string `<`, ASCII byte order), NOT
+        # locale-collated -- an uppercase-leading path sorts before an
+        # all-lowercase one (e.g. "Report.md" before "archive.md"), which
+        # can surprise a human skimming `_detection.json` expecting
+        # conventional case-insensitive alphabetical order. This is
+        # deliberate (design.md Decision 2): it is the only way Windows and
+        # Linux agree on ordering without a locale-dependent collation.
         all_paths = sorted(inbox_dir.rglob("*"), key=lambda p: _relposix(p, inbox_dir))
         files = [p for p in all_paths if p.is_file()]
         dirs = [p for p in all_paths if p.is_dir()]
@@ -146,6 +160,14 @@ class IngestService:
         ignored: list[dict[str, str]] = []
         for path in files:
             rel = _relposix(path, inbox_dir)
+            if rel in _HARNESS_ARTIFACT_NAMES:
+                # PR3 verify follow-up (finding a): the harness's OWN
+                # bookkeeping files get a DISTINCT reason from a genuine
+                # user `_`-prefixed file, so a downstream/agent consumer can
+                # mechanically filter them out without hardcoding filename
+                # knowledge -- still reported, never silently dropped.
+                ignored.append({"relative_path": rel, "reason": "harness_artifact"})
+                continue
             if _has_underscore_component(rel):
                 ignored.append({"relative_path": rel, "reason": "underscore_prefixed"})
                 continue
