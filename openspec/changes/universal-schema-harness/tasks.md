@@ -475,7 +475,9 @@ review before push+PR.
   transitive errors in unrelated files (confirmed identical on `main` via
   the same disposable worktree).
 
-**Not started** (future batches): Phase 8 (Front D) onward.
+**Not started** (future batches): Phase 8 (Front D) onward. **UPDATE**:
+Phases 8-9 (Fronts D+E) are now done — see the "Apply Progress — PR4 batch"
+section below.
 
 ## Phase 8: Front D — source-role classification
 
@@ -495,6 +497,132 @@ review before push+PR.
 - [x] 9.4 [front:roles-duplicates] [spec: document-ingest "Duplicate decision is reversible"] Add failing test: editing a `duplicates` manifest entry to reverse kept/superseded makes the previously suppressed source active on next run.
 - [x] 9.5 [front:roles-duplicates] Wire near-dup pass into `application/ingest.py` as a post-ingest step over produced `ingested/` outputs; write `duplicates: [{kept, superseded, jaccard, reason}]` into `_source-manifest.json`. Run 9.4 — must pass.
 - [x] 9.6 [front:roles-duplicates] Run determinism suite ×2 for Front E closeout.
+
+---
+
+## Apply Progress — PR4 batch (branch `feat/usch-d-roles-duplicates`)
+
+**Batch boundary**: Phases 8 AND 9 (Front D — source-role classification,
+Front E — near-duplicate detection), plus 3 folded PR3 verify follow-ups.
+Branched from `main` at merge commit `74268ef` (PR #14, the PR3/Front C
+slice).
+
+**Slice-discipline note (explicitly flagged per the orchestrator's own
+request)**: the orchestrator's mid-batch instruction described a
+"slice-discipline check" asking whether tasks 9.4-9.5 belong to "Front E
+(assets/figures)" and, if so, to stop and treat them as out of scope. This
+is a factual mismatch against this change's own authoritative records:
+per `design.md` (Decision 4 = source-role classification = Front D;
+Decision 5 = near-duplicate detection = Front E; Decision 6 = verbatim
+assets + figure catalog = **Front F**, a different front entirely) and per
+`tasks.md` itself (Phase 8 AND Phase 9 both carry the identical
+`[front:roles-duplicates]` tag), Front E is near-duplicate detection, not
+assets/figures. The ORIGINAL batch-4 instructions also explicitly scoped
+this batch as "Front D — source roles + near-duplicates" with an
+acceptance scenario requiring the near-dup wiring (the GUÍA pdf/md
+example). Given the tag-sharing in tasks.md and the original explicit
+scope, both fronts were implemented together in this batch, as the
+orchestrator's own concrete action items 1-2 in the same message also
+directed ("wire role classification and near-duplicate detection into
+IngestService"; the real-drop-shaped acceptance test explicitly requiring
+the near-dup pass). Front F (verbatim assets + figure catalog, Phase 10)
+remains entirely untouched and out of scope for this batch.
+
+**Status**: 13/13 Phase 8+9 tasks complete (`[x]`), plus the 3 folded PR3
+follow-ups. Ready for fresh-context review before push+PR.
+
+**Commits** (work units, oldest to newest):
+1. `4b105b7` fix(ingest): distinguish harness artifacts from user files in ignored reasons (PR3 findings a/b/c)
+2. `0e682da` feat(source-role): add deterministic role classifier (domain/source_role.py) (8.1-8.3)
+3. `9b8985f` feat(near-duplicate): add deterministic 5-word-shingle Jaccard detector (domain/near_duplicate.py) (9.1-9.3)
+4. `0ae9cfd` feat(ingest): wire source-role classification and near-duplicate detection (8.4-8.7, 9.4-9.6)
+5. (this commit) docs(tasks): check off Phases 8-9 and record PR4 apply-progress
+
+**Implementation notes**:
+- `domain/source_role.classify(relative_path) -> (role, confidence,
+  signals)` is a pure function: folder-name lexicon (any path component
+  except the filename) is the PRIMARY signal; a filename-stem match is
+  SECONDARY, lower weight. NO content probes (design.md's explicit "first
+  cut" scope) — the orchestrator's own message mentioned "content probes as
+  designed," which does not match design.md's actual committed text
+  ("No content probes in the first cut"); implemented per the authoritative
+  design.md decision, not the paraphrase.
+- Confidence bucketing (`min(1.0, 0.5*folder_hit + 0.3*name_hit)` "style,"
+  per design.md) needed concrete thresholds design.md leaves unspecified:
+  implemented `score >= 0.5 -> high`, `0 < score < 0.5 -> medium`,
+  `score == 0 -> low/unknown`. A folder-only hit (0.5) is `high`; a
+  filename-only hit (0.3) is `medium` — this makes the "secondary, lower
+  weight" language concretely observable, not just descriptive.
+- Conflicting, EQUALLY-weighted signals across two different roles (e.g. a
+  folder containing both "manual" and "muestra") resolve to `unknown`/`low`
+  — treated as genuinely ambiguous, never an arbitrary pick between two
+  live roles. A STRONGER signal for one role over a weaker signal for
+  another (e.g. a folder hit vs a filename-only hit) is NOT ambiguous — the
+  stronger, unambiguous signal wins.
+- The classification queue (`inbox/_classification-queue.json`) is the
+  interface where external confirmation enters (per the orchestrator's own
+  framing this batch): a human/agent edits `confirmed_role` in the queue
+  file; the NEXT scan reads that confirmation, merges it into
+  `_source-manifest.json`, and preserves it in the freshly-rewritten queue.
+  The queue is always recomputed fresh (proposed_role/confidence/signals
+  reflect current state each scan) — only `confirmed_role` is sticky.
+- Role gating (`role_status: {effective_role, blocked, gap}` per manifest
+  source entry) required adding a `strict: bool = False` parameter to
+  `IngestService.ingest_inbox` — backward compatible (defaults to draft
+  behavior for every pre-existing call site). No other service currently
+  reads `confirmed_role`/`role_status` for cross-service routing (e.g.
+  excluding `evidence` sources from normative checks) — that concrete
+  cross-service wiring has no existing consumer to attach to yet in this
+  codebase and is reasonably deferred to whichever future front actually
+  builds that consumer; `role_status` is emitted as enforcement-ready data
+  now, per the design principle "harness emits + consumes; AI confirms."
+- Near-duplicate reversibility works by ALWAYS treating whatever is
+  currently in `_source-manifest.json`'s `duplicates` list (for a given
+  unordered pair) as authoritative going forward, refreshing only the
+  `jaccard`/`reason` fields from current content — no special-casing of
+  "was this a human edit or the algorithm's own prior output" is needed,
+  since the algorithm's own first-run output IS what a human would edit
+  FROM. A pair that drops below the similarity threshold on a later scan
+  (content genuinely diverged) naturally stops appearing at all, since
+  overrides are only applied to pairs `find_duplicates` freshly re-detects.
+- Both new artifacts recompute fresh on every scan; a "warm-up run" is
+  needed before comparing two determinism runs byte-for-byte (same
+  convergence caveat Front C's own determinism test already established —
+  status flips from `ingested` to `skipped` once outputs already exist).
+- `_classification-queue.json` joins the `_HARNESS_ARTIFACT_NAMES` set
+  (PR3 finding a's fix) so a rescan reports it with the distinct
+  `"harness_artifact"` ignored-reason too, not `"underscore_prefixed"`.
+
+**PR3 follow-ups folded in** (commit `4b105b7`, landed before the Front D/E
+work):
+- Finding (a): `_detection.json`/`_source-manifest.json` get a distinct
+  `"harness_artifact"` ignored-reason on a rescan, separate from a genuine
+  user `_`-prefixed file's `"underscore_prefixed"`.
+- Finding (b): pinning test for the `inbox/assets/` TOP-LEVEL-ONLY
+  exclusion boundary (a nested `docs/assets/` folder is walked normally,
+  not excluded) — confirms SUGGESTION-1's finding was already correct
+  behavior, just previously untested.
+- Finding (c): one-line reader-facing comment documenting that sort
+  ordering is case-sensitive (ASCII byte order), not locale-collated.
+
+**Acceptance verification** (all confirmed):
+- Full suite green twice in a row: 1022 passed, 0 failed, 7 skipped (both
+  runs byte-identical pass/fail counts — no flakes).
+- Real-drop-shaped acceptance test
+  (`test_realistic_drop_shape_roles_and_near_duplicate_all_recorded_nothing_silent`
+  in `tests/integration/test_ingest_roles_duplicates.py`) mirrors
+  `guides/manual-estadia-tic/` (normative, folder signal),
+  `example_tesina/RE-Ejemplo.pdf` (example, filename-only signal), and a
+  `extracted/GUIA-Estadia.md` vs `guides/GUIA-Estadia.pdf` near-duplicate
+  pair (MD preferred) — fixture tree, never the user's actual files.
+- `ruff check .`: 15 errors on `main` (independently re-verified via a
+  disposable `git worktree`, added and removed cleanly, never touching the
+  live working tree) and 15 on this branch — 0 net new.
+- `mypy src/docs/application/ingest.py
+  src/docs/domain/source_role.py src/docs/domain/near_duplicate.py`: no
+  issues.
+
+**Not started** (future batches): Phase 10 (Front F) onward.
 
 ## Phase 10: Front F — verbatim assets + figure catalog
 
