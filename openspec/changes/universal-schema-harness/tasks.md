@@ -624,6 +624,79 @@ work):
 
 **Not started** (future batches): Phase 10 (Front F) onward.
 
+**Correction (this fix-verify round)**: the PR4 ledger commit's own message
+title/body was a copy-paste error — it read "docs(sdd): add PR3 verify
+report and record batch 3 completion" but was actually the PR4 (Phase 8+9)
+ledger commit `cac2de8`. The diff content was correct; only the commit
+message text was wrong. Left un-amended at the time per the strict "always
+create new commits, never amend without explicit request" rule, and
+flagged transparently in that batch's own result contract and in Engram.
+Noted here again for anyone reading this ledger without that context.
+
+**Fix-verify round** (fresh-context `sdd-verify` returned needs-fixes — 1
+CRITICAL, 3 WARNING, 3 SUGGESTION, full report:
+`openspec/changes/universal-schema-harness/verify-report-pr4.md`; this
+round resolves every finding, same branch, strict TDD throughout):
+
+**Commits** (work units, oldest to newest):
+6. `7c1a32e` fix(near-duplicate): normalize accents and markdown structure before shingling (CRITICAL-1 + WARNING-2 + WARNING-3 + SUGGESTION-2 + SUGGESTION-3)
+7. `74211a0` fix(source-role): recognize EN example/examples, extracted, singular anexo (WARNING-1 + SUGGESTION-1)
+8. `3fe232f` test(ingest): make the GUIA near-dup acceptance scenario honest (CRITICAL-1's mask)
+9. (this commit) docs(tasks): record PR4 fix-verify round in apply-progress
+
+**Fix-verify findings and resolutions**:
+- **CRITICAL-1** (near-duplicate detector has no accent normalization,
+  silently misses design.md Decision 5's own flagship real-world scenario
+  — jaccard as low as ~0.12 for otherwise-identical accented-vs-unaccented
+  Spanish content): fixed by REUSING the existing
+  `markdown_text._ACCENT_TRANSLATION` table inside a new
+  `_normalize_for_shingling` step (never duplicated). Failing-test-first
+  reproduced an independently-authored 79-word accented-curated vs
+  unaccented+markup-noisy+one-word-different "extracted" variant — now
+  correctly detected at jaccard >= 0.85.
+- **CRITICAL-1's mask** (the acceptance test wrote byte-IDENTICAL text to
+  both GUIA variants, so it could never have caught the bug): rewrote
+  `test_realistic_drop_shape_...` to derive the "extracted" PDF variant
+  independently (accent-stripped + markdown noise) from the curated MD
+  variant, so the test can only pass with real normalization.
+- **WARNING-2** (markdown structural markup — headings/lists/blockquotes/
+  tables — not stripped, only bold/italic/code): same fix, reusing the
+  existing `strip_frontmatter_and_markdown` utility (also never
+  duplicated) ahead of `clean_markdown_text` in the same normalization
+  step.
+- **WARNING-1** (EXAMPLE/EVIDENCE lexicons don't recognize this repo's own
+  real folder names `example_tesina/`/`extracted/`): added English
+  "example"/"examples" to the EXAMPLE lexicon and "extracted" to EVIDENCE
+  (extracted/traceability content is plausibly always evidence material by
+  construction, per the verify report's own recommendation). Tests use the
+  real fixture folder names, not synthetic ones.
+- **WARNING-3** (documents shorter than 5 words can only be exact-or-
+  disjoint, never gradually "near"): documented (docstring) and pinned
+  with a test — explicitly NO algorithm change, a safe deliberate
+  limitation, not a defect.
+- **SUGGESTION-1** (singular "anexo" missing from EVIDENCE lexicon):
+  added alongside the existing plural "anexos".
+- **SUGGESTION-2** (two empty documents flagged 100% duplicates of each
+  other): `find_duplicates` now filters empty documents (zero shingles)
+  out of the pairwise pass entirely, before any comparison; `_jaccard`
+  itself also stays safe on its own (defense in depth) — `not a or not b`
+  now returns `0.0`, never `1.0`.
+- **SUGGESTION-3** (no comment on the deliberate O(n^2) pairwise-comparison
+  design choice): added a docstring note on `find_duplicates` citing
+  design.md Decision 5's own rejection of simhash/MinHash for the first
+  cut, and flagging where that assumption would start to break down.
+
+**Acceptance verification** (all confirmed, post-fix-batch):
+- Full suite green twice in a row: 1031 passed, 0 failed, 7 skipped (both
+  runs byte-identical pass/fail counts — no flakes).
+- `ruff check .`: 15 errors on `main` (independently re-verified via a
+  disposable `git worktree`, added and removed cleanly, never touching the
+  live working tree) and 15 on this branch — 0 net new.
+- `mypy src/docs/domain/near_duplicate.py src/docs/domain/source_role.py`:
+  no issues.
+
+**Not started** (future batches): Phase 10 (Front F) onward.
+
 ## Phase 10: Front F — verbatim assets + figure catalog
 
 - [ ] 10.1 [front:assets-figures] [spec: asset-management "File under inbox/assets/ bypasses markdown ingest"] Add failing test in `tests/integration/test_ingest_recursive.py` (or new asset-routing test file): a file under `inbox/assets/` is routed to asset storage before the recursive source walk and never appears as converted markdown.
