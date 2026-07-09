@@ -7,11 +7,29 @@ import re
 # matched as a WHOLE WORD within any relative-path component (so
 # "guides/manual-estadia-tic/" hits "manual" even though the component
 # itself is not an exact lexicon match). Primary signal.
+#
+# Extended (fresh-context verify, PR4 fix batch, WARNING-1 + SUGGESTION-1):
+# design.md's original lists never included the English "example"/
+# "examples", "extracted", or the singular "anexo" -- reproduced as a real,
+# evidence-backed gap against THIS repo's OWN fixture folder names
+# (example_tesina/, extracted/, from reporte-estadia-tic.json and PR3's own
+# realistic-drop acceptance test): files in those real folders got ZERO
+# folder-level signal and fell back to unconfirmed/unknown despite the
+# folder name clearly signaling intent to a human. "extracted" maps to
+# EVIDENCE (extracted/traceability content is plausibly always evidence
+# material by construction, per the verify report's own recommendation).
 _NORMATIVE_LEXICON = frozenset({"normativa", "norma", "reglas", "rules", "manual", "lineamientos"})
 _EXAMPLE_LEXICON = frozenset(
-    {"ejemplo", "ejemplos", "muestra", "sample", "reference", "referencia", "plantilla"}
+    {
+        "ejemplo", "ejemplos", "muestra", "sample", "reference", "referencia", "plantilla",
+        "example", "examples",
+    }
 )
-_EVIDENCE_LEXICON = frozenset({"evidencia", "evidence", "anexos", "sources", "fuentes", "capturas"})
+_EVIDENCE_LEXICON = frozenset(
+    {
+        "evidencia", "evidence", "anexo", "anexos", "sources", "fuentes", "capturas", "extracted",
+    }
+)
 
 _ROLE_LEXICONS: dict[str, frozenset[str]] = {
     "normative": _NORMATIVE_LEXICON,

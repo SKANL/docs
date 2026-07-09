@@ -108,3 +108,49 @@ def test_classify_is_a_pure_function_same_input_same_output():
     first = classify("evidencia/captura-01.png")
     second = classify("evidencia/captura-01.png")
     assert first == second
+
+
+# --- WARNING-1 / SUGGESTION-1: lexicon coverage for THIS repo's own -----
+# --- real folder names (fresh-context verify, PR4 fix batch) ------------
+
+
+def test_english_example_folder_name_classifies_via_folder_signal():
+    # WARNING-1: reproduced against this repo's OWN fixture folder name
+    # (example_tesina/, from reporte-estadia-tic.json's example_pdf path).
+    # A generic filename with NO lexicon hit of its own must still resolve
+    # via the folder-level "example" word.
+    role, confidence, signals = classify("example_tesina/case-study.pdf")
+    assert role == "example"
+    assert confidence == "high"
+    assert signals == ["folder:example"]
+
+
+def test_english_example_folder_name_combines_with_filename_signal():
+    # example_tesina/RE-Ejemplo.pdf (this repo's real fixture path):
+    # now gets BOTH a folder hit ("example") and a filename hit
+    # ("ejemplo") -- confidence rises from medium (filename-only, before
+    # this fix) to high.
+    role, confidence, signals = classify("example_tesina/RE-Ejemplo.pdf")
+    assert role == "example"
+    assert confidence == "high"
+    assert signals == ["folder:example", "filename:ejemplo"]
+
+
+def test_extracted_folder_name_classifies_as_evidence():
+    # WARNING-1: reproduced against this repo's OWN fixture folder name
+    # (extracted/, from reporte-estadia-tic.json's extracted_dir path, and
+    # PR3's own realistic-drop acceptance test). "extracted" content is
+    # plausibly always evidence/traceability material by construction.
+    role, confidence, signals = classify("extracted/notes.md")
+    assert role == "evidence"
+    assert confidence == "high"
+    assert signals == ["folder:extracted"]
+
+
+def test_singular_anexo_recognized_alongside_plural_anexos():
+    # SUGGESTION-1: only the plural "anexos" was in the EVIDENCE lexicon --
+    # a singular folder name got zero signal.
+    role, confidence, signals = classify("anexo/foto.png")
+    assert role == "evidence"
+    assert confidence == "high"
+    assert signals == ["folder:anexo"]
