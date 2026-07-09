@@ -11,9 +11,18 @@ manifest's own `duplicates` entries."""
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 
 from docs.application.ingest import IngestService
+
+
+def _strip_accents(text: str) -> str:
+    """Test-local accent stripper, deliberately INDEPENDENT from
+    production code -- see tests/unit/domain/test_near_duplicate.py's
+    identical helper (fresh-context verify, PR4 fix batch, CRITICAL-1)."""
+    normalized = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
 
 class _FakeDetector:
@@ -277,10 +286,18 @@ def test_realistic_drop_shape_roles_and_near_duplicate_all_recorded_nothing_sile
 ):
     # Acceptance context: mirrors the shape of a real user's OneDrive inbox
     # drop -- guides/manual-estadia-tic/ (normative, folder signal),
-    # example_tesina/RE-Ejemplo.pdf (example, filename signal only), and a
+    # example_tesina/RE-Ejemplo.pdf (example, folder+filename signal), and a
     # near-duplicate pair (extracted/GUIA-Estadia.md vs
     # guides/GUIA-Estadia.pdf -- same guide, MD is the curated
     # higher-fidelity copy). Fixture tree, never the user's actual files.
+    #
+    # CRITICAL-1 fix-batch honesty requirement (fresh-context verify): the
+    # two GUIA variants are GENUINELY DIFFERENT text, not the same string
+    # written twice -- guide_curated has correct Spanish accents (as a
+    # hand-curated markdown file would); guide_extracted is independently
+    # derived with accents stripped PLUS markdown structural noise (as a
+    # plausible PDF-extraction artifact), so this test can only pass with
+    # REAL accent/markup normalization, not by accident.
     inbox = tmp_path / "inbox"
     manual_dir = inbox / "guides" / "manual-estadia-tic"
     manual_dir.mkdir(parents=True)
@@ -296,14 +313,20 @@ def test_realistic_drop_shape_roles_and_near_duplicate_all_recorded_nothing_sile
         encoding="utf-8",
     )
 
-    guide_text = (
+    guide_words = (
         "Guía de referencia para la elaboración del reporte de estadía técnica "
         "en organizaciones receptoras y demás actores relevantes del proceso "
-        "académico institucional de vinculación profesional."
-    )
+        "académico institucional de vinculación profesional y sus programas "
+        "correspondientes de formación técnica reconocidos oficialmente"
+    ).split()
+    guide_curated = " ".join(guide_words)
+    extracted_words = [_strip_accents(word) for word in guide_words]
+    guide_extracted = "# " + " ".join(extracted_words)
+    guide_extracted = guide_extracted.replace("tecnica", "**tecnica**", 1)
+
     (inbox / "extracted").mkdir(parents=True)
-    (inbox / "extracted" / "GUIA-Estadia.md").write_text(guide_text, encoding="utf-8")
-    (inbox / "guides" / "GUIA-Estadia.pdf").write_text(guide_text, encoding="utf-8")
+    (inbox / "extracted" / "GUIA-Estadia.md").write_text(guide_curated, encoding="utf-8")
+    (inbox / "guides" / "GUIA-Estadia.pdf").write_text(guide_extracted, encoding="utf-8")
 
     kind_by_name = {
         "00-intro.md": "md",
