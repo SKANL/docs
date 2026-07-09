@@ -239,6 +239,26 @@ def test_files_under_inbox_assets_are_excluded_from_source_walk_and_reported_ign
     assert report["ignored"] == [{"relative_path": "assets/cover.png", "reason": "assets_subtree"}]
 
 
+def test_nested_non_top_level_assets_folder_is_walked_not_excluded(tmp_path: Path):
+    # PR3 verify follow-up SUGGESTION-1: only a LITERAL top-level
+    # inbox/assets/ subtree is excluded (design.md Decisions 2/6/8 all say
+    # "inbox/assets/", never "any directory named assets"). A directory
+    # named "assets" nested somewhere else in the tree is a completely
+    # ordinary source folder and must be walked normally, not excluded.
+    inbox = tmp_path / "inbox"
+    nested_assets = inbox / "docs" / "assets"
+    nested_assets.mkdir(parents=True)
+    (nested_assets / "notes.md").write_text("# Notes", encoding="utf-8")
+    service = IngestService(_FakeDetector({"notes.md": "md"}), {"md": _FakeHandler()})
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    entry = next(e for e in report["files"] if e["file"] == "notes.md")
+    assert entry["relative_path"] == "docs/assets/notes.md"
+    assert entry["status"] == "ingested"
+    assert report["ignored"] == []
+
+
 def test_underscore_prefixed_component_anywhere_in_tree_is_excluded_and_reported_ignored(
     tmp_path: Path,
 ):
@@ -411,3 +431,28 @@ def test_recursive_walk_report_ordering_is_byte_stable_across_two_independent_ru
     # filesystem-iteration order (a-dir before top.md before z-dir).
     text = first_bytes.decode("utf-8")
     assert text.index("a-dir/nested/two.md") < text.index("top.md") < text.index("z-dir/one.md")
+
+
+def test_self_written_artifacts_get_a_distinct_ignored_reason_from_genuine_underscore_files(
+    tmp_path: Path,
+):
+    # PR3 verify follow-up (finding a): _detection.json/_source-manifest.json
+    # are the harness's OWN bookkeeping files -- a rescan finds them (both
+    # `_`-prefixed, sitting in inbox_dir) and must report them, never
+    # silently, but with a DISTINCT reason ("harness_artifact") from a
+    # genuine user `_`-prefixed file ("underscore_prefixed"), so a
+    # downstream/agent consumer can mechanically filter the harness's own
+    # artifacts without hardcoding filename knowledge.
+    inbox = tmp_path / "inbox"
+    (inbox / "_drafts").mkdir(parents=True)
+    (inbox / "_drafts" / "wip.md").write_text("# WIP", encoding="utf-8")
+    (inbox / "notes.md").write_text("# Notes", encoding="utf-8")
+    service = IngestService(_FakeDetector({"notes.md": "md"}), {"md": _FakeHandler()})
+    service.ingest_inbox(inbox, tmp_path / "sections")  # warm-up: creates the two artifacts
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")
+
+    ignored_by_path = {e["relative_path"]: e["reason"] for e in report["ignored"]}
+    assert ignored_by_path["_detection.json"] == "harness_artifact"
+    assert ignored_by_path["_source-manifest.json"] == "harness_artifact"
+    assert ignored_by_path["_drafts/wip.md"] == "underscore_prefixed"

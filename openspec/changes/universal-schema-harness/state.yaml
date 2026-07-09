@@ -22,15 +22,16 @@ phases:
   apply:
     status: in-progress
     note: >
-      batch 3/7 COMPLETE: Front C (recursive ingest, provenance,
-      honest status vocabulary, IngestArtifactWriter port) on branch
-      feat/usch-c-recursive-ingest (4 commits), verify pass 1: ready-for-pr
-      (first slice to pass without a fix cycle). PR #12 (A) and PR #13 (B)
-      MERGED. Next: Front D (roles/duplicates), folding in PR3's
-      non-blocking findings (harness_artifact ignored-reason,
-      inbox/assets boundary pinning test, sort-order doc note).
-      Open follow-ups: task 13.1 (guard scope), NEW-SUGGESTION-3
-      (empty nested subdir sweep).
+      batch 4/7 COMPLETE: Fronts D+E (source-role classification with
+      confirmation queue, 5-word-shingle Jaccard near-duplicate detection
+      with accent/markdown normalization) on branch
+      feat/usch-d-roles-duplicates (13 commits), verify passes 1+2
+      (needs-fixes: accent-normalization CRITICAL masked by a vacuous
+      test -> ready-for-pr with non-vacuous-test proof). PRs #12 (A),
+      #13 (B), #14 (C) MERGED. Next: Front F (verbatim assets + figure
+      catalog). Open follow-ups: task 13.1 (guard scope), NEW-SUGGESTION-3
+      (empty nested subdir sweep), role_status has no cross-service
+      consumer yet (deferred to G/gap-report wiring).
   verify:
     status: pending
   archive:

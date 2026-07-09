@@ -146,17 +146,18 @@ def test_writes_source_manifest_with_provenance_entries(tmp_path: Path):
     assert manifest_path.exists()
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert payload["schema"] == 1
-    assert payload["sources"] == [
-        {
-            "file": "a.docx",
-            "relative_path": "sub/a.docx",
-            "source_dir": "sub",
-            "kind": "docx",
-            "status": "ingested",
-            "sha256": payload["sources"][0]["sha256"],
-            "output": payload["sources"][0]["output"],
-        }
-    ]
+    assert payload["duplicates"] == []
+    entry = payload["sources"][0]
+    # role/duplicate fields (Front D/E) are asserted in their own dedicated
+    # test suites (test_source_role.py, test_ingest_roles_duplicates.py) --
+    # this test stays scoped to provenance (Front C).
+    assert entry["file"] == "a.docx"
+    assert entry["relative_path"] == "sub/a.docx"
+    assert entry["source_dir"] == "sub"
+    assert entry["kind"] == "docx"
+    assert entry["status"] == "ingested"
+    assert len(entry["sha256"]) == 64
+    assert entry["output"]
 
 
 def test_ingest_inbox_delegates_json_artifact_writes_to_injected_writer(tmp_path: Path):
@@ -172,7 +173,7 @@ def test_ingest_inbox_delegates_json_artifact_writes_to_injected_writer(tmp_path
     service.ingest_inbox(inbox, tmp_path / "sections")
 
     written_names = {path.name for path, _ in writer.calls}
-    assert written_names == {"_detection.json", "_source-manifest.json"}
+    assert written_names == {"_detection.json", "_source-manifest.json", "_classification-queue.json"}
 
 
 def test_handler_failure_preserves_detected_kind_in_error_entry(tmp_path: Path):
