@@ -482,19 +482,19 @@ review before push+PR.
 - [x] 8.1 [front:roles-duplicates] [spec: document-ingest "Deterministic signal classifies unambiguously"] Add failing test in new `tests/unit/domain/test_source_role.py`: folder-lexicon signal (`normativa`/`ejemplo`/`evidencia` families) classifies unambiguously; filename-pattern signal as lower-weight secondary.
 - [x] 8.2 [front:roles-duplicates] [spec: document-ingest "Ambiguous source is queued, not defaulted"] Add failing test: unmatched path yields role `unknown`, confidence `low`, queued rather than defaulted.
 - [x] 8.3 [front:roles-duplicates] Implement new `domain/source_role.py` (`classify(relative_path) -> (role, confidence, signals)`), pure function, bucketed confidence (`high`/`medium`/`low`). Run 8.1-8.2 — must pass.
-- [ ] 8.4 [front:roles-duplicates] Add failing determinism test for `inbox/_classification-queue.json` writer (two runs byte-identical, entries keyed by `relative_path`).
-- [ ] 8.5 [front:roles-duplicates] Wire classification into `application/ingest.py`: write `_classification-queue.json` via `IngestArtifactWriter`; merge external confirmation into `_source-manifest.json` under `confirmed_role`. Run 8.4 — must pass.
-- [ ] 8.6 [front:roles-duplicates] [spec: document-ingest "Confirmed role recorded and enforced"] Add failing service-layer test: unconfirmed role blocks in strict mode, admits with `PENDIENTE` gap in draft mode; confirmed role routes source correctly (`normative`/`example`/`evidence` downstream gating). Implement gating in `application/ingest.py`/consuming services. Run — must pass.
-- [ ] 8.7 [front:roles-duplicates] Run determinism suite ×2 for Front D closeout.
+- [x] 8.4 [front:roles-duplicates] Add failing determinism test for `inbox/_classification-queue.json` writer (two runs byte-identical, entries keyed by `relative_path`).
+- [x] 8.5 [front:roles-duplicates] Wire classification into `application/ingest.py`: write `_classification-queue.json` via `IngestArtifactWriter`; merge external confirmation into `_source-manifest.json` under `confirmed_role`. Run 8.4 — must pass.
+- [x] 8.6 [front:roles-duplicates] [spec: document-ingest "Confirmed role recorded and enforced"] Add failing service-layer test: unconfirmed role blocks in strict mode, admits with `PENDIENTE` gap in draft mode; confirmed role routes source correctly (`normative`/`example`/`evidence` downstream gating). Implement gating in `application/ingest.py`/consuming services. Run — must pass.
+- [x] 8.7 [front:roles-duplicates] Run determinism suite ×2 for Front D closeout.
 
 ## Phase 9: Front E — near-duplicate detection
 
 - [x] 9.1 [front:roles-duplicates] [spec: document-ingest "Higher-fidelity duplicate is kept"] Add failing test in new `tests/unit/domain/test_near_duplicate.py`: identical text, near-duplicate (one edit), and disjoint texts; assert 5-word-shingle Jaccard `>= 0.85` threshold boundary.
 - [x] 9.2 [front:roles-duplicates] [spec: document-ingest "Distinct sources are not falsely merged"] Add failing test: fidelity ranking (`curated_md > docx_converted_md > pdf_extracted_md > txt_md`) picks the higher-fidelity member regardless of input order; tie-break by POSIX `relative_path`.
 - [x] 9.3 [front:roles-duplicates] Implement `domain/near_duplicate.py` (`find_duplicates(docs) -> list[DuplicateDecision]`) reusing `markdown_text.clean_markdown_text` for normalization. Run 9.1-9.2 — must pass.
-- [ ] 9.4 [front:roles-duplicates] [spec: document-ingest "Duplicate decision is reversible"] Add failing test: editing a `duplicates` manifest entry to reverse kept/superseded makes the previously suppressed source active on next run.
-- [ ] 9.5 [front:roles-duplicates] Wire near-dup pass into `application/ingest.py` as a post-ingest step over produced `ingested/` outputs; write `duplicates: [{kept, superseded, jaccard, reason}]` into `_source-manifest.json`. Run 9.4 — must pass.
-- [ ] 9.6 [front:roles-duplicates] Run determinism suite ×2 for Front E closeout.
+- [x] 9.4 [front:roles-duplicates] [spec: document-ingest "Duplicate decision is reversible"] Add failing test: editing a `duplicates` manifest entry to reverse kept/superseded makes the previously suppressed source active on next run.
+- [x] 9.5 [front:roles-duplicates] Wire near-dup pass into `application/ingest.py` as a post-ingest step over produced `ingested/` outputs; write `duplicates: [{kept, superseded, jaccard, reason}]` into `_source-manifest.json`. Run 9.4 — must pass.
+- [x] 9.6 [front:roles-duplicates] Run determinism suite ×2 for Front E closeout.
 
 ## Phase 10: Front F — verbatim assets + figure catalog
 

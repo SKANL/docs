@@ -8,18 +8,23 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
+from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
+from docs.domain.source_role import classify
 
 _DETECTION_REPORT_NAME = "_detection.json"
 _SOURCE_MANIFEST_NAME = "_source-manifest.json"
+_CLASSIFICATION_QUEUE_NAME = "_classification-queue.json"
 
 # PR3 verify follow-up (finding a): these are the harness's OWN
 # `_`-prefixed bookkeeping files, always written at `inbox_dir` root --
 # a rescan finding them gets a distinct `"harness_artifact"` ignored-reason,
 # never conflated with a genuine user `_`-prefixed file.
-_HARNESS_ARTIFACT_NAMES = frozenset({_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME})
+_HARNESS_ARTIFACT_NAMES = frozenset(
+    {_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME, _CLASSIFICATION_QUEUE_NAME}
+)
 
 # `inbox/assets/` is the verbatim-asset convention (design.md Decision 6) --
 # excluded from the recursive source walk entirely (routed elsewhere, not a
@@ -104,7 +109,9 @@ class IngestService:
         self.handlers = dict(handlers)
         self.writer: IngestArtifactWriter = writer or _InlineJsonWriter()
 
-    def ingest_inbox(self, inbox_dir: Path, sections_dir: Path) -> dict[str, Any]:
+    def ingest_inbox(
+        self, inbox_dir: Path, sections_dir: Path, strict: bool = False
+    ) -> dict[str, Any]:
         inbox_dir = Path(inbox_dir)
         sections_dir = Path(sections_dir)
         entries: list[dict[str, Any]] = []
@@ -124,7 +131,18 @@ class IngestService:
             ]
             entries.extend(empty_dir_entries)
             entries.sort(key=lambda entry: entry["relative_path"])
-            self._write_source_manifest(inbox_dir, entries)
+
+            # Front D (design.md Decision 4): classify every real source
+            # entry, merge any externally-confirmed role from the PRIOR
+            # classification queue (the interface where confirmation
+            # enters), resolve the draft/strict gate, then (re)write the
+            # queue. Front E (Decision 5): near-duplicate pass over the
+            # just-produced `ingested/` outputs, preserving any manual
+            # kept/superseded reversal already recorded in the manifest.
+            manifest_sources = self._build_manifest_sources(inbox_dir, entries, strict)
+            self._write_classification_queue(inbox_dir, manifest_sources)
+            duplicates = self._find_near_duplicates(inbox_dir, manifest_sources)
+            self._write_source_manifest(inbox_dir, manifest_sources, duplicates)
         report = {
             "processed": sum(1 for e in entries if e.get("status") != "empty_dir"),
             "files": entries,
@@ -362,13 +380,172 @@ class IngestService:
         # port (design.md Decision 9) -- no direct write_text here anymore.
         self.writer.write_json(inbox_dir / _DETECTION_REPORT_NAME, report)
 
-    def _write_source_manifest(self, inbox_dir: Path, entries: list[dict[str, Any]]) -> None:
+    def _write_source_manifest(
+        self, inbox_dir: Path, manifest_sources: list[dict[str, Any]], duplicates: list[dict[str, Any]]
+    ) -> None:
         # `inbox/_source-manifest.json` (design.md's artifact map): distinct
         # from the collection stage's `sections/source-manifest.json`.
-        # Ingest-time provenance only in this front (Front D/E later extend
-        # these same entries with role/duplicate fields). `_`-prefixed, so
-        # the recursive walk itself always skips it, same as
-        # `_detection.json`.
-        sources = [entry for entry in entries if entry.get("status") != "empty_dir"]
-        payload = {"schema": 1, "sources": sources}
+        # `_`-prefixed, so the recursive walk itself always skips it, same
+        # as `_detection.json`.
+        payload = {"schema": 1, "sources": manifest_sources, "duplicates": duplicates}
         self.writer.write_json(inbox_dir / _SOURCE_MANIFEST_NAME, payload)
+
+    # --- Front D: source-role classification (design.md Decision 4) -----
+
+    def _build_manifest_sources(
+        self, inbox_dir: Path, entries: list[dict[str, Any]], strict: bool
+    ) -> list[dict[str, Any]]:
+        # Classification is a PURE function of relative_path -- zero AI
+        # judgment, zero I/O, zero randomness at runtime (spec:
+        # document-ingest "Source-Role Classification"). External
+        # confirmation enters ONLY through the classification queue file
+        # (an agent/human edits it); a prior confirmation round-trips
+        # forward into this run's manifest AND the freshly-rewritten queue.
+        prior_confirmed = self._read_prior_confirmed_roles(inbox_dir)
+        sources: list[dict[str, Any]] = []
+        for entry in entries:
+            if entry.get("status") == "empty_dir":
+                continue
+            relative_path = entry["relative_path"]
+            role, confidence, signals = classify(relative_path)
+            confirmed_role = prior_confirmed.get(relative_path)
+            manifest_entry = dict(entry)
+            manifest_entry["proposed_role"] = role
+            manifest_entry["confidence"] = confidence
+            manifest_entry["signals"] = signals
+            manifest_entry["confirmed_role"] = confirmed_role
+            manifest_entry["role_status"] = self._resolve_role_gate(role, confirmed_role, strict)
+            sources.append(manifest_entry)
+        return sources
+
+    def _resolve_role_gate(
+        self, proposed_role: str, confirmed_role: str | None, strict: bool
+    ) -> dict[str, Any]:
+        # Gating (design.md Decision 4, spec: "Confirmed role recorded and
+        # enforced"): a confirmed role always routes the source under that
+        # role. Unconfirmed: draft admits with the proposed role and a
+        # PENDIENTE-style gap entry; strict blocks outright (consistent
+        # with the draft/strict split, Decision 7).
+        if confirmed_role:
+            return {"effective_role": confirmed_role, "blocked": False, "gap": None}
+        if strict:
+            return {
+                "effective_role": None,
+                "blocked": True,
+                "gap": (
+                    f"Rol sin confirmar (propuesto: {proposed_role}); "
+                    "bloqueado en modo estricto hasta que se confirme."
+                ),
+            }
+        return {
+            "effective_role": proposed_role,
+            "blocked": False,
+            "gap": f"PENDIENTE: rol sin confirmar (propuesto: {proposed_role}).",
+        }
+
+    def _read_prior_confirmed_roles(self, inbox_dir: Path) -> dict[str, str]:
+        queue_path = inbox_dir / _CLASSIFICATION_QUEUE_NAME
+        if not queue_path.exists():
+            return {}
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        confirmed: dict[str, str] = {}
+        for relative_path, entry in data.get("entries", {}).items():
+            role = entry.get("confirmed_role")
+            if role:
+                confirmed[relative_path] = role
+        return confirmed
+
+    def _write_classification_queue(
+        self, inbox_dir: Path, manifest_sources: list[dict[str, Any]]
+    ) -> None:
+        # `inbox/_classification-queue.json` (design.md Decision 4): the
+        # interface where EXTERNAL confirmation enters. Atomic, sort_keys
+        # writer via IngestArtifactWriter (Decision 9); entries KEYED BY
+        # relative_path.
+        entries = {
+            source["relative_path"]: {
+                "proposed_role": source["proposed_role"],
+                "confidence": source["confidence"],
+                "signals": source["signals"],
+                "confirmed_role": source.get("confirmed_role"),
+            }
+            for source in manifest_sources
+        }
+        payload = {"schema": 1, "entries": entries}
+        self.writer.write_json(inbox_dir / _CLASSIFICATION_QUEUE_NAME, payload)
+
+    # --- Front E: near-duplicate detection (design.md Decision 5) -------
+
+    def _find_near_duplicates(
+        self, inbox_dir: Path, manifest_sources: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        # A post-ingest pass over the just-produced `ingested/` outputs
+        # (spec: document-ingest "Near-Duplicate Detection") -- their
+        # content is stable and already deterministic, so this sees final
+        # normalized artifacts, not raw heterogeneous sources.
+        docs: list[SourceDoc] = []
+        for source in manifest_sources:
+            output = source.get("output")
+            if not output:
+                continue
+            try:
+                text = Path(output).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            docs.append(SourceDoc(relative_path=source["relative_path"], kind=source["kind"], text=text))
+
+        manual_overrides = self._read_manual_duplicate_overrides(inbox_dir)
+        fresh_decisions = find_duplicates(docs)
+        final_decisions: list[dict[str, Any]] = []
+        for decision in fresh_decisions:
+            pair_key = frozenset({decision.kept, decision.superseded})
+            override = manual_overrides.get(pair_key)
+            if override is not None:
+                # Reversible (spec: "Duplicate decision is reversible") --
+                # a human edited kept/superseded for this pair in the
+                # manifest; respect that choice, but keep the FRESH jaccard
+                # score/reason (reflects current content).
+                final_decisions.append(
+                    {
+                        "kept": override.kept,
+                        "superseded": override.superseded,
+                        "jaccard": decision.jaccard,
+                        "reason": decision.reason,
+                    }
+                )
+            else:
+                final_decisions.append(
+                    {
+                        "kept": decision.kept,
+                        "superseded": decision.superseded,
+                        "jaccard": decision.jaccard,
+                        "reason": decision.reason,
+                    }
+                )
+        return sorted(final_decisions, key=lambda d: (d["kept"], d["superseded"]))
+
+    def _read_manual_duplicate_overrides(
+        self, inbox_dir: Path
+    ) -> dict[frozenset[str], DuplicateDecision]:
+        manifest_path = inbox_dir / _SOURCE_MANIFEST_NAME
+        if not manifest_path.exists():
+            return {}
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        overrides: dict[frozenset[str], DuplicateDecision] = {}
+        for entry in data.get("duplicates", []):
+            kept, superseded = entry.get("kept"), entry.get("superseded")
+            if not kept or not superseded:
+                continue
+            overrides[frozenset({kept, superseded})] = DuplicateDecision(
+                kept=kept,
+                superseded=superseded,
+                jaccard=entry.get("jaccard", 0.0),
+                reason=entry.get("reason", ""),
+            )
+        return overrides
