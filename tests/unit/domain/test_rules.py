@@ -37,6 +37,56 @@ def test_requirement_present_false_when_no_match_and_no_detect():
     assert requirement_present("metodología utilizada", plain, {}) is False
 
 
+def test_requirement_present_false_against_the_harness_own_pendiente_scaffold_line():
+    # CRITICAL-1 (verify-report-pr6.md): render_contract_scaffold's own
+    # "PENDIENTE: documentar {item} con evidencia..." placeholder line
+    # embeds the requirement's own words -- must NEVER count as "present".
+    # Real scaffold output, not hand-typed text (the exact verifier repro).
+    from docs.domain.markdown_text import clean_markdown_text
+    from docs.domain.section_rendering import render_contract_scaffold
+
+    contract = SectionContract(required_content=["objetivo del proyecto", "justificacion", "problema"])
+    scaffold = render_contract_scaffold("Introducción", contract, context={})
+    plain = clean_markdown_text(scaffold).lower()
+
+    for requirement in contract.required_content:
+        assert requirement_present(requirement, plain, {}) is False, requirement
+
+
+def test_requirement_present_still_true_for_a_hand_authored_pendiente_note():
+    # A human/AI-authored "PENDIENTE: <note>" (a different opening verb than
+    # the harness's own three scaffold sentences) still counts as present --
+    # e.g. the estadía "resultados importantes o PENDIENTE" detect override
+    # relies on the bare word "pendiente" being an acceptable escape hatch.
+    detect = {"resultados importantes o pendiente": ["resultado", "pendiente"]}
+    plain = "pendiente: aún no hay resultados que reportar."
+    assert requirement_present("resultados importantes o pendiente", plain, detect) is True
+
+
+def test_scaffold_scrub_regex_covers_every_pendiente_sentence_the_scaffold_emits():
+    # Drift guard: `_SCAFFOLD_PENDIENTE_RE` hardcodes the opening verbs of
+    # `render_contract_scaffold`'s PENDIENTE sentences. A fourth sentence
+    # template added there without updating the regex would silently reopen
+    # CRITICAL-1 (a scaffolded section counting as already written). Driving
+    # the real generator with every branch enabled keeps the two in lockstep:
+    # any emitted `PENDIENTE:` sentence the regex fails to scrub fails here.
+    from docs.domain.markdown_text import clean_markdown_text
+    from docs.domain.rules import _SCAFFOLD_PENDIENTE_RE
+    from docs.domain.section_rendering import render_contract_scaffold
+
+    contract = SectionContract(
+        required_content=["objetivo del proyecto"],
+        apa_required=True,
+        references_list=True,
+    )
+    plain = clean_markdown_text(
+        render_contract_scaffold("Introducción", contract, context={})
+    ).lower()
+
+    assert "pendiente:" in plain  # the generator really did emit them
+    assert "pendiente:" not in _SCAFFOLD_PENDIENTE_RE.sub(" ", plain)
+
+
 def test_review_section_contract_no_issues_when_contract_satisfied():
     contract = SectionContract(required_content=["objetivo"])
     text = "# Sección\n\nEl objetivo de este trabajo es claro y está bien definido con suficiente texto."

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from docs.application.collection import CollectionService
+from docs.application.context import ContextService
 from docs.application.context_files import CONCERNS, CURATED_INDEX_FILENAME, build_context_files, build_context_index
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
@@ -45,6 +46,7 @@ class PipelineService:
         qa_service: QaService,
         workspace: Workspace,
         ingest_service: IngestService,
+        context_service: ContextService,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -59,6 +61,7 @@ class PipelineService:
         self.qa_service = qa_service
         self.workspace = workspace
         self.ingest_service = ingest_service
+        self.context_service = context_service
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -203,6 +206,25 @@ class PipelineService:
             paths = [str(self.build_section(doc_id, template, section.id, config)) for section in template.sections]
             return True, f"{len(paths)} secciones"
 
+        def stage_gap_report() -> tuple[bool, str]:
+            section_bodies: dict[str, str] = {}
+            for section in template.sections:
+                if self.review_service.repository.section_exists(doc_id, section.order, section.id):
+                    _metadata, body = self.review_service.repository.read_section(doc_id, section.order, section.id)
+                    section_bodies[section.id] = body
+            sections_dir = Path(config["paths"]["sections_dir"])
+            # Reuse the SAME atomic writer instance already wired to
+            # IngestService (design.md Decision 9: ContextService gains no
+            # new constructor dependency for this artifact).
+            report = self.context_service.build_gap_report(
+                doc_id, template, section_bodies, sections_dir, writer=self.ingest_service.writer
+            )
+            gap_count = len(report["context_gaps"]) + len(report["section_gaps"])
+            detail = f"{len(report['context_gaps'])} gaps de contexto, {len(report['section_gaps'])} gaps de sección"
+            if gap_count and strict:
+                return False, f"{detail} (modo estricto bloquea antes de producir salida final)."
+            return True, detail
+
         def stage_pack_context() -> tuple[bool, str]:
             normative = resolve_normative_settings(config)
             manifest_exists, manifest_size = self.rules_manifest_state(config)
@@ -304,6 +326,7 @@ class PipelineService:
             "collect-issues": stage_collect_issues,
             "build-ledger": stage_build_ledger,
             "build-sections": stage_build_sections,
+            "gap-report": stage_gap_report,
             "pack-context": stage_pack_context,
             "review-document": stage_review_document,
             "build-docx": stage_build_docx,

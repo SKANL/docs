@@ -9,6 +9,7 @@ import pytest
 from docx import Document
 
 from docs.application.collection import CollectionService
+from docs.application.context import ContextService
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
 from docs.application.docx_assembly import DocxRendererAdapter
@@ -29,10 +30,12 @@ from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetecto
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
 from docs.infrastructure.ingest.pandoc_ingest_adapter import PandocIngestAdapter
+from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
+from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 from docs.application.asset import AssetService
 
@@ -45,11 +48,13 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
     section_repo = JsonSectionRepository(workspace)
     source_repo = FilesystemSourceRepository()
     context_repo = JsonContextRepository(workspace)
+    document_repo = JsonDocumentRepository(workspace)
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     evidence_service = EvidenceService(evidence_repo)
     review_service = ReviewService(section_repo)
     collection_service = CollectionService(source_repo, evidence_repo)
     context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
+    context_service = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
     tool_resolver = SystemToolResolverAdapter()
     docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
     format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
@@ -72,6 +77,7 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
         doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
         review_service, context_pack_service, context_repo, docx_assembly_service,
         format_audit_service, qa_service, workspace, ingest_service,
+        context_service=context_service,
     )
     return service, workspace
 
@@ -355,6 +361,7 @@ def _pipeline_config(tmp_path: Path) -> dict:
         "paths": {
             "rules_manifest": str(tmp_path / "manual-rules.json"),
             "context_dir": str(tmp_path / "context"),
+            "sections_dir": str(tmp_path / "sections"),
             "source_manifest": str(tmp_path / "source.json"),
             "issues_manifest": str(tmp_path / "issues.json"),
             "code_evidence_manifest": str(tmp_path / "code-evidence.json"),

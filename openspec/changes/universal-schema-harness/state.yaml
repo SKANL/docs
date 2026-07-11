@@ -20,20 +20,27 @@ phases:
     status: done
     artifact: tasks.md
   apply:
-    status: in-progress
+    status: done
     note: >
-      batch 5/6 COMPLETE: Front F (verbatim asset pre-ingest routing,
-      _placement-queue.json, confirmed-placement wiring into resolved
-      structure, deterministic figure catalog) on branch
-      feat/usch-f-assets-figures (7 commits), verify pass 1 needs-fixes
-      (CRITICAL: placement confirmation inert - manifest half only, never
-      reached structure_parts) -> fixed (_apply_confirmed_placements in
-      resolve_context) + orchestrator self-verified the small fix (RED test
-      against real structure_parts consumer; auto-confirm invariant holds:
-      structure_part only set when confirmed_placement truthy). PRs #12 (A)
-      #13 (B) #14 (C) #15 (D+E) MERGED. Next+last: Front G (template
-      lifecycle + gap report). Open follow-ups: 13.1 guard scope, 13.2/13.3
-      figure assembly consumer + heuristic scope, NEW-SUGGESTION-3.
+      ALL 6 BATCHES COMPLETE - implementation feature-complete.
+      Fronts A-G shipped across PRs #12 (A policy de-hardcode), #13 (B media
+      cleanup + doctor), #14 (C recursive ingest), #15 (D+E roles +
+      near-duplicates), #16 (F verbatim assets + figure catalog), and the
+      final Front G (template init/validate + gap report) on branch
+      feat/usch-g-template-lifecycle.
+      Verify caught a CRITICAL in 4 of 6 slices, every one an inert-feature
+      or vacuous-test class: normative_source silent loss (A), media
+      file-level data loss (B), accent normalization masked by a
+      byte-identical-input test (D+E), placement confirmation never reaching
+      structure_parts (F), and gap report self-satisfied by its own PENDIENTE
+      scaffold text (G, root-caused in the shared requirement_present -
+      review-section/review-document were silently passing unwritten sections
+      too). All fixed test-first with non-vacuous proofs.
+      Suite: 1089 passing. Open follow-ups (Phase 13): 13.1 no-literal guard
+      scope, 13.2/13.3 figure assembly consumer + image heuristic scope,
+      NEW-SUGGESTION-3 empty nested subdir sweep.
+      Remaining: Phase 12 final acceptance against the user's real drop, then
+      archive.
   verify:
     status: pending
   archive:

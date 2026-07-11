@@ -130,6 +130,7 @@ class Deps:
             doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
             review_service, context_pack_service, context_repo, docx_assembly_service,
             format_audit_service, qa_service, self.workspace, self.ingest,
+            context_service=self.context,
         )
 
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:

@@ -11,12 +11,14 @@ _ASSEMBLE_DOCX_STAGES: list[tuple[str, bool]] = [
 ]
 
 
-def test_pipeline_stage_plan_prep_has_nine_stages_in_order():
+def test_pipeline_stage_plan_prep_has_ten_stages_in_order():
+    # "gap-report" added Front G (task 11.9, design.md Decision 7) right
+    # after "build-sections" -- a deliberate surface growth, not drift.
     stages = pipeline_stage_plan("prep")
     assert [name for name, _ in stages] == [
         "doctor", "build-rules", "review-rules", "collect-sources",
         "collect-code-evidence", "collect-issues", "build-ledger",
-        "build-sections", "pack-context",
+        "build-sections", "gap-report", "pack-context",
     ]
 
 
@@ -26,6 +28,9 @@ def test_pipeline_stage_plan_prep_fail_fast_flags_match_legacy():
     assert stages["review-rules"] is True
     assert stages["build-rules"] is False
     assert stages["build-sections"] is False
+    # strict mode must block on gaps before final output (spec:
+    # document-pipeline "Strict mode blocks on gaps").
+    assert stages["gap-report"] is True
 
 
 def test_pipeline_stage_plan_assemble_returns_caller_supplied_stages():
@@ -49,7 +54,7 @@ def test_pipeline_stage_plan_all_is_prep_plus_review_document_plus_assemble():
     assert names == [
         "doctor", "build-rules", "review-rules", "collect-sources",
         "collect-code-evidence", "collect-issues", "build-ledger",
-        "build-sections", "pack-context", "review-document",
+        "build-sections", "gap-report", "pack-context", "review-document",
         "build-docx", "format-audit-docx", "qa-docx",
     ]
     assert dict(stages)["review-document"] is True
