@@ -147,7 +147,7 @@ class Deps:
         document = self.document_repository.read_document(doc_id)      # Document (extra allowed)
         template = self.document_repository.load_template(document.template)
         merged = _deep_merge(template.model_dump(), document.model_dump())
-        merged = _expand_tokens(merged, _standard_tokens(self.workspace))
+        merged = _expand_tokens(merged, _standard_tokens(self.workspace, self.workspace.doc_root(doc_id)))
         paths = dict(merged.get("paths", {}))
         paths.update(_computed_paths(self.workspace.doc_root(doc_id)))
         # prompts_dir: per-document default, template/document override wins if set
@@ -199,9 +199,16 @@ def _apply_confirmed_placements(parts: list[dict[str, Any]], inbox_dir: Path) ->
     parts = list(parts)
     for part in confirmed_parts:
         if part.get("type") == "cover_from_asset":
-            # A confirmed cover REPLACES the template default -- there is
-            # only ever one cover.
-            parts = [p for p in parts if p.get("type") != "cover_from_template"]
+            # A confirmed cover REPLACES whatever cover the template already
+            # declared -- cover_from_template OR its own cover_from_asset (the
+            # real reporte-estadia-tic declares the latter, and filtering only
+            # cover_from_template left the document with two covers). There is
+            # exactly one cover.
+            parts = [
+                p
+                for p in parts
+                if p.get("type") not in ("cover_from_template", "cover_from_asset")
+            ]
             parts.insert(0, part)
         else:
             # embed_docx ("back" kind) -- appended after the sections part.
@@ -229,12 +236,17 @@ def _expand_tokens(value: Any, tokens: dict[str, str]) -> Any:
     return value
 
 
-def _standard_tokens(workspace: Workspace) -> dict[str, str]:
+def _standard_tokens(workspace: Workspace, doc_root: Path) -> dict[str, str]:
     # Harness-global tokens have no library equivalent (Judgment call 2);
     # expand only what the workspace/cwd can supply. Unresolved tokens stay literal.
+    # `{doc_root}`/`{inbox_dir}` are per-document: a template's source paths point
+    # into the document's OWN inbox, since every document is an isolated workspace
+    # and its material arrives by being dropped there.
     return {
         "{templates_dir}": str(workspace.templates_dir.resolve()),
         "{documents_dir}": str(workspace.documents_dir.resolve()),
+        "{doc_root}": str(doc_root.resolve()),
+        "{inbox_dir}": str((doc_root / "inbox").resolve()),
         "{cwd}": str(Path.cwd().resolve()),
     }
 
