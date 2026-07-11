@@ -19,11 +19,12 @@ from docs.application.documents import DocumentService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
-from docs.application.ingest import IngestService
+from docs.application.ingest import _SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.domain.models.template import Template
+from docs.domain.docx_structure import structure_parts
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
@@ -152,6 +153,9 @@ class Deps:
         paths.setdefault("prompts_dir", str(self.workspace.doc_root(doc_id) / "prompts"))
         merged["paths"] = paths
         merged["doc_id"] = doc_id
+        merged["structure"] = _apply_confirmed_placements(
+            structure_parts(merged), Path(paths["inbox_dir"])
+        )
         return ResolvedContext(doc_id=doc_id, config=merged, template=Template.model_validate(merged))
 
 
@@ -167,6 +171,41 @@ def resolve_renderer(renderers: dict[str, DocumentRendererPort], output_format: 
             f"Formatos disponibles: {available}."
         )
     return renderer
+
+
+def _apply_confirmed_placements(parts: list[dict[str, Any]], inbox_dir: Path) -> list[dict[str, Any]]:
+    """CRITICAL-1 fix (PR5 verify): the WRITE half of design.md Decision 6a's
+    "confirmation lands TWICE" -- reads confirmed placements' precomputed
+    `structure_part` from `inbox/_source-manifest.json` (IngestService's own
+    output, `_route_and_queue_assets`) and splices them into the resolved
+    document structure, so the EXISTING `structure_parts()` consumer
+    (docx_assembly.py/doctor.py) can actually see them. No new consumer.
+    """
+    manifest_path = inbox_dir / _SOURCE_MANIFEST_NAME
+    if not manifest_path.exists():
+        return parts
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return parts
+    confirmed_parts = [
+        placement["structure_part"]
+        for placement in manifest.get("placements", [])
+        if placement.get("structure_part")
+    ]
+    if not confirmed_parts:
+        return parts
+    parts = list(parts)
+    for part in confirmed_parts:
+        if part.get("type") == "cover_from_asset":
+            # A confirmed cover REPLACES the template default -- there is
+            # only ever one cover.
+            parts = [p for p in parts if p.get("type") != "cover_from_template"]
+            parts.insert(0, part)
+        else:
+            # embed_docx ("back" kind) -- appended after the sections part.
+            parts.append(part)
+    return parts
 
 
 def _deep_merge(base: Any, override: Any) -> Any:
