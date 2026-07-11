@@ -952,6 +952,79 @@ front. Phase 12 (final acceptance, spans all fronts) and Phase 13
 (hardening follow-ups) remain open as cross-front closeout/deferred work,
 not new fronts.
 
+### Apply Progress — Batch 6 fix-verify round (Front G)
+
+Verify report `openspec/changes/universal-schema-harness/verify-report-pr6.md`
+returned needs-fixes: 1 CRITICAL — exactly the risk flagged in the original
+apply-progress ledger. Fixed on the same branch
+`feat/usch-g-template-lifecycle`, strict TDD, work-unit commits.
+
+**Commits** (work units, oldest to newest):
+6. `9da4004` fix(rules): scaffold PENDIENTE lines can no longer self-satisfy their own required_content (CRITICAL-1)
+7. (this commit) docs(tasks): record PR6 fix-verify round in apply-progress
+
+**Fix-verify findings and resolutions**:
+- **CRITICAL-1** (`render_contract_scaffold`'s own "PENDIENTE: documentar
+  {item} con evidencia..." placeholder line embeds the requirement's own
+  words, trivially self-satisfying `requirement_present()`'s substring
+  check — a document of entirely unwritten, freshly-scaffolded sections
+  reported ZERO `section_gaps`, silently defeating strict mode's entire
+  gap-blocking purpose for the single most common real-world state a
+  section is in): root-cause fix in the SHARED `requirement_present()`
+  function (`domain/rules.py`), not per-caller — fixes BOTH callers at
+  once: `review_section_contract` (the review-time sibling silently had
+  the identical bug, never named by the verifier but caught by grepping
+  every caller per the ponytail root-cause directive) and
+  `ContextService.build_gap_report`. Strips the harness's three known
+  PENDIENTE sentence openers (`documentar`/`agregar citas`/`ordenar`) —
+  verb-anchored, not "any PENDIENTE: sentence", so a human/AI-authored
+  note like "PENDIENTE: aún no hay resultados." (different opening verb)
+  still counts as present, preserving the estadía "resultados importantes
+  o PENDIENTE" → `["resultado", "pendiente"]` detect-override escape
+  hatch. Failing tests written FIRST and confirmed RED via a disposable
+  `git stash` of the fix (restored after confirming), matching the exact
+  two-tier reproduction the coordinator required: (1) real
+  `render_contract_scaffold` output → `requirement_present()` returns
+  `False` for its own requirements (`test_rules.py`); (2) real
+  `ContextService.build_gap_report` driven by real (not hand-typed)
+  scaffold output → `section_gaps` reports every missing item
+  (`test_context_gap_report.py`); the real pipeline strict path genuinely
+  blocks on an untouched scaffold and proceeds once the section is
+  genuinely (re)written (`test_pipeline_strict_gap.py`).
+- **Disclosed test-coverage hole closed** (verifier's own naming): the
+  documento-generico end-to-end acceptance test previously asserted only
+  `context_gaps`, never `section_gaps` — now asserts both, driven by the
+  real `build-sections` stage output (`test_documento_generico_
+  acceptance.py`).
+- **Two existing tests encoded the old buggy behavior — updated,
+  explicitly disclosed here** (coordinator's own instruction: "if existing
+  tests assert the old buggy behavior, they encode the bug"):
+  `test_strict_mode_proceeds_when_the_context_field_is_filled`
+  (`test_pipeline_strict_gap.py`) asserted that filling ONLY the context
+  field was sufficient for strict mode to proceed — that assertion only
+  held because `section_gaps` was silently empty for the still-unwritten
+  "introduccion" section. Renamed to
+  `test_strict_mode_still_blocks_on_the_untouched_scaffold_after_filling_
+  only_context` with the assertion reversed (`gap_stage["ok"] is False`),
+  and a NEW sibling test
+  (`test_strict_mode_proceeds_once_the_section_is_genuinely_written`)
+  covers the real positive case — a genuinely-authored section (written
+  without harness frontmatter so `build-sections`' own idempotency check
+  defers to a proposal file instead of clobbering it) actually lets strict
+  mode proceed.
+
+**Acceptance verification** (all confirmed, post-fix-batch):
+- Full suite green twice in a row: 1088 passed, 0 failed, 7 skipped (both
+  runs byte-identical pass/fail counts — no flakes).
+- `ruff check .`: 15 errors on `main` (independently re-verified via a
+  disposable `git worktree`, added and removed cleanly, never touching the
+  live working tree) and 15 on this branch — 0 net new.
+- `mypy src/docs/domain/rules.py`: no issues.
+
+**Not started**: none — this closes the final blocker; the
+universal-schema-harness change is implementation-feature-complete.
+Phase 12/13 remain open as cross-front closeout/deferred work.
+
 ## Phase 12: Final acceptance (spans all fronts)
 
 - [ ] 12.1 [spec: proposal success criteria] Confirm `documento-generico` passes `doctor`/`review-rules`/`build-rules`/`prep` with zero errors.
