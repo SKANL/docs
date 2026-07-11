@@ -36,6 +36,7 @@ def _service(evidence_repository) -> PipelineService:
         qa_service=unused,
         workspace=unused,
         ingest_service=unused,
+        context_service=unused,
     )
 
 

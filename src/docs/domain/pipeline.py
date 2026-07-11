@@ -9,6 +9,13 @@ _PREP_STAGES: list[tuple[str, bool]] = [
     ("collect-issues", False),
     ("build-ledger", False),
     ("build-sections", False),
+    # Gap report (design.md Decision 7): runs right after sections are
+    # scaffolded (needs their bodies) and before pack-context/review/build.
+    # fail_fast=True -- in strict mode a non-empty gap report MUST stop the
+    # pipeline before final output (spec: document-pipeline "Strict mode
+    # blocks on gaps"); the stage callable itself decides ok/fail based on
+    # the `strict` flag (draft always proceeds).
+    ("gap-report", True),
     ("pack-context", False),
 ]
 
