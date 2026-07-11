@@ -665,6 +665,15 @@ class IngestService:
         for rel in sorted(candidates):
             proposed_kind = candidates[rel] or None
             confirmed_placement = prior_confirmed.get(rel)
+            # A heuristic candidate with no proposed kind has nothing to
+            # confirm: it is a figure (it lands in the figure catalog), not a
+            # document-structure asset. Queueing it floods the confirmation
+            # queue with unanswerable entries -- the first real drop produced
+            # 59 such nulls against 1 real cover. A DECLARED asset always
+            # queues even without a guessable kind: putting it in
+            # inbox/assets/ is itself the request to place it.
+            if rel not in declared_by_rel and proposed_kind is None:
+                continue
             queue_entries[rel] = {
                 "proposed_kind": proposed_kind,
                 "confirmed_placement": confirmed_placement,

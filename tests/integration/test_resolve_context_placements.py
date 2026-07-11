@@ -68,6 +68,30 @@ def test_confirmed_cover_placement_is_usable_by_assembly(workspace):
     assert cover_parts == [{"type": "cover_from_asset", "asset": "cover.docx"}]
 
 
+def test_confirmed_cover_replaces_a_template_declared_cover_from_asset(workspace, tmp_path):
+    """A template may already declare its own `cover_from_asset` (the real
+    reporte-estadia-tic does). A confirmed cover must REPLACE it, not stack a
+    second one -- a document has exactly one cover. Found against the real
+    template: the resolved structure came back with two cover parts."""
+    templates = tmp_path / "templates"
+    template = dict(_TEMPLATE)
+    template["structure"] = [
+        {"type": "cover_from_asset", "asset": "cover"},
+        {"type": "sections"},
+    ]
+    (templates / "conportada.json").write_text(json.dumps(template), encoding="utf-8")
+
+    deps = Deps()
+    deps.documents.create("doc3", "conportada")
+    _write_confirmed_cover_placement(deps.workspace.doc_root("doc3") / "inbox")
+
+    parts = structure_parts(deps.resolve_context("doc3").config)
+
+    assert [p for p in parts if p.get("type") == "cover_from_asset"] == [
+        {"type": "cover_from_asset", "asset": "cover.docx"}
+    ]
+
+
 def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
     deps = Deps()
     deps.documents.create("doc2", "tesina")
@@ -77,3 +101,25 @@ def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
 
     assert not any(p.get("type") == "cover_from_asset" for p in parts)
     assert parts[0]["type"] == "cover_from_template"
+
+
+def test_doc_root_and_inbox_dir_tokens_expand_in_template_paths(workspace, tmp_path):
+    """A template's source paths point into the document's OWN inbox -- each
+    document is an isolated workspace. Found against the real
+    reporte-estadia-tic, whose paths carried an unexpanded `{tesina_root}`
+    from the pre-inbox layout, so `doctor` failed on a literal token."""
+    templates = tmp_path / "templates"
+    template = dict(_TEMPLATE)
+    template["paths"] = {"manual_dir": "{inbox_dir}/guides/manual", "root": "{doc_root}"}
+    (templates / "contokens.json").write_text(json.dumps(template), encoding="utf-8")
+
+    deps = Deps()
+    deps.documents.create("doc4", "contokens")
+    doc_root = deps.workspace.doc_root("doc4")
+
+    paths = deps.resolve_context("doc4").config["paths"]
+
+    # Compared as Path, not str: token expansion splices a resolved Windows path
+    # into a forward-slash template value, and every consumer reads it via Path().
+    assert Path(paths["manual_dir"]) == (doc_root / "inbox" / "guides" / "manual").resolve()
+    assert Path(paths["root"]) == doc_root.resolve()

@@ -397,7 +397,20 @@ class PipelineService:
         if docx_path and docx_path.exists():
             issues.extend(self.format_audit_service.audit_format(docx_path, config, strict=strict).issues)
             try:
-                self.qa_service.qa_docx(config, docx_path, strict=strict)
+                qa_dir = self.qa_service.qa_docx(config, docx_path, strict=strict)
             except Exception as exc:
                 issues.append(Issue("error", f"QA visual falló: {exc}", code="qa.failed"))
+            else:
+                # Draft degrades when LibreOffice is absent (the format audit
+                # above still ran). Degraded is not the same as failed -- but it
+                # is never silent either, or `verify` would report a clean visual
+                # QA that never happened.
+                if not any(qa_dir.glob("*.pdf")):
+                    issues.append(
+                        Issue(
+                            "warning",
+                            "QA visual omitido: LibreOffice no está disponible (auditoría de formato sí se ejecutó).",
+                            code="qa.skipped",
+                        )
+                    )
         return ReviewResult(issues)

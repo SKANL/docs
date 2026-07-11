@@ -108,7 +108,12 @@ def test_top_level_cover_docx_heuristic_detected_and_queued_not_auto_routed(tmp_
     assert entry["confirmed_placement"] is None
 
 
-def test_image_file_anywhere_is_heuristically_proposed(tmp_path: Path):
+def test_unproposable_image_is_cataloged_as_a_figure_not_queued_for_placement(tmp_path: Path):
+    """A heuristic image with no placement signal has nothing to confirm: it is
+    a figure (it lands in the figure catalog), not a document-structure asset.
+    Queueing it would flood the confirmation queue with unanswerable entries --
+    the real drop produced 59 such nulls against 1 real cover. It is still kept
+    out of markdown ingest and still reported, just never queued."""
     inbox = tmp_path / "inbox"
     (inbox / "images" / "guia").mkdir(parents=True)
     (inbox / "images" / "guia" / "page-001-image-001.png").write_bytes(_PIXEL_PNG)
@@ -117,13 +122,33 @@ def test_image_file_anywhere_is_heuristically_proposed(tmp_path: Path):
     report = service.ingest_inbox(inbox, tmp_path / "sections")
 
     queue = json.loads((inbox / "_placement-queue.json").read_text(encoding="utf-8"))
-    assert "images/guia/page-001-image-001.png" in queue["entries"]
-    # No naming signal -- proposed_kind stays null, never invented.
-    assert queue["entries"]["images/guia/page-001-image-001.png"]["proposed_kind"] is None
+    assert queue["entries"] == {}
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert [f["origin_relative_path"] for f in catalog["figures"]] == [
+        "images/guia/page-001-image-001.png"
+    ]
     # Reported (never silently dropped), never flattened to markdown either.
     assert report["ignored"] == [
         {"relative_path": "images/guia/page-001-image-001.png", "reason": "asset_candidate"}
     ]
+
+
+def test_declared_asset_without_a_guessable_kind_is_still_queued(tmp_path: Path):
+    """Putting a file in inbox/assets/ IS the declaration -- the harness must
+    still ask where it goes even when the filename carries no placement signal.
+    This is the line between "nothing to confirm" (heuristic, unqueued above)
+    and "declared, placement unknown" (queued here)."""
+    inbox = tmp_path / "inbox"
+    (inbox / "assets").mkdir(parents=True)
+    (inbox / "assets" / "diagrama.png").write_bytes(_PIXEL_PNG)
+    service = _service({})
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    queue = json.loads((inbox / "_placement-queue.json").read_text(encoding="utf-8"))
+    assert queue["entries"] == {
+        "assets/diagrama.png": {"proposed_kind": None, "confirmed_placement": None}
+    }
 
 
 def test_non_asset_like_file_is_not_proposed(tmp_path: Path):

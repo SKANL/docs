@@ -8,11 +8,11 @@
     "scope_policy": ""
   },
   "paths": {
-    "manual_dir": "{tesina_root}/guides/manual-estadia-tic",
-    "manual_pdf": "{tesina_root}/guides/GUÍA DE REFERENCIA PARA LA ELABORACIÓN DEL REPORTE DE ESTADÍA TIC (2).pdf",
-    "extracted_dir": "{tesina_root}/extracted",
+    "manual_dir": "{inbox_dir}/guides/manual-estadia-tic",
+    "manual_pdf": "{inbox_dir}/guides/GUÍA DE REFERENCIA PARA LA ELABORACIÓN DEL REPORTE DE ESTADÍA TIC (2).pdf",
+    "extracted_dir": "{inbox_dir}/extracted",
     "extracted_dir_policy": "rules_traceability_only",
-    "example_pdf": "{tesina_root}/example_tesina/RE-Ejemplo.pdf"
+    "example_pdf": "{inbox_dir}/example_tesina/RE-Ejemplo.pdf"
   },
   "normative": {
     "normative_source": "docs/guides/manual-estadia-tic",
@@ -23,14 +23,31 @@
       "hoja de guarda": "La hoja de guarda está excluida del arnés."
     },
     "first_person_patterns": [
-      "\\byo\\b", "\\bnosotros\\b", "\\bnosotras\\b", "\\bmi\\b", "\\bmis\\b",
-      "\\bnuestro\\b", "\\bnuestra\\b", "\\bdesarrollé\\b", "\\bdesarrollamos\\b",
-      "\\bconsidero\\b", "\\bcreemos\\b"
+      "\\byo\\b",
+      "\\bnosotros\\b",
+      "\\bnosotras\\b",
+      "\\bmi\\b",
+      "\\bmis\\b",
+      "\\bnuestro\\b",
+      "\\bnuestra\\b",
+      "\\bdesarrollé\\b",
+      "\\bdesarrollamos\\b",
+      "\\bconsidero\\b",
+      "\\bcreemos\\b"
     ],
     "subjective_terms": [
-      "excelente", "impresionante", "increíble", "increible", "claramente",
-      "obviamente", "afortunadamente", "lamentablemente", "simplemente",
-      "éxito", "exito", "fracaso"
+      "excelente",
+      "impresionante",
+      "increíble",
+      "increible",
+      "claramente",
+      "obviamente",
+      "afortunadamente",
+      "lamentablemente",
+      "simplemente",
+      "éxito",
+      "exito",
+      "fracaso"
     ]
   },
   "advisor_overrides": [
@@ -43,38 +60,73 @@
     }
   ],
   "preliminaries": {
-    "cover": { "enabled": true, "numbering": "none" },
-    "blank_page": { "enabled": true, "title": "HOJA EN BLANCO", "numbering": "roman", "start": 2 },
+    "cover": {
+      "enabled": true,
+      "numbering": "none"
+    },
+    "blank_page": {
+      "enabled": true,
+      "title": "HOJA EN BLANCO",
+      "numbering": "roman",
+      "start": 2
+    },
     "responsibility_page": {
       "enabled": true,
       "numbering": "roman",
       "text": "Aunque este trabajo hubiere servido para obtener el Grado de Técnico Superior Universitario en Desarrollo de Software Multiplataforma y hubiere sido aprobado por la Dirección de Tecnologías de la Información y Comunicación, sólo su autor es responsable de las doctrinas en él emitida"
     },
     "roman_pagination": {
-      "enabled": true, "starts_after_cover": true, "format": "lowerRoman",
-      "position": "bottom_right", "font": "Times New Roman", "font_pt": 12
+      "enabled": true,
+      "starts_after_cover": true,
+      "format": "lowerRoman",
+      "position": "bottom_right",
+      "font": "Times New Roman",
+      "font_pt": 12
     },
     "body_pagination_start": {
-      "section_id": "introduccion", "start": 1, "format": "decimal",
-      "position": "bottom_right", "font": "Times New Roman", "font_pt": 12
+      "section_id": "introduccion",
+      "start": 1,
+      "format": "decimal",
+      "position": "bottom_right",
+      "font": "Times New Roman",
+      "font_pt": 12
     }
   },
   "structure": [
-    { "type": "cover_from_asset", "asset": "cover" },
-    { "type": "blank_page" },
-    { "type": "fixed_text_page", "text": "Aunque este trabajo hubiere servido para obtener el Grado de Técnico Superior Universitario en Desarrollo de Software Multiplataforma y hubiere sido aprobado por la Dirección de Tecnologías de la Información y Comunicación, sólo su autor es responsable de las doctrinas en él emitida" },
+    {
+      "type": "cover_from_asset",
+      "asset": "cover"
+    },
+    {
+      "type": "blank_page"
+    },
+    {
+      "type": "fixed_text_page",
+      "text": "Aunque este trabajo hubiere servido para obtener el Grado de Técnico Superior Universitario en Desarrollo de Software Multiplataforma y hubiere sido aprobado por la Dirección de Tecnologías de la Información y Comunicación, sólo su autor es responsable de las doctrinas en él emitida"
+    },
     {
       "type": "sections",
-      "preliminary_pagination": { "format": "lowerRoman", "start": 2 },
+      "preliminary_pagination": {
+        "format": "lowerRoman",
+        "start": 2
+      },
       "body_restart_section": "introduccion",
-      "body_pagination": { "format": "decimal", "start": 1 }
+      "body_pagination": {
+        "format": "decimal",
+        "start": 1
+      }
     }
   ],
   "format": {
     "page_size": "letter",
     "page_margins_cm": {
       "cover_policy": "preserve_template",
-      "non_cover": { "top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5 },
+      "non_cover": {
+        "top": 2.5,
+        "right": 2.5,
+        "bottom": 2.5,
+        "left": 2.5
+      },
       "source": "advisor_override:margins-2-5cm-non-cover"
     },
     "body_font": "Times New Roman",
@@ -106,12 +158,27 @@
       "\\b\\d{10}\\b",
       "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
     ],
-    "sensitive_context_fields": ["RFC", "Teléfono", "Correo Electrónico", "Domicilio"],
+    "sensitive_context_fields": [
+      "RFC",
+      "Teléfono",
+      "Correo Electrónico",
+      "Domicilio"
+    ],
     "policy": "Los datos sensibles pueden permanecer en el contexto interno, pero no deben entrar al cuerpo salvo instrucción explícita."
   },
   "strict_policy": {
-    "draft": { "allow_pending": true, "length_violations": "warning", "missing_evidence": "warning", "apa_violations": "warning" },
-    "strict": { "allow_pending": false, "length_violations": "error", "missing_evidence": "error", "apa_violations": "error" }
+    "draft": {
+      "allow_pending": true,
+      "length_violations": "warning",
+      "missing_evidence": "warning",
+      "apa_violations": "warning"
+    },
+    "strict": {
+      "allow_pending": false,
+      "length_violations": "error",
+      "missing_evidence": "error",
+      "apa_violations": "error"
+    }
   },
   "cross_consistency": {
     "enabled": true,
@@ -120,12 +187,26 @@
   "documents_tools": {
     "enabled": true,
     "required_in_strict": true,
-    "scripts": ["insert_toc.py", "heading_audit.py", "section_audit.py", "style_lint.py", "captions_and_crossrefs.py", "table_geometry.py", "privacy_scrub.py"],
+    "scripts": [
+      "insert_toc.py",
+      "heading_audit.py",
+      "section_audit.py",
+      "style_lint.py",
+      "captions_and_crossrefs.py",
+      "table_geometry.py",
+      "privacy_scrub.py"
+    ],
     "render_docx": "{documents_render_docx}"
   },
   "ledger_seed": [
-    { "classification": "confirmado", "claim": "La portada se toma desde la plantilla DOCX existente." },
-    { "classification": "pendiente", "claim": "PENDIENTE: fuentes bibliográficas realmente consultadas para el marco teórico." }
+    {
+      "classification": "confirmado",
+      "claim": "La portada se toma desde la plantilla DOCX existente."
+    },
+    {
+      "classification": "pendiente",
+      "claim": "PENDIENTE: fuentes bibliográficas realmente consultadas para el marco teórico."
+    }
   ],
   "context_schema": {
     "topics": [
@@ -133,52 +214,147 @@
         "id": "alumno",
         "title": "Datos del Alumno",
         "required": true,
-        "consumed_by": ["agradecimientos", "introduccion"],
+        "consumed_by": [
+          "agradecimientos",
+          "introduccion"
+        ],
         "fields": [
-          { "key": "nombre", "label": "Nombre del Alumno", "required": true },
-          { "key": "carrera", "label": "Carrera", "required": true },
-          { "key": "grado_grupo", "label": "Grado y Grupo", "required": false },
-          { "key": "asesor", "label": "Nombre del Asesor Académico", "required": true },
-          { "key": "segundo_revisor", "label": "Nombre del Segundo Revisor", "required": false }
+          {
+            "key": "nombre",
+            "label": "Nombre del Alumno",
+            "required": true
+          },
+          {
+            "key": "carrera",
+            "label": "Carrera",
+            "required": true
+          },
+          {
+            "key": "grado_grupo",
+            "label": "Grado y Grupo",
+            "required": false
+          },
+          {
+            "key": "asesor",
+            "label": "Nombre del Asesor Académico",
+            "required": true
+          },
+          {
+            "key": "segundo_revisor",
+            "label": "Nombre del Segundo Revisor",
+            "required": false
+          }
         ]
       },
       {
         "id": "organizacion",
         "title": "Datos de la Organización",
         "required": true,
-        "consumed_by": ["agradecimientos", "introduccion", "capitulo-i-marco-contextual"],
+        "consumed_by": [
+          "agradecimientos",
+          "introduccion",
+          "capitulo-i-marco-contextual"
+        ],
         "fields": [
-          { "key": "nombre", "label": "Nombre", "required": true },
-          { "key": "alias", "label": "Alias (nombre corto)", "required": false },
-          { "key": "tipo", "label": "Tipo", "required": false },
-          { "key": "rfc", "label": "RFC", "required": false, "sensitive": true },
-          { "key": "telefono", "label": "Teléfono", "required": false, "sensitive": true },
-          { "key": "direccion", "label": "Dirección Empresa", "required": false, "sensitive": true },
-          { "key": "localidad", "label": "Localidad", "required": false },
-          { "key": "municipio", "label": "Municipio", "required": false },
-          { "key": "estado", "label": "Estado", "required": false }
+          {
+            "key": "nombre",
+            "label": "Nombre",
+            "required": true
+          },
+          {
+            "key": "alias",
+            "label": "Alias (nombre corto)",
+            "required": false
+          },
+          {
+            "key": "tipo",
+            "label": "Tipo",
+            "required": false
+          },
+          {
+            "key": "rfc",
+            "label": "RFC",
+            "required": false,
+            "sensitive": true
+          },
+          {
+            "key": "telefono",
+            "label": "Teléfono",
+            "required": false,
+            "sensitive": true
+          },
+          {
+            "key": "direccion",
+            "label": "Dirección Empresa",
+            "required": false,
+            "sensitive": true
+          },
+          {
+            "key": "localidad",
+            "label": "Localidad",
+            "required": false
+          },
+          {
+            "key": "municipio",
+            "label": "Municipio",
+            "required": false
+          },
+          {
+            "key": "estado",
+            "label": "Estado",
+            "required": false
+          }
         ]
       },
       {
         "id": "tutor",
         "title": "Datos del Tutor Empresarial",
         "required": false,
-        "consumed_by": ["agradecimientos"],
+        "consumed_by": [
+          "agradecimientos"
+        ],
         "fields": [
-          { "key": "nombre", "label": "Nombre", "required": false },
-          { "key": "apellido_paterno", "label": "Apellido Paterno", "required": false },
-          { "key": "apellido_materno", "label": "Apellido Materno", "required": false }
+          {
+            "key": "nombre",
+            "label": "Nombre",
+            "required": false
+          },
+          {
+            "key": "apellido_paterno",
+            "label": "Apellido Paterno",
+            "required": false
+          },
+          {
+            "key": "apellido_materno",
+            "label": "Apellido Materno",
+            "required": false
+          }
         ]
       },
       {
         "id": "estadia",
         "title": "Datos de la Estadía",
         "required": true,
-        "consumed_by": ["introduccion", "resumen"],
+        "consumed_by": [
+          "introduccion",
+          "resumen"
+        ],
         "fields": [
-          { "key": "periodo_inicio", "label": "Inicio de estadía", "required": true },
-          { "key": "periodo_fin", "label": "Fin de estadía", "required": true },
-          { "key": "duracion_horas", "label": "Duración en horas", "required": true }
+          {
+            "key": "periodo_inicio",
+            "label": "Inicio de estadía",
+            "required": true
+          },
+          {
+            "key": "periodo_fin",
+            "label": "Fin de estadía",
+            "required": true
+          },
+          {
+            "key": "duracion_horas",
+            "label": "Duración en horas",
+            "required": true
+          }
         ]
       },
       {
@@ -186,7 +362,11 @@
         "title": "Datos del Proyecto",
         "required": true,
         "multiline": true,
-        "consumed_by": ["resumen", "introduccion", "capitulo-i-marco-contextual"],
+        "consumed_by": [
+          "resumen",
+          "introduccion",
+          "capitulo-i-marco-contextual"
+        ],
         "prompt": "Describe el proyecto: nombre registrado, objetivo general, objetivos específicos, alcance, problemática y justificación."
       },
       {
@@ -194,88 +374,286 @@
         "title": "Sustento técnico",
         "required": false,
         "multiline": true,
-        "consumed_by": ["introduccion", "capitulo-iii-metodologia"],
+        "consumed_by": [
+          "introduccion",
+          "capitulo-iii-metodologia"
+        ],
         "prompt": "Tecnologías y arquitectura realmente usadas (lenguaje, framework, patrón, librerías)."
       }
     ]
   },
   "sections": [
-    { "id": "agradecimientos", "title": "AGRADECIMIENTOS", "optional": true, "order": 10 },
-    { "id": "indice", "title": "ÍNDICE", "required": true, "order": 20 },
-    { "id": "resumen", "title": "RESUMEN", "required": true, "order": 30 },
-    { "id": "introduccion", "title": "INTRODUCCIÓN", "required": true, "order": 40 },
-    { "id": "capitulo-i-marco-contextual", "title": "CAPÍTULO I. MARCO CONTEXTUAL", "required": true, "order": 50 },
-    { "id": "capitulo-ii-marco-teorico", "title": "CAPÍTULO II. MARCO TEÓRICO", "required": true, "order": 60 },
-    { "id": "capitulo-iii-metodologia", "title": "CAPÍTULO III. METODOLOGÍA O PROPUESTA A IMPLEMENTAR", "required": true, "order": 70 },
-    { "id": "capitulo-iv-resultados", "title": "CAPÍTULO IV. RESULTADOS Y EXPERIENCIAS", "required": true, "order": 80 },
-    { "id": "conclusiones", "title": "CONCLUSIONES", "required": true, "order": 90 },
-    { "id": "anexos", "title": "ANEXOS", "required": true, "order": 100 },
-    { "id": "referencias", "title": "REFERENCIAS BIBLIOGRÁFICAS", "required": true, "order": 110 }
+    {
+      "id": "agradecimientos",
+      "title": "AGRADECIMIENTOS",
+      "optional": true,
+      "order": 10
+    },
+    {
+      "id": "indice",
+      "title": "ÍNDICE",
+      "required": true,
+      "order": 20
+    },
+    {
+      "id": "resumen",
+      "title": "RESUMEN",
+      "required": true,
+      "order": 30
+    },
+    {
+      "id": "introduccion",
+      "title": "INTRODUCCIÓN",
+      "required": true,
+      "order": 40
+    },
+    {
+      "id": "capitulo-i-marco-contextual",
+      "title": "CAPÍTULO I. MARCO CONTEXTUAL",
+      "required": true,
+      "order": 50
+    },
+    {
+      "id": "capitulo-ii-marco-teorico",
+      "title": "CAPÍTULO II. MARCO TEÓRICO",
+      "required": true,
+      "order": 60
+    },
+    {
+      "id": "capitulo-iii-metodologia",
+      "title": "CAPÍTULO III. METODOLOGÍA O PROPUESTA A IMPLEMENTAR",
+      "required": true,
+      "order": 70
+    },
+    {
+      "id": "capitulo-iv-resultados",
+      "title": "CAPÍTULO IV. RESULTADOS Y EXPERIENCIAS",
+      "required": true,
+      "order": 80
+    },
+    {
+      "id": "conclusiones",
+      "title": "CONCLUSIONES",
+      "required": true,
+      "order": 90
+    },
+    {
+      "id": "anexos",
+      "title": "ANEXOS",
+      "required": true,
+      "order": 100
+    },
+    {
+      "id": "referencias",
+      "title": "REFERENCIAS BIBLIOGRÁFICAS",
+      "required": true,
+      "order": 110
+    }
   ],
   "section_contracts": {
     "agradecimientos": {
       "title": "AGRADECIMIENTOS",
-      "length": { "target_pages": 1, "min_words": 180, "max_words": 500 },
-      "required_content": ["agradecimiento institucional", "asesor académico", "tutora empresarial", "organización receptora"],
-      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": false
+      "length": {
+        "target_pages": 1,
+        "min_words": 180,
+        "max_words": 500
+      },
+      "required_content": [
+        "agradecimiento institucional",
+        "asesor académico",
+        "tutora empresarial",
+        "organización receptora"
+      ],
+      "evidence_required": false,
+      "apa_required": false,
+      "pending_allowed_in_draft": false
     },
     "indice": {
       "title": "ÍNDICE",
       "toc": true,
-      "length": { "target_pages": 1 },
-      "required_content": ["campo TOC dinámico", "títulos hasta tercer nivel", "paginación"],
-      "detect": { "campo TOC dinámico": ["[[toc]]", "toc"], "títulos hasta tercer nivel": ["[[toc]]", "índice"], "paginación": ["[[toc]]", "paginación", "página"] },
-      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": false
+      "length": {
+        "target_pages": 1
+      },
+      "required_content": [
+        "campo TOC dinámico",
+        "títulos hasta tercer nivel",
+        "paginación"
+      ],
+      "detect": {
+        "campo TOC dinámico": [
+          "[[toc]]",
+          "toc"
+        ],
+        "títulos hasta tercer nivel": [
+          "[[toc]]",
+          "índice"
+        ],
+        "paginación": [
+          "[[toc]]",
+          "paginación",
+          "página"
+        ]
+      },
+      "evidence_required": false,
+      "apa_required": false,
+      "pending_allowed_in_draft": false
     },
     "resumen": {
       "title": "RESUMEN",
-      "length": { "target_pages": 1, "min_words": 220, "max_words": 520 },
-      "required_content": ["tema del proyecto", "enfoque del trabajo", "motivo del proyecto", "resultados importantes o PENDIENTE"],
-      "detect": { "resultados importantes o PENDIENTE": ["resultado", "pendiente"] },
-      "evidence_required": true, "apa_required": false, "pending_allowed_in_draft": true
+      "length": {
+        "target_pages": 1,
+        "min_words": 220,
+        "max_words": 520
+      },
+      "required_content": [
+        "tema del proyecto",
+        "enfoque del trabajo",
+        "motivo del proyecto",
+        "resultados importantes o PENDIENTE"
+      ],
+      "detect": {
+        "resultados importantes o PENDIENTE": [
+          "resultado",
+          "pendiente"
+        ]
+      },
+      "evidence_required": true,
+      "apa_required": false,
+      "pending_allowed_in_draft": true
     },
     "introduccion": {
       "title": "INTRODUCCIÓN",
-      "length": { "min_pages": 2, "max_pages": 4, "min_words": 900, "max_words": 1800 },
-      "required_content": ["objetivo", "justificación", "problema", "delimitación espacial", "delimitación temporal", "unidad de análisis", "sustento técnico", "método o procedimiento", "capitulado"],
-      "evidence_required": true, "apa_required": false, "pending_allowed_in_draft": true
+      "length": {
+        "min_pages": 2,
+        "max_pages": 4,
+        "min_words": 900,
+        "max_words": 1800
+      },
+      "required_content": [
+        "objetivo",
+        "justificación",
+        "problema",
+        "delimitación espacial",
+        "delimitación temporal",
+        "unidad de análisis",
+        "sustento técnico",
+        "método o procedimiento",
+        "capitulado"
+      ],
+      "evidence_required": true,
+      "apa_required": false,
+      "pending_allowed_in_draft": true
     },
     "capitulo-i-marco-contextual": {
       "title": "CAPÍTULO I. MARCO CONTEXTUAL",
-      "required_content": ["situación de la empresa", "historia", "ubicación", "área asignada", "actores", "planteamiento del problema", "causas", "evidencias", "justificación", "objetivo general", "objetivos específicos"],
-      "evidence_required": true, "apa_required": false, "pending_allowed_in_draft": true
+      "required_content": [
+        "situación de la empresa",
+        "historia",
+        "ubicación",
+        "área asignada",
+        "actores",
+        "planteamiento del problema",
+        "causas",
+        "evidencias",
+        "justificación",
+        "objetivo general",
+        "objetivos específicos"
+      ],
+      "evidence_required": true,
+      "apa_required": false,
+      "pending_allowed_in_draft": true
     },
     "capitulo-ii-marco-teorico": {
       "title": "CAPÍTULO II. MARCO TEÓRICO",
-      "required_content": ["fundamentación teórica", "enfoque deductivo", "autores", "teorías", "conceptos clave", "antecedentes"],
-      "evidence_required": true, "apa_required": true, "pending_allowed_in_draft": true
+      "required_content": [
+        "fundamentación teórica",
+        "enfoque deductivo",
+        "autores",
+        "teorías",
+        "conceptos clave",
+        "antecedentes"
+      ],
+      "evidence_required": true,
+      "apa_required": true,
+      "pending_allowed_in_draft": true
     },
     "capitulo-iii-metodologia": {
       "title": "CAPÍTULO III. METODOLOGÍA O PROPUESTA A IMPLEMENTAR",
-      "required_content": ["estrategia", "técnica o procedimiento", "procesos", "instrumentos", "diseño", "aplicación de teoría"],
-      "evidence_required": true, "apa_required": true, "pending_allowed_in_draft": true
+      "required_content": [
+        "estrategia",
+        "técnica o procedimiento",
+        "procesos",
+        "instrumentos",
+        "diseño",
+        "aplicación de teoría"
+      ],
+      "evidence_required": true,
+      "apa_required": true,
+      "pending_allowed_in_draft": true
     },
     "capitulo-iv-resultados": {
       "title": "CAPÍTULO IV. RESULTADOS Y EXPERIENCIAS",
-      "required_content": ["evaluación", "alcance", "resultados por objetivo", "evidencias", "experiencias", "aportación"],
-      "evidence_required": true, "apa_required": false, "pending_allowed_in_draft": true
+      "required_content": [
+        "evaluación",
+        "alcance",
+        "resultados por objetivo",
+        "evidencias",
+        "experiencias",
+        "aportación"
+      ],
+      "evidence_required": true,
+      "apa_required": false,
+      "pending_allowed_in_draft": true
     },
     "conclusiones": {
       "title": "CONCLUSIONES",
-      "required_content": ["síntesis", "relación con objetivos", "hallazgos", "aportaciones", "líneas futuras"],
-      "evidence_required": true, "apa_required": false, "pending_allowed_in_draft": true
+      "required_content": [
+        "síntesis",
+        "relación con objetivos",
+        "hallazgos",
+        "aportaciones",
+        "líneas futuras"
+      ],
+      "evidence_required": true,
+      "apa_required": false,
+      "pending_allowed_in_draft": true
     },
     "anexos": {
       "title": "ANEXOS",
-      "required_content": ["material de apoyo", "referencias desde el cuerpo", "separadores por anexo"],
-      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+      "required_content": [
+        "material de apoyo",
+        "referencias desde el cuerpo",
+        "separadores por anexo"
+      ],
+      "evidence_required": false,
+      "apa_required": false,
+      "pending_allowed_in_draft": true
     },
     "referencias": {
       "title": "REFERENCIAS BIBLIOGRÁFICAS",
       "references_list": true,
-      "required_content": ["fuentes citadas", "formato APA 7", "orden alfabético"],
-      "detect": { "fuentes citadas": ["referencias", "pendiente"], "formato APA 7": ["apa 7", "apa"], "orden alfabético": ["alfabético", "orden"] },
-      "evidence_required": false, "apa_required": true, "pending_allowed_in_draft": true
+      "required_content": [
+        "fuentes citadas",
+        "formato APA 7",
+        "orden alfabético"
+      ],
+      "detect": {
+        "fuentes citadas": [
+          "referencias",
+          "pendiente"
+        ],
+        "formato APA 7": [
+          "apa 7",
+          "apa"
+        ],
+        "orden alfabético": [
+          "alfabético",
+          "orden"
+        ]
+      },
+      "evidence_required": false,
+      "apa_required": true,
+      "pending_allowed_in_draft": true
     }
   }
 }

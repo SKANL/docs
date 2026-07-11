@@ -94,8 +94,16 @@ class DoctorService:
         pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
         checks.append(Check("pandoc", bool(pandoc), pandoc or "No encontrado en PATH. Instalar Pandoc para build-docx."))
         libreoffice = self.tool_resolver.resolve_libreoffice(config.get("paths", {}))
+        # Optional, unlike pandoc: LibreOffice only renders the visual QA PDF.
+        # Its absence must not fail-fast the whole pipeline and deny the user a
+        # document the harness can otherwise build (qa-docx degrades in draft).
         checks.append(
-            Check("libreoffice", bool(libreoffice), libreoffice or "No encontrado en PATH. Instalar LibreOffice para qa-docx.")
+            Check(
+                "libreoffice",
+                bool(libreoffice),
+                libreoffice or "No encontrado en PATH. Instalar LibreOffice para el QA visual (opcional).",
+                required=False,
+            )
         )
 
         scripts_dir_value = config.get("paths", {}).get("documents_scripts_dir")
