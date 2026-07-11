@@ -28,7 +28,9 @@ _EXPECTED_FLAT_COMMANDS = {
     "format-audit-docx", "apply-corrections", "stamp-section",
 }
 _EXPECTED_GROUPS = {
-    "template": {"list", "show"},
+    # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
+    # 1b/1c) -- a deliberate surface growth, not drift.
+    "template": {"list", "show", "init", "validate"},
     "doc": {"current", "delete", "list", "new", "rename", "show", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
@@ -69,7 +71,7 @@ def test_commands_package_splits_by_concern():
     assert _names(section_app) == {
         "build-section", "pack-context", "review-section", "review-document",
     }
-    assert _names(template_app) == {"list", "show"}
+    assert _names(template_app) == {"list", "show", "init", "validate"}
     assert _names(doc_app) == {"current", "delete", "list", "new", "rename", "show", "use"}
     assert _names(asset_app) == {"add", "list", "rm"}
     assert _names(context_app) == {"elicit", "ingest", "rm", "set", "show", "status"}
