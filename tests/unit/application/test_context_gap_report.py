@@ -67,6 +67,30 @@ def test_missing_section_required_content_appears_as_a_section_gap(tmp_path: Pat
     assert report["section_gaps"] == [{"section_id": "introduccion", "missing": ["alcance"]}]
 
 
+def test_freshly_scaffolded_unedited_section_reports_every_required_item_as_a_gap(tmp_path: Path):
+    # CRITICAL-1 (verify-report-pr6.md): driven by the REAL
+    # render_contract_scaffold() output -- not hand-typed text -- so this
+    # would have caught the scaffold self-matching bug directly.
+    from docs.domain.section_rendering import render_contract_scaffold
+
+    topic = Topic(id="alumno", title="Alumno", required=False)
+    contract = SectionContract(required_content=["objetivo del proyecto", "justificacion", "problema"])
+    contracts = {"introduccion": contract}
+    template = _template(topic, contracts)
+    service = ContextService(_FakeContextRepo(), _FakeDocumentRepo(), context_markdown=None)
+    scaffold_body = render_contract_scaffold("Introducción", contract, context={})
+
+    report = service.build_gap_report(
+        "doc1", template,
+        section_bodies={"introduccion": scaffold_body},
+        sections_dir=tmp_path,
+    )
+
+    assert report["section_gaps"] == [
+        {"section_id": "introduccion", "missing": ["objetivo del proyecto", "justificacion", "problema"]}
+    ]
+
+
 def test_gap_report_is_empty_when_context_and_sections_are_complete(tmp_path: Path):
     topic = Topic(
         id="alumno", title="Alumno", required=True,

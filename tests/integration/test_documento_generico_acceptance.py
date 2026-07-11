@@ -181,3 +181,10 @@ def test_documento_generico_full_prep_pipeline_passes_with_zero_errors(tmp_path:
     # draft mode: gaps are advisory, never block -- but still reported.
     report = json.loads((sections_dir / "gap-report.json").read_text(encoding="utf-8"))
     assert report["context_gaps"], "documento-generico's required topics are never filled in this test"
+    # CRITICAL-1 regression (verify-report-pr6.md): every section here is
+    # genuinely freshly-scaffolded by the real build-sections stage above,
+    # never hand-written -- section_gaps must report real content gaps too,
+    # never silently self-satisfied by the harness's own PENDIENTE text.
+    assert report["section_gaps"], "freshly-scaffolded sections must report real content gaps"
+    introduccion_gap = next(g for g in report["section_gaps"] if g["section_id"] == "introduccion")
+    assert set(introduccion_gap["missing"]) == {"tema", "objetivo", "alcance"}

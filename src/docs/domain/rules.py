@@ -30,13 +30,31 @@ _RESULTS_RE = re.compile(r"\bresultados?\b")
 _RESULTS_EVIDENCE_RE = re.compile(r"\b(evidencia|captura|prueba|medici[oó]n|issue|commit|anexo)\b")
 _MARGIN_KEYS = ("top", "right", "bottom", "left")
 
+# CRITICAL-1 (verify-report-pr6.md): section_rendering.render_contract_scaffold
+# emits exactly three fixed PENDIENTE placeholder sentence templates -- e.g.
+# "PENDIENTE: documentar {item} con evidencia del ledger, contexto o fuentes."
+# -- which embed a required_content item's own words in its own "not yet
+# done" text, trivially self-satisfying requirement_present's substring
+# check. Stripped by their known opening verb before the presence check so a
+# freshly-scaffolded, unedited section can never self-satisfy its own
+# required_content (root-cause fix in the shared function -- fixes every
+# caller: review_section_contract AND ContextService.build_gap_report).
+# ponytail: verb-anchored, not "any PENDIENTE: sentence" -- a human/AI note
+# like "PENDIENTE: aún no hay resultados." (different opening verb) still
+# counts as present, preserving detect overrides like the estadía
+# "resultados importantes o PENDIENTE" -> ["resultado", "pendiente"] escape
+# hatch. Upgrade path if this ever collides: track generated-text provenance
+# instead of pattern-matching the harness's own wording.
+_SCAFFOLD_PENDIENTE_RE = re.compile(r"pendiente:\s*(?:documentar|agregar citas|ordenar)[^.]*\.")
+
 
 def requirement_present(requirement: str, plain: str, detect: dict[str, list[str]]) -> bool:
+    scrubbed = _SCAFFOLD_PENDIENTE_RE.sub(" ", plain)
     candidates = detect.get(requirement)
     if not candidates:
         words = [w for w in _REQUIREMENT_WORD_SPLIT_RE.split(requirement.lower()) if len(w) >= 4]
         candidates = [requirement] + words
-    return any(str(candidate).lower() in plain for candidate in candidates)
+    return any(str(candidate).lower() in scrubbed for candidate in candidates)
 
 
 def review_section_contract(

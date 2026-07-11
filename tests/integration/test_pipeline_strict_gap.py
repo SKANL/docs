@@ -154,6 +154,11 @@ def test_draft_mode_proceeds_and_gap_report_lists_the_missing_context_field(tmp_
     assert "pack-context" in [s["stage"] for s in summary["stages"]]
     report = json.loads((tmp_path / "sections" / "gap-report.json").read_text(encoding="utf-8"))
     assert report["context_gaps"] == [{"topic_id": "alumno", "missing": ["Nombre"]}]
+    # CRITICAL-1 regression (verify-report-pr6.md): "introduccion" is a real,
+    # freshly-scaffolded, unedited section here -- its own required_content
+    # ("algo") must ALSO show up as a genuine section gap, never silently
+    # self-satisfied by the harness's own PENDIENTE placeholder text.
+    assert report["section_gaps"] == [{"section_id": "introduccion", "missing": ["algo"]}]
 
 
 def test_strict_mode_blocks_before_pack_context_when_a_context_field_is_missing(tmp_path, monkeypatch):
@@ -179,7 +184,16 @@ def test_strict_mode_blocks_before_pack_context_when_a_context_field_is_missing(
     assert report["context_gaps"]
 
 
-def test_strict_mode_proceeds_when_the_context_field_is_filled(tmp_path, monkeypatch):
+def test_strict_mode_still_blocks_on_the_untouched_scaffold_after_filling_only_context(tmp_path, monkeypatch):
+    # CRITICAL-1 regression (verify-report-pr6.md): filling ONLY the context
+    # field is NOT enough -- "introduccion"'s section_contract still
+    # requires content ("algo") that build-sections has only ever
+    # SCAFFOLDED, never actually written. Before the fix this test asserted
+    # the OPPOSITE (strict proceeds) -- that assertion only held because
+    # requirement_present() trivially self-matched the harness's own
+    # "PENDIENTE: documentar algo con evidencia..." scaffold line. Updated
+    # here, explicitly, per the coordinator's fix-verify instruction: an
+    # existing test that asserts the old buggy behavior encodes the bug.
     Path(tmp_path / "context").mkdir()
     Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
     service, _ = _service(tmp_path)
@@ -192,5 +206,35 @@ def test_strict_mode_proceeds_when_the_context_field_is_filled(tmp_path, monkeyp
     )
 
     gap_stage = next(s for s in summary["stages"] if s["stage"] == "gap-report")
-    assert gap_stage["ok"] is True
+    assert gap_stage["ok"] is False
+    assert "pack-context" not in [s["stage"] for s in summary["stages"]]
+    report = json.loads((tmp_path / "sections" / "gap-report.json").read_text(encoding="utf-8"))
+    assert report["context_gaps"] == []
+    assert report["section_gaps"] == [{"section_id": "introduccion", "missing": ["algo"]}]
+
+
+def test_strict_mode_proceeds_once_the_section_is_genuinely_written(tmp_path, monkeypatch):
+    # The REAL counterpart: the section is genuinely authored (not the
+    # harness's own PENDIENTE scaffold) BEFORE the pipeline runs. Written
+    # WITHOUT harness frontmatter, so build-sections' own idempotency check
+    # (not "managed_by docs-harness") defers to a proposal file instead of
+    # clobbering it -- the real, edited content is what gap-report reads.
+    Path(tmp_path / "context").mkdir()
+    Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
+    service, _ = _service(tmp_path)
+    service.context_repository.write_topic("doc1", _TOPIC, {"nombre": "Ada"})
+    service.review_service.repository.write_section(
+        "doc1", 1, "introduccion", "# Introducción\n\nEsto documenta algo con evidencia real y verificable.\n"
+    )
+    _patch_doctor_tools(monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: "gh")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path, strict=True
+    )
+
+    gap_stage = next(s for s in summary["stages"] if s["stage"] == "gap-report")
+    assert gap_stage["ok"] is True, json.loads(
+        (tmp_path / "sections" / "gap-report.json").read_text(encoding="utf-8")
+    )
     assert "pack-context" in [s["stage"] for s in summary["stages"]]
