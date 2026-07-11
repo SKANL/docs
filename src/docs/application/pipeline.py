@@ -242,7 +242,11 @@ class PipelineService:
         def stage_ingest() -> tuple[bool, str]:
             inbox_dir = Path(config["paths"]["inbox_dir"])
             sections_dir = Path(config["paths"]["sections_dir"])
-            report = self.ingest_service.ingest_inbox(inbox_dir, sections_dir)
+            assets_dir_value = config["paths"].get("assets_dir")
+            assets_dir = Path(assets_dir_value) if assets_dir_value else None
+            report = self.ingest_service.ingest_inbox(
+                inbox_dir, sections_dir, strict=strict, assets_dir=assets_dir
+            )
             errors = [f for f in report["files"] if f.get("status") == "error"]
             detail = f"{report['processed']} archivos procesados"
             if errors:

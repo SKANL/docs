@@ -30,6 +30,7 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
+from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
 from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
@@ -106,7 +107,10 @@ class Deps:
             "txt": md_ingest_adapter,
         }
         self.ingest = IngestService(
-            FiletypeDetectorAdapter(), ingest_handlers, writer=FilesystemIngestArtifactWriter()
+            FiletypeDetectorAdapter(),
+            ingest_handlers,
+            writer=FilesystemIngestArtifactWriter(),
+            image_metadata=PythonDocxImageMetadataAdapter(),
         )
 
         self.assets = asset_service
