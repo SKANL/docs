@@ -92,3 +92,92 @@ def test_documento_generico_doctor_rules_config_check_passes(tmp_path: Path, mon
 
     rules_check = next(c for c in result.checks if c.name == "rules_config")
     assert rules_check.ok is True, rules_check.detail
+
+
+def test_documento_generico_full_prep_pipeline_passes_with_zero_errors(tmp_path: Path, monkeypatch):
+    """Task 11.10 (Front G closeout): the WHOLE `prep` stage set --
+    including the new Front G "gap-report" stage -- must still pass
+    end-to-end for `documento-generico`, proving Front G did not regress
+    the founding Front A acceptance gate this file exists to protect."""
+    from docs.application.asset import AssetService
+    from docs.application.collection import CollectionService
+    from docs.application.context import ContextService
+    from docs.application.context_pack import ContextPackService
+    from docs.application.docx_assembly import DocxRendererAdapter
+    from docs.application.format_audit import FormatAuditService
+    from docs.application.ingest import IngestService
+    from docs.application.pipeline import PipelineService
+    from docs.application.qa import QaService
+    from docs.application.review import ReviewService
+    from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
+    from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+    from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
+    from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
+    from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
+    from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
+    from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
+    from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
+    from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.tool_resolver_adapter.resolve_pandoc_executable", lambda paths: "pandoc"
+    )
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.tool_resolver_adapter.resolve_libreoffice_executable", lambda paths: "soffice"
+    )
+    monkeypatch.setattr("shutil.which", lambda name: "gh")
+
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
+    Path(tmp_path / "context").mkdir()
+    sections_dir = tmp_path / "sections"
+
+    config = _resolved_config(tmp_path)
+    config["paths"].update(
+        {
+            "sections_dir": str(sections_dir),
+            "source_manifest": str(tmp_path / "source.json"),
+            "issues_manifest": str(tmp_path / "issues.json"),
+            "code_evidence_manifest": str(tmp_path / "code-evidence.json"),
+            "fact_ledger": str(tmp_path / "00-fact-ledger.md"),
+            "prompts_dir": str(tmp_path / "prompts"),
+        }
+    )
+    template = Template.model_validate(config)
+
+    evidence_repo = JsonEvidenceRepository()
+    section_repo = JsonSectionRepository(workspace)
+    source_repo = FilesystemSourceRepository()
+    context_repo = JsonContextRepository(workspace)
+    document_repo = JsonDocumentRepository(workspace)
+    asset_service = AssetService(FilesystemAssetRepository(), workspace)
+    evidence_service = EvidenceService(evidence_repo)
+    review_service = ReviewService(section_repo)
+    collection_service = CollectionService(source_repo, evidence_repo)
+    context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
+    context_service = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
+    tool_resolver = SystemToolResolverAdapter()
+    docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
+    format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
+    qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
+    doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
+    ingest_service = IngestService(FiletypeDetectorAdapter(), {})
+    pipeline = PipelineService(
+        doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
+        review_service, context_pack_service, context_repo, docx_assembly_service,
+        format_audit_service, qa_service, workspace, ingest_service,
+        context_service=context_service,
+    )
+
+    summary = pipeline.run_pipeline("doc1", template, config, "prep", repo_root=tmp_path, strict=False)
+
+    failed = [s for s in summary["stages"] if not s["ok"]]
+    assert summary["passed"] is True, failed
+    assert [s["stage"] for s in summary["stages"]][:9] == [
+        "doctor", "build-rules", "review-rules", "collect-sources",
+        "collect-code-evidence", "collect-issues", "build-ledger",
+        "build-sections", "gap-report",
+    ]
+    # draft mode: gaps are advisory, never block -- but still reported.
+    report = json.loads((sections_dir / "gap-report.json").read_text(encoding="utf-8"))
+    assert report["context_gaps"], "documento-generico's required topics are never filled in this test"
