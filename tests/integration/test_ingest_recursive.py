@@ -354,33 +354,34 @@ def test_realistic_multi_source_drop_produces_decisive_provenance_for_every_item
 
     report = service.ingest_inbox(inbox, tmp_path / "sections")
 
+    # cover.docx and the extracted PNGs are Front F heuristic asset
+    # candidates (design.md Decision 6a) -- excluded from markdown-ingest
+    # `sources`, never flattened, but still reported (via `ignored` +
+    # `_placement-queue.json`), never invisible.
+    asset_candidate_paths = {"cover.docx", *(f"extracted/{name}" for name in png_names)}
     all_paths = {
         "example_tesina/ejemplo.pdf",
         *(f"guides/manual-estadia-tic/{name}" for name in manual_names),
         "extracted/notes.md",
         "extracted/data.json",
-        *(f"extracted/{name}" for name in png_names),
-        "cover.docx",
     }
     reported_paths = {e["relative_path"] for e in report["files"]}
     assert reported_paths == all_paths, "every item must appear -- zero invisible items"
 
     statuses = {e["relative_path"]: e["status"] for e in report["files"]}
     assert statuses["example_tesina/ejemplo.pdf"] == "ingested"
-    assert statuses["cover.docx"] == "ingested"
     for name in manual_names:
         assert statuses[f"guides/manual-estadia-tic/{name}"] == "ingested"
     assert statuses["extracted/notes.md"] == "ingested"
     assert statuses["extracted/data.json"] == "unsupported"
-    for name in png_names:
-        assert statuses[f"extracted/{name}"] == "unsupported"
 
     by_rel = {e["relative_path"]: e for e in report["files"]}
-    assert by_rel["cover.docx"]["source_dir"] == ""
     assert by_rel["example_tesina/ejemplo.pdf"]["source_dir"] == "example_tesina"
     assert by_rel[f"guides/manual-estadia-tic/{manual_names[0]}"]["source_dir"] == "guides/manual-estadia-tic"
 
-    assert report["ignored"] == []
+    ignored_paths = {e["relative_path"] for e in report["ignored"]}
+    assert ignored_paths == asset_candidate_paths
+    assert all(e["reason"] == "asset_candidate" for e in report["ignored"])
     assert report["processed"] == len(all_paths)
 
 

@@ -7,8 +7,10 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from docs.domain.figure_catalog import FigureEntry, build as build_figure_catalog
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
+from docs.domain.ports.image_metadata_port import ImageMetadataPort
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
@@ -17,14 +19,24 @@ from docs.domain.source_role import classify
 _DETECTION_REPORT_NAME = "_detection.json"
 _SOURCE_MANIFEST_NAME = "_source-manifest.json"
 _CLASSIFICATION_QUEUE_NAME = "_classification-queue.json"
+_PLACEMENT_QUEUE_NAME = "_placement-queue.json"
 
 # PR3 verify follow-up (finding a): these are the harness's OWN
 # `_`-prefixed bookkeeping files, always written at `inbox_dir` root --
 # a rescan finding them gets a distinct `"harness_artifact"` ignored-reason,
 # never conflated with a genuine user `_`-prefixed file.
 _HARNESS_ARTIFACT_NAMES = frozenset(
-    {_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME, _CLASSIFICATION_QUEUE_NAME}
+    {_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME, _CLASSIFICATION_QUEUE_NAME, _PLACEMENT_QUEUE_NAME}
 )
+
+# Verbatim-asset heuristic (design.md Decision 6a): an image anywhere
+# outside `inbox/assets/`, or a `.docx` whose path signals cover/portada/
+# anexo-visual intent, is PROPOSED (never auto-routed) to the placement
+# queue. ponytail: substring match on the lowercased relative path, no
+# content probing -- same grain as source_role.py's folder lexicon.
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".tiff", ".bmp"})
+_COVER_KEYWORDS = ("portada", "cover")
+_BACK_KEYWORDS = ("anexo-visual", "anexo_visual")
 
 # `inbox/assets/` is the verbatim-asset convention (design.md Decision 6) --
 # excluded from the recursive source walk entirely (routed elsewhere, not a
@@ -63,6 +75,27 @@ def _has_underscore_component(relative_posix: str) -> bool:
 
 def _is_under_assets(relative_posix: str) -> bool:
     return relative_posix.split("/", 1)[0] == _ASSETS_DIR_NAME
+
+
+def _guess_asset_kind(relative_posix: str) -> str | None:
+    lower = relative_posix.lower()
+    if any(keyword in lower for keyword in _COVER_KEYWORDS):
+        return "cover"
+    if any(keyword in lower for keyword in _BACK_KEYWORDS):
+        return "back"
+    return None
+
+
+def _is_heuristic_asset_candidate(relative_posix: str) -> bool:
+    suffix = Path(relative_posix).suffix.lower()
+    if suffix in _IMAGE_EXTENSIONS:
+        return True
+    return suffix == ".docx" and _guess_asset_kind(relative_posix) is not None
+
+
+def _structure_part_for_kind(kind: str, asset_name: str) -> dict[str, str]:
+    part_type = "cover_from_asset" if kind == "cover" else "embed_docx"
+    return {"type": part_type, "asset": asset_name}
 
 
 class _InlineJsonWriter:
@@ -104,20 +137,28 @@ class IngestService:
         detector: SourceTypeDetectorPort,
         handlers: dict[str, SourceIngestPort],
         writer: IngestArtifactWriter | None = None,
+        image_metadata: ImageMetadataPort | None = None,
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
         self.writer: IngestArtifactWriter = writer or _InlineJsonWriter()
+        self.image_metadata = image_metadata
 
     def ingest_inbox(
-        self, inbox_dir: Path, sections_dir: Path, strict: bool = False
+        self,
+        inbox_dir: Path,
+        sections_dir: Path,
+        strict: bool = False,
+        assets_dir: Path | None = None,
     ) -> dict[str, Any]:
         inbox_dir = Path(inbox_dir)
         sections_dir = Path(sections_dir)
         entries: list[dict[str, Any]] = []
         ignored: list[dict[str, str]] = []
         if inbox_dir.is_dir():
-            sources, ignored, empty_dir_entries = self._walk_inbox(inbox_dir)
+            sources, ignored, empty_dir_entries, declared_assets, heuristic_candidates = (
+                self._walk_inbox(inbox_dir)
+            )
             # Pre-scan snapshot (design.md Decision 3): captured ONCE, before
             # any conversion this scan, so status resolution can distinguish
             # "already present from a prior run" (skipped) from "produced
@@ -132,6 +173,14 @@ class IngestService:
             entries.extend(empty_dir_entries)
             entries.sort(key=lambda entry: entry["relative_path"])
 
+            # Front F (design.md Decision 6a): pre-ingest asset routing +
+            # pending-placement queue, same external-confirmation contract
+            # as the classification queue.
+            placements = self._route_and_queue_assets(
+                inbox_dir, declared_assets, heuristic_candidates, assets_dir
+            )
+            self._build_figure_catalog(inbox_dir, sections_dir, declared_assets, heuristic_candidates)
+
             # Front D (design.md Decision 4): classify every real source
             # entry, merge any externally-confirmed role from the PRIOR
             # classification queue (the interface where confirmation
@@ -142,7 +191,7 @@ class IngestService:
             manifest_sources = self._build_manifest_sources(inbox_dir, entries, strict)
             self._write_classification_queue(inbox_dir, manifest_sources)
             duplicates = self._find_near_duplicates(inbox_dir, manifest_sources)
-            self._write_source_manifest(inbox_dir, manifest_sources, duplicates)
+            self._write_source_manifest(inbox_dir, manifest_sources, duplicates, placements)
         report = {
             "processed": sum(1 for e in entries if e.get("status") != "empty_dir"),
             "files": entries,
@@ -152,9 +201,13 @@ class IngestService:
         self._write_detection_report(inbox_dir, report)
         return report
 
-    def _walk_inbox(
-        self, inbox_dir: Path
-    ) -> tuple[list[tuple[Path, str]], list[dict[str, str]], list[dict[str, str]]]:
+    def _walk_inbox(self, inbox_dir: Path) -> tuple[
+        list[tuple[Path, str]],
+        list[dict[str, str]],
+        list[dict[str, str]],
+        list[tuple[Path, str]],
+        list[tuple[Path, str]],
+    ]:
         # Recursive, deterministically-ordered walk (design.md Decision 2):
         # `rglob("*")` results are filtered then manually sorted by the
         # POSIX relative-path string -- the sort key, not the filesystem
@@ -176,6 +229,8 @@ class IngestService:
 
         sources: list[tuple[Path, str]] = []
         ignored: list[dict[str, str]] = []
+        declared_assets: list[tuple[Path, str]] = []
+        heuristic_candidates: list[tuple[Path, str]] = []
         for path in files:
             rel = _relposix(path, inbox_dir)
             if rel in _HARNESS_ARTIFACT_NAMES:
@@ -190,12 +245,31 @@ class IngestService:
                 ignored.append({"relative_path": rel, "reason": "underscore_prefixed"})
                 continue
             if _is_under_assets(rel):
+                # design.md Decision 6a: anything under inbox/assets/ is a
+                # DECLARED verbatim asset -- excluded from the source walk
+                # (unchanged from Front C) but now also routed (Front F).
                 ignored.append({"relative_path": rel, "reason": "assets_subtree"})
+                declared_assets.append((path, rel))
+                continue
+            if _is_heuristic_asset_candidate(rel):
+                # design.md Decision 6a: a likely verbatim asset (image
+                # anywhere, or a cover/portada/anexo-visual-signaled .docx)
+                # is excluded from markdown ingest -- it must never be
+                # flattened to markdown before a human confirms it either
+                # way -- but reported (never silently dropped) and proposed
+                # to the placement queue. "Not auto-routed" (design.md)
+                # means not auto-COPIED into asset storage without
+                # confirmation, not "still ingested as regular content".
+                ignored.append({"relative_path": rel, "reason": "asset_candidate"})
+                heuristic_candidates.append((path, rel))
                 continue
             sources.append((path, rel))
 
-        empty_dir_entries = self._find_empty_dirs(inbox_dir, dirs, {rel for _, rel in sources})
-        return sources, ignored, empty_dir_entries
+        asset_relatives = {rel for _, rel in (*declared_assets, *heuristic_candidates)}
+        empty_dir_entries = self._find_empty_dirs(
+            inbox_dir, dirs, {rel for _, rel in sources} | asset_relatives
+        )
+        return sources, ignored, empty_dir_entries, declared_assets, heuristic_candidates
 
     def _find_empty_dirs(
         self, inbox_dir: Path, dirs: list[Path], source_relatives: set[str]
@@ -381,13 +455,22 @@ class IngestService:
         self.writer.write_json(inbox_dir / _DETECTION_REPORT_NAME, report)
 
     def _write_source_manifest(
-        self, inbox_dir: Path, manifest_sources: list[dict[str, Any]], duplicates: list[dict[str, Any]]
+        self,
+        inbox_dir: Path,
+        manifest_sources: list[dict[str, Any]],
+        duplicates: list[dict[str, Any]],
+        placements: list[dict[str, Any]],
     ) -> None:
         # `inbox/_source-manifest.json` (design.md's artifact map): distinct
         # from the collection stage's `sections/source-manifest.json`.
         # `_`-prefixed, so the recursive walk itself always skips it, same
         # as `_detection.json`.
-        payload = {"schema": 1, "sources": manifest_sources, "duplicates": duplicates}
+        payload = {
+            "schema": 1,
+            "sources": manifest_sources,
+            "duplicates": duplicates,
+            "placements": placements,
+        }
         self.writer.write_json(inbox_dir / _SOURCE_MANIFEST_NAME, payload)
 
     # --- Front D: source-role classification (design.md Decision 4) -----
@@ -549,3 +632,121 @@ class IngestService:
                 reason=entry.get("reason", ""),
             )
         return overrides
+
+    # --- Front F: verbatim assets + placement queue (design.md Decision 6a)
+
+    def _route_and_queue_assets(
+        self,
+        inbox_dir: Path,
+        declared_assets: list[tuple[Path, str]],
+        heuristic_candidates: list[tuple[Path, str]],
+        assets_dir: Path | None,
+    ) -> list[dict[str, Any]]:
+        # Pipeline order (design.md Decision 6a): asset-routing -> recursive
+        # walk -> ingest -> near-dup -> classification queue. Declared
+        # assets (inbox/assets/) are routed UNCONDITIONALLY -- their
+        # presence there IS the declaration. Heuristic candidates elsewhere
+        # (image files, or a cover/portada/anexo-visual-signaled .docx) are
+        # only PROPOSED, never auto-routed -- and excluded from `sources` by
+        # `_walk_inbox` so they are never flattened to markdown before a
+        # human confirms a placement either way.
+        prior_confirmed = self._read_prior_confirmed_placements(inbox_dir)
+        candidates: dict[str, str] = {}  # relative_path -> proposed_kind ("" if none)
+        for _path, rel in declared_assets:
+            candidates[rel] = _guess_asset_kind(rel) or ""
+        for _path, rel in heuristic_candidates:
+            candidates[rel] = _guess_asset_kind(rel) or ""
+
+        declared_by_rel = {rel: path for path, rel in declared_assets}
+        source_by_rel = {rel: path for path, rel in heuristic_candidates}
+
+        queue_entries: dict[str, dict[str, Any]] = {}
+        placements: list[dict[str, Any]] = []
+        for rel in sorted(candidates):
+            proposed_kind = candidates[rel] or None
+            confirmed_placement = prior_confirmed.get(rel)
+            queue_entries[rel] = {
+                "proposed_kind": proposed_kind,
+                "confirmed_placement": confirmed_placement,
+            }
+
+            src_path = declared_by_rel.get(rel) or source_by_rel.get(rel)
+            asset_name = Path(rel).name
+            routed = rel in declared_by_rel  # unconditionally routed
+            if confirmed_placement and assets_dir is not None and src_path is not None:
+                # A CONFIRMED heuristic asset is routed now too (declared
+                # ones were already routed below, copy is idempotent).
+                self._copy_asset(src_path, assets_dir, asset_name)
+                routed = True
+            structure_part = (
+                _structure_part_for_kind(confirmed_placement, asset_name)
+                if confirmed_placement
+                else None
+            )
+            placements.append(
+                {
+                    "relative_path": rel,
+                    "proposed_kind": proposed_kind,
+                    "confirmed_placement": confirmed_placement,
+                    "routed": routed,
+                    "structure_part": structure_part,
+                }
+            )
+
+        if assets_dir is not None:
+            for path, rel in declared_assets:
+                self._copy_asset(path, assets_dir, Path(rel).name)
+
+        self.writer.write_json(
+            inbox_dir / _PLACEMENT_QUEUE_NAME, {"schema": 1, "entries": queue_entries}
+        )
+        return placements
+
+    def _copy_asset(self, src: Path, assets_dir: Path, name: str) -> None:
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, assets_dir / name)
+
+    def _read_prior_confirmed_placements(self, inbox_dir: Path) -> dict[str, str]:
+        queue_path = inbox_dir / _PLACEMENT_QUEUE_NAME
+        if not queue_path.exists():
+            return {}
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        confirmed: dict[str, str] = {}
+        for relative_path, entry in data.get("entries", {}).items():
+            placement = entry.get("confirmed_placement")
+            if placement:
+                confirmed[relative_path] = placement
+        return confirmed
+
+    # --- Front F: figure catalog (design.md Decision 6b) -----------------
+
+    def _build_figure_catalog(
+        self,
+        inbox_dir: Path,
+        sections_dir: Path,
+        declared_assets: list[tuple[Path, str]],
+        heuristic_candidates: list[tuple[Path, str]],
+    ) -> None:
+        image_candidates = [
+            (path, rel)
+            for path, rel in (*declared_assets, *heuristic_candidates)
+            if Path(rel).suffix.lower() in _IMAGE_EXTENSIONS
+        ]
+        figures: list[FigureEntry] = []
+        for path, rel in sorted(image_candidates, key=lambda item: item[1]):
+            data = path.read_bytes()
+            dimensions = self.image_metadata.read_dimensions(path) if self.image_metadata else None
+            width, height = dimensions if dimensions is not None else (None, None)
+            figures.append(
+                FigureEntry(
+                    sha256=sha256_hex(data),
+                    width_px=width,
+                    height_px=height,
+                    origin_relative_path=rel,
+                )
+            )
+        catalog_path = sections_dir / "figure-catalog.json"
+        self.writer.write_json(catalog_path, build_figure_catalog(figures))

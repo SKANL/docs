@@ -695,21 +695,154 @@ round resolves every finding, same branch, strict TDD throughout):
 - `mypy src/docs/domain/near_duplicate.py src/docs/domain/source_role.py`:
   no issues.
 
-**Not started** (future batches): Phase 10 (Front F) onward.
+**Not started** (future batches): Phase 11 (Front G) onward.
 
 ## Phase 10: Front F — verbatim assets + figure catalog
 
-- [ ] 10.1 [front:assets-figures] [spec: asset-management "File under inbox/assets/ bypasses markdown ingest"] Add failing test in `tests/integration/test_ingest_recursive.py` (or new asset-routing test file): a file under `inbox/assets/` is routed to asset storage before the recursive source walk and never appears as converted markdown.
-- [ ] 10.2 [front:assets-figures] [spec: asset-management "Heuristic classifies likely placement kind"] Add failing test: image-kind file or `.docx` in a `portada`/`cover`/`anexo-visual`-named folder outside `inbox/assets/` is proposed (not auto-routed) with a `proposed_kind`.
-- [ ] 10.3 [front:assets-figures] Implement pre-ingest asset-routing step: pipeline order becomes asset-routing -> recursive walk -> ingest -> near-dup -> classification queue. `inbox/assets/` subtree excluded from the source walk (extends Decision 2 skip rule). Run 10.1-10.2 — must pass.
-- [ ] 10.4 [front:assets-figures] [spec: asset-management "Newly detected asset is queued" / "Unconfirmed asset is never auto-placed"] Add failing test: newly routed asset appears in `_placement-queue.json` with heuristic kind; unconfirmed asset is never auto-placed at assembly and is reported as pending.
-- [ ] 10.5 [front:assets-figures] Implement `_placement-queue.json` writer via `IngestArtifactWriter`; wire confirmation into document `structure` (`cover_from_asset`/`embed_docx` parts) AND into a `placements` block of `_source-manifest.json`. Run 10.4 — must pass.
-- [ ] 10.6 [front:assets-figures] Add failing test in new `tests/integration/test_image_metadata_adapter.py`: real PNG/JPEG dimensions read correctly; unparseable format returns `null`, never raises.
-- [ ] 10.7 [front:assets-figures] Add new `domain/ports/image_metadata_port.py` (`ImageMetadataPort`) + `infrastructure/docx/python_docx_image_metadata_adapter.py` adapter (uses `docx.image`, no new dependency). Wire in `cli/_shared.py` `Deps.__init__`. Run 10.6 — must pass.
-- [ ] 10.8 [front:assets-figures] [spec: asset-management "Catalog is byte-identical across runs" / "Catalog entry records required metadata"] Add failing test in new `tests/unit/domain/test_figure_catalog.py`: pure catalog builder given metadata tuples produces stable `fig-<sha8>`-id-sorted entries `{id, sha256, width_px, height_px, origin_relative_path, caption}`; two independent builds byte-identical.
-- [ ] 10.9 [front:assets-figures] Implement `domain/figure_catalog.py` (`build(entries)`); write `sections/figure-catalog.json` via `IngestArtifactWriter`. Run 10.8 — must pass.
-- [ ] 10.10 [front:assets-figures] [spec: asset-management "A section resolves a referenced captioned figure"] Add failing integration test: a section referencing a figure by catalog `id` resolves the figure and caption at assembly. Wire section-to-catalog resolution. Run — must pass.
-- [ ] 10.11 [front:assets-figures] Run determinism suite ×2 for Front F closeout.
+- [x] 10.1 [front:assets-figures] [spec: asset-management "File under inbox/assets/ bypasses markdown ingest"] Add failing test in `tests/integration/test_ingest_recursive.py` (or new asset-routing test file): a file under `inbox/assets/` is routed to asset storage before the recursive source walk and never appears as converted markdown.
+- [x] 10.2 [front:assets-figures] [spec: asset-management "Heuristic classifies likely placement kind"] Add failing test: image-kind file or `.docx` in a `portada`/`cover`/`anexo-visual`-named folder outside `inbox/assets/` is proposed (not auto-routed) with a `proposed_kind`. **WARNING-1 note** (verify-report-pr5.md, accepted per design.md's own literal "image... anywhere" wording, no code change): the heuristic sweeps up ALL image files anywhere in the drop, including OCR-extraction byproduct images (e.g. `extracted/page-N.png`) that are not really cover/back candidates — for a real drop with dozens of such images this can produce a large, mostly-irrelevant placement queue. Accepted product shape for now; a design-level follow-up (e.g. excluding known extraction folders, or a lower-confidence queue tier) is tracked at 13.2.
+- [x] 10.3 [front:assets-figures] Implement pre-ingest asset-routing step: pipeline order becomes asset-routing -> recursive walk -> ingest -> near-dup -> classification queue. `inbox/assets/` subtree excluded from the source walk (extends Decision 2 skip rule). Run 10.1-10.2 — must pass.
+- [x] 10.4 [front:assets-figures] [spec: asset-management "Newly detected asset is queued" / "Unconfirmed asset is never auto-placed"] Add failing test: newly routed asset appears in `_placement-queue.json` with heuristic kind; unconfirmed asset is never auto-placed at assembly and is reported as pending.
+- [x] 10.5 [front:assets-figures] Implement `_placement-queue.json` writer via `IngestArtifactWriter`; wire confirmation into document `structure` (`cover_from_asset`/`embed_docx` parts) AND into a `placements` block of `_source-manifest.json`. Run 10.4 — must pass. **CRITICAL-1 fix** (verify-report-pr5.md, commit `ad9bbe7`): the first cut only delivered the manifest half — `structure_parts(config)`, the real consumer `docx_assembly.py`/`doctor.py` read, never saw a confirmed placement, so "assembly can reference the asset at its confirmed placement" (spec scenario "Confirmed placement is recorded and usable") was false. Fixed by reading confirmed placements' precomputed `structure_part` back from `inbox/_source-manifest.json` in `Deps.resolve_context` (`cli/_shared.py`) and splicing them into `config["structure"]` before `structure_parts()` is ever called downstream — reuses the existing consumer, no new one. Failing-test-first reproduced the verifier's exact check: confirm a cover placement, call the real `structure_parts(resolved_config)`, assert the `cover_from_asset` part is present (`tests/integration/test_resolve_context_placements.py`).
+- [x] 10.6 [front:assets-figures] Add failing test in new `tests/integration/test_image_metadata_adapter.py`: real PNG/JPEG dimensions read correctly; unparseable format returns `null`, never raises.
+- [x] 10.7 [front:assets-figures] Add new `domain/ports/image_metadata_port.py` (`ImageMetadataPort`) + `infrastructure/docx/python_docx_image_metadata_adapter.py` adapter (uses `docx.image`, no new dependency). Wire in `cli/_shared.py` `Deps.__init__`. Run 10.6 — must pass.
+- [x] 10.8 [front:assets-figures] [spec: asset-management "Catalog is byte-identical across runs" / "Catalog entry records required metadata"] Add failing test in new `tests/unit/domain/test_figure_catalog.py`: pure catalog builder given metadata tuples produces stable `fig-<sha8>`-id-sorted entries `{id, sha256, width_px, height_px, origin_relative_path, caption}`; two independent builds byte-identical.
+- [x] 10.9 [front:assets-figures] Implement `domain/figure_catalog.py` (`build(entries)`); write `sections/figure-catalog.json` via `IngestArtifactWriter`. Run 10.8 — must pass.
+- [x] 10.10 [front:assets-figures] [spec: asset-management "A section resolves a referenced captioned figure" — capability delivered as a resolvable domain function; assembly-time wiring explicitly OUT of scope, tracked at 13.3] Add failing test: a section referencing a figure by catalog `id` resolves the figure and caption. Wire section-to-catalog resolution. Run — must pass. **Formally disclosed deferral — WARNING-2 (verify-report-pr5.md)**: the spec scenario and this task's own original text both literally required assembly-time resolution ("WHEN the document is assembled — THEN the referenced figure... resolve[s]"); this is NOT what ships. What ships: a pure, unit-tested `domain/figure_catalog.py:resolve_section_figures(text, catalog)` function with ZERO assembly-time integration test and ZERO caller in `docx_assembly.py` (confirmed via src/-wide grep — the only caller is `ingest.py`'s own catalog-writing step; nothing downstream reads `sections/figure-catalog.json`). This checkbox marks the resolution *capability* as delivered and unit-proven, not the assembly-time splice — the literal task bar as originally worded is intentionally NOT what "done" means here. Same class of deliberate deferral as Front D's `role_status` (queued/resolvable, not auto-spliced). Assembly-time wiring is a separate slice, tracked at 13.3 — do not re-close 13.3 by reinterpreting this checkbox.
+- [x] 10.11 [front:assets-figures] Run determinism suite ×2 for Front F closeout.
+
+### Apply Progress — Batch 5 (Front F: verbatim assets + figure catalog)
+
+Branch `feat/usch-f-assets-figures` off `main` @ `7839e0f` (PRs A-E merged,
+PR4's "correct batch label this time" ledger entry closed the loop).
+
+**Commits** (work units, oldest to newest):
+1. `f896deb` feat(figure-catalog): add pure catalog builder + section figure resolution
+2. `cf410bf` feat(assets): add ImageMetadataPort + python-docx-backed adapter
+3. `c3c4a16` feat(ingest): wire verbatim-asset routing, placement queue, figure catalog
+4. `46e9415` fix(ingest): exclude heuristic asset candidates from markdown ingest
+
+**Design correction disclosed** (self-caught, not a verify-round finding):
+commit `c3c4a16`'s first cut kept heuristic-detected asset candidates
+(top-level `cover.docx`, images anywhere) IN the normal `sources` list, so
+they were BOTH proposed to the placement queue AND flattened to markdown by
+their registered handler — a literal reading of design.md's "not
+auto-routed... avoids stealing a legitimate .docx content source." Re-reading
+the coordinator's own real-drop acceptance wording ("the cover never
+flattened to markdown, nothing silent") surfaced the contradiction before
+any verify round did. Commit `46e9415` fixes it: `_walk_inbox` now excludes
+heuristic candidates from `sources` entirely (reported via `ignored`, reason
+`asset_candidate` — never silent), and `_route_and_queue_assets`/
+`_build_figure_catalog` consume the new `heuristic_candidates` list instead
+of re-scanning `sources`. "Not auto-routed" now reads as "not auto-COPIED
+into asset storage without confirmation," not "still eligible for ingest."
+Updated the pre-existing PR3 test
+`test_realistic_multi_source_drop_produces_decisive_provenance_for_every_item`
+(`tests/integration/test_ingest_recursive.py`) to match — its `cover.docx`
+and extracted PNGs are now asset candidates, moved from `report["files"]`
+into `report["ignored"]`.
+
+**Real-drop acceptance test** (coordinator-specified):
+`test_real_drop_cover_convention_asset_and_catalog_images_all_visible` in
+`tests/integration/test_ingest_assets_figures.py` — top-level `cover.docx`
+(heuristic → queued, never flattened), `inbox/assets/logo.png` (convention →
+routed unconditionally), and a nested `images/guia-referencia-estadia-tic/`
+folder (real drop naming) with one genuinely parseable tiny PNG and one
+genuinely unparseable file, using the REAL `PythonDocxImageMetadataAdapter`
+(not the file's fake) so the null-dimensions path is honestly exercised, not
+masked. Asserts nothing is silent: every dropped file appears in
+`report["files"] | report["ignored"]`.
+
+**Ponytail (laziness, level full) choices**:
+- `_route_and_queue_assets` uses plain `shutil.copyfile` into an injected
+  `assets_dir: Path`, not `AssetService` (would need a new `doc_id`/
+  `Workspace` dependency inside `IngestService` for no behavioral gain —
+  mirrors how `sections_dir` is already a plain `Path` param).
+- `ImageMetadataPort` has exactly one adapter (`PythonDocxImageMetadataAdapter`,
+  built on `docx.image` — no new runtime dependency); no second
+  implementation "for later."
+- Figure references use a `[[figure:fig-XXXXXXXX]]` marker mirroring the
+  existing `[[TOC]]` convention (`section_rendering.py`) — no new syntax
+  family invented.
+
+**Scope boundary disclosed** (task 10.10, same class as Front D's
+`role_status`): `resolve_section_figures(text, catalog)` is a pure,
+unit-tested domain function satisfying the spec's "a section resolves a
+referenced captioned figure" capability. It is NOT spliced into the DOCX
+assembly rendering pipeline (`docx_assembly.py`) — no assembly-level
+consumer of `[[figure:...]]` markers exists yet, and the coordinator's own
+framing scoped this batch to "the routing/declaration gap, not new
+rendering code" (unlike `cover_from_asset`/`embed_docx`, which already had a
+working assembly-side consumer in `docx_assembly.py`/`doctor.py` to wire
+into).
+
+**Acceptance verification** (all confirmed):
+- Full suite green twice in a row: 1054 passed, 0 failed, 7 skipped (both
+  runs byte-identical pass/fail counts — no flakes).
+- `ruff check .`: 15 errors on `main` (independently re-verified via a
+  disposable `git worktree`, added and removed cleanly, never touching the
+  live working tree) and 15 on this branch — 0 net new.
+- `mypy` on all touched files (`application/ingest.py`,
+  `domain/figure_catalog.py`, `domain/ports/image_metadata_port.py`,
+  `infrastructure/docx/python_docx_image_metadata_adapter.py`,
+  `cli/_shared.py`, `application/pipeline.py`): no issues attributable to
+  these files (remaining reported errors are pre-existing untyped
+  third-party stub gaps in unrelated modules, unchanged from `main`).
+
+**Not started** (future batches): Phase 11 (Front G) onward.
+
+### Apply Progress — Batch 5 fix-verify round (Front F)
+
+Verify report `openspec/changes/universal-schema-harness/verify-report-pr5.md`
+returned needs-fixes: 1 CRITICAL, 2 WARNING. Fixed on the same branch
+`feat/usch-f-assets-figures`, strict TDD, work-unit commits.
+
+**Commits** (work units, oldest to newest):
+5. `ad9bbe7` fix(cli): splice confirmed asset placements into resolved structure (CRITICAL-1)
+6. (this commit) docs(tasks): tighten 10.10 wording, disclose WARNING-1, add 13.2/13.3 follow-ups (WARNING-1 + WARNING-2)
+
+**Fix-verify findings and resolutions**:
+- **CRITICAL-1** (task 10.5's own stated deliverable — "wire confirmation
+  into document structure" — was half-missing and undisclosed; a confirmed
+  cover placement was completely inert for assembly, contradicting the
+  spec scenario "Confirmed placement is recorded and usable"): IMPLEMENTED
+  (not just disclosed), per the coordinator's explicit instruction. Failing-
+  test-first reproduced the verifier's exact check
+  (`tests/integration/test_resolve_context_placements.py`): confirm a
+  cover.docx placement, call the REAL `structure_parts(resolved_config)`
+  consumer directly, assert nothing before the fix / the `cover_from_asset`
+  part after. Fix reuses the existing seam per the ponytail directive: no
+  new assembly consumer invented, no `IngestService` access to document
+  config added. `Deps.resolve_context` (`cli/_shared.py`) now reads
+  confirmed placements' precomputed `structure_part` back from
+  `inbox/_source-manifest.json` and splices them into `config["structure"]`
+  before any downstream `structure_parts()` call — a confirmed cover
+  replaces the template default, a confirmed back placement appends after
+  `sections`.
+- **WARNING-1** (heuristic image-detection scope is broad enough to sweep
+  up PDF/OCR-extraction images, not just cover/portada candidates): no code
+  change (accepted product shape per design.md's own literal wording, per
+  the coordinator's explicit instruction) — disclosed inline at task 10.2
+  and tracked as a design-level follow-up at 13.2.
+- **WARNING-2** (task 10.10's checkbox/spec wording promised assembly-time
+  figure resolution that is honestly-but-not-formally deferred): 10.10's
+  wording tightened to explicitly state the literal spec/task bar
+  (assembly-time resolution) is NOT met — only the underlying resolution
+  *capability* (a pure, unit-tested domain function) ships this batch — and
+  a tracked follow-up task (13.3) opened for the actual assembly-time
+  splice, mirroring the Phase 13 hardening-follow-up pattern already
+  established by 13.1.
+
+**Acceptance verification** (all confirmed, post-fix-batch):
+- Full suite green twice in a row: 1056 passed, 0 failed, 7 skipped (both
+  runs byte-identical pass/fail counts — no flakes; +2 tests over the
+  original batch's 1054 for the new CRITICAL-1 regression test file).
+- `ruff check .`: 15 errors on this branch — 0 net new (matches `main`).
+- `mypy src/docs/cli/_shared.py`: no issues attributable to this file
+  (remaining reported errors are the same pre-existing untyped
+  third-party-stub gaps observed throughout this change).
+
+**Not started** (future batches): Phase 11 (Front G) onward.
 
 ## Phase 11: Front G — template lifecycle + gap report
 
@@ -736,3 +869,5 @@ round resolves every finding, same branch, strict TDD throughout):
 ## Phase 13: Hardening follow-ups (cross-front, additive)
 
 - [ ] 13.1 [front:hardening] [WARNING-4, PR2 fix-batch verify] Reconsider the no-literal structural guard's (`tests/unit/test_no_document_type_literal.py`) scan scope. Two document-type policy literals have now been found and fixed OUTSIDE its current `domain/rules.py` + `domain/normative.py` scope, by adversarial review rather than the original `explore.md` inventory: `domain/evidence.py`'s `pdf_and_extracted_use` (PR1, WARNING-2) and `application/doctor.py`'s `extracted_dir_policy` comparison (PR2, NEW-SUGGESTION-1). Per the PR2 verify report's judgment: the guard's current narrow scope is acceptable to leave unresolved for now (as a disciplined, separately-reviewable decision, not silently widened inside an unrelated bugfix), but "different architectural layer, therefore out of scope" is weaker as an architectural argument than as a process one — two independent recurrences suggest the anti-pattern is not confined to `domain/` as a layer. Evaluate before Fronts C-G add more application-layer consumers of template-declared policy: either widen the guard to cover application services that read template-declared policy fields, or explicitly accept the narrower domain-only scope with a reason stronger than layer membership alone. Do NOT implement as part of landing this task — decide and record the outcome, then implement in its own commit if widening is chosen.
+- [ ] 13.2 [front:hardening] [WARNING-1, PR5 verify report] The Front F heuristic image-detection scope (`_is_heuristic_asset_candidate` in `application/ingest.py`) matches design.md's own literal "image... anywhere" wording, but in a real drop with dozens of OCR-extraction byproduct images (e.g. `extracted/page-N.png`), this produces a large, mostly-irrelevant `_placement-queue.json` that can obscure the few genuine cover/portada candidates. Evaluate before real-world drops exercise this at scale: either exclude images under folders that already signal non-asset/extraction intent (reusing `source_role.py`'s EVIDENCE/extraction lexicon rather than inventing a new one), or queue low-confidence (no naming signal) images in a visibly separate tier from clearly-named ones. Decide and record the outcome before implementing.
+- [ ] 13.3 [front:hardening] [WARNING-2, PR5 verify report — task 10.10 assembly-time deferral] Wire `domain/figure_catalog.py:resolve_section_figures(text, catalog)` into the DOCX assembly rendering pipeline so the spec scenario "A section resolves a referenced captioned figure" is satisfied AT ASSEMBLY, not just as an isolated, unit-tested domain function. Requires a new assembly-time consumer (unlike `cover_from_asset`/`embed_docx`, `docx_assembly.py` has no existing reader of `sections/figure-catalog.json` or `[[figure:...]]` markers to wire into) — add a failing integration test first: a section body containing `[[figure:fig-<id>]]` resolves to the correct figure + caption when the document is assembled. This is a separate, reviewable slice; do not fold it into an unrelated fix.

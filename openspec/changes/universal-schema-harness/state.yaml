@@ -22,16 +22,18 @@ phases:
   apply:
     status: in-progress
     note: >
-      batch 4/7 COMPLETE: Fronts D+E (source-role classification with
-      confirmation queue, 5-word-shingle Jaccard near-duplicate detection
-      with accent/markdown normalization) on branch
-      feat/usch-d-roles-duplicates (13 commits), verify passes 1+2
-      (needs-fixes: accent-normalization CRITICAL masked by a vacuous
-      test -> ready-for-pr with non-vacuous-test proof). PRs #12 (A),
-      #13 (B), #14 (C) MERGED. Next: Front F (verbatim assets + figure
-      catalog). Open follow-ups: task 13.1 (guard scope), NEW-SUGGESTION-3
-      (empty nested subdir sweep), role_status has no cross-service
-      consumer yet (deferred to G/gap-report wiring).
+      batch 5/6 COMPLETE: Front F (verbatim asset pre-ingest routing,
+      _placement-queue.json, confirmed-placement wiring into resolved
+      structure, deterministic figure catalog) on branch
+      feat/usch-f-assets-figures (7 commits), verify pass 1 needs-fixes
+      (CRITICAL: placement confirmation inert - manifest half only, never
+      reached structure_parts) -> fixed (_apply_confirmed_placements in
+      resolve_context) + orchestrator self-verified the small fix (RED test
+      against real structure_parts consumer; auto-confirm invariant holds:
+      structure_part only set when confirmed_placement truthy). PRs #12 (A)
+      #13 (B) #14 (C) #15 (D+E) MERGED. Next+last: Front G (template
+      lifecycle + gap report). Open follow-ups: 13.1 guard scope, 13.2/13.3
+      figure assembly consumer + heuristic scope, NEW-SUGGESTION-3.
   verify:
     status: pending
   archive:

@@ -173,7 +173,13 @@ def test_ingest_inbox_delegates_json_artifact_writes_to_injected_writer(tmp_path
     service.ingest_inbox(inbox, tmp_path / "sections")
 
     written_names = {path.name for path, _ in writer.calls}
-    assert written_names == {"_detection.json", "_source-manifest.json", "_classification-queue.json"}
+    assert written_names == {
+        "_detection.json",
+        "_source-manifest.json",
+        "_classification-queue.json",
+        "_placement-queue.json",
+        "figure-catalog.json",
+    }
 
 
 def test_handler_failure_preserves_detected_kind_in_error_entry(tmp_path: Path):
