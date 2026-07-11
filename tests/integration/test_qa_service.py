@@ -106,3 +106,20 @@ def test_qa_docx_reports_configured_documents_audit_results(tmp_path):
     report_text = (output_dir / "qa-report.md").read_text(encoding="utf-8")
     assert "- OK `heading_audit.py`" in report_text
     assert "- OK `section_audit.py`" in report_text  # not found -> ok under non-strict
+
+
+@pytest.mark.skipif(_HAS_LIBREOFFICE, reason="requires LibreOffice to be unavailable")
+def test_qa_docx_draft_degrades_without_libreoffice_and_still_audits_format(tmp_path):
+    """LibreOffice only renders the visual PDF; the format audit (margins,
+    fonts, spacing) is pure python-docx. In draft, a missing optional tool must
+    degrade -- reporting the skipped render -- not abort the pipeline and deny
+    the user their document. Strict still raises (see the test above)."""
+    docx_path = _make_docx(tmp_path)
+    service = _make_service()
+    config = {"paths": {"output_qa_dir": str(tmp_path / "qa")}}
+
+    output_dir = service.qa_docx(config, docx_path, strict=False)
+
+    report = (output_dir / "qa-report.md").read_text(encoding="utf-8")
+    assert "no disponible" in report.lower()
+    assert "auditor" in report.lower()  # the format audit still ran

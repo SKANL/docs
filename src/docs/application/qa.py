@@ -25,7 +25,17 @@ class QaService:
             ensure_child_path(Path(config["paths"]["output_qa_dir"]), output_dir)
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        expected_pdf = self.port.render_docx_to_pdf(config, docx_path, output_dir)
+        # The visual PDF render is the ONLY part of QA that needs LibreOffice;
+        # the format audit below (margins, fonts, spacing) is pure python-docx.
+        # In draft, a missing optional tool degrades to a reported skip rather
+        # than denying the user their document. Strict still raises: asking for
+        # strict QA is asking for the full evidence, render included.
+        try:
+            expected_pdf: Path | None = self.port.render_docx_to_pdf(config, docx_path, output_dir)
+        except RuntimeError:
+            if strict:
+                raise
+            expected_pdf = None
 
         # PNG-per-page rendering is permanently out of scope (user decision,
         # 2026-06-21) — will be reimplemented differently later. Verbatim

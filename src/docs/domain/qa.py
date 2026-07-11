@@ -15,17 +15,25 @@ def ensure_child_path(parent: Path, child: Path) -> None:
 
 def render_qa_report(
     docx_path: Path,
-    pdf_path: Path,
+    pdf_path: Path | None,
     pngs: list[Path],
     audit: ReviewResult,
     document_audits: list[dict[str, Any]] | None = None,
 ) -> str:
     document_audits = document_audits or []
+    # `pdf_path is None` means the visual render was skipped in draft because
+    # LibreOffice is absent -- said plainly rather than reported as "0 bytes",
+    # which reads like a corrupt render instead of a tool that was never run.
+    pdf_line = (
+        "- PDF: no disponible (LibreOffice ausente; el render visual se omitió en borrador)"
+        if pdf_path is None
+        else f"- PDF: {pdf_path} ({pdf_path.stat().st_size if pdf_path.exists() else 0} bytes)"
+    )
     lines = [
         "# QA DOCX",
         "",
         f"- DOCX: {docx_path}",
-        f"- PDF: {pdf_path} ({pdf_path.stat().st_size if pdf_path.exists() else 0} bytes)",
+        pdf_line,
         f"- PNG pages: {len(pngs)}",
         "- Índice dinámico: el campo TOC se actualiza al abrir el DOCX en Word o con Ctrl+A y F9; el render de QA puede mostrar el texto de actualización pendiente.",
         "",

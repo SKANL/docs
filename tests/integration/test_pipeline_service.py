@@ -543,7 +543,7 @@ def test_verify_all_skips_docx_checks_when_no_draft_exists(tmp_path):
 # absent (as it is on this host).
 
 
-def test_verify_all_appends_qa_failed_issue_when_libreoffice_unavailable(tmp_path, monkeypatch):
+def test_verify_all_reports_qa_skipped_when_libreoffice_unavailable_in_draft(tmp_path, monkeypatch):
     Path(tmp_path / "context").mkdir()
     service, _ = _service(tmp_path)
     config = _pipeline_config(tmp_path)
@@ -558,7 +558,10 @@ def test_verify_all_appends_qa_failed_issue_when_libreoffice_unavailable(tmp_pat
         lambda paths: None,
     )
     result = service.verify_all("doc1", _template(), config, strict=False)
-    assert any(issue.code == "qa.failed" for issue in result.issues)
+    # Degraded, not failed: the visual render is optional in draft, but its
+    # absence is reported -- never a silently "clean" QA that never ran.
+    assert any(issue.code == "qa.skipped" and issue.severity == "warning" for issue in result.issues)
+    assert not any(issue.code == "qa.failed" for issue in result.issues)
 
 
 def test_verify_all_finds_docx_at_configured_draft_name(tmp_path, monkeypatch):
@@ -582,9 +585,9 @@ def test_verify_all_finds_docx_at_configured_draft_name(tmp_path, monkeypatch):
 
     result = service.verify_all("doc1", _template(), config, strict=False)
 
-    # It found and audited the custom-named file (qa.failed comes from the
+    # It found and audited the custom-named file (qa.skipped comes from the
     # QA stage running against it, not from "no docx found at all").
-    assert any(issue.code == "qa.failed" for issue in result.issues)
+    assert any(issue.code == "qa.skipped" for issue in result.issues)
 
 
 # --- Task 8.1: ingest stage_set wiring -----------------------------------
