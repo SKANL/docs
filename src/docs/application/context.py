@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+from docs.application.ingest import _InlineJsonWriter
 from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
+from docs.domain.markdown_text import clean_markdown_text
 from docs.domain.models.template import Template, Topic
+from docs.domain.ports.context_markdown_port import ContextMarkdownPort
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_repository import DocumentNotFoundError, DocumentRepository
-from docs.domain.ports.context_markdown_port import ContextMarkdownPort
+from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
+from docs.domain.rules import requirement_present
 
 
 class ContextService:
@@ -121,3 +126,47 @@ class ContextService:
         pairs = [(s, self.context_repo.read_topic(doc_id, self._find_topic(template, s.id))) for s in statuses]
         text = self.context_markdown.render_requests(template.context_schema, pairs, only_topic=only_topic)
         return self.context_repo.write_requests(doc_id, text)
+
+    def build_gap_report(
+        self,
+        doc_id: str,
+        template: Template,
+        section_bodies: dict[str, str],
+        sections_dir: Path,
+        writer: IngestArtifactWriter | None = None,
+    ) -> dict[str, Any]:
+        """Machine-readable gap report (design.md Decision 7, spec:
+        document-pipeline "Machine-Readable Gap Report") -- combines
+        context-required-field gaps (reusing `status`/`missing_fields`,
+        already built) with section `required_content` gaps (reusing
+        `rules.requirement_present`, already built for post-hoc review;
+        here surfaced pre-emptively). No new ContextService dependency:
+        `writer` defaults to the same atomic `IngestArtifactWriter`
+        fallback `IngestService` uses when the composition root does not
+        inject one (`cli/_shared.py`/`Deps.__init__` passes the same real
+        `FilesystemIngestArtifactWriter` instance already wired to
+        `IngestService`, ponytail: reuse, no new wiring)."""
+        self._require_document(doc_id)
+        context_gaps = [
+            {"topic_id": status.id, "missing": status.missing}
+            for status in self.status(doc_id, template)
+            if status.missing
+        ]
+        section_gaps: list[dict[str, Any]] = []
+        for section_id in sorted(template.section_contracts):
+            contract = template.section_contracts[section_id]
+            plain = clean_markdown_text(section_bodies.get(section_id, "")).lower()
+            missing = [
+                requirement
+                for requirement in contract.required_content
+                if not requirement_present(requirement, plain, contract.detect)
+            ]
+            if missing:
+                section_gaps.append({"section_id": section_id, "missing": missing})
+        report: dict[str, Any] = {
+            "schema": 1,
+            "context_gaps": context_gaps,
+            "section_gaps": section_gaps,
+        }
+        (writer or _InlineJsonWriter()).write_json(Path(sections_dir) / "gap-report.json", report)
+        return report
