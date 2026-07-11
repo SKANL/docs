@@ -156,7 +156,9 @@ class IngestService:
         entries: list[dict[str, Any]] = []
         ignored: list[dict[str, str]] = []
         if inbox_dir.is_dir():
-            sources, ignored, empty_dir_entries, declared_assets = self._walk_inbox(inbox_dir)
+            sources, ignored, empty_dir_entries, declared_assets, heuristic_candidates = (
+                self._walk_inbox(inbox_dir)
+            )
             # Pre-scan snapshot (design.md Decision 3): captured ONCE, before
             # any conversion this scan, so status resolution can distinguish
             # "already present from a prior run" (skipped) from "produced
@@ -175,9 +177,9 @@ class IngestService:
             # pending-placement queue, same external-confirmation contract
             # as the classification queue.
             placements = self._route_and_queue_assets(
-                inbox_dir, declared_assets, sources, assets_dir
+                inbox_dir, declared_assets, heuristic_candidates, assets_dir
             )
-            self._build_figure_catalog(inbox_dir, sections_dir, declared_assets, sources)
+            self._build_figure_catalog(inbox_dir, sections_dir, declared_assets, heuristic_candidates)
 
             # Front D (design.md Decision 4): classify every real source
             # entry, merge any externally-confirmed role from the PRIOR
@@ -199,9 +201,13 @@ class IngestService:
         self._write_detection_report(inbox_dir, report)
         return report
 
-    def _walk_inbox(
-        self, inbox_dir: Path
-    ) -> tuple[list[tuple[Path, str]], list[dict[str, str]], list[dict[str, str]], list[tuple[Path, str]]]:
+    def _walk_inbox(self, inbox_dir: Path) -> tuple[
+        list[tuple[Path, str]],
+        list[dict[str, str]],
+        list[dict[str, str]],
+        list[tuple[Path, str]],
+        list[tuple[Path, str]],
+    ]:
         # Recursive, deterministically-ordered walk (design.md Decision 2):
         # `rglob("*")` results are filtered then manually sorted by the
         # POSIX relative-path string -- the sort key, not the filesystem
@@ -224,6 +230,7 @@ class IngestService:
         sources: list[tuple[Path, str]] = []
         ignored: list[dict[str, str]] = []
         declared_assets: list[tuple[Path, str]] = []
+        heuristic_candidates: list[tuple[Path, str]] = []
         for path in files:
             rel = _relposix(path, inbox_dir)
             if rel in _HARNESS_ARTIFACT_NAMES:
@@ -244,10 +251,25 @@ class IngestService:
                 ignored.append({"relative_path": rel, "reason": "assets_subtree"})
                 declared_assets.append((path, rel))
                 continue
+            if _is_heuristic_asset_candidate(rel):
+                # design.md Decision 6a: a likely verbatim asset (image
+                # anywhere, or a cover/portada/anexo-visual-signaled .docx)
+                # is excluded from markdown ingest -- it must never be
+                # flattened to markdown before a human confirms it either
+                # way -- but reported (never silently dropped) and proposed
+                # to the placement queue. "Not auto-routed" (design.md)
+                # means not auto-COPIED into asset storage without
+                # confirmation, not "still ingested as regular content".
+                ignored.append({"relative_path": rel, "reason": "asset_candidate"})
+                heuristic_candidates.append((path, rel))
+                continue
             sources.append((path, rel))
 
-        empty_dir_entries = self._find_empty_dirs(inbox_dir, dirs, {rel for _, rel in sources})
-        return sources, ignored, empty_dir_entries, declared_assets
+        asset_relatives = {rel for _, rel in (*declared_assets, *heuristic_candidates)}
+        empty_dir_entries = self._find_empty_dirs(
+            inbox_dir, dirs, {rel for _, rel in sources} | asset_relatives
+        )
+        return sources, ignored, empty_dir_entries, declared_assets, heuristic_candidates
 
     def _find_empty_dirs(
         self, inbox_dir: Path, dirs: list[Path], source_relatives: set[str]
@@ -617,7 +639,7 @@ class IngestService:
         self,
         inbox_dir: Path,
         declared_assets: list[tuple[Path, str]],
-        sources: list[tuple[Path, str]],
+        heuristic_candidates: list[tuple[Path, str]],
         assets_dir: Path | None,
     ) -> list[dict[str, Any]]:
         # Pipeline order (design.md Decision 6a): asset-routing -> recursive
@@ -625,19 +647,18 @@ class IngestService:
         # assets (inbox/assets/) are routed UNCONDITIONALLY -- their
         # presence there IS the declaration. Heuristic candidates elsewhere
         # (image files, or a cover/portada/anexo-visual-signaled .docx) are
-        # only PROPOSED, never auto-routed (avoids stealing a legitimate
-        # .docx content source) -- they stay in `sources` too, ingested
-        # normally like any other file.
+        # only PROPOSED, never auto-routed -- and excluded from `sources` by
+        # `_walk_inbox` so they are never flattened to markdown before a
+        # human confirms a placement either way.
         prior_confirmed = self._read_prior_confirmed_placements(inbox_dir)
         candidates: dict[str, str] = {}  # relative_path -> proposed_kind ("" if none)
         for _path, rel in declared_assets:
             candidates[rel] = _guess_asset_kind(rel) or ""
-        for _path, rel in sources:
-            if _is_heuristic_asset_candidate(rel):
-                candidates[rel] = _guess_asset_kind(rel) or ""
+        for _path, rel in heuristic_candidates:
+            candidates[rel] = _guess_asset_kind(rel) or ""
 
         declared_by_rel = {rel: path for path, rel in declared_assets}
-        source_by_rel = {rel: path for path, rel in sources}
+        source_by_rel = {rel: path for path, rel in heuristic_candidates}
 
         queue_entries: dict[str, dict[str, Any]] = {}
         placements: list[dict[str, Any]] = []
@@ -707,11 +728,11 @@ class IngestService:
         inbox_dir: Path,
         sections_dir: Path,
         declared_assets: list[tuple[Path, str]],
-        sources: list[tuple[Path, str]],
+        heuristic_candidates: list[tuple[Path, str]],
     ) -> None:
         image_candidates = [
             (path, rel)
-            for path, rel in (*declared_assets, *sources)
+            for path, rel in (*declared_assets, *heuristic_candidates)
             if Path(rel).suffix.lower() in _IMAGE_EXTENSIONS
         ]
         figures: list[FigureEntry] = []
