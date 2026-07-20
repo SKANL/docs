@@ -47,6 +47,12 @@ _MARGIN_KEYS = ("top", "right", "bottom", "left")
 # instead of pattern-matching the harness's own wording.
 _SCAFFOLD_PENDIENTE_RE = re.compile(r"pendiente:\s*(?:documentar|agregar citas|ordenar)[^.]*\.")
 
+# Word-boundary marker match: only the standalone token "pendiente(s)" is the
+# PENDIENTE marker. A bare `"pendiente" in text` substring test false-triggers
+# on ordinary words that merely contain it (independiente, expediente), which
+# forced authors to reword legitimate prose.
+_PENDIENTE_MARKER_RE = re.compile(r"\bpendientes?\b", re.IGNORECASE)
+
 
 def requirement_present(requirement: str, plain: str, detect: dict[str, list[str]]) -> bool:
     scrubbed = _SCAFFOLD_PENDIENTE_RE.sub(" ", plain)
@@ -296,7 +302,7 @@ def _check_contract_dispatch(
 
 def _check_pending_marker(lowered: str, is_policy_file: bool, strict_policy: StrictPolicyBlock, contract: SectionContract) -> list[Issue]:
     pending_allowed = strict_policy.allow_pending and contract.pending_allowed_in_draft
-    if not is_policy_file and "pendiente" in lowered and not pending_allowed:
+    if not is_policy_file and _PENDIENTE_MARKER_RE.search(lowered) and not pending_allowed:
         return [
             Issue(
                 "error",

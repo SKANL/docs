@@ -506,6 +506,26 @@ def test_review_section_text_pending_marker_skipped_for_policy_file():
     assert not any(i.code == "content.pending_not_allowed" for i in issues)
 
 
+def test_review_section_text_pending_marker_ignores_substring_false_positives():
+    # "independiente"/"expediente" merely CONTAIN "pendiente"; they are not the
+    # PENDIENTE marker and must not trip content.pending_not_allowed.
+    contract = SectionContract(pending_allowed_in_draft=False)
+    text = "# Título\n\nUn órgano independiente revisó el expediente de los casos independientes."
+    issues = _call(text, contract=contract)
+    assert not any(i.code == "content.pending_not_allowed" for i in issues)
+
+
+def test_review_section_text_pending_marker_still_flags_real_marker_forms():
+    contract = SectionContract(pending_allowed_in_draft=False)
+    for text in (
+        "# Título\n\nPENDIENTE: documentar la evidencia del ledger.",
+        "# Título\n\nQueda pendiente la revisión final.",
+        "# Título\n\nEsto está PENDIENTE.",
+    ):
+        issues = _call(text, contract=contract)
+        assert any(i.code == "content.pending_not_allowed" for i in issues), text
+
+
 def test_review_section_text_dispatches_to_apa7_review():
     text = "# Título\n\nEsto se sostiene (García, 2020) sin lista de referencias."
     issues = _call(text)
