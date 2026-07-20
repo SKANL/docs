@@ -243,6 +243,31 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
                     archive.write(path, path.relative_to(tmp_path).as_posix())
 
 
+def _run_has_drawing(run: Any) -> bool:
+    from docx.oxml.ns import qn
+
+    return run._r.find(qn("w:drawing")) is not None or run._r.find(qn("w:pict")) is not None
+
+
+def _transfer_drawing_run(run: Any, new_paragraph: Any, source_part: Any, dest_part: Any) -> None:
+    # Inline images live as a <w:drawing> inside the run element, not in
+    # run.text. Deep-copy the run XML and re-embed each referenced image part
+    # into the destination package, remapping its relationship id.
+    import copy
+
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    from docx.oxml.ns import qn
+
+    new_r = copy.deepcopy(run._r)
+    for embed_attr in (qn("r:embed"), qn("r:link")):
+        for blip in new_r.iter(qn("a:blip")):
+            rid = blip.get(embed_attr)
+            if rid:
+                image_part = source_part.related_parts[rid]
+                blip.set(embed_attr, dest_part.relate_to(image_part, RT.IMAGE))
+    new_paragraph._p.append(new_r)
+
+
 def add_fixed_text_page(document: Any, text: str) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm, Pt
@@ -462,6 +487,9 @@ class PythonDocxAssemblyAdapter:
             if is_heading_1:
                 body_heading_seen = True
             for run in paragraph.runs:
+                if _run_has_drawing(run):
+                    _transfer_drawing_run(run, new_paragraph, body.part, cover.part)
+                    continue
                 new_run = new_paragraph.add_run(run.text)
                 new_run.bold = run.bold
                 new_run.italic = run.italic
