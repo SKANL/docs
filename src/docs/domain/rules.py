@@ -119,7 +119,12 @@ def review_section_contract(
                 )
             )
 
-    if contract.apa_required and not extract_apa_citations(text) and "pendiente" not in plain:
+    if (
+        contract.apa_required
+        and not contract.references_list
+        and not extract_apa_citations(text)
+        and "pendiente" not in plain
+    ):
         issues.append(
             Issue(
                 strict_policy.apa_violations,
@@ -131,7 +136,13 @@ def review_section_contract(
     return issues
 
 
-def review_apa7_text(text: str, apa7_enabled: bool, strict_policy: StrictPolicyBlock) -> list[Issue]:
+def review_apa7_text(
+    text: str,
+    apa7_enabled: bool,
+    strict_policy: StrictPolicyBlock,
+    is_references_list: bool = False,
+    global_reference_list: bool = False,
+) -> list[Issue]:
     if not apa7_enabled:
         return []
 
@@ -140,7 +151,11 @@ def review_apa7_text(text: str, apa7_enabled: bool, strict_policy: StrictPolicyB
     citations = extract_apa_citations(text)
     references = extract_reference_entries(text)
 
-    if citations and not references:
+    # When the document carries a consolidated bibliography (some section has
+    # references_list=True), a citing section legitimately has no local
+    # reference list; citation<->reference reciprocity is the DOCUMENT-level job
+    # of review_cross_consistency, not this per-section audit.
+    if citations and not references and not global_reference_list:
         issues.append(
             Issue(
                 severity,
@@ -153,7 +168,12 @@ def review_apa7_text(text: str, apa7_enabled: bool, strict_policy: StrictPolicyB
                 Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference")
             )
 
-    if references and not citations:
+    # A dedicated bibliography (references_list section) legitimately holds
+    # reference entries with no in-text citations -- that reciprocity is the
+    # DOCUMENT-level job of review_cross_consistency, not this per-section
+    # audit. Skip the reference_without_citation block for such sections; the
+    # sort and quote-locator checks below still run.
+    if references and not citations and not is_references_list:
         for entry in references:
             issues.append(
                 Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation")
@@ -321,7 +341,14 @@ def review_section_text(
     issues.extend(_check_title(text, normative.is_policy_file))
     issues.extend(_check_contract_dispatch(text, section_id, contract, strict_policy, strict, normative.is_policy_file))
     issues.extend(_check_pending_marker(lowered, normative.is_policy_file, strict_policy, contract))
-    issues.extend(review_apa7_text(text, template.apa7.enabled, strict_policy))
+    has_global_bibliography = any(
+        getattr(c, "references_list", False) for c in template.section_contracts.values()
+    )
+    issues.extend(
+        review_apa7_text(
+            text, template.apa7.enabled, strict_policy, contract.references_list, has_global_bibliography
+        )
+    )
     issues.extend(_check_results_evidence(lowered))
 
     return issues

@@ -266,6 +266,105 @@ def test_review_apa7_text_no_citations_no_references_no_issues():
     assert issues == []
 
 
+def test_review_apa7_text_references_list_skips_reference_without_citation():
+    # A dedicated bibliography (references_list section) legitimately has
+    # reference entries but NO in-text citations -- the per-section audit must
+    # NOT flag apa.reference_without_citation. Cross-document resolution
+    # (coherence.*) still validates citation<->reference reciprocity elsewhere.
+    text = (
+        "# REFERENCIAS\n"
+        "Alfa, B. (2019). Un título largo cualquiera. Editorial.\n"
+        "Beta, C. (2020). Otro título largo diferente. Editorial.\n"
+        "Gamma, D. (2021). Un tercer título extenso. Editorial.\n"
+    )
+    issues = review_apa7_text(
+        text, apa7_enabled=True, strict_policy=_policy(apa_violations="error"), is_references_list=True
+    )
+    assert not any(i.code == "apa.reference_without_citation" for i in issues)
+
+
+def test_review_apa7_text_references_list_still_flags_unsorted():
+    # The sort check must survive: a bibliography must still be alphabetized.
+    text = (
+        "# REFERENCIAS\n"
+        "Zeta, A. (2020). Título Z largo cualquiera. Editorial.\n"
+        "Alfa, B. (2019). Título A largo cualquiera. Editorial.\n"
+    )
+    issues = review_apa7_text(
+        text, apa7_enabled=True, strict_policy=_policy(), is_references_list=True
+    )
+    assert any(i.code == "apa.references_not_sorted" for i in issues)
+
+
+def test_review_apa7_text_global_bibliography_skips_no_reference_list():
+    # A citing chapter (NOT a references_list section) whose references live in
+    # a consolidated document-level bibliography legitimately has no local
+    # reference list. Citation<->reference reciprocity is the DOCUMENT-level job
+    # of review_cross_consistency, so the per-section audit must NOT flag
+    # apa.no_reference_list nor apa.citation_without_reference here.
+    text = (
+        "# Capítulo II\n\n"
+        "El marco teórico se apoya en (Martin, 2018) y (Beck, 2003) "
+        "para justificar el enfoque adoptado."
+    )
+    issues = review_apa7_text(
+        text,
+        apa7_enabled=True,
+        strict_policy=_policy(apa_violations="error"),
+        is_references_list=False,
+        global_reference_list=True,
+    )
+    codes = [i.code for i in issues]
+    assert "apa.no_reference_list" not in codes
+    assert "apa.citation_without_reference" not in codes
+
+
+def test_review_apa7_text_no_global_bibliography_still_flags_no_reference_list():
+    # Regression guard: without a consolidated bibliography, a citing section
+    # with no local reference list STILL fails (old behavior preserved).
+    text = (
+        "# Capítulo II\n\n"
+        "El marco teórico se apoya en (Martin, 2018) y (Beck, 2003) "
+        "para justificar el enfoque adoptado."
+    )
+    issues = review_apa7_text(
+        text,
+        apa7_enabled=True,
+        strict_policy=_policy(apa_violations="error"),
+        is_references_list=False,
+        global_reference_list=False,
+    )
+    assert any(i.code == "apa.no_reference_list" for i in issues)
+
+
+def test_review_section_contract_apa_required_skipped_for_references_list():
+    # A references_list section requires reference entries, not in-text
+    # citations -- apa.required must NOT fire even under strict.
+    contract = SectionContract(apa_required=True, references_list=True)
+    text = (
+        "# REFERENCIAS\n"
+        "Alfa, B. (2019). Un título largo cualquiera. Editorial.\n"
+    )
+    issues = review_section_contract(text, "referencias", contract, _policy(apa_violations="error"), strict=True)
+    assert not any(i.code == "apa.required" for i in issues)
+
+
+def test_review_section_text_references_list_bibliography_clean_under_strict():
+    # End-to-end via review_section_text: a valid bibliography section (3+
+    # entries, no citations) yields ZERO apa.required and ZERO
+    # apa.reference_without_citation under strict.
+    contract = SectionContract(apa_required=True, references_list=True)
+    text = (
+        "# REFERENCIAS\n"
+        "Alfa, B. (2019). Un título largo cualquiera. Editorial.\n"
+        "Beta, C. (2020). Otro título largo diferente. Editorial.\n"
+        "Gamma, D. (2021). Un tercer título extenso. Editorial.\n"
+    )
+    issues = _call(text, contract=contract, strict=True)
+    assert not any(i.code == "apa.reference_without_citation" for i in issues)
+    assert not any(i.code == "apa.required" for i in issues)
+
+
 from docs.domain.models.template import Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.rules import review_section_text
@@ -418,6 +517,25 @@ def test_review_section_text_apa7_disabled_via_template_skips_apa_checks():
     template = _template(apa7={"enabled": False})
     issues = _call(text, template=template)
     assert not any(i.code.startswith("apa.") for i in issues)
+
+
+def test_review_section_text_citing_chapter_clean_with_consolidated_bibliography():
+    # Wiring guard: a citing chapter (references_list=False) in a template that
+    # owns a consolidated bibliography section (references_list=True) must NOT
+    # emit the per-section apa.no_reference_list / apa.citation_without_reference
+    # false positives; document-level review_cross_consistency owns that check.
+    template = _template(
+        section_contracts={
+            "cap-2": SectionContract(apa_required=True, references_list=False),
+            "referencias": SectionContract(apa_required=True, references_list=True),
+        }
+    )
+    contract = SectionContract(apa_required=True, references_list=False)
+    text = "# Capítulo II\n\nEl enfoque se apoya en (Martin, 2018) y (Beck, 2003)."
+    issues = _call(text, contract=contract, template=template, strict=True)
+    codes = [i.code for i in issues]
+    assert "apa.no_reference_list" not in codes
+    assert "apa.citation_without_reference" not in codes
 
 
 def test_review_section_text_results_without_evidence_warning():
