@@ -63,20 +63,20 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: `doc revise` loop (B) — PR 4, independent of PR 2/3
 
-- [ ] 4.1 RED (`tests/unit/application/test_revision.py`, new): `RevisionService.revise(doc_id, template, config, section_id, new_body, request)` returns before/after Markdown + a one-line summary
-- [ ] 4.2 GREEN: create `application/revision.py:RevisionService` (`SectionRepository`, `ReviewService`, `ContextService`); snapshots pre-edit body to `sections/_revisions/NNN-<id>.<n>.md`, writes new body, diffs with `difflib.unified_diff`
-- [ ] 4.3 RED: only the edited section + `review-document` are re-validated; other sections' `review_section` is not invoked
-- [ ] 4.4 GREEN: scope `revise()`'s re-validation call to the edited section id + `review_document`
-- [ ] 4.5 RED: a successful revise appends one entry (`request`, `section_id`, `diff_path`, `before_hash`, `after_hash`, `ts`) to `sections/_revisions/revision-log.json`; prior entries stay, in order
-- [ ] 4.6 GREEN: implement append-only read-modify-write for `revision-log.json` (`schema: 1, entries: []`)
-- [ ] 4.7 RED: a `context` topic edit ripples via `Topic.consumed_by` (`template.py:20`) to dependent sections; non-dependent sections stay untouched
-- [ ] 4.8 GREEN: `RevisionService.revise_topic(doc_id, template, config, topic_id, new_value, request)` — writes via `ContextService.set`, maps `consumed_by` → dependent section ids, re-validates each + `review-document`, logs `ripple: [...]`
-- [ ] 4.9 RED: a structural request (unknown section/topic id, or explicit add/remove) is rejected naming `revise` as unsuited for structural changes
-- [ ] 4.10 GREEN: validate the target id against `template.sections`/`context_schema.topics` before proceeding; raise `ValueError` with that message
-- [ ] 4.11 RED (`tests/integration/test_corrections_service.py`, regression): `apply-corrections` still produces no diff/provenance/log entry after this change
-- [ ] 4.12 GREEN: confirm `CorrectionsService.apply_corrections` shares no code path with `RevisionService` (isolation check; no code change expected)
-- [ ] 4.13 GREEN (CLI wiring): add `doc revise <section-or-topic-id> "<request>"` to `cli/commands/doc_app.py`; wire `Deps.revision = RevisionService(...)` (`cli/_shared.py`)
-- [ ] 4.14 Run `tests/unit/application/test_revision.py` + `tests/integration/test_review_service.py` — confirm no regression to existing review call sites
+- [x] 4.1 RED (`tests/unit/application/test_revision.py`, new): `RevisionService.revise(doc_id, template, config, section_id, new_body, request)` returns before/after Markdown + a one-line summary
+- [x] 4.2 GREEN: create `application/revision.py:RevisionService` (`SectionRepository`, `ReviewService`, `ContextService`); snapshots the diff to `sections/_revisions/<order>-<id>.<n>.diff` (unified diff IS the snapshot artifact — no separate raw-body file, `diff_path` in the log points to it), writes new body, diffs with `difflib.unified_diff` (`domain/revision.py`)
+- [x] 4.3 RED: only the edited section + `review-document` are re-validated; other sections' `review_section` is not invoked
+- [x] 4.4 GREEN: scope `revise()`'s re-validation call to the edited section id + `review_document`
+- [x] 4.5 RED: a successful revise appends one entry (`request`, `section_id`, `diff_path`, `before_hash`, `after_hash`, `ts`) to `sections/_revisions/revision-log.json`; prior entries stay, in order
+- [x] 4.6 GREEN: implement append-only read-modify-write for `revision-log.json` (`schema: 1, entries: []`)
+- [x] 4.7 RED: a `context` topic edit ripples via `Topic.consumed_by` (`template.py:20`) to dependent sections; non-dependent sections stay untouched
+- [x] 4.8 GREEN: `RevisionService.revise_topic(doc_id, template, config, topic_id, new_value, request)` — writes via `ContextService.set`, maps `consumed_by` → dependent section ids, re-validates each + `review-document`, logs `ripple: [...]`
+- [x] 4.9 RED: a structural request (unknown section/topic id, or explicit add/remove) is rejected naming `revise` as unsuited for structural changes
+- [x] 4.10 GREEN: validate the target id against `template.sections`/`context_schema.topics` before proceeding; raise `ValueError` with that message (`RevisionService.resolve_target`, also used for CLI dispatch)
+- [x] 4.11 RED (`tests/integration/test_corrections_service.py`, regression): `apply-corrections` still produces no diff/provenance/log entry after this change — ran unmodified, all pass
+- [x] 4.12 GREEN: confirm `CorrectionsService.apply_corrections` shares no code path with `RevisionService` (isolation check; no code change expected) — confirmed by inspection: `corrections.py` imports nothing from `revision.py`/`domain/revision.py`, and `RevisionService` imports nothing from `corrections.py`
+- [x] 4.13 GREEN (CLI wiring): add `doc revise <target-id> "<request>" <body-file>` to `cli/commands/doc_app.py`; wire `Deps.revision = RevisionService(...)` (`cli/_shared.py`); dispatches to `revise()`/`revise_topic()` via `resolve_target()`
+- [x] 4.14 Run `tests/unit/application/test_revision.py` + `tests/integration/test_review_service.py` — confirm no regression to existing review call sites (both green)
 
 ## Phase 5: 2nd built-in template + acceptance (D) — PR 5, depends on PR 1
 

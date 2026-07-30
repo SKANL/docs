@@ -26,6 +26,7 @@ from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.application.revision import RevisionService
 from docs.application.status import StatusService
 from docs.domain.models.template import Template
 from docs.domain.docx_structure import structure_parts
@@ -183,6 +184,7 @@ class Deps:
         self.corrections = CorrectionsService(section_repo, evidence_repo)
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
         self.status = StatusService(section_repo, self.context, review_service)
+        self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
         self.pipeline = PipelineService(
             doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
             review_service, context_pack_service, context_repo, docx_assembly_service,

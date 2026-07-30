@@ -7,6 +7,7 @@ Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted with
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -138,4 +139,46 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
     result = deps.status.status_summary(resolved.doc_id, resolved.template, resolved.config, normative=normative)
+    emit_result(result, as_json)
+
+
+@doc_app.command("revise")
+def doc_revise(
+    ctx: typer.Context,
+    target: str = typer.Argument(..., metavar="id", help="Id de sección o de tema de contexto a revisar."),
+    request: str = typer.Argument(..., help="Descripción breve de la solicitud de cambio (queda en la bitácora)."),
+    body_file: str = typer.Argument(
+        ..., metavar="archivo",
+        help="Ruta a un .md con el cuerpo/valor de reemplazo ya editado por el agente (fuera de banda).",
+    ),
+    field: str = typer.Option("", "--field", help="Clave de campo (solo temas de contexto no-prosa)."),
+    strict: bool = typer.Option(False, "--strict"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Bucle de edición semántica (design.md item B, spec: document-revise):
+    el agente ya escribió el reemplazo en `body_file`; el harness calcula el
+    diff, re-valida solo lo afectado (sección/tema + review-document) y
+    registra la procedencia en `sections/_revisions/revision-log.json`. No
+    admite cambios estructurales (agregar/quitar secciones): usa `context
+    set`/ingesta para eso."""
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    normative = resolve_normative_settings(resolved.config)
+    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
+    new_content = Path(body_file).read_text(encoding="utf-8")
+    now = datetime.now().isoformat(timespec="seconds")
+
+    kind = deps.revision.resolve_target(resolved.template, target)
+    if kind == "section":
+        result = deps.revision.revise(
+            resolved.doc_id, resolved.template, resolved.config, target, new_content, request,
+            strict=strict, manifest_exists=manifest_exists, manifest_size=manifest_size,
+            normative=normative, now=now,
+        )
+    else:
+        result = deps.revision.revise_topic(
+            resolved.doc_id, resolved.template, resolved.config, target, new_content, request,
+            field=field, strict=strict, manifest_exists=manifest_exists, manifest_size=manifest_size,
+            normative=normative, now=now,
+        )
     emit_result(result, as_json)
