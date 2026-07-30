@@ -133,3 +133,50 @@ def test_doc_init_does_not_reseed_existing_templates(fresh_cwd):
     assert result.exit_code == 0
     assert not (templates / "documento-generico.json").exists()
     assert (templates / "custom.json").read_text(encoding="utf-8") == '{"type": "custom", "title": "Mine"}'
+
+
+# ── PR9: `doc status` resumable summary (design.md item I) ─────────────────
+
+_STATUS_TEMPLATE = {
+    "type": "tesina",
+    "title": "Tesina",
+    "context_schema": {"topics": [{"id": "alumno", "title": "Alumno", "required": True, "multiline": True}]},
+    "sections": [{"id": "introduccion", "title": "Introducción", "order": 1, "required": True}],
+    "section_contracts": {"introduccion": {}},
+}
+
+
+@pytest.fixture
+def status_ws(tmp_path, monkeypatch):
+    (tmp_path / "documents").mkdir()
+    templates = tmp_path / "templates"
+    templates.mkdir()
+    (templates / "tesina.json").write_text(json.dumps(_STATUS_TEMPLATE), encoding="utf-8")
+    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(tmp_path / "documents"))
+    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
+    return tmp_path
+
+
+def test_doc_status_reports_fresh_document(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    result = runner.invoke(app, ["doc", "status", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["context"] == {"filled": 0, "total": 1, "missing_topics": ["alumno"]}
+    assert payload["sections"]["authored"] == 0
+    assert payload["sections"]["total"] == 1
+    assert payload["sections"]["missing"] == ["introduccion"]
+    assert payload["ingest"]["ran"] is False
+    assert payload["output"]["draft_exists"] is False
+
+
+def test_doc_status_markdown_output_mentions_document_id(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    result = runner.invoke(app, ["doc", "status"])
+
+    assert result.exit_code == 0, result.output
+    assert "alpha" in result.output
+    assert "Contexto" in result.output

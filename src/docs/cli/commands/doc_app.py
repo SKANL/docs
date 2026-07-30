@@ -11,8 +11,9 @@ from pathlib import Path
 
 import typer
 
-from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx
+from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
+from docs.domain.normative import resolve_normative_settings
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
 
@@ -125,3 +126,16 @@ def doc_delete(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id
         raise RuntimeError(f"Confirma el borrado de `{doc_id}` con --yes.")
     deps.documents.delete(doc_id)
     print(f"Documento `{doc_id}` eliminado.")
+
+
+@doc_app.command("status")
+def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")) -> None:
+    """Resumen retomable del documento activo (design.md item I): contexto
+    lleno/faltante, secciones redactadas/scaffold/con hallazgos, ingesta,
+    figuras y salida -- para que un agente pueda retomar sin re-derivar el
+    estado a mano."""
+    deps, doc = _ctx(ctx)
+    resolved = deps.resolve_context(doc)
+    normative = resolve_normative_settings(resolved.config)
+    result = deps.status.status_summary(resolved.doc_id, resolved.template, resolved.config, normative=normative)
+    emit_result(result, as_json)
