@@ -148,7 +148,7 @@ def test_status_summary_reports_partially_completed_document(tmp_path, workspace
     # Output draft artifact.
     output_draft_dir = doc_root / "output" / "draft"
     output_draft_dir.mkdir(parents=True)
-    (output_draft_dir / "tesina-draft.docx").write_text("x", encoding="utf-8")
+    (output_draft_dir / "alpha-draft.docx").write_text("x", encoding="utf-8")
 
     status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
 

@@ -31,11 +31,11 @@ class DocxRendererAdapter:
             ("qa-docx", True),
         ]
 
-    def _draft_docx_name(self, config: dict[str, Any]) -> str:
-        return resolve_draft_docx_name(config)
+    def _draft_docx_name(self, doc_id: str, config: dict[str, Any]) -> str:
+        return resolve_draft_docx_name(doc_id, config)
 
-    def _body_docx_name(self, config: dict[str, Any]) -> str:
-        return resolve_body_docx_name(config)
+    def _body_docx_name(self, doc_id: str, config: dict[str, Any]) -> str:
+        return resolve_body_docx_name(doc_id, config)
 
     def _resolve_cover_asset_path(self, doc_id: str, parts: list[dict[str, Any]]) -> Path | None:
         leading = parts[: sections_index(parts)]
@@ -84,8 +84,8 @@ class DocxRendererAdapter:
 
         output_dir = Path(config["paths"]["output_draft_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output or output_dir / self._draft_docx_name(config)
-        body_docx = output_dir / self._body_docx_name(config)
+        output = output or output_dir / self._draft_docx_name(doc_id, config)
+        body_docx = output_dir / self._body_docx_name(doc_id, config)
 
         # Legacy strips YAML/JSON frontmatter from each section before invoking
         # pandoc. `split_frontmatter` (docs.domain.markdown_text) already matches

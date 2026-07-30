@@ -319,9 +319,9 @@ def test_build_raises_when_no_markdown_sections_exist(tmp_path, service):
 # --- config-driven output names (PR4: move hardcoded doc names to config) ------
 
 
-def test_build_default_output_names_are_backward_compatible(tmp_path, service):
-    # No config["output"] key at all — existing fixtures/callers keep working
-    # with the same "tesina-draft.docx"/"tesina-body.docx" defaults as before.
+def test_build_default_output_names_are_doc_id_derived(tmp_path, service):
+    # No config["output"] key at all — the default derives from the doc id,
+    # not a hardcoded "tesina" literal (residual estadia-coupling fix).
     config = {
         "sections": [{"id": "resumen", "order": 1}],
         "paths": {"sections_dir": str(tmp_path / "sections"), "output_draft_dir": str(tmp_path / "draft")},
@@ -329,14 +329,14 @@ def test_build_default_output_names_are_backward_compatible(tmp_path, service):
     (tmp_path / "sections").mkdir()
     with pytest.raises(RuntimeError, match="No hay secciones"):
         service.build("doc-1", config)
-    assert service._draft_docx_name(config) == "tesina-draft.docx"
-    assert service._body_docx_name(config) == "tesina-body.docx"
+    assert service._draft_docx_name("doc-1", config) == "doc-1-draft.docx"
+    assert service._body_docx_name("doc-1", config) == "doc-1-body.docx"
 
 
 def test_build_uses_configured_output_names_when_present(service):
     config = {"output": {"draft_name": "custom-draft.docx", "body_name": "custom-body.docx"}}
-    assert service._draft_docx_name(config) == "custom-draft.docx"
-    assert service._body_docx_name(config) == "custom-body.docx"
+    assert service._draft_docx_name("doc-1", config) == "custom-draft.docx"
+    assert service._body_docx_name("doc-1", config) == "custom-body.docx"
 
 
 @pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
@@ -366,8 +366,8 @@ def test_build_produces_docx_at_configured_draft_and_body_names(tmp_path, servic
     assert output == draft_dir / "custom-draft.docx"
     assert output.exists()
     assert (draft_dir / "custom-body.docx").exists()
-    assert not (draft_dir / "tesina-draft.docx").exists()
-    assert not (draft_dir / "tesina-body.docx").exists()
+    assert not (draft_dir / "doc-1-draft.docx").exists()
+    assert not (draft_dir / "doc-1-body.docx").exists()
 
 
 @pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
@@ -391,7 +391,7 @@ def test_build_produces_docx_with_default_output_path(tmp_path, service):
 
     output = service.build("doc-1", config)
 
-    assert output == draft_dir / "tesina-draft.docx"
+    assert output == draft_dir / "doc-1-draft.docx"
     assert output.exists()
     document = Document(str(output))
     assert any("Contenido del resumen" in p.text for p in document.paragraphs)

@@ -141,6 +141,11 @@
     "reference_hanging_indent_cm": 1.27,
     "keyword_bold_terms": {}
   },
+  "output": {
+    "draft_name": "tesina-draft.docx",
+    "body_name": "tesina-body.docx",
+    "html_name": "tesina-draft.html"
+  },
   "apa7": {
     "enabled": true,
     "style": "APA 7",
