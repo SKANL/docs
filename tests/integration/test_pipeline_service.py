@@ -683,6 +683,11 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
     # -> identical outputs." Runs ingest -> assemble twice over the same
     # fixture inbox/sections and asserts every artifact (ingested markdown,
     # context-curation files, and the built DOCX) is byte-identical.
+    # This is also the testable statement for the Reproducibility Boundary
+    # Principle (design.md item M; openspec/specs/document-pipeline/spec.md
+    # "Reproducibility Boundary Principle"): unchanged section .md sources
+    # rebuild to byte-identical output; the principle does NOT claim prose
+    # edits themselves must be byte-identical across sessions.
     monkeypatch.setattr(
         "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
         lambda paths: None,

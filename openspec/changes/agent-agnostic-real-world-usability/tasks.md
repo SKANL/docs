@@ -118,11 +118,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 10: Agent contract + reproducibility principle (B, M) — PR 10, depends on all
 
-- [ ] 10.1 RED: characterization test — repo-root `AGENTS.md` bytes equal packaged copy
-- [ ] 10.2 GREEN: write `AGENTS.md` (workflow, config/env precedence, `[[figure:]]`/`Ver {ref}` convention, cognitive-slot boundary, reproducibility boundary); force-include in `pyproject.toml`
-- [ ] 10.3 RED: `docs guide` works from an installed wheel (no repo checkout)
-- [ ] 10.4 GREEN: implement `docs guide` on `core_app.py:17` via `importlib.resources`
-- [ ] 10.5 GREEN: add Reproducibility Boundary Principle statement to `openspec/specs/document-pipeline/spec.md` (spec text only)
+- [x] 10.1 RED: characterization test — repo-root `AGENTS.md` bytes equal packaged copy
+- [x] 10.2 GREEN: write `AGENTS.md` (workflow, config/env precedence, `[[figure:]]`/`Ver {ref}` convention, cognitive-slot boundary, reproducibility boundary); force-include in `pyproject.toml`
+- [x] 10.3 RED: `docs guide` works from an installed wheel (no repo checkout)
+- [x] 10.4 GREEN: implement `docs guide` on `core_app.py:17` via `importlib.resources`
+- [x] 10.5 GREEN: add Reproducibility Boundary Principle statement to `openspec/specs/document-pipeline/spec.md` (spec text only)
 
 ## Sequencing notes
 
