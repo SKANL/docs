@@ -107,7 +107,20 @@ class OpendataloaderPdfAdapter:
                         input_path=[str(staged) for staged in staged_by_candidate.values()],
                         output_dir=str(tmp_dir),
                         format="markdown",
-                        image_output="off",
+                        # External raster extraction (not "off"): with no
+                        # `image_dir` override, opendataloader-pdf namespaces
+                        # extracted images per input stem as `<stem>_images/`
+                        # next to `<stem>.md` -- verified against the
+                        # installed CLI (see the adapter class docstring
+                        # binding conditions). Renamed below to the same
+                        # `<stem>-<kind>-<sha8>_media` shape pandoc's
+                        # `--extract-media` produces, so the figure-catalog
+                        # page-render gate (`_render_vector_pdf_figures`,
+                        # gated on a paired `_media/` dir being
+                        # absent/empty) only fires for PDFs that truly have
+                        # no extractable raster, instead of every PDF.
+                        image_output="external",
+                        image_format="png",
                         hybrid="off",
                         quiet=True,
                     )
@@ -119,6 +132,16 @@ class OpendataloaderPdfAdapter:
                 if tmp_output.exists():
                     sha8 = sha256_hex(candidate.read_bytes())[:8]
                     final = ingested_output_path(out_dir, candidate.stem, kind, sha8)
+                    tmp_media = tmp_dir / f"{candidate.stem}_images"
+                    if tmp_media.is_dir() and any(tmp_media.iterdir()):
+                        final_media_dir = final.with_name(f"{final.stem}_media")
+                        if final_media_dir.exists():
+                            # Retry-safety, mirroring PandocIngestAdapter: an
+                            # orphan from an earlier attempt that finalized
+                            # the media dir but died before the paired `.md`
+                            # landed must not block `os.replace`.
+                            shutil.rmtree(final_media_dir)
+                        atomic_finalize(tmp_media, final_media_dir)
                     self._results[candidate] = atomic_finalize(tmp_output, final)
                 else:
                     cause = (batch_error.stdout or str(batch_error)) if batch_error else (

@@ -585,14 +585,32 @@ def test_review_section_text_pending_marker_ignores_substring_false_positives():
 
 
 def test_review_section_text_pending_marker_still_flags_real_marker_forms():
+    # The real marker is always emitted UPPERCASE by convention (see
+    # section_rendering's scaffold sentences). Only those forms are the
+    # marker; lowercase "pendiente" is ordinary Spanish prose (see the
+    # false-positive regression test below).
     contract = SectionContract(pending_allowed_in_draft=False)
     for text in (
         "# Título\n\nPENDIENTE: documentar la evidencia del ledger.",
-        "# Título\n\nQueda pendiente la revisión final.",
+        "# Título\n\nQueda PENDIENTE la revisión final.",
         "# Título\n\nEsto está PENDIENTE.",
     ):
         issues = _call(text, contract=contract)
         assert any(i.code == "content.pending_not_allowed" for i in issues), text
+
+
+def test_review_section_text_pending_marker_ignores_legit_lowercase_adjective():
+    # Regression: "pendiente(s)" is a legitimate Spanish adjective ("temas
+    # pendientes", "observaciones pendientes"). Only the real, always-UPPERCASE
+    # marker convention should trip content.pending_not_allowed -- a
+    # case-insensitive match on lowercased text false-flagged ordinary prose.
+    contract = SectionContract(pending_allowed_in_draft=False)
+    text = (
+        "# Título\n\nQuedan algunas observaciones pendientes y temas "
+        "pendientes por revisar en la siguiente reunión."
+    )
+    issues = _call(text, contract=contract)
+    assert not any(i.code == "content.pending_not_allowed" for i in issues)
 
 
 def test_review_section_text_dispatches_to_apa7_review():
