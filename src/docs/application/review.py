@@ -195,9 +195,29 @@ class ReviewService:
                 self.repository.write_section(doc_id, section.order, section.id, generated)
                 return section_path
             is_managed = current_metadata.get("managed_by") == "docs-harness"
-            current_body_hash = hashlib.sha256(current_body.encode("utf-8")).hexdigest()
-            is_unchanged = current_metadata.get("body_hash") == current_body_hash
-            if is_managed and is_unchanged:
+            # Content-based, not hash-based: `body_hash` in frontmatter only
+            # records what the body looked like the *last time this function
+            # wrote it* (including from stamp_section, which recomputes it
+            # from the current -- possibly authored -- body). It can be
+            # perfectly self-consistent and still not match a fresh re-render,
+            # so comparing it to a freshly hashed current_body proves nothing
+            # about whether the section was authored. Comparing the actual
+            # current body against the actual fresh render does.
+            authored_by = current_metadata.get("authored_by", "harness-scaffold")
+            looks_authored = current_body != body or authored_by != "harness-scaffold"
+            # ponytail: the `current_body != body` term also fires for an
+            # UNstamped, never-authored scaffold section whose fresh render
+            # merely drifted (e.g. upstream evidence/context changed the
+            # scaffold text). That routes it to a `_proposals` candidate
+            # instead of regenerating in place -- a minor cost. It is the
+            # deliberate safe side of an ambiguity we cannot resolve by content
+            # alone: an unstamped section with a drifted body is
+            # indistinguishable from one the agent authored but forgot to
+            # stamp. Erring toward proposal-protection never loses authored
+            # work; erring toward in-place regeneration would reopen the exact
+            # data-loss bug this check exists to close. Do not "optimize" the
+            # spurious proposal away without provenance to disambiguate.
+            if is_managed and not looks_authored:
                 if generated_metadata_changed(current_metadata, metadata):
                     self.repository.write_section(doc_id, section.order, section.id, generated)
                 return section_path

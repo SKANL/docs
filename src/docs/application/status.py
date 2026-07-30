@@ -58,7 +58,26 @@ class StatusService:
                 continue
             sections_authored += 1
             metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
-            if metadata.get("authored_by") == "harness-scaffold" or "PENDIENTE" in body:
+            # Content-based, not `authored_by`-based: authored_by only
+            # changes via the optional, explicit stamp-section command, so a
+            # section can be fully authored (no leftover PENDIENTE) yet still
+            # carry the default "harness-scaffold" value forever. Leftover
+            # PENDIENTE markers are the real signal that a section still
+            # needs authoring.
+            #
+            # Coverage note (holds for every real section kind): a contract
+            # scaffold ALWAYS carries the disclaimer line
+            # (`section_rendering.render_contract_scaffold`, "...resolver todos
+            # los PENDIENTE...") until authored, so it is correctly flagged
+            # regardless of whether it declares any `required_content`. The
+            # only fresh scaffold with no PENDIENTE is a TOC section
+            # (`render_toc_section` -> `[[TOC]]`), and that is correct: a TOC
+            # is fully harness-generated and resolves at build time, so it
+            # needs no authoring and must NOT be reported as pending.
+            # ponytail: this couples "still-scaffold" to the disclaimer wording
+            # carrying "PENDIENTE"; if that line ever drops the word, switch to
+            # comparing `body` against a fresh scaffold render instead.
+            if "PENDIENTE" in body:
                 sections_scaffold.append(section.id)
             review = self.review_service.review_section(
                 doc_id, template, section.id, strict=False, normative=normative
