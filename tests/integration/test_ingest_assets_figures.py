@@ -12,6 +12,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import struct
+import zlib
 from pathlib import Path
 
 from docs.application.ingest import IngestService
@@ -21,6 +23,34 @@ _PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY"
     "42YAAAAASUVORK5CYII="
 )
+
+
+def _malformed_but_pillow_openable_png() -> bytes:
+    """A hand-built 4x4 RGBA PNG whose IDAT chunk declares a length 8 bytes
+    longer than its actual compressed data (a "raw"/non-Pillow encoder's
+    off-by-N framing bug). Pillow's decoder tolerates this -- it scans the
+    zlib stream to its own natural end and ignores the declared-length
+    overshoot -- but python-docx's minimal `docx.image.png` chunk-offset
+    walker trusts the declared length literally, overruns past the real
+    end of file while reading the next chunk header, and raises
+    `docx.image.exceptions.UnexpectedEndOfFileError` -- a bare `Exception`
+    subclass raised with NO arguments, so `str(exc) == ""`. This is a real,
+    deterministic reproduction of the reported clean-room bug (confirmed via
+    both `PIL.Image.open(...).load()` succeeding and `docx.image.image.Image.
+    from_file(...)` raising), not a synthetic/injected failure."""
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+    def chunk_with_declared_len(tag: bytes, data: bytes, declared_len: int) -> bytes:
+        return struct.pack(">I", declared_len) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+    width = height = 4
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)  # 8-bit RGBA
+    raw = b"".join(b"\x00" + bytes([255, 0, 0, 255] * width) for _ in range(height))
+    idat_data = zlib.compress(raw)
+    idat_chunk = chunk_with_declared_len(b"IDAT", idat_data, len(idat_data) + 8)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + idat_chunk + chunk(b"IEND", b"")
 
 
 class _FakeDetector:
@@ -334,3 +364,46 @@ def test_real_drop_cover_convention_asset_and_catalog_images_all_visible(tmp_pat
         "images/guia-referencia-estadia-tic/page-001-image-001.png",
         "images/guia-referencia-estadia-tic/page-002-image-002.png",
     }
+
+
+# --- HIGH robustness fix: a crashing image must not abort the whole batch --
+
+
+def test_image_metadata_crash_is_isolated_warns_and_still_catalogs_other_images(
+    tmp_path: Path, capsys
+) -> None:
+    """A malformed-but-Pillow-openable image makes python-docx's minimal PNG
+    parser raise `UnexpectedEndOfFileError` (empty message) instead of one
+    of `read_dimensions`'s already-handled exception types. Before the fix,
+    this exception escaped `ingest_inbox` entirely and crashed the whole
+    scan. It must instead degrade exactly like a known-unparseable image
+    (null dimensions, still cataloged) while surfacing a non-empty WARN."""
+    inbox = tmp_path / "inbox"
+    (inbox / "images").mkdir(parents=True)
+    (inbox / "images" / "bad.png").write_bytes(_malformed_but_pillow_openable_png())
+    (inbox / "images" / "good.png").write_bytes(_PIXEL_PNG)
+    (inbox / "notes.md").write_text("# hello", encoding="utf-8")
+    service = IngestService(
+        _FakeDetector({"notes.md": "md"}),
+        {"md": _TextEchoHandler()},
+        image_metadata=PythonDocxImageMetadataAdapter(),
+    )
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections")  # must not raise
+
+    # The other source still ingests normally.
+    assert any(e["file"] == "notes.md" and e["status"] == "ingested" for e in report["files"])
+
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    by_origin = {f["origin_relative_path"]: f for f in catalog["figures"]}
+    # The crashing image is still cataloged (sha256 known from its bytes),
+    # just without dimensions -- same shape as a genuinely-unparseable file.
+    assert by_origin["images/bad.png"]["width_px"] is None
+    assert by_origin["images/bad.png"]["height_px"] is None
+    # The OTHER image is unaffected -- real dimensions still read.
+    assert by_origin["images/good.png"]["width_px"] == 1
+    assert by_origin["images/good.png"]["height_px"] == 1
+
+    stderr = capsys.readouterr().err
+    assert "images/bad.png" in stderr
+    assert "UnexpectedEndOfFileError" in stderr  # non-empty diagnostic, not "ERROR: "
