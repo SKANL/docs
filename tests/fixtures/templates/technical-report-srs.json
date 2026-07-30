@@ -1,0 +1,132 @@
+{
+  "type": "technical-report-srs",
+  "title": "Technical Report (SRS)",
+  "project_defaults": {
+    "language": "en-US",
+    "voice": "third_person_singular",
+    "document_type": "technical_report_srs",
+    "scope_policy": ""
+  },
+  "paths": {},
+  "normative": {
+    "excluded_front_matter": {},
+    "first_person_patterns": [],
+    "subjective_terms": [
+      "amazing",
+      "incredible",
+      "obviously",
+      "clearly",
+      "unfortunately",
+      "fortunately",
+      "simply",
+      "success",
+      "failure"
+    ]
+  },
+  "advisor_overrides": [],
+  "structure": [
+    { "type": "fixed_text_page", "text_field": "title" },
+    { "type": "toc" },
+    {
+      "type": "sections",
+      "preliminary_pagination": {},
+      "body_restart_section": "overview",
+      "body_pagination": { "format": "decimal", "start": 1 }
+    }
+  ],
+  "format": {
+    "page_size": "letter",
+    "page_margins_cm": {
+      "cover_policy": "preserve_template",
+      "non_cover": { "top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5 }
+    },
+    "body_font": "Calibri",
+    "body_font_pt": 11,
+    "line_spacing": 1.15,
+    "first_line_indent_cm": 0,
+    "paragraph_space_after_pt": 12,
+    "table_policy": "horizontal_lines_only_no_color",
+    "figure_caption_position": "below",
+    "keyword_bold_terms": {}
+  },
+  "apa7": { "enabled": false, "citation_style": "none" },
+  "privacy": { "forbidden_in_body_patterns": [], "sensitive_context_fields": [] },
+  "strict_policy": {
+    "draft": { "allow_pending": true, "length_violations": "warning", "missing_evidence": "warning", "apa_violations": "warning" },
+    "strict": { "allow_pending": false, "length_violations": "error", "missing_evidence": "error", "apa_violations": "error" }
+  },
+  "cross_consistency": { "enabled": true, "contested_stack_terms": ["jQuery", "AngularJS", "Silverlight"] },
+  "documents_tools": { "enabled": false, "required_in_strict": false, "scripts": [] },
+  "ledger_seed": [],
+  "context_schema": {
+    "topics": [
+      {
+        "id": "project",
+        "title": "Project metadata",
+        "required": true,
+        "consumed_by": ["overview", "scope", "architecture"],
+        "fields": [
+          { "key": "name", "label": "Project name", "required": true },
+          { "key": "author", "label": "Author", "required": true },
+          { "key": "date", "label": "Date", "required": false }
+        ]
+      },
+      {
+        "id": "objective",
+        "title": "Objective and scope",
+        "required": true,
+        "multiline": true,
+        "consumed_by": ["overview", "scope"],
+        "prompt": "Describe the system's purpose, scope boundaries, and target users."
+      }
+    ]
+  },
+  "sections": [
+    { "id": "overview", "title": "OVERVIEW", "required": true, "order": 10 },
+    { "id": "scope", "title": "SCOPE", "required": true, "order": 20 },
+    { "id": "requirements", "title": "REQUIREMENTS", "required": true, "order": 30 },
+    { "id": "architecture", "title": "ARCHITECTURE", "required": true, "order": 40 },
+    { "id": "implementation", "title": "IMPLEMENTATION", "required": true, "order": 50 },
+    { "id": "testing", "title": "TESTING", "required": true, "order": 60 },
+    { "id": "references", "title": "REFERENCES", "required": false, "order": 70 }
+  ],
+  "section_contracts": {
+    "overview": {
+      "title": "OVERVIEW",
+      "required_content": ["purpose", "audience"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "scope": {
+      "title": "SCOPE",
+      "required_content": ["in scope", "out of scope"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "requirements": {
+      "title": "REQUIREMENTS",
+      "required_content": ["functional requirements", "non-functional requirements"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "architecture": {
+      "title": "ARCHITECTURE",
+      "required_content": ["components", "data flow"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "implementation": {
+      "title": "IMPLEMENTATION",
+      "required_content": ["key modules", "technology stack"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "testing": {
+      "title": "TESTING",
+      "required_content": ["test strategy", "coverage"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "references": {
+      "title": "REFERENCES",
+      "references_list": true,
+      "required_content": ["cited sources"],
+      "detect": { "cited sources": ["reference", "n/a"] },
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    }
+  }
+}

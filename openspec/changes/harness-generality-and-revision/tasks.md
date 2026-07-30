@@ -80,11 +80,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: 2nd built-in template + acceptance (D) — PR 5, depends on PR 1
 
-- [ ] 5.1 RED (`tests/integration/test_technical_report_srs_acceptance.py`, new): full pipeline (ingest → author → review → assemble) on the SRS template completes green, using ITS `contested_stack_terms`/`citation_style: none` — not estadia's
-- [ ] 5.2 GREEN: author `templates/builtin/technical-report-srs.json` (English, non-APA, `citation_style: none`, distinct `subjective_terms`/`contested_stack_terms`, structurally different sections)
-- [ ] 5.3 RED (`tests/unit/cli/test_template_app.py`, extend): `template list --available` lists both `reporte-estadia-tic` and `technical-report-srs`; both usable via `template use`
-- [ ] 5.4 GREEN: verify `pyproject.toml`'s existing `templates/builtin/*.json` package-data glob already covers the new file (no change expected)
-- [ ] 5.5 Run `tests/integration/test_documento_generico_acceptance.py` + the new SRS acceptance test together — proves A's config-drive across two independent templates
+- [x] 5.1 RED (`tests/integration/test_technical_report_srs_acceptance.py`, new): full pipeline (ingest → author → review → assemble) on the SRS template completes green, using ITS `contested_stack_terms`/`citation_style: none` — not estadia's
+- [x] 5.2 GREEN: author `templates/builtin/technical-report-srs.json` (English, non-APA, `citation_style: none`, distinct `subjective_terms`/`contested_stack_terms`, structurally different sections)
+- [x] 5.3 RED (`tests/integration/test_cli_template.py`, extend — no `tests/unit/cli/test_template_app.py` exists in this codebase; PR3's built-in-template-provisioning coverage already lives in `test_cli_template.py`, extended there instead of creating a duplicate file): `template list --available` lists both `reporte-estadia-tic` and `technical-report-srs`; both usable via `template use`
+- [x] 5.4 GREEN: verified `pyproject.toml`'s existing `[tool.hatch.build.targets.wheel] packages = ["src/docs"]` already covers the new file (no change made) — `_list_builtin_names()`/`_read_builtin()` (`template_app.py`) already discover any `*.json` under `docs.templates.builtin` via `importlib.resources`, no registration code needed
+- [x] 5.5 Run `tests/integration/test_documento_generico_acceptance.py` + the new SRS acceptance test together — proves A's config-drive across two independent templates (both green)
 
 ## Phase 6: Lifecycle + build version + `doc status` (F) — PR 6, independent
 
