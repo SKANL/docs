@@ -155,7 +155,8 @@ class PipelineService:
             if self.context_repository.topic_exists(doc_id, topic.id):
                 context[topic.id] = self.context_repository.read_topic_raw(doc_id, topic.id)
         keyword_bold_terms = config.get("format", {}).get("keyword_bold_terms", {}).get(section_id, [])
-        body = render_section_draft(section_id, section.title, contract, context, keyword_bold_terms)
+        citation_style = resolve_normative_settings(config).citation_style
+        body = render_section_draft(section_id, section.title, contract, context, keyword_bold_terms, citation_style)
         return self.review_service.build_section(
             doc_id, template, section_id, body,
             source_hash=self.evidence_service.source_hash(config),

@@ -187,11 +187,49 @@ class TestRenderContractScaffold:
         assert "Fuentes APA 7" in body
         assert "PENDIENTE: ordenar alfabéticamente" in body
 
+    def test_includes_apa_pendiente_when_citation_style_is_apa7_explicitly(self):
+        # Positive: an apa7-citation-style template still gets the APA scaffold
+        # block (default citation_style stays "apa7" for backward compat with
+        # every caller that doesn't pass it, e.g. estadia).
+        body = render_contract_scaffold("Discusión", SectionContract(apa_required=True), {}, citation_style="apa7")
+        assert "Fuentes APA 7" in body
+        assert "PENDIENTE: agregar citas autor-fecha" in body
+
+    def test_omits_apa_section_when_citation_style_is_none_even_if_apa_required(self):
+        # Negative: a section-level apa_required=True is meaningless once the
+        # TEMPLATE declares citation_style: none (e.g. technical-report-srs) --
+        # this must never leak an APA-specific scaffold hint into a non-APA doc.
+        body = render_contract_scaffold("Discusión", SectionContract(apa_required=True), {}, citation_style="none")
+        assert "Fuentes APA 7" not in body
+        assert "PENDIENTE: agregar citas autor-fecha" not in body
+
+    def test_omits_references_apa_pendiente_when_citation_style_is_none(self):
+        body = render_contract_scaffold(
+            "Referencias", SectionContract(references_list=True), {}, citation_style="none"
+        )
+        assert "PENDIENTE: ordenar alfabéticamente" not in body
+
+    def test_includes_references_apa_pendiente_when_citation_style_is_apa7(self):
+        body = render_contract_scaffold(
+            "Referencias", SectionContract(references_list=True), {}, citation_style="apa7"
+        )
+        assert "PENDIENTE: ordenar alfabéticamente" in body
+
 
 class TestRenderSectionDraft:
     def test_toc_contract_renders_toc_body(self):
         body = render_section_draft("toc", "Índice", SectionContract(toc=True), {}, [])
         assert "[[TOC]]" in body
+
+    def test_citation_style_none_threaded_through_to_scaffold(self):
+        contract = SectionContract(apa_required=True)
+        body = render_section_draft("discusion", "Discusión", contract, {}, [], citation_style="none")
+        assert "Fuentes APA 7" not in body
+
+    def test_citation_style_defaults_to_apa7_when_omitted(self):
+        contract = SectionContract(apa_required=True)
+        body = render_section_draft("discusion", "Discusión", contract, {}, [])
+        assert "Fuentes APA 7" in body
 
     def test_non_toc_contract_renders_scaffold_and_applies_bold(self):
         body = render_section_draft("intro", "Introducción", SectionContract(), {}, ["alcance"])
