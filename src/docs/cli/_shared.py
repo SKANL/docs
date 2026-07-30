@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ from docs.domain.docx_structure import structure_parts
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_config import resolve_workspace_roots
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
@@ -62,12 +64,32 @@ def _ctx(ctx: typer.Context) -> tuple[Deps, str]:
     return ctx.obj["deps"], ctx.obj["doc"]
 
 
+WORKSPACE_CONFIG_FILENAME = "docs.config.json"
+
+
+def _load_workspace_config() -> dict[str, str] | None:
+    """Best-effort read of `docs.config.json` in cwd (spec: workspace-config
+    "Persisted Workspace Configuration"). A malformed file WARNs to stderr and
+    is ignored — fail-open, never bricks a command (design.md item A)."""
+    path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"WARN: no se pudo leer {path}, se ignora ({exc}).", file=sys.stderr)
+        return None
+
+
 def build_workspace() -> Workspace:
-    """Workspace roots from env (injectable in tests), cwd-relative defaults.
-    Legacy hardcoded HARNESS_ROOT/documents & templates; no library equivalent
-    (Judgment call 2)."""
-    documents_dir = Path(os.environ.get("DOCS_DOCUMENTS_DIR", "documents"))
-    templates_dir = Path(os.environ.get("DOCS_TEMPLATES_DIR", "templates"))
+    """Workspace roots: `docs.config.json` (cwd) -> env vars (injectable in
+    tests) -> cwd-relative defaults, in that precedence order (spec:
+    workspace-config "Config Precedence Resolution"). Legacy hardcoded
+    HARNESS_ROOT/documents & templates; no library equivalent (Judgment call
+    2)."""
+    documents_dir, templates_dir = resolve_workspace_roots(
+        _load_workspace_config(), os.environ, (Path("documents"), Path("templates"))
+    )
     return Workspace(documents_dir=documents_dir, templates_dir=templates_dir)
 
 

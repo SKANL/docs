@@ -46,12 +46,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: Workspace config + `doc init` (A) — PR 2, depends on PR 1
 
-- [ ] 2.1 RED: `resolve_workspace_roots` precedence — config overrides env, env overrides default
-- [ ] 2.2 GREEN: `domain/workspace_config.py:resolve_workspace_roots` (pure)
-- [ ] 2.3 RED: malformed `docs.config.json` → WARN + fallback, never brick a command
-- [ ] 2.4 GREEN: `build_workspace()` best-effort reads `Path.cwd()/"docs.config.json"`, delegates to resolver (`cli/_shared.py:64`)
-- [ ] 2.5 RED: `doc init` bootstraps config+dirs+seeded template; refuses clobber without `--force`
-- [ ] 2.6 GREEN: implement `doc init` on `doc_app.py:15` (calls `template use` from PR 3 — stub until PR 3 lands, or sequence after PR 3 if simpler)
+- [x] 2.1 RED: `resolve_workspace_roots` precedence — config overrides env, env overrides default
+- [x] 2.2 GREEN: `domain/workspace_config.py:resolve_workspace_roots` (pure)
+- [x] 2.3 RED: malformed `docs.config.json` → WARN + fallback, never brick a command
+- [x] 2.4 GREEN: `build_workspace()` best-effort reads `Path.cwd()/"docs.config.json"`, delegates to resolver (`cli/_shared.py:64`)
+- [x] 2.5 RED: `doc init` bootstraps config+dirs+seeded template; refuses clobber without `--force`
+- [x] 2.6 GREEN: implement `doc init` on `doc_app.py:15` (calls `template use` from PR 3 — stub until PR 3 lands, or sequence after PR 3 if simpler)
 
 ## Phase 3: Built-in template provisioning (C) — PR 3, depends on PR 2
 

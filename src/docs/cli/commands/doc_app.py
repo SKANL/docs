@@ -7,12 +7,59 @@ Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted with
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import typer
 
-from docs.cli._shared import _ctx
+from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx
+from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
+
+
+@doc_app.command("init")
+def doc_init(
+    ctx: typer.Context,
+    documents_dir: str = typer.Option("", "--documents-dir", help="Ruta de documents_dir a registrar (por defecto, la resuelta actualmente vía config/env)."),
+    templates_dir: str = typer.Option("", "--templates-dir", help="Ruta de templates_dir a registrar (por defecto, la resuelta actualmente vía config/env)."),
+    force: bool = typer.Option(False, "--force", help="Sobrescribe docs.config.json aunque difiera del existente."),
+) -> None:
+    """Bootstrapea un workspace: crea documents_dir/templates_dir, escribe
+    docs.config.json con las rutas resueltas y siembra las plantillas
+    integradas si templates_dir está vacío (spec: workspace-config `doc init`
+    Bootstrap Command; design.md item A, reutiliza `template use` de C)."""
+    deps, _ = _ctx(ctx)
+    resolved_documents = documents_dir or str(deps.workspace.documents_dir)
+    resolved_templates = templates_dir or str(deps.workspace.templates_dir)
+    new_config = {"documents_dir": resolved_documents, "templates_dir": resolved_templates}
+
+    config_path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
+    if config_path.exists() and not force:
+        try:
+            existing = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = None
+        if existing == new_config:
+            print(f"El workspace ya está inicializado ({config_path}).")
+            return
+        print(f"Ya existe `{config_path}` con otra configuración. Usa --force para sobrescribir.")
+        raise typer.Exit(code=1)
+
+    config_path.write_text(
+        json.dumps(new_config, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+    documents_path = Path(resolved_documents)
+    templates_path = Path(resolved_templates)
+    documents_path.mkdir(parents=True, exist_ok=True)
+    templates_path.mkdir(parents=True, exist_ok=True)
+
+    if not any(templates_path.glob("*.json")):
+        for name in _list_builtin_names():
+            (templates_path / f"{name}.json").write_text(_read_builtin(name), encoding="utf-8")
+
+    print(f"Workspace inicializado: {config_path}")
+    print(f"documents_dir={documents_path}, templates_dir={templates_path}")
 
 
 @doc_app.command("new")
