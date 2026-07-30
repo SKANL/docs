@@ -1,7 +1,8 @@
 change: agent-agnostic-real-world-usability
 artifact_store: hybrid
 created: 2026-07-29
-updated: 2026-07-29
+updated: 2026-07-30
+archived: 2026-07-30
 
 phases:
   explore:
@@ -35,12 +36,26 @@ phases:
       Opened PR #20 (base fix/docx-figures-and-apa-review, stacked on #19).
     mirror: sdd/agent-agnostic-real-world-usability/apply-progress (engram)
   verify:
-    status: pending
+    status: done
+    note: >
+      Verified against main @ 23ad2f8 (PR #19 + PR #20 merged). Full suite
+      1227 passed / 0 failed / 7 skipped. All 63 tasks checked. All 13 items
+      (A-M) satisfied with code + passing test evidence, no CRITICAL/WARNING
+      issues. Verdict PASS.
+    artifact: verify-report.md
+    mirror: sdd/agent-agnostic-real-world-usability/verify-report (engram)
   archive:
-    status: pending
+    status: done
+    note: >
+      Specs merged into main specs under openspec/specs/; delta specs synced
+      for 6 capabilities (3 new: workspace-config, agent-contract,
+      template-provisioning; 3 modified: document-ingest, document-pipeline,
+      document-render). Change folder moved to archive. Archive report
+      persisted with full observation-ID ledger for traceability.
+    artifact: archive-report.md
+    mirror: sdd/agent-agnostic-real-world-usability/archive-report (engram)
 
-next_recommended:
-  - sdd-verify
+next_recommended: none
 
 capabilities:
   new:
