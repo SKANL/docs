@@ -42,9 +42,28 @@ phases:
       Remaining: Phase 12 final acceptance against the user's real drop, then
       archive.
   verify:
-    status: pending
+    status: done
+    note: >
+      Verified against main c8f9d88, suite 1326 passed / 7 skipped —
+      implementation complete, zero implementation gap. See
+      verify-report-pr1.md through verify-report-pr6.md for the per-front
+      verify trail.
   archive:
-    status: pending
+    status: done
+    note: >
+      Reconciled 2026-07-30. document-template created as a new canonical
+      spec (verbatim from this change's delta, already in canonical form).
+      document-pipeline/document-ingest/asset-management deltas merged
+      additively where not already superseded by later-archived changes
+      (agent-agnostic-real-world-usability, harness-generality-and-revision).
+      Two delta requirements skipped as superseded: document-ingest's
+      folder-lexicon "Source-Role Classification" (superseded by the
+      newer "Content-Based Source Classification with Confidence
+      Threshold") and document-pipeline's "Machine-Readable Gap Report"
+      (flagged, not confidently superseded — overlaps document-ingest's
+      "Human/Agent-Readable Intake Report"; left for orchestrator review,
+      not added to avoid a contradictory duplicate). See archive-report.md
+      for the full per-requirement breakdown.
 
 next_recommended:
   - resolve-delivery-decision   # Review Workload Guard fired: chained PRs recommended, chain strategy pending

@@ -235,3 +235,75 @@ The pipeline/CLI MUST allow selecting `html` and/or `pdf` as target output forma
 - GIVEN a document config requesting `pdf` output
 - WHEN assemble runs
 - THEN a PDF artifact is produced via the format registry, or a WARN+skip if the PDF toolchain is absent
+
+### Requirement: Template-Declared Review-Rules Checks
+
+`review-rules` checks MUST be driven entirely by what the resolved template
+declares — conditional checks that run only when their policy block is
+present, and consistency checks that compare a template's declared values
+against itself, never against a hardcoded literal.
+
+#### Scenario: APA gate respected
+
+- GIVEN a template with `apa7.enabled` set to `false`
+- WHEN `review-rules` runs
+- THEN no APA-compliance check is required to pass, and none is forced true
+
+#### Scenario: Preliminaries checked only when declared
+
+- GIVEN a template with a `preliminaries` block declared
+- WHEN `review-rules` runs
+- THEN the check compares the document against the template's own declared
+  structure (e.g., its own body-restart section id), not a fixed literal
+
+#### Scenario: Margins checked for shape, not value
+
+- GIVEN a template declaring a `page_margins_cm` block
+- WHEN `review-rules` runs
+- THEN it verifies the declared keys hold numeric centimeter values
+- AND it does not require any specific numeric value
+
+#### Scenario: Extracted-dir policy checked only when configured
+
+- GIVEN a template with no `paths.extracted_dir` configured
+- WHEN `review-rules` runs
+- THEN the extracted-dir policy check does not execute
+- AND when `paths.extracted_dir` IS configured, the check verifies the
+  declared policy string is internally consistent with `source_priority`
+
+### Requirement: Build-Rules Guards Absent Paths
+
+The `build-rules` stage MUST NOT raise an unhandled exception when template
+`paths` configuration is empty or missing keys; it MUST skip the affected
+sub-step or degrade with a reported gap instead of crashing.
+
+#### Scenario: Empty paths config does not crash build-rules
+
+- GIVEN a template with an empty `paths` object
+- WHEN the `build-rules` stage runs
+- THEN it completes without raising `KeyError` or any unhandled exception
+
+#### Scenario: Missing path reported as a gap, not a crash
+
+- GIVEN a template missing `paths.manual_dir` or `paths.extracted_dir`
+- WHEN `build-rules` runs
+- THEN the affected sub-step is skipped or degraded
+- AND the missing configuration is reported, not silently ignored
+
+### Requirement: Document Workspace Creation Includes Ingest Inbox
+
+Creating a new document workspace MUST create the source-ingest `inbox/`
+directory alongside existing workspace subdirectories, so ingest has a
+target directory without manual setup.
+
+#### Scenario: New document workspace includes inbox/
+
+- GIVEN a user creates a new document
+- WHEN workspace creation completes
+- THEN an empty `inbox/` directory exists under the document's workspace
+
+#### Scenario: Existing workspace creation behavior preserved
+
+- GIVEN a user creates a new document
+- WHEN workspace creation completes
+- THEN all previously created subdirectories (e.g., `corrections/`) still exist

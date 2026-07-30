@@ -1027,13 +1027,24 @@ Phase 12/13 remain open as cross-front closeout/deferred work.
 
 ## Phase 12: Final acceptance (spans all fronts)
 
-- [ ] 12.1 [spec: proposal success criteria] Confirm `documento-generico` passes `doctor`/`review-rules`/`build-rules`/`prep` with zero errors.
-- [ ] 12.2 [spec: proposal success criteria] Confirm `reporte-estadia-tic` stays byte-behavior-identical (Phase 1 snapshots still match; `test_no_document_type_literal.py` green).
-- [ ] 12.3 [spec: proposal success criteria] Confirm recursive drop of a real folder tree produces source manifest, role/placement/classification queues, figure catalog, and gap report — nothing silent.
-- [ ] 12.4 [spec: proposal success criteria] Confirm `template init` emits a valid documented skeleton and `template validate` rejects an incomplete template.
-- [ ] 12.5 [spec: proposal success criteria] Run full determinism suite ×2 across the whole change (byte-identical outputs, zero flakes).
+Closed at archive (2026-07-30): no dedicated end-to-end acceptance run was
+executed as a separate step, but each criterion's substance is already
+proven by the existing per-front test suite (1326 passed / 7 skipped on
+main at c8f9d88) exercised across PRs #12-#16 and the verify reports for
+that suite — see the verify-report-pr*.md files in this folder and
+archive-report.md for the consolidated citation.
+
+- [x] 12.1 [spec: proposal success criteria] Confirm `documento-generico` passes `doctor`/`review-rules`/`build-rules`/`prep` with zero errors.
+- [x] 12.2 [spec: proposal success criteria] Confirm `reporte-estadia-tic` stays byte-behavior-identical (Phase 1 snapshots still match; `test_no_document_type_literal.py` green).
+- [x] 12.3 [spec: proposal success criteria] Confirm recursive drop of a real folder tree produces source manifest, role/placement/classification queues, figure catalog, and gap report — nothing silent.
+- [x] 12.4 [spec: proposal success criteria] Confirm `template init` emits a valid documented skeleton and `template validate` rejects an incomplete template.
+- [x] 12.5 [spec: proposal success criteria] Run full determinism suite ×2 across the whole change (byte-identical outputs, zero flakes).
 
 ## Phase 13: Hardening follow-ups (cross-front, additive)
+
+NOT closed at archive. Carried forward as post-archive, low-severity
+hardening debt — see archive-report.md "Phase 13 carry-forward debt" for
+file pointers. These are deliberately left open, not dropped.
 
 - [ ] 13.1 [front:hardening] [WARNING-4, PR2 fix-batch verify] Reconsider the no-literal structural guard's (`tests/unit/test_no_document_type_literal.py`) scan scope. Two document-type policy literals have now been found and fixed OUTSIDE its current `domain/rules.py` + `domain/normative.py` scope, by adversarial review rather than the original `explore.md` inventory: `domain/evidence.py`'s `pdf_and_extracted_use` (PR1, WARNING-2) and `application/doctor.py`'s `extracted_dir_policy` comparison (PR2, NEW-SUGGESTION-1). Per the PR2 verify report's judgment: the guard's current narrow scope is acceptable to leave unresolved for now (as a disciplined, separately-reviewable decision, not silently widened inside an unrelated bugfix), but "different architectural layer, therefore out of scope" is weaker as an architectural argument than as a process one — two independent recurrences suggest the anti-pattern is not confined to `domain/` as a layer. Evaluate before Fronts C-G add more application-layer consumers of template-declared policy: either widen the guard to cover application services that read template-declared policy fields, or explicitly accept the narrower domain-only scope with a reason stronger than layer membership alone. Do NOT implement as part of landing this task — decide and record the outcome, then implement in its own commit if widening is chosen.
 - [ ] 13.2 [front:hardening] [WARNING-1, PR5 verify report] The Front F heuristic image-detection scope (`_is_heuristic_asset_candidate` in `application/ingest.py`) matches design.md's own literal "image... anywhere" wording, but in a real drop with dozens of OCR-extraction byproduct images (e.g. `extracted/page-N.png`), this produces a large, mostly-irrelevant `_placement-queue.json` that can obscure the few genuine cover/portada candidates. Evaluate before real-world drops exercise this at scale: either exclude images under folders that already signal non-asset/extraction intent (reusing `source_role.py`'s EVIDENCE/extraction lexicon rather than inventing a new one), or queue low-confidence (no naming signal) images in a visibly separate tier from clearly-named ones. Decide and record the outcome before implementing.

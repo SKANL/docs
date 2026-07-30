@@ -53,9 +53,11 @@ contract now lives in `openspec/specs/`.
 
 ## Specs & planning — read on demand (do not @import)
 
-- `openspec/specs/<capability>/spec.md` — the CURRENT contract (5
-  capabilities: document-pipeline, document-render, document-ingest,
-  context-curation, asset-management). New SDD changes delta against these.
+- `openspec/specs/<capability>/spec.md` — the CURRENT contract (11
+  capabilities: agent-contract, asset-management, context-curation,
+  document-ingest, document-lifecycle, document-pipeline, document-render,
+  document-revise, document-template, template-provisioning,
+  workspace-config). New SDD changes delta against these.
 - `openspec/changes/<change>/` — active SDD changes, if any (none right
   now). `state.yaml` is the phase record; tasks.md checkboxes are the truth
   of progress; planning artifacts are frozen, additive edits only.
