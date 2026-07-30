@@ -496,6 +496,62 @@ def test_run_pipeline_assemble_threads_custom_draft_name_to_audit_and_qa(tmp_pat
     assert not (draft_dir / "tesina-draft.docx").exists()
 
 
+# --- build-html stage (PR2, item C-html) ----------------------------------
+
+
+def test_run_pipeline_assemble_runs_build_html_stage_for_html_renderer(tmp_path):
+    class _FakeHtmlRenderer:
+        output_format = "html"
+
+        def stage_plan(self):
+            return [("build-html", True)]
+
+        def build(self, doc_id, config, output=None):
+            output_dir = Path(config["paths"]["output_draft_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output or (output_dir / "tesina-draft.html")
+            path.write_text("<html></html>", encoding="utf-8")
+            return path
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeHtmlRenderer()
+    )
+
+    html_stage = next(s for s in summary["stages"] if s["stage"] == "build-html")
+    assert html_stage["ok"] is True
+    assert (tmp_path / "draft" / "tesina-draft.html").exists()
+
+
+def test_run_pipeline_build_html_stage_degrades_cleanly_when_renderer_skips(tmp_path):
+    # HtmlRendererAdapter.build() returns None (WARN + skip) when pandoc is
+    # absent -- the stage must stay ok=True with an "omitido" detail, the same
+    # best-effort pattern as stage_collect_issues, never a pipeline failure
+    # for a secondary, opt-in output format.
+    class _FakeSkippingHtmlRenderer:
+        output_format = "html"
+
+        def stage_plan(self):
+            return [("build-html", True)]
+
+        def build(self, doc_id, config, output=None):
+            return None
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingHtmlRenderer()
+    )
+
+    html_stage = next(s for s in summary["stages"] if s["stage"] == "build-html")
+    assert html_stage["ok"] is True
+    assert "omitido" in html_stage["detail"]
+
+
 def test_pipeline_and_renderer_resolve_draft_name_from_one_shared_default(tmp_path, monkeypatch):
     # D1 (tech-debt closeout): pipeline.py and docx_assembly.py each used to
     # declare their own "tesina-draft.docx" literal. Both must now resolve

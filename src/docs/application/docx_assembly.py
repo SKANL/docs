@@ -1,16 +1,13 @@
 # src/docs/application/docx_assembly.py
 from __future__ import annotations
 
-import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
 from docs.application.asset import AssetService
 from docs.application.output_names import resolve_body_docx_name, resolve_draft_docx_name
-from docs.domain.cross_reference import number_and_resolve
+from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
 from docs.domain.docx_structure import sections_index, structure_parts
-from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 
@@ -81,13 +78,7 @@ class DocxRendererAdapter:
         if not pandoc:
             raise RuntimeError("Pandoc no está disponible en PATH. Instálalo y vuelve a ejecutar `build-docx`.")
 
-        sections = sorted(config["sections"], key=lambda item: item["order"])
-        sections_dir = Path(config["paths"]["sections_dir"])
-        existing_sections = [
-            sections_dir / f"{section['order']:03d}-{section['id']}.md"
-            for section in sections
-            if (sections_dir / f"{section['order']:03d}-{section['id']}.md").exists()
-        ]
+        existing_sections = resolve_existing_section_paths(config)
         if not existing_sections:
             raise RuntimeError("No hay secciones Markdown para ensamblar. Ejecuta `build-section resumen` primero.")
 
@@ -111,17 +102,6 @@ class DocxRendererAdapter:
         # order `sections` already arrives in) before pandoc ever sees the
         # text -- a pure, deterministic pass; text with no markers (e.g. a
         # section that already hand-writes `Figura N.`) passes through
-        # unchanged.
-        tmp_dir = Path(tempfile.mkdtemp(prefix="docs_sections_"))
-        bodies = [split_frontmatter(path.read_text(encoding="utf-8"))[1] for path in sections]
-        numbered, warnings = number_and_resolve(
-            [(path.stem, body) for path, body in zip(sections, bodies)]
-        )
-        for warning in warnings:
-            print(f"WARN: {warning}", file=sys.stderr)
-        stripped: list[Path] = []
-        for section_path, (_section_id, body) in zip(sections, numbered):
-            target = tmp_dir / section_path.name
-            target.write_text(body, encoding="utf-8")
-            stripped.append(target)
-        return stripped
+        # unchanged. Delegates to the shared `section_markdown` helper (PR2)
+        # so `HtmlRendererAdapter` reuses the exact same pass.
+        return strip_frontmatter_to_temp(sections)

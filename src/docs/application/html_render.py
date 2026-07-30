@@ -1,0 +1,66 @@
+# src/docs/application/html_render.py
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+from docs.application.output_names import resolve_html_name
+from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
+from docs.domain.ports.tool_resolver_port import ToolResolverPort
+
+
+class HtmlRendererAdapter:
+    """`DocumentRendererPort` implementation for single-file HTML output
+    (design.md item C-html): pandoc markdown -> standalone, self-contained
+    HTML, one call, no docx-specific assembly/audit/QA stages. Reuses the
+    same section-resolution and frontmatter-strip/figure-numbering pass as
+    `DocxRendererAdapter` via `application/section_markdown.py` rather than
+    duplicating it."""
+
+    output_format = "html"
+
+    def __init__(self, tool_resolver: ToolResolverPort) -> None:
+        self.tool_resolver = tool_resolver
+
+    def stage_plan(self) -> list[tuple[str, bool]]:
+        return [("build-html", True)]
+
+    def _html_name(self, config: dict[str, Any]) -> str:
+        return resolve_html_name(config)
+
+    def build(self, doc_id: str, config: dict[str, Any], output: Path | None = None) -> Path | None:
+        pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
+        if not pandoc:
+            # Unlike DocxRendererAdapter (docx is the primary, always-required
+            # format), HTML degrades cleanly when pandoc is absent: WARN and
+            # skip rather than fail the whole pipeline run for a secondary,
+            # opt-in output format.
+            print(
+                "WARN: Pandoc no está disponible en PATH. Se omite la salida HTML.",
+                file=sys.stderr,
+            )
+            return None
+
+        existing_sections = resolve_existing_section_paths(config)
+        if not existing_sections:
+            raise RuntimeError("No hay secciones Markdown para ensamblar. Ejecuta `build-section resumen` primero.")
+
+        output_dir = Path(config["paths"]["output_draft_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output = output or output_dir / self._html_name(config)
+
+        stripped_sections = strip_frontmatter_to_temp(existing_sections)
+        # `--standalone` produces a full HTML document (not a fragment);
+        # `--embed-resources` inlines any referenced assets so the artifact
+        # stays a single self-contained file (design.md Open Question:
+        # single-file, default). No `--metadata date=...`/wall-clock input is
+        # ever passed, so pandoc has nothing non-deterministic to stamp into
+        # the output (unlike docx's zip container, plain HTML has no
+        # container-level timestamp to normalize).
+        subprocess.run(
+            [pandoc, *map(str, stripped_sections), "--standalone", "--embed-resources", "-o", str(output)],
+            check=True,
+        )
+        return output

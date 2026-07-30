@@ -252,6 +252,17 @@ class PipelineService:
             built_docx_path["path"] = path
             return True, str(path)
 
+        def stage_build_html() -> tuple[bool, str]:
+            # HtmlRendererAdapter.build() returns None (already WARNed to
+            # stderr) when pandoc is absent -- degrade like the best-effort
+            # `stage_collect_issues` pattern (ok=True, "omitido: ..." detail)
+            # rather than failing the whole pipeline for a secondary,
+            # opt-in output format (item C-html).
+            path = renderer.build(doc_id, config)
+            if path is None:
+                return True, "omitido: pandoc no disponible"
+            return True, str(path)
+
         def stage_format_audit() -> tuple[bool, str]:
             docx_path = _draft_docx_path()
             result = self.format_audit_service.audit_format(docx_path, config, strict=strict)
@@ -330,6 +341,7 @@ class PipelineService:
             "pack-context": stage_pack_context,
             "review-document": stage_review_document,
             "build-docx": stage_build_docx,
+            "build-html": stage_build_html,
             "format-audit-docx": stage_format_audit,
             "ingest": stage_ingest,
             "build-context-files": stage_build_context_files,

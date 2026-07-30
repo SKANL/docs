@@ -43,14 +43,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: HTML renderer + `--format` CLI (C-html) — PR 2, depends on PR 1
 
-- [ ] 2.1 RED (`tests/unit/application/test_html_render.py`, new): `HtmlRendererAdapter.output_format == "html"`; `build()` invokes pandoc, returns the output path
-- [ ] 2.2 GREEN: create `application/html_render.py:HtmlRendererAdapter` (reuse the numbering/frontmatter-strip pass from `docx_assembly.py:_strip_frontmatter_to_temp`; `subprocess.run([pandoc, *inputs, "--standalone", "--embed-resources", "-o", output])`)
-- [ ] 2.3 RED (`tests/integration/test_html_determinism.py`, new): building unchanged sections twice produces byte-identical `.html`
-- [ ] 2.4 GREEN: strip any pandoc-injected date/generator metadata that breaks determinism
-- [ ] 2.5 RED (`tests/unit/cli/test_core_app.py`, new): `pipeline assemble --format html` selects the html renderer; repeatable `--format` builds several; no flag keeps today's docx-only behavior
-- [ ] 2.6 GREEN: add repeatable `--format` Option to `core_app.pipeline` (`core_app.py:58`), loop `resolve_renderer` + `run_pipeline` per requested format (default `["docx"]`)
-- [ ] 2.7 GREEN: register `Deps.renderers["html"]` (`cli/_shared.py:119`)
-- [ ] 2.8 Run `tests/unit/application/test_renderer_registry.py` + `tests/integration/test_docx_assembly_service.py` — confirm default docx-only path unaffected
+- [x] 2.1 RED (`tests/unit/application/test_html_render.py`, new): `HtmlRendererAdapter.output_format == "html"`; `build()` invokes pandoc, returns the output path
+- [x] 2.2 GREEN: create `application/html_render.py:HtmlRendererAdapter` (reuse the numbering/frontmatter-strip pass from `docx_assembly.py:_strip_frontmatter_to_temp`; `subprocess.run([pandoc, *inputs, "--standalone", "--embed-resources", "-o", output])`)
+- [x] 2.3 RED (`tests/integration/test_html_determinism.py`, new): building unchanged sections twice produces byte-identical `.html`
+- [x] 2.4 GREEN: strip any pandoc-injected date/generator metadata that breaks determinism — verified empirically (pandoc 3.10, `--standalone --embed-resources`, no `-M date`/frontmatter date input): the only injected meta is `<meta name="generator" content="pandoc 3.10">` (toolchain-version-fixed, no wall clock); two independent builds — including across a real 2.1s sleep — are already byte-identical with zero normalization code. No normalizer added (YAGNI); both determinism tests pass unmodified as the RED→GREEN proof.
+- [x] 2.5 RED (`tests/unit/cli/test_core_app.py`, new): `pipeline assemble --format html` selects the html renderer; repeatable `--format` builds several; no flag keeps today's docx-only behavior
+- [x] 2.6 GREEN: add repeatable `--format` Option to `core_app.pipeline` (`core_app.py:58`), loop `resolve_renderer` + `run_pipeline` per requested format (default `["docx"]`)
+- [x] 2.7 GREEN: register `Deps.renderers["html"]` (`cli/_shared.py:119`)
+- [x] 2.8 Run `tests/unit/application/test_renderer_registry.py` + `tests/integration/test_docx_assembly_service.py` — confirm default docx-only path unaffected
 
 ## Phase 3: PDF renderer (C-pdf) — PR 3, depends on PR 2
 

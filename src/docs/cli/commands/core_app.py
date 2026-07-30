@@ -13,7 +13,7 @@ from pathlib import Path
 
 import typer
 
-from docs.cli._shared import _ctx, emit_result
+from docs.cli._shared import _ctx, emit_result, resolve_renderer
 
 core_app = typer.Typer()
 
@@ -61,25 +61,49 @@ def pipeline(
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
     repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
+    formats: list[str] = typer.Option(
+        None,
+        "--format",
+        help="Formato(s) de salida a construir (repetible, ej. --format html --format docx). "
+        "Sin esta opción usa output.format de la config (docx por defecto).",
+    ),
 ) -> None:
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    renderer = deps.resolve_renderer(resolved.config)
-    summary = deps.pipeline.run_pipeline(
-        resolved.doc_id, resolved.template, resolved.config, stage_set,
-        repo_root=repo_root, strict=strict, renderer=renderer,
-    )
-    if as_json:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    # No --format: preserve today's config-driven resolution exactly (a
+    # single renderer from `output.format`, default "docx") so an explicit
+    # `output.format` in a template's config is never silently overridden by
+    # a hardcoded CLI default. --format (repeatable): build exactly the
+    # requested formats via the same registry-resolution function.
+    if formats:
+        renderers = [resolve_renderer(deps.renderers, fmt) for fmt in formats]
     else:
-        lines = [f"# Pipeline `{summary['stage_set']}` (strict={summary['strict']})", ""]
-        for stage in summary["stages"]:
-            marker = "OK" if stage["ok"] else "FAIL"
-            head = stage["detail"].splitlines()[0] if stage["detail"] else ""
-            lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
-        lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])
-        print("\n".join(lines))
-    raise typer.Exit(code=0 if summary["passed"] else 1)
+        renderers = [deps.resolve_renderer(resolved.config)]
+
+    summaries = [
+        deps.pipeline.run_pipeline(
+            resolved.doc_id, resolved.template, resolved.config, stage_set,
+            repo_root=repo_root, strict=strict, renderer=renderer,
+        )
+        for renderer in renderers
+    ]
+    passed = all(summary["passed"] for summary in summaries)
+
+    if as_json:
+        # Backward compatible: a single (default, unflagged) format still
+        # prints one JSON object, not a one-item list.
+        payload = summaries[0] if len(summaries) == 1 else summaries
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        for summary in summaries:
+            lines = [f"# Pipeline `{summary['stage_set']}` (strict={summary['strict']})", ""]
+            for stage in summary["stages"]:
+                marker = "OK" if stage["ok"] else "FAIL"
+                head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+                lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
+            lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])
+            print("\n".join(lines))
+    raise typer.Exit(code=0 if passed else 1)
 
 
 @core_app.command()
