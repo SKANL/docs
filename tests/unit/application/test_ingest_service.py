@@ -341,3 +341,108 @@ def test_rescan_ignores_previously_written_detection_report(tmp_path: Path):
 
     names = [entry["file"] for entry in second_report["files"]]
     assert "_detection.json" not in names
+
+
+# --- Item K (PR8): cross-source conflict detection -------------------------
+
+
+class _TextPassthroughHandler:
+    """Writes the SOURCE text verbatim as the ingested output -- conflict
+    detection reads the ingested `.md` text (design.md K: "it already has
+    each ingested source's text available"), not the raw pre-conversion
+    bytes, so this fake stands in for a real converter that preserves
+    prose."""
+
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
+        target = out_dir / f"{src.stem}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        return target
+
+
+def test_ingest_inbox_detects_cross_source_conflict_and_warns(tmp_path: Path, capsys):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "proyecto.md").write_text("El backend usa bun.js y TypeScript.", encoding="utf-8")
+    (inbox / "technical-design.md").write_text(
+        "El backend está construido en PHP con Laravel.", encoding="utf-8"
+    )
+    service = IngestService(
+        _FakeDetector({"proyecto.md": "markdown", "technical-design.md": "markdown"}),
+        {"markdown": _TextPassthroughHandler()},
+    )
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    manifest = json.loads((inbox / "_source-manifest.json").read_text(encoding="utf-8"))
+    assert len(manifest["conflicts"]) == 1
+    conflict = manifest["conflicts"][0]
+    assert conflict["group"] == "backend_runtime"
+    assert sorted(conflict["sources"]) == ["proyecto.md", "technical-design.md"]
+    assert "WARN" in capsys.readouterr().err
+
+
+def test_ingest_inbox_no_conflict_manifest_conflicts_empty(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.md").write_text("Todo tranquilo por aquí.", encoding="utf-8")
+    service = IngestService(_FakeDetector({"a.md": "markdown"}), {"markdown": _TextPassthroughHandler()})
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    manifest = json.loads((inbox / "_source-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["conflicts"] == []
+
+
+# --- Item G (PR8): intake/gap report ----------------------------------------
+
+
+def test_ingest_inbox_writes_intake_report_md(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "a.docx").write_bytes(b"docx-bytes")
+    service = IngestService(_FakeDetector({"a.docx": "docx"}), {"docx": _FakeHandler()})
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    report_path = inbox / "intake-report.md"
+    assert report_path.exists()
+    content = report_path.read_text(encoding="utf-8")
+    assert "## Encontrado" in content
+    assert "a.docx" in content
+
+
+def test_ingest_inbox_intake_report_includes_gap_report_and_ledger_when_present(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    sections = tmp_path / "sections"
+    sections.mkdir()
+    (sections / "gap-report.json").write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "context_gaps": [{"topic_id": "objetivo", "missing": ["descripcion"]}],
+                "section_gaps": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (sections / "00-fact-ledger.md").write_text(
+        "- PENDIENTE: horas totales\n- Hecho confirmado.\n", encoding="utf-8"
+    )
+    service = IngestService(_FakeDetector({}), {})
+
+    service.ingest_inbox(inbox, sections)
+
+    content = (inbox / "intake-report.md").read_text(encoding="utf-8")
+    assert "`objetivo`: descripcion" in content
+    assert "PENDIENTE: horas totales" in content
+    assert "Hecho confirmado." not in content
+
+
+def test_ingest_inbox_intake_report_absent_when_no_inbox_dir(tmp_path: Path):
+    service = IngestService(_FakeDetector({}), {})
+
+    service.ingest_inbox(tmp_path / "missing-inbox", tmp_path / "sections")
+
+    assert not (tmp_path / "missing-inbox" / "intake-report.md").exists()

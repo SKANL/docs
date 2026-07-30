@@ -102,12 +102,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 8: Cross-source conflict + intake/gap report (G, K) — PR 8, depends on PR 5
 
-- [ ] 8.1 RED: `detect_conflicts` flags two sources asserting different members of a mutually-exclusive term group
-- [ ] 8.2 GREEN: `domain/source_conflict.py:detect_conflicts` (pure, curated exclusive-group table)
-- [ ] 8.3 RED: no conflicts present → empty, deterministic sorted output
-- [ ] 8.4 GREEN: wire into `IngestService` post-walk, WARN in manifest
-- [ ] 8.5 RED: `render_intake_report` produces Found/Missing/How-to-finish from detection+manifest+gap-report+ledger
-- [ ] 8.6 GREEN: `domain/intake_report.py:render_intake_report` (pure); write `inbox/intake-report.md` at end of `ingest_inbox` (`ingest.py:195`)
+- [x] 8.1 RED: `detect_conflicts` flags two sources asserting different members of a mutually-exclusive term group
+- [x] 8.2 GREEN: `domain/source_conflict.py:detect_conflicts` (pure, curated exclusive-group table)
+- [x] 8.3 RED: no conflicts present → empty, deterministic sorted output
+- [x] 8.4 GREEN: wire into `IngestService` post-walk, WARN in manifest
+- [x] 8.5 RED: `render_intake_report` produces Found/Missing/How-to-finish from detection+manifest+gap-report+ledger
+- [x] 8.6 GREEN: `domain/intake_report.py:render_intake_report` (pure); write `inbox/intake-report.md` at end of `ingest_inbox` (`ingest.py:195`)
 
 ## Phase 9: `doc status` (I) — PR 9, depends on PR 8
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from docs.domain.figure_catalog import FigureEntry, build as build_figure_catalog
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
+from docs.domain.intake_report import render_intake_report
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
 from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
@@ -17,19 +18,30 @@ from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
+from docs.domain.source_conflict import Conflict, detect_conflicts
 from docs.domain.source_role import classify
 
 _DETECTION_REPORT_NAME = "_detection.json"
 _SOURCE_MANIFEST_NAME = "_source-manifest.json"
 _CLASSIFICATION_QUEUE_NAME = "_classification-queue.json"
 _PLACEMENT_QUEUE_NAME = "_placement-queue.json"
+_INTAKE_REPORT_NAME = "intake-report.md"
 
 # PR3 verify follow-up (finding a): these are the harness's OWN
 # `_`-prefixed bookkeeping files, always written at `inbox_dir` root --
 # a rescan finding them gets a distinct `"harness_artifact"` ignored-reason,
-# never conflated with a genuine user `_`-prefixed file.
+# never conflated with a genuine user `_`-prefixed file. `intake-report.md`
+# (item G, PR8) joins this set too -- it is NOT `_`-prefixed (deliberately
+# discoverable via plain `ls`, design.md ADR-G/AGENTS.md item B), so it must
+# be named here explicitly or a rescan would re-ingest its own prior report.
 _HARNESS_ARTIFACT_NAMES = frozenset(
-    {_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME, _CLASSIFICATION_QUEUE_NAME, _PLACEMENT_QUEUE_NAME}
+    {
+        _DETECTION_REPORT_NAME,
+        _SOURCE_MANIFEST_NAME,
+        _CLASSIFICATION_QUEUE_NAME,
+        _PLACEMENT_QUEUE_NAME,
+        _INTAKE_REPORT_NAME,
+    }
 )
 
 # Verbatim-asset heuristic (design.md Decision 6a): an image anywhere
@@ -168,6 +180,13 @@ class IngestService:
         sections_dir = Path(sections_dir)
         entries: list[dict[str, Any]] = []
         ignored: list[dict[str, str]] = []
+        manifest_payload: dict[str, Any] = {
+            "schema": 1,
+            "sources": [],
+            "duplicates": [],
+            "placements": [],
+            "conflicts": [],
+        }
         if inbox_dir.is_dir():
             sources, ignored, empty_dir_entries, declared_assets, heuristic_candidates = (
                 self._walk_inbox(inbox_dir)
@@ -206,7 +225,22 @@ class IngestService:
             manifest_sources = self._build_manifest_sources(inbox_dir, entries, strict)
             self._write_classification_queue(inbox_dir, manifest_sources)
             duplicates = self._find_near_duplicates(inbox_dir, manifest_sources)
-            self._write_source_manifest(inbox_dir, manifest_sources, duplicates, placements)
+            # Item K (design.md ADR-K): a deterministic, curated-term-group
+            # check over the just-produced ingested text -- WARN only, never
+            # blocks, never auto-resolves (fail-open, agent decides).
+            conflicts = self._detect_source_conflicts(manifest_sources)
+            self._warn_conflicts(conflicts)
+            manifest_payload = {
+                "schema": 1,
+                "sources": manifest_sources,
+                "duplicates": duplicates,
+                "placements": placements,
+                "conflicts": [
+                    {"group": c.group, "members": list(c.members), "sources": list(c.sources)}
+                    for c in conflicts
+                ],
+            }
+            self._write_source_manifest(inbox_dir, manifest_payload)
         report = {
             "processed": sum(1 for e in entries if e.get("status") != "empty_dir"),
             "files": entries,
@@ -214,6 +248,11 @@ class IngestService:
             "media_cleanup": self._clean_orphan_media(sections_dir / "ingested"),
         }
         self._write_detection_report(inbox_dir, report)
+        # Item G (design.md ADR-G): a VIEW over already-produced artifacts,
+        # never a new source of truth -- gap-report.json and
+        # 00-fact-ledger.md may not exist yet on a first ingest pass
+        # (built by later pipeline stages), so both reads are best-effort.
+        self._write_intake_report(inbox_dir, sections_dir, report, manifest_payload)
         return report
 
     def _walk_inbox(self, inbox_dir: Path) -> tuple[
@@ -469,23 +508,13 @@ class IngestService:
         # port (design.md Decision 9) -- no direct write_text here anymore.
         self.writer.write_json(inbox_dir / _DETECTION_REPORT_NAME, report)
 
-    def _write_source_manifest(
-        self,
-        inbox_dir: Path,
-        manifest_sources: list[dict[str, Any]],
-        duplicates: list[dict[str, Any]],
-        placements: list[dict[str, Any]],
-    ) -> None:
+    def _write_source_manifest(self, inbox_dir: Path, payload: dict[str, Any]) -> None:
         # `inbox/_source-manifest.json` (design.md's artifact map): distinct
         # from the collection stage's `sections/source-manifest.json`.
         # `_`-prefixed, so the recursive walk itself always skips it, same
-        # as `_detection.json`.
-        payload = {
-            "schema": 1,
-            "sources": manifest_sources,
-            "duplicates": duplicates,
-            "placements": placements,
-        }
+        # as `_detection.json`. `payload` already carries schema/sources/
+        # duplicates/placements/conflicts -- built by the caller so it can
+        # be reused verbatim by `_write_intake_report` (item G).
         self.writer.write_json(inbox_dir / _SOURCE_MANIFEST_NAME, payload)
 
     # --- Front D: source-role classification (design.md Decision 4) -----
@@ -675,6 +704,71 @@ class IngestService:
                 reason=entry.get("reason", ""),
             )
         return overrides
+
+    # --- Item K: cross-source conflict detection (design.md ADR-K) --------
+
+    def _detect_source_conflicts(self, manifest_sources: list[dict[str, Any]]) -> list[Conflict]:
+        # Reads each ingested source's OWN converted text (same `output`
+        # field `_find_near_duplicates` already reads) -- pure, deterministic
+        # detection lives entirely in `domain/source_conflict.py`; I/O
+        # (reading the produced .md text) stays here in the application
+        # layer.
+        texts: list[tuple[str, str]] = []
+        for source in manifest_sources:
+            output = source.get("output")
+            if not output:
+                continue
+            try:
+                text = Path(output).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            texts.append((source["relative_path"], text))
+        return detect_conflicts(texts)
+
+    def _warn_conflicts(self, conflicts: list[Conflict]) -> None:
+        for conflict in conflicts:
+            sources = ", ".join(conflict.sources)
+            members = ", ".join(conflict.members)
+            print(
+                f"WARN: fuentes en conflicto ({sources}) afirman miembros distintos de "
+                f"`{conflict.group}` ({members}); revisa y resuelve manualmente.",
+                file=sys.stderr,
+            )
+
+    # --- Item G: intake / gap report (design.md ADR-G) --------------------
+
+    def _read_gap_report(self, sections_dir: Path) -> dict[str, Any]:
+        gap_path = Path(sections_dir) / "gap-report.json"
+        if not gap_path.exists():
+            return {}
+        try:
+            return json.loads(gap_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+    def _read_ledger_pending(self, sections_dir: Path) -> list[str]:
+        ledger_path = Path(sections_dir) / "00-fact-ledger.md"
+        if not ledger_path.exists():
+            return []
+        pending: list[str] = []
+        for line in ledger_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "PENDIENTE" in line:
+                pending.append(line.lstrip("-* ").strip())
+        return pending
+
+    def _write_intake_report(
+        self,
+        inbox_dir: Path,
+        sections_dir: Path,
+        detection: dict[str, Any],
+        manifest: dict[str, Any],
+    ) -> None:
+        if not inbox_dir.is_dir():
+            return
+        gap_report = self._read_gap_report(sections_dir)
+        ledger_pending = self._read_ledger_pending(sections_dir)
+        content = render_intake_report(detection, manifest, gap_report, ledger_pending)
+        (inbox_dir / _INTAKE_REPORT_NAME).write_text(content, encoding="utf-8")
 
     # --- Front F: verbatim assets + placement queue (design.md Decision 6a)
 
