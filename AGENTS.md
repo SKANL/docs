@@ -89,8 +89,11 @@ docs doc mark-final                 # 15. optional: flip lifecycle draft -> fina
 `docs build-section <id>` (**re**)generates a section **from the template
 scaffold** — it is the initial-scaffolding command (`pipeline prep` runs it
 once for every section) and must **not** be run again on a section you have
-already hand-authored: it can overwrite your prose with a freshly-rendered
-scaffold body. `docs stamp-section <id> --by <agent>` is the safe command to
+already hand-authored. The harness protects you — if it detects authored
+content it diverts the regenerated scaffold to `sections/_proposals/<id>.candidate.md`
+and leaves your prose untouched — but you are then left with a stray candidate
+to reconcile, and the command is simply the wrong tool once authoring has begun.
+`docs stamp-section <id> --by <agent>` is the safe command to
 run after authoring — it never touches the prose body, it only rewrites the
 front-matter header (`body_hash`, `authored_by`, `model`). If in doubt after
 authoring, run `stamp-section`, never `build-section`.
@@ -270,8 +273,9 @@ Rules:
 ## 4. The review loop: `review-section --json` iterate-to-green
 
 **Never run `build-section` on a section you are about to review or have
-already authored** — it regenerates from the template scaffold and can
-overwrite your prose (see the WARNING in §1). Use `stamp-section` instead
+already authored** — it regenerates from the template scaffold (authored
+content is protected, but diverted to a `_proposals/` candidate you must then
+reconcile — see the WARNING in §1). Use `stamp-section` instead
 once authoring settles (below); `review-section` itself is always safe —
 it only reads and reports, it never writes.
 
