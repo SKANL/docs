@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import sys
 from datetime import datetime
 from typing import Callable, Protocol
 
@@ -93,9 +95,30 @@ class DocumentService:
     def mark_final(self, doc_id: str) -> Document:
         """Lifecycle-lite (design.md item F): user-set `final` marker, no
         heavier VCS/workflow. Read-modify-write through the same port
-        `write_document` already uses elsewhere in this class."""
+        `write_document` already uses elsewhere in this class. Also PROMOTES
+        the current draft build (`output/draft/`) into `output/final/` -- a
+        published snapshot COPY, so `doc status`'s `output_final_exists`
+        (status.py) becomes meaningful and a later re-build still honestly
+        reflects "draft" until finalized again."""
         validate_slug(doc_id)
         document = self.repository.read_document(doc_id)
         updated = document.model_copy(update={"lifecycle": "final"})
         self.repository.write_document(updated)
+        self._promote_draft_to_final(doc_id)
         return updated
+
+    def _promote_draft_to_final(self, doc_id: str) -> None:
+        doc_root = self.workspace.doc_root(doc_id)
+        draft_dir = doc_root / "output" / "draft"
+        final_dir = doc_root / "output" / "final"
+        draft_files = [p for p in draft_dir.iterdir() if p.is_file()] if draft_dir.is_dir() else []
+        if not draft_files:
+            print(
+                f"WARN: `{doc_id}` no tiene un build en borrador (output/draft "
+                "vacío); no hay nada que promover a output/final.",
+                file=sys.stderr,
+            )
+            return
+        final_dir.mkdir(parents=True, exist_ok=True)
+        for path in draft_files:
+            shutil.copyfile(path, final_dir / path.name)
