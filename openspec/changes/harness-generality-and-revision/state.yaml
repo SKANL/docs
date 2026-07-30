@@ -1,0 +1,78 @@
+change: harness-generality-and-revision
+artifact_store: hybrid
+created: 2026-07-30
+updated: 2026-07-30
+
+phases:
+  explore:
+    status: done
+    note: >
+      Exploration done inline this session by the orchestrator; no separate
+      explore artifact persisted. Grounded findings (bound decisions A-F,
+      file:line evidence) handed to propose directly and validated against
+      current code.
+  propose:
+    status: done
+    artifact: proposal.md
+    mirror: sdd/harness-generality-and-revision/proposal (engram)
+  spec:
+    status: done
+    artifact: specs/<capability>/spec.md
+    mirror: sdd/harness-generality-and-revision/spec (engram)
+  design:
+    status: done
+    artifact: design.md
+    mirror: sdd/harness-generality-and-revision/design (engram)
+  tasks:
+    status: done
+    artifact: tasks.md
+    mirror: sdd/harness-generality-and-revision/tasks (engram)
+    note: >
+      7 chained slices (stacked-to-main, auto-chain, decision needed: No).
+      Order: A (rules) -> C-html -> C-pdf -> B (revise) -> D (2nd template,
+      depends on A) -> F (lifecycle) -> E doc coverage (depends on
+      C-pdf/B/F). Clean-room adversarial run (E) deferred to verify phase,
+      not an apply task. Phase 4 (revise) flagged Medium-High 400-line risk;
+      split into B1/B2 at apply time if it runs over.
+  apply:
+    status: pending
+  verify:
+    status: pending
+  archive:
+    status: pending
+
+next_recommended: sdd-apply (PR 1: template-driven review rules)
+
+capabilities:
+  new:
+    - document-revise
+    - document-lifecycle
+  modified:
+    - template-provisioning
+    - document-pipeline
+    - document-render
+    - agent-contract
+  unchanged:
+    - context-curation
+    - asset-management
+    - document-ingest
+    - workspace-config
+
+delivery_strategy: auto-chain
+chain_strategy: stacked-to-main
+notes: >
+  Harness generality + semantic revision. Six bound decisions (A-F):
+  (A) template-driven review rules — move rule DATA out of rules.py/
+  source_role.py into template config, estadia declares current values so
+  behavior is byte-identical (pure refactor); (B) native `doc revise` loop —
+  agent edits section .md, harness provides diff + scoped re-validation +
+  provenance, v1 covers prose + rippling context-topic edits, defers
+  structural/re-ingest; (C) HTML (deterministic) + PDF (best-effort,
+  WARN+skip) renderers via DocumentRendererPort, PDF explicitly
+  non-byte-deterministic (reproducibility-boundary amendment); (D) 2nd
+  built-in non-APA English SRS-like template + e2e acceptance validating A;
+  (E) verify-phase clean-room refinement of AGENTS.md; (F) lightweight
+  lifecycle (draft/final) + build version surfaced by `doc status`.
+  Non-negotiable: estadia backward-compat, strict TDD RED-first, determinism
+  for docx/HTML. 7 chained slices (mechanical/low-risk first). Does NOT touch
+  the active universal-schema-harness change.

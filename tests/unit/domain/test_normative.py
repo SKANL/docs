@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from docs.domain.normative import (
     EXCLUDED_FRONT_MATTER,
     FIRST_PERSON_PATTERNS,
@@ -77,3 +79,31 @@ def test_resolve_normative_settings_reads_overrides_from_config():
     assert result.scope_term == "aws"
     assert result.scope_focus == "backend"
     assert r"\bsecreto-interno\b" in result.secret_patterns
+
+
+def test_resolve_normative_settings_contested_stack_terms_defaults_empty():
+    settings = resolve_normative_settings({})
+    assert settings.contested_stack_terms == []
+
+
+def test_resolve_normative_settings_reads_contested_stack_terms_from_cross_consistency():
+    config = {"cross_consistency": {"contested_stack_terms": ["Laravel", "Supabase"]}}
+    settings = resolve_normative_settings(config)
+    assert settings.contested_stack_terms == ["Laravel", "Supabase"]
+
+
+def test_resolve_normative_settings_citation_style_defaults_apa7():
+    settings = resolve_normative_settings({})
+    assert settings.citation_style == "apa7"
+
+
+def test_resolve_normative_settings_citation_style_reads_none_from_apa7_block():
+    config = {"apa7": {"citation_style": "none"}}
+    settings = resolve_normative_settings(config)
+    assert settings.citation_style == "none"
+
+
+def test_resolve_normative_settings_citation_style_rejects_unknown_value():
+    config = {"apa7": {"citation_style": "mla9"}}
+    with pytest.raises(ValueError, match="citation_style"):
+        resolve_normative_settings(config)

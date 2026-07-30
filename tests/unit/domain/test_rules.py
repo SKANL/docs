@@ -626,6 +626,15 @@ def test_review_section_text_apa7_disabled_via_template_skips_apa_checks():
     assert not any(i.code.startswith("apa.") for i in issues)
 
 
+def test_review_section_text_citation_style_none_skips_apa_checks():
+    # spec: template-provisioning "citation_style accepts apa7|none" -- "none"
+    # skips APA-specific checks even when the template's own apa7.enabled is
+    # left at its default True.
+    text = "# Título\n\nEsto se sostiene (García, 2020) sin lista de referencias."
+    issues = _call(text, citation_style="none")
+    assert not any(i.code.startswith("apa.") for i in issues)
+
+
 def test_review_section_text_citing_chapter_clean_with_consolidated_bibliography():
     # Wiring guard: a citing chapter (references_list=False) in a template that
     # owns a consolidated bibliography section (references_list=True) must NOT
@@ -1074,9 +1083,18 @@ def test_review_cross_consistency_duration_mismatch_severity_tracks_strict():
     assert issue.severity == "error"
 
 
+def test_review_cross_consistency_no_default_terms_when_none_provided():
+    # Compat gate (task 1.3): proves DEFAULT_CONTESTED_STACK_TERMS is gone --
+    # an unqualified mention of a formerly-hardcoded term (Laravel) raises no
+    # issue when no contested_stack_terms are supplied by the caller.
+    bodies = {"infraestructura": "El sistema usa Laravel como base de datos definitiva."}
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
+
+
 def test_review_cross_consistency_contested_stack_term_unqualified():
     bodies = {"infraestructura": "El sistema usa MySQL como base de datos definitiva."}
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["MySQL"])
     issue = next(i for i in result.issues if i.code == "coherence.contested_stack_unqualified")
     assert issue.severity == "warning"
     assert "MySQL" in issue.message
@@ -1085,13 +1103,13 @@ def test_review_cross_consistency_contested_stack_term_unqualified():
 
 def test_review_cross_consistency_contested_stack_term_hedged_no_issue():
     bodies = {"infraestructura": "El sistema usa MySQL como posible dependencia externa en el prototipo."}
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["MySQL"])
     assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
 
 
 def test_review_cross_consistency_contested_stack_term_pendiente_no_issue():
     bodies = {"infraestructura": "El uso de MySQL está PENDIENTE de definición."}
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["MySQL"])
     assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
 
 
@@ -1106,7 +1124,7 @@ def test_review_cross_consistency_contested_stack_term_bare_still_flagged():
     # delimiting/evidence signal in its own clause must still be flagged
     # (the genuine catch this rule exists for).
     bodies = {"infraestructura": "El backend usa Firebase para todo el sistema sin ninguna alternativa."}
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["Firebase"])
     issue = next(i for i in result.issues if i.code == "coherence.contested_stack_unqualified")
     assert "Firebase" in issue.message
 
@@ -1120,7 +1138,7 @@ def test_review_cross_consistency_contested_stack_term_delimited_with_citation_n
             "Firebase se utiliza exclusivamente para notificaciones push (ADR-014, 2023)."
         )
     }
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["Firebase"])
     assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
 
 
@@ -1133,7 +1151,7 @@ def test_review_cross_consistency_contested_stack_evidence_in_other_clause_still
             "El backend usa Firebase para todo el sistema. Otra decisión se documentó (García, 2020)."
         )
     }
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["Firebase"])
     assert any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
 
 
