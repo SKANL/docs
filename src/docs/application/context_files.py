@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from docs.domain.context_index_files import CURATED_INDEX_FILENAME, is_context_content_filename
+from docs.domain.context_index_files import is_context_content_filename
 from docs.domain.markdown_text import dedupe_strings, extract_markdown_headings, keyword_set
 
 # PR8 task 8.1 (index.md collision, binding note carried from PR7's fresh
