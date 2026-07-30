@@ -900,7 +900,7 @@ class IngestService:
         figures: list[FigureEntry] = []
         for path, rel in sorted(image_candidates, key=lambda item: item[1]):
             data = path.read_bytes()
-            dimensions = self.image_metadata.read_dimensions(path) if self.image_metadata else None
+            dimensions = self._read_image_dimensions(path, rel)
             width, height = dimensions if dimensions is not None else (None, None)
             figures.append(
                 FigureEntry(
@@ -915,6 +915,35 @@ class IngestService:
         )
         catalog_path = sections_dir / "figure-catalog.json"
         self.writer.write_json(catalog_path, build_figure_catalog(figures))
+
+    def _read_image_dimensions(self, path: Path, relative_path: str) -> tuple[int, int] | None:
+        # Graceful degradation (HIGH robustness fix): `image_metadata.read_dimensions`
+        # already fails open (returns None) for the KNOWN-unparseable cases it
+        # explicitly catches (`UnrecognizedImageError`/`InvalidImageStreamError`/
+        # `OSError` in `PythonDocxImageMetadataAdapter`) -- but a malformed-yet
+        # Pillow-openable image (e.g. a PNG whose declared chunk length disagrees
+        # with its actual data) can still make python-docx's minimal PNG chunk
+        # walker raise an UNRELATED, uncaught exception (observed:
+        # `docx.image.exceptions.UnexpectedEndOfFileError`, which even renders
+        # with an EMPTY message). Left unguarded here, that exception used to
+        # escape `ingest_inbox` entirely and abort the whole ingest batch --
+        # this call site is where every image dimension read funnels through,
+        # so it is the single place to guard (same WARN+continue shape as
+        # `_render_vector_pdf_figures` below): the image still lands in the
+        # figure catalog with null dimensions, same as a known-unparseable
+        # file, but the WARN always carries the exception TYPE plus its
+        # message so an empty `str(exc)` never renders as a silent no-op.
+        if self.image_metadata is None:
+            return None
+        try:
+            return self.image_metadata.read_dimensions(path)
+        except Exception as exc:  # noqa: BLE001 -- any image-parsing failure must degrade, never abort the batch
+            print(
+                f"WARN: no se pudieron leer las dimensiones de la imagen {relative_path} "
+                f"({type(exc).__name__}: {exc}); se cataloga sin dimensiones.",
+                file=sys.stderr,
+            )
+            return None
 
     def _render_vector_pdf_figures(
         self,
