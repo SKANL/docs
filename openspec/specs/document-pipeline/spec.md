@@ -113,3 +113,19 @@ The pipeline MUST include an `ingest` stage set (format-agnostic like `prep`) fo
 - GIVEN the same source inbox and configuration
 - WHEN the pipeline runs twice independently
 - THEN all ingested Markdown files, context files, and final DOCX output are byte-identical across both runs
+
+### Requirement: Reproducibility Boundary Principle
+
+The system MUST treat section Markdown files as the durable source of truth for document content, and the built `.docx` (or other rendered format) as a deterministic function of those Markdown files plus configuration. Byte-for-byte determinism applies to the build step; it MUST NOT be required of agent-authored prose across independent authoring sessions.
+
+#### Scenario: Rebuilding from unchanged sources is byte-identical
+
+- GIVEN unchanged section Markdown files and configuration
+- WHEN the document is built (assembled/rendered) twice
+- THEN the two output files are byte-identical
+
+#### Scenario: Prose changes are not a determinism violation
+
+- GIVEN an agent edits a section's Markdown content between two authoring sessions
+- WHEN the document is rebuilt after the edit
+- THEN the output legitimately differs, and this is not treated as a determinism failure

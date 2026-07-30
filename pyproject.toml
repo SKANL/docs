@@ -31,6 +31,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/docs"]
 
+# design.md item B (ADR-B): AGENTS.md is authored once at the repo root
+# (reviewable as plain Markdown) and force-included as package data so an
+# installed wheel carries it too -- `docs guide` reads this copy via
+# importlib.resources with no repo checkout required.
+[tool.hatch.build.targets.wheel.force-include]
+"AGENTS.md" = "docs/data/AGENTS.md"
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]

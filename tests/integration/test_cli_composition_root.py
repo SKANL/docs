@@ -22,6 +22,9 @@ from docs.cli.main import app
 # tip caccb92, after PR2 merged).
 _EXPECTED_FLAT_COMMANDS = {
     "doctor", "pipeline", "verify", "history", "stamp",
+    # `guide` added PR10 of agent-agnostic-real-world-usability (item B,
+    # agent contract) -- deliberate surface growth, not drift.
+    "guide",
     "collect-sources", "build-rules", "review-rules", "collect-issues",
     "collect-code-evidence", "build-ledger", "build-section", "pack-context",
     "review-section", "review-document", "build-docx", "qa-docx",
@@ -62,7 +65,7 @@ def test_commands_package_splits_by_concern():
     def _names(sub_app: typer.Typer) -> set[str]:
         return set(typer.main.get_command(sub_app).commands.keys())
 
-    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp"}
+    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp", "guide"}
     assert _names(collection_app) == {
         "collect-sources", "build-rules", "review-rules",
         "collect-issues", "collect-code-evidence", "build-ledger",
