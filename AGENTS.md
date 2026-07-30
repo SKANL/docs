@@ -22,6 +22,21 @@ disk. Point the CLI at it via `docs.config.json`, the
 `DOCS_DOCUMENTS_DIR`/`DOCS_TEMPLATES_DIR` env vars, or by running
 `docs doc init` from inside the workspace directory (see §2).
 
+If your working directory is the document workspace and not this harness
+checkout (no `pyproject.toml`/`.venv` here), run the CLI via `uv`'s
+`--project` flag pointed at the harness checkout instead of a source-checkout
+`cd`:
+
+```
+uv run --project <path-to-harness> python -m docs.cli.main <command>
+```
+
+Do **not** use `uv run --directory <path-to-harness> ...` for this: it
+changes `uv`'s project root to the harness checkout and silently writes
+`docs.config.json`/other resolved-cwd artifacts *there* instead of your
+workspace — `--project` keeps `uv`'s project resolution on the harness while
+leaving your invocation's cwd (and therefore config resolution, §2) alone.
+
 ## 0. Mental model: mechanical core vs. cognitive slots
 
 The harness is deterministic and format-agnostic: given the same inputs
@@ -38,10 +53,14 @@ guesses prose.
   evidence synthesis that make the document say something.
 
 Section `.md` files carry a harness-managed `---{...JSON...}---` front-matter
-header (hashes, review/scaffold metadata) above the prose body. The harness
-rewrites that header on every `build-section`/`review-section`/`doc revise`
-call — **edit only the Markdown body below the header**, never the header
-itself.
+header (hashes, review/scaffold metadata) above the prose body. **Edit only
+the Markdown body below the header**, never the header itself — the header
+is rewritten for you by `build-section` (initial scaffold — see the WARNING
+in §1/§4), `docs stamp-section <id> --by <who>` (recomputes `body_hash`,
+records `authored_by`; the command to run after hand-authoring), and
+`doc revise` (§5). `review-section` does **not** touch the header — it only
+reads the section and reports issues; running it does not update
+`body_hash`/`authored_by`.
 
 Everything below exists to get you to and through that one cognitive slot
 as fast as possible, then verify the result mechanically.
@@ -56,14 +75,25 @@ docs doc new <id> --template <type> # 3. create a document, mark it active
 docs pipeline ingest                # 5. convert inbox/ sources to markdown + assets
 docs doc status --json              # 6. see what's filled, what's missing, what's next
 docs context set <topic> <field> <value>   # 7. fill required context fields
-docs pipeline prep                  # 8. scaffold section files from the template
+docs pipeline prep                  # 8. scaffold section files from the template (runs build-section per section, once)
 # 9. author: edit sections/NNN-<id>.md bodies (the cognitive slot)
-docs review-section <id> --json     # 10. iterate to green (see loop below)
-docs pipeline assemble              # 11. render the final output(s), --format html|pdf|docx
-docs verify                         # 12. structural + audit verification
-# 13. optional, after a first assemble: docs doc revise <id> "<request>" <file>
-docs doc mark-final                 # 14. optional: flip lifecycle draft -> final
+docs stamp-section <id> --by <agent> # 10. record provenance + recompute body_hash (recommended, see §0/§4)
+docs review-section <id> --json     # 11. iterate to green (see loop below)
+docs pipeline assemble              # 12. render the final output(s), --format html|pdf|docx
+docs verify                         # 13. structural + audit verification
+# 14. optional, after a first assemble: docs doc revise <id> "<request>" <file>
+docs doc mark-final                 # 15. optional: flip lifecycle draft -> final, snapshot draft build into output/final/
 ```
+
+**WARNING — `build-section` vs `stamp-section`: not interchangeable.**
+`docs build-section <id>` (**re**)generates a section **from the template
+scaffold** — it is the initial-scaffolding command (`pipeline prep` runs it
+once for every section) and must **not** be run again on a section you have
+already hand-authored: it can overwrite your prose with a freshly-rendered
+scaffold body. `docs stamp-section <id> --by <agent>` is the safe command to
+run after authoring — it never touches the prose body, it only rewrites the
+front-matter header (`body_hash`, `authored_by`, `model`). If in doubt after
+authoring, run `stamp-section`, never `build-section`.
 
 Every step has a corresponding CLI command; run `docs --help` or
 `docs <group> --help` for the full option surface. `docs doctor` is
@@ -95,7 +125,7 @@ Two `docs doctor` checks worth knowing up front:
 | `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `mark-final` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
-| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `build-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
+| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
 | `asset` | asset registration commands |
 | `docx` | low-level `.docx` inspection commands |
 
@@ -122,17 +152,20 @@ omitted — existing single-format workflows are unaffected.
   build WARNs to stderr and **skips** the PDF artifact — every other
   requested format still builds successfully; this is not a failure.
 
-**Known limitation: output filenames are not derived from the document or
-template.** Assembled files use a fixed default (`tesina-draft.docx`,
-`tesina-body.docx`, `tesina-draft.html`) regardless of the active template
-or document id — none of the three built-in templates override
-`output.draft_name`/`body_name`/`html_name`, so even `technical-report-srs`
-and `documento-generico` documents ship as `tesina-*` files today. The
-rendered HTML `<title>` is likewise not a document-title field — it is
-whatever the *first* section's filename stem happens to be. Set
-`output.draft_name`/`body_name`/`html_name` in config to override this for
-a non-Spanish/non-thesis document; it is cosmetic and does not affect
-content correctness.
+**Output filenames derive from the document id by default.** Assembled
+files default to `<doc-id>-draft.docx`, `<doc-id>-body.docx`, and
+`<doc-id>-draft.html` (e.g. `faro-draft.docx` for a document with id
+`faro`) — a template may still declare explicit names via
+`output.draft_name`/`body_name`/`html_name` in its config, which win over
+the id-derived default; `reporte-estadia-tic` does this (its `output` block
+declares `tesina-draft.docx`/`tesina-body.docx`/`tesina-draft.html`
+explicitly), so only estadia documents ship as `tesina-*` files —
+`technical-report-srs` and `documento-generico` documents ship as
+`<doc-id>-*` by default. The rendered HTML `<title>` is the document's
+title: the template's declared `title` if the document config has one,
+else the document id — never the first section's filename stem (pandoc's
+own fallback when no `--metadata title=` is passed, which the harness
+always passes).
 
 ### Ingest & classification: advisory, and never auto-injected into sections
 
@@ -147,7 +180,10 @@ mode, `pipeline ingest` still succeeds (exit 0) even when a file's role is
 `unknown` or low-confidence — arbitrarily-named source files are common and
 expected. There is no CLI command that "confirms" a role: hand-edit
 `_classification-queue.json`, setting `confirmed_role` on an entry, and the
-*next* `pipeline ingest` run reads it back. Confirming a role only clears
+*next* `pipeline ingest` run reads it back. `confirmed_role` accepts exactly
+one of `evidence | example | normative` — any other value (a typo, a
+section id, `unknown`) is rejected with a WARNING and the entry stays
+pending, same as if it were never confirmed. Confirming a role only clears
 that file's count in `doc status --json`'s `classification_pending` field
 (§6) — **it does not write anything into a section.**
 
@@ -233,6 +269,12 @@ Rules:
 
 ## 4. The review loop: `review-section --json` iterate-to-green
 
+**Never run `build-section` on a section you are about to review or have
+already authored** — it regenerates from the template scaffold and can
+overwrite your prose (see the WARNING in §1). Use `stamp-section` instead
+once authoring settles (below); `review-section` itself is always safe —
+it only reads and reports, it never writes.
+
 `docs review-section <id> --json` is the machine-checkable target for a
 section's authored prose. Loop:
 
@@ -245,7 +287,9 @@ section's authored prose. Loop:
    content, add quantified evidence or a citation next to a flagged claim,
    resolve the inconsistency).
 4. Re-run step 1. Repeat until `"passed": true`.
-5. `docs review-document --json` runs the same check across every section
+5. Run `docs stamp-section <id> --by <agent>` to record provenance and
+   recompute `body_hash` for the now-reviewed body (recommended — see §0).
+6. `docs review-document --json` runs the same check across every section
    at once, for a final pre-assemble sweep.
 
 Review checks are evidence-aware: a subjective or contested term next to
@@ -311,13 +355,18 @@ user-driven signal with no effect on build mechanics; it exists so an agent
 or reviewer can tell, from `docs doc status --json`, whether a document is
 still being iterated on or considered done.
 
-**`mark-final` sets a state flag only — it does not currently produce a
-final-variant artifact.** `output/final/` is created empty at `doc new`
-time and reserved for future use; no current command writes into it.
-Every render (docx/html/pdf), draft or final lifecycle, always lands under
-`output/draft/`. Do not imply to a user that marking a document final
-generates a separate final-format file — check `output/draft/` regardless
-of lifecycle state.
+**`mark-final` also promotes the current draft build into `output/final/`.**
+Beyond flipping the lifecycle flag, `docs doc mark-final` copies every file
+currently in `output/draft/` into `output/final/` — a **point-in-time
+snapshot**, not a live mirror: it reflects whatever was last built at the
+moment `mark-final` ran. If you edit a section and re-assemble afterward,
+`output/draft/` moves ahead and `output/final/` is now stale — **re-run
+`docs doc mark-final` to re-sync it** after any further edit+assemble cycle.
+If `output/draft/` is empty when `mark-final` runs (nothing has been
+assembled yet), it WARNs and promotes nothing — `mark-final` never fails,
+but `output/final/` stays empty until at least one `pipeline assemble` has
+run. `docs doc status --json`'s `output.final_exists` reflects whether
+`output/final/` currently has any file in it (see the table below).
 
 Each `docs pipeline assemble`/`all` run appends a `build_version` (an
 incrementing integer, starting at `1`) to the document's `runs/` history —
@@ -339,8 +388,10 @@ this is a wall-clock log, not part of the deterministic build artifact
 | `sections.needs_review` | Section exists and `review-section` currently reports one or more issues — tracked independently of `scaffold`. |
 | `sections.authored` | Raw count of section files that exist on disk, regardless of scaffold/needs_review state. |
 | `ingest.classification_pending` | Count of `inbox/_classification-queue.json` entries with no `confirmed_role` yet (§1). |
+| `figures.count` | Number of entries in `sections/figure-catalog.json`, built by `pipeline ingest` from image assets found under `inbox/` (declared + heuristically-detected images, plus rendered vector-PDF pages). It is **not** a count of inline `[[figure:label]]` markers (§3) — those are independent, resolved/numbered only at build time, and never increment this field; a section can reference figures via `[[figure:...]]` with `figures.count` still `0` if no image ever went through `pipeline ingest`. |
 | `lifecycle` | `"draft"` or `"final"`, set by `doc mark-final` (above). |
 | `build_version` | Highest `build_version` recorded under `runs/`, or `null` before the first `pipeline assemble`. |
+| `output.final_exists` | Whether `output/final/` currently contains any file — becomes `true` after a `doc mark-final` run that had a non-empty `output/draft/` to promote (above); stays `false` before the first successful promotion. |
 
 ## 7. Reproducibility boundary (read this before worrying about "identical output")
 
@@ -379,7 +430,7 @@ This means:
     _revisions/             # docs doc revise: per-edit .diff snapshots + revision-log.json
   context/                # per-topic context fields (docs context set/status)
   assets/                 # figures/images referenced by sections
-  output/draft|final/     # rendered .docx/html/pdf output; final/ is reserved, not populated by any current command (see §6)
+  output/draft|final/     # rendered .docx/html/pdf output; draft/ is always the current build, final/ is a snapshot copy `doc mark-final` promotes it into (see §6)
   runs/                   # command history + build_version (docs history, docs doc status)
 ```
 
