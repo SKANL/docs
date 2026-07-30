@@ -195,9 +195,17 @@ class ReviewService:
                 self.repository.write_section(doc_id, section.order, section.id, generated)
                 return section_path
             is_managed = current_metadata.get("managed_by") == "docs-harness"
-            current_body_hash = hashlib.sha256(current_body.encode("utf-8")).hexdigest()
-            is_unchanged = current_metadata.get("body_hash") == current_body_hash
-            if is_managed and is_unchanged:
+            # Content-based, not hash-based: `body_hash` in frontmatter only
+            # records what the body looked like the *last time this function
+            # wrote it* (including from stamp_section, which recomputes it
+            # from the current -- possibly authored -- body). It can be
+            # perfectly self-consistent and still not match a fresh re-render,
+            # so comparing it to a freshly hashed current_body proves nothing
+            # about whether the section was authored. Comparing the actual
+            # current body against the actual fresh render does.
+            authored_by = current_metadata.get("authored_by", "harness-scaffold")
+            looks_authored = current_body != body or authored_by != "harness-scaffold"
+            if is_managed and not looks_authored:
                 if generated_metadata_changed(current_metadata, metadata):
                     self.repository.write_section(doc_id, section.order, section.id, generated)
                 return section_path

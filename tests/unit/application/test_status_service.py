@@ -169,6 +169,42 @@ def test_status_summary_reports_partially_completed_document(tmp_path, workspace
 # --- Phase 6: lifecycle + build version (item F, spec: document-lifecycle) -
 
 
+def test_status_summary_reports_authored_section_without_stamp_as_not_scaffold(tmp_path, workspace, service):
+    """Regression: authoring a section (removing PENDIENTE) without running
+    `stamp-section` leaves `authored_by` at its default 'harness-scaffold'
+    value forever, and a `body_hash` written once at scaffold time is never
+    refreshed either. Status must classify by body content, not by an
+    unstamped provenance field or a hash nobody kept current -- otherwise a
+    fully-authored, review-passed document shows every section as scaffold
+    forever."""
+    section_repo = JsonSectionRepository(workspace)
+    service.context_service.set("alpha", _template(), "alumno", "Texto introductorio.")
+
+    authored_body = "# Introducción\n\nAlcance definido y evidenciado.\n"
+    metadata = {
+        "managed_by": "docs-harness",
+        "authored_by": "harness-scaffold",  # never stamped
+        "schema": 3,
+        "section_id": "introduccion",
+        "title": "Introducción",
+        "body_hash": "stale-hash-from-original-scaffold",  # never refreshed
+    }
+    section_repo.write_section("alpha", 1, "introduccion", with_frontmatter(authored_body, metadata))
+
+    conclusiones_body = "# Conclusiones\n\nCierre del trabajo.\n"
+    section_repo.write_section(
+        "alpha", 2, "conclusiones",
+        with_frontmatter(
+            conclusiones_body,
+            {"managed_by": "docs-harness", "authored_by": "harness-scaffold", "schema": 3},
+        ),
+    )
+
+    status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
+
+    assert status.sections_scaffold == []
+
+
 def test_status_summary_reports_final_lifecycle_after_mark_final(tmp_path, document_repo, service):
     document = document_repo.read_document("alpha")
     document_repo.write_document(document.model_copy(update={"lifecycle": "final"}))

@@ -58,7 +58,13 @@ class StatusService:
                 continue
             sections_authored += 1
             metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
-            if metadata.get("authored_by") == "harness-scaffold" or "PENDIENTE" in body:
+            # Content-based, not `authored_by`-based: authored_by only
+            # changes via the optional, explicit stamp-section command, so a
+            # section can be fully authored (no leftover PENDIENTE) yet still
+            # carry the default "harness-scaffold" value forever. Leftover
+            # PENDIENTE markers are the real signal that a section still
+            # needs authoring.
+            if "PENDIENTE" in body:
                 sections_scaffold.append(section.id)
             review = self.review_service.review_section(
                 doc_id, template, section.id, strict=False, normative=normative
