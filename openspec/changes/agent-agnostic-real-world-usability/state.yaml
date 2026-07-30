@@ -27,14 +27,20 @@ phases:
     artifact: tasks.md
     mirror: sdd/agent-agnostic-real-world-usability/tasks (engram)
   apply:
-    status: pending
+    status: done
+    note: >
+      All 10 slices (PR1-PR10, 63 TDD task pairs) implemented on branch
+      feat/agent-agnostic-usability; full suite 1227 passed / 7 skipped, ruff
+      clean. Slices PR9/PR10 built in isolated worktrees and merged in.
+      Opened PR #20 (base fix/docx-figures-and-apa-review, stacked on #19).
+    mirror: sdd/agent-agnostic-real-world-usability/apply-progress (engram)
   verify:
     status: pending
   archive:
     status: pending
 
 next_recommended:
-  - sdd-apply
+  - sdd-verify
 
 capabilities:
   new:
