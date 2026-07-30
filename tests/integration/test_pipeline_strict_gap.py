@@ -78,6 +78,7 @@ def _pipeline_config(tmp_path: Path) -> dict:
         "paths": {
             "rules_manifest": str(tmp_path / "manual-rules.json"),
             "context_dir": str(tmp_path / "context"),
+            "manual_dir": str(tmp_path / "manual"),
             "sections_dir": str(tmp_path / "sections"),
             "source_manifest": str(tmp_path / "source.json"),
             "issues_manifest": str(tmp_path / "issues.json"),
@@ -143,7 +144,10 @@ def test_draft_mode_proceeds_and_gap_report_lists_the_missing_context_field(tmp_
     Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
     service, _ = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    # gh unavailable (non-strict -> not required); every other tool (e.g. the
+    # new required "uv" capability check, item L) still resolves so doctor
+    # itself does not fail-fast before gap-report runs.
+    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
 
     summary = service.run_pipeline(
         "doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path, strict=False
@@ -163,6 +167,7 @@ def test_draft_mode_proceeds_and_gap_report_lists_the_missing_context_field(tmp_
 
 def test_strict_mode_blocks_before_pack_context_when_a_context_field_is_missing(tmp_path, monkeypatch):
     Path(tmp_path / "context").mkdir()
+    Path(tmp_path / "manual").mkdir()  # strict mode also requires doctor's manual_dir check (item E)
     Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
     service, _ = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
@@ -195,6 +200,7 @@ def test_strict_mode_still_blocks_on_the_untouched_scaffold_after_filling_only_c
     # here, explicitly, per the coordinator's fix-verify instruction: an
     # existing test that asserts the old buggy behavior encodes the bug.
     Path(tmp_path / "context").mkdir()
+    Path(tmp_path / "manual").mkdir()  # strict mode also requires doctor's manual_dir check (item E)
     Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
     service, _ = _service(tmp_path)
     service.context_repository.write_topic("doc1", _TOPIC, {"nombre": "Ada"})
@@ -220,6 +226,7 @@ def test_strict_mode_proceeds_once_the_section_is_genuinely_written(tmp_path, mo
     # (not "managed_by docs-harness") defers to a proposal file instead of
     # clobbering it -- the real, edited content is what gap-report reads.
     Path(tmp_path / "context").mkdir()
+    Path(tmp_path / "manual").mkdir()  # strict mode also requires doctor's manual_dir check (item E)
     Path(tmp_path / "documents" / "doc1").mkdir(parents=True)
     service, _ = _service(tmp_path)
     service.context_repository.write_topic("doc1", _TOPIC, {"nombre": "Ada"})

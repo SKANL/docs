@@ -18,7 +18,9 @@ import re
 # folder name clearly signaling intent to a human. "extracted" maps to
 # EVIDENCE (extracted/traceability content is plausibly always evidence
 # material by construction, per the verify report's own recommendation).
-_NORMATIVE_LEXICON = frozenset({"normativa", "norma", "reglas", "rules", "manual", "lineamientos"})
+# Public: reused by domain/doctor.py's manual auto-detect (item E) -- same
+# vocabulary, never a second copy.
+NORMATIVE_LEXICON = frozenset({"normativa", "norma", "reglas", "rules", "manual", "lineamientos"})
 _EXAMPLE_LEXICON = frozenset(
     {
         "ejemplo", "ejemplos", "muestra", "sample", "reference", "referencia", "plantilla",
@@ -32,7 +34,7 @@ _EVIDENCE_LEXICON = frozenset(
 )
 
 _ROLE_LEXICONS: dict[str, frozenset[str]] = {
-    "normative": _NORMATIVE_LEXICON,
+    "normative": NORMATIVE_LEXICON,
     "example": _EXAMPLE_LEXICON,
     "evidence": _EVIDENCE_LEXICON,
 }

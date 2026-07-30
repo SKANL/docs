@@ -398,7 +398,10 @@ def test_run_pipeline_prep_build_sections_succeeds_and_writes_the_section_file(t
     Path(tmp_path / "context").mkdir()
     service, _ = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None)  # gh unavailable -> collect-issues "omitido"
+    # gh unavailable -> collect-issues "omitido"; every other tool (e.g. the
+    # new required "uv" capability check, item L) still resolves so doctor
+    # itself does not fail-fast before build-sections runs.
+    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
     summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
     stage = next(s for s in summary["stages"] if s["stage"] == "build-sections")
     assert stage["ok"] is True
@@ -416,7 +419,7 @@ def test_run_pipeline_prep_runs_pack_context_after_build_sections(tmp_path, monk
     Path(tmp_path / "context").mkdir()
     service, _ = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
     summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
     stage_names = [s["stage"] for s in summary["stages"]]
     assert "pack-context" in stage_names
@@ -440,7 +443,7 @@ def test_run_pipeline_writes_a_run_log_entry(tmp_path, monkeypatch):
     Path(tmp_path / "context").mkdir()
     service, workspace = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
     service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
     runs = service.list_runs("doc1", _pipeline_config(tmp_path))
     assert any(r["command"] == "pipeline-prep" for r in runs)
