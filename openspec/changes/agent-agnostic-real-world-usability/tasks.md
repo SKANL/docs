@@ -81,14 +81,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 6: Figure/table numbering + cross-ref (H) — PR 6, depends on PR 5
 
-- [ ] 6.1 RED: `number_and_resolve` assigns `Figura N`/`Tabla M` in document order, then in-text order
-- [ ] 6.2 GREEN: implement `domain/cross_reference.py:number_and_resolve` (pure); add `[[table:slug]]` marker
-- [ ] 6.3 RED: caption rewrite (`Figura N. <caption>`) and `[[ref:slug]]` → `Ver Figura N`/`Ver Tabla M`
-- [ ] 6.4 GREEN: implement caption/ref rewrite
-- [ ] 6.5 RED: unresolvable `[[ref:]]` → `Ver Figura ?` + build WARN, never silent
-- [ ] 6.6 GREEN: add unknown-label handling
-- [ ] 6.7 RED: reordering sections renumbers deterministically, no manual edits (numbering-determinism risk)
-- [ ] 6.8 GREEN: wire `number_and_resolve` into `DocxRendererAdapter.build` before `_strip_frontmatter_to_temp`/pandoc (`docx_assembly.py:100`)
+- [x] 6.1 RED: `number_and_resolve` assigns `Figura N`/`Tabla M` in document order, then in-text order
+- [x] 6.2 GREEN: implement `domain/cross_reference.py:number_and_resolve` (pure); add `[[table:slug]]` marker
+- [x] 6.3 RED: caption rewrite (`Figura N. <caption>`) and `[[ref:slug]]` → `Ver Figura N`/`Ver Tabla M`
+- [x] 6.4 GREEN: implement caption/ref rewrite
+- [x] 6.5 RED: unresolvable `[[ref:]]` → `Ver Figura ?` + build WARN, never silent
+- [x] 6.6 GREEN: add unknown-label handling
+- [x] 6.7 RED: reordering sections renumbers deterministically, no manual edits (numbering-determinism risk)
+- [x] 6.8 GREEN: wire `number_and_resolve` into `DocxRendererAdapter.build` before `_strip_frontmatter_to_temp`/pandoc (`docx_assembly.py:100`)
 
 ## Phase 7: Evidence-aware review precision (J) — PR 7, independent
 

@@ -260,6 +260,42 @@ def test_strip_frontmatter_to_temp_handles_multiple_sections_in_order(tmp_path, 
     assert [path.read_text(encoding="utf-8") for path in stripped] == ["Uno.\n", "Dos.\n"]
 
 
+# --- _strip_frontmatter_to_temp: figure/table numbering + cross-ref (item H) ---
+
+
+def test_strip_frontmatter_to_temp_numbers_figure_markers_in_document_order(tmp_path, service):
+    first = tmp_path / "001-resumen.md"
+    first.write_text("[[figure:organigrama]] Organigrama del equipo.\n", encoding="utf-8")
+    second = tmp_path / "002-anexos.md"
+    second.write_text("Consulte [[ref:organigrama]] para más detalle.\n", encoding="utf-8")
+
+    stripped = service._strip_frontmatter_to_temp([first, second])
+
+    assert stripped[0].read_text(encoding="utf-8") == "Figura 1. Organigrama del equipo.\n"
+    assert stripped[1].read_text(encoding="utf-8") == "Consulte Ver Figura 1 para más detalle.\n"
+
+
+def test_strip_frontmatter_to_temp_leaves_hardcoded_captions_untouched(tmp_path, service):
+    section = tmp_path / "001-resumen.md"
+    section.write_text("Figura 1. Ya numerada a mano.\n", encoding="utf-8")
+
+    stripped = service._strip_frontmatter_to_temp([section])
+
+    assert stripped[0].read_text(encoding="utf-8") == "Figura 1. Ya numerada a mano.\n"
+
+
+def test_strip_frontmatter_to_temp_warns_on_unresolved_ref_never_silent(tmp_path, service, capsys):
+    section = tmp_path / "001-resumen.md"
+    section.write_text("Consulte [[ref:no-existe]].\n", encoding="utf-8")
+
+    stripped = service._strip_frontmatter_to_temp([section])
+
+    assert stripped[0].read_text(encoding="utf-8") == "Consulte Ver Figura ?.\n"
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err
+    assert "no-existe" in captured.err
+
+
 # --- build ----------------------------------------------------------------------
 
 
@@ -446,3 +482,36 @@ def test_build_produces_working_toc_field_not_literal_placeholder(tmp_path, serv
     result = Document(str(output))
     assert not any(p.text.strip() == "[[TOC]]" for p in result.paragraphs)
     assert any('w:fldCharType="begin"' in p._p.xml for p in result.paragraphs)
+
+
+# --- build: figure/table numbering + cross-ref wired end-to-end (item H) -------
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_numbers_figures_and_resolves_refs_across_sections(tmp_path, service):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    draft_dir = tmp_path / "draft"
+    (sections_dir / "001-resumen.md").write_text(
+        "# Resumen\n\n[[figure:organigrama]] Organigrama del equipo.\n", encoding="utf-8"
+    )
+    (sections_dir / "002-anexos.md").write_text(
+        "# Anexos\n\nConsulte [[ref:organigrama]] para más detalle.\n", encoding="utf-8"
+    )
+    template = _pandoc_styled_docx(tmp_path, "Plantilla.", "template.docx")
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}, {"id": "anexos", "order": 2}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(draft_dir),
+            "template_docx": str(template),
+        },
+    }
+
+    output = service.build("doc-1", config)
+
+    document = Document(str(output))
+    texts = [p.text for p in document.paragraphs]
+    assert any("Figura 1. Organigrama del equipo." in t for t in texts)
+    assert any("Consulte Ver Figura 1 para más detalle." in t for t in texts)
