@@ -69,6 +69,22 @@ def test_deps_registers_the_html_renderer(workspace):
     assert Deps().renderers["html"].output_format == "html"
 
 
+def test_deps_registers_the_pdf_renderer(workspace):
+    assert "pdf" in Deps().renderers
+    assert Deps().renderers["pdf"].output_format == "pdf"
+
+
+def test_pipeline_format_pdf_selects_the_pdf_renderer(workspace, monkeypatch):
+    _new_doc()
+    seen_formats: list[str] = []
+    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", _fake_run_pipeline(seen_formats))
+
+    result = runner.invoke(app, ["pipeline", "assemble", "--format", "pdf"])
+
+    assert result.exit_code == 0
+    assert seen_formats == ["pdf"]
+
+
 def test_pipeline_format_html_selects_the_html_renderer(workspace, monkeypatch):
     _new_doc()
     seen_formats: list[str] = []

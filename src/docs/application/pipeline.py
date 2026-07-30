@@ -263,6 +263,17 @@ class PipelineService:
                 return True, "omitido: pandoc no disponible"
             return True, str(path)
 
+        def stage_build_pdf() -> tuple[bool, str]:
+            # PdfRendererAdapter.build() returns None (already WARNed to
+            # stderr) when the LibreOffice/soffice toolchain is absent --
+            # degrade like build-html/stage_collect_issues (ok=True,
+            # "omitido: ..." detail) rather than failing the whole pipeline
+            # for a secondary, opt-in output format (item C-pdf).
+            path = renderer.build(doc_id, config)
+            if path is None:
+                return True, "omitido: LibreOffice/soffice no disponible"
+            return True, str(path)
+
         def stage_format_audit() -> tuple[bool, str]:
             docx_path = _draft_docx_path()
             result = self.format_audit_service.audit_format(docx_path, config, strict=strict)
@@ -342,6 +353,7 @@ class PipelineService:
             "review-document": stage_review_document,
             "build-docx": stage_build_docx,
             "build-html": stage_build_html,
+            "build-pdf": stage_build_pdf,
             "format-audit-docx": stage_format_audit,
             "ingest": stage_ingest,
             "build-context-files": stage_build_context_files,

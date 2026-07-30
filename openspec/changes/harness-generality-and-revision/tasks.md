@@ -54,12 +54,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: PDF renderer (C-pdf) — PR 3, depends on PR 2
 
-- [ ] 3.1 RED (`tests/unit/application/test_pdf_render.py`, new): `PdfRendererAdapter.output_format == "pdf"`; `build()` builds the docx then calls `render_docx_to_pdf`
-- [ ] 3.2 GREEN: create `application/pdf_render.py:PdfRendererAdapter` (wraps `DocxRendererAdapter` + `QaRenderPort.render_docx_to_pdf`)
-- [ ] 3.3 RED: soffice absent (`resolve_libreoffice_executable` → `None`) → WARN + skip PDF; other requested formats still build (threat-matrix: missing-toolchain degradation)
-- [ ] 3.4 GREEN: catch the missing-toolchain `RuntimeError` in `PdfRendererAdapter.build`, print a WARN, skip (return `None`); `core_app.pipeline`'s format loop skips `None` results
-- [ ] 3.5 GREEN: register `Deps.renderers["pdf"]` (`cli/_shared.py:119`)
-- [ ] 3.6 Run `tests/integration/test_libreoffice_qa_adapter.py` — confirm the shared `render_docx_to_pdf` path is unaffected
+- [x] 3.1 RED (`tests/unit/application/test_pdf_render.py`, new): `PdfRendererAdapter.output_format == "pdf"`; `build()` builds the docx then calls `render_docx_to_pdf`
+- [x] 3.2 GREEN: create `application/pdf_render.py:PdfRendererAdapter` (wraps `DocxRendererAdapter` + `QaRenderPort.render_docx_to_pdf`)
+- [x] 3.3 RED: soffice absent (`resolve_libreoffice_executable` → `None`) → WARN + skip PDF; other requested formats still build (threat-matrix: missing-toolchain degradation)
+- [x] 3.4 GREEN: catch the missing-toolchain `RuntimeError` in `PdfRendererAdapter.build`, print a WARN, skip (return `None`); `core_app.pipeline`'s format loop skips `None` results
+- [x] 3.5 GREEN: register `Deps.renderers["pdf"]` (`cli/_shared.py:119`)
+- [x] 3.6 Run `tests/integration/test_libreoffice_qa_adapter.py` — confirm the shared `render_docx_to_pdf` path is unaffected
 
 ## Phase 4: `doc revise` loop (B) — PR 4, independent of PR 2/3
 

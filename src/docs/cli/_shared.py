@@ -22,6 +22,7 @@ from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import _SOURCE_MANIFEST_NAME, IngestService
+from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
@@ -118,12 +119,20 @@ class Deps:
         tool_resolver = SystemToolResolverAdapter()
         docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
         html_renderer_service = HtmlRendererAdapter(tool_resolver)
+        # Stateless (no instance state) -- one instance shared by QaService's
+        # existing visual-QA PDF render and PdfRendererAdapter's `--format
+        # pdf` conversion, never two separate adapter instances for the same
+        # soffice subprocess call (item C-pdf, mirrors the content-probe
+        # single-instance pattern below).
+        libreoffice_qa_adapter = LibreOfficeQaAdapter()
+        pdf_renderer_service = PdfRendererAdapter(docx_assembly_service, libreoffice_qa_adapter)
         self.renderers: dict[str, DocumentRendererPort] = {
             docx_assembly_service.output_format: docx_assembly_service,
             html_renderer_service.output_format: html_renderer_service,
+            pdf_renderer_service.output_format: pdf_renderer_service,
         }
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
-        qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
+        qa_service = QaService(libreoffice_qa_adapter, format_audit_service)
         # Stateless -- one instance shared by the doctor's manual auto-detect
         # (item E) and ingest's content-based classification (item D, PR4),
         # never a second port/adapter (design.md ADR-D).

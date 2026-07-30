@@ -552,6 +552,63 @@ def test_run_pipeline_build_html_stage_degrades_cleanly_when_renderer_skips(tmp_
     assert "omitido" in html_stage["detail"]
 
 
+# --- build-pdf stage (PR3, item C-pdf) -------------------------------------
+
+
+def test_run_pipeline_build_pdf_stage_degrades_cleanly_when_renderer_skips(tmp_path):
+    # PdfRendererAdapter.build() returns None (WARN + skip) when soffice is
+    # absent -- the stage must stay ok=True with an "omitido" detail, same
+    # best-effort pattern as build-html, never a pipeline failure for a
+    # secondary, opt-in output format (spec: document-render "Best-Effort PDF
+    # Renderer With Graceful Degradation").
+    class _FakeSkippingPdfRenderer:
+        output_format = "pdf"
+
+        def stage_plan(self):
+            return [("build-pdf", True)]
+
+        def build(self, doc_id, config, output=None):
+            return None
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingPdfRenderer()
+    )
+
+    pdf_stage = next(s for s in summary["stages"] if s["stage"] == "build-pdf")
+    assert pdf_stage["ok"] is True
+    assert "omitido" in pdf_stage["detail"]
+
+
+def test_run_pipeline_assemble_runs_build_pdf_stage_for_pdf_renderer(tmp_path):
+    class _FakePdfRenderer:
+        output_format = "pdf"
+
+        def stage_plan(self):
+            return [("build-pdf", True)]
+
+        def build(self, doc_id, config, output=None):
+            output_dir = Path(config["paths"]["output_draft_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output or (output_dir / "tesina-draft.pdf")
+            path.write_bytes(b"fake pdf")
+            return path
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakePdfRenderer()
+    )
+
+    pdf_stage = next(s for s in summary["stages"] if s["stage"] == "build-pdf")
+    assert pdf_stage["ok"] is True
+    assert (tmp_path / "draft" / "tesina-draft.pdf").exists()
+
+
 def test_pipeline_and_renderer_resolve_draft_name_from_one_shared_default(tmp_path, monkeypatch):
     # D1 (tech-debt closeout): pipeline.py and docx_assembly.py each used to
     # declare their own "tesina-draft.docx" literal. Both must now resolve
