@@ -12,6 +12,19 @@ _RUN_KWARGS = {"check": True, "capture_output": True, "text": True, "encoding": 
 logger = logging.getLogger(__name__)
 
 
+def _is_not_a_git_repo(exc: Exception) -> bool:
+    """A non-git workspace (exit 128, `fatal: not a git repository ...`) is
+    an EXPECTED, routine case for `run_git_rev_parse_head`/
+    `detect_github_remote` -- every pipeline/verify/doctor run outside a
+    repo hits it. Distinguishing it lets the caller log at DEBUG instead of
+    WARNING, so the console isn't spammed on every command, while a
+    genuinely unexpected git failure (missing binary, corrupt repo, ...)
+    still WARNs -- git failures are surfaced, never silently swallowed."""
+    if not isinstance(exc, subprocess.CalledProcessError):
+        return False
+    return "not a git repository" in (exc.stderr or "").lower()
+
+
 class FilesystemSourceRepository:
     def glob_markdown(self, directory: Path) -> list[Path]:
         return sorted(directory.glob("*.md"))
@@ -71,7 +84,8 @@ class FilesystemSourceRepository:
                 **_RUN_KWARGS,
             )
         except Exception as exc:
-            logger.warning("git remote get-url origin failed in %s: %s", repo_root, exc)
+            level = logging.DEBUG if _is_not_a_git_repo(exc) else logging.WARNING
+            logger.log(level, "git remote get-url origin failed in %s: %s", repo_root, exc)
             return ""
         return proc.stdout.strip()
 
@@ -83,6 +97,7 @@ class FilesystemSourceRepository:
                 **_RUN_KWARGS,
             )
         except Exception as exc:
-            logger.warning("git rev-parse --short HEAD failed in %s: %s", repo_root, exc)
+            level = logging.DEBUG if _is_not_a_git_repo(exc) else logging.WARNING
+            logger.log(level, "git rev-parse --short HEAD failed in %s: %s", repo_root, exc)
             return ""
         return proc.stdout.strip()
