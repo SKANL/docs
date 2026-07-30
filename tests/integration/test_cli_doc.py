@@ -207,6 +207,22 @@ def test_doc_mark_final_sets_lifecycle_reported_by_status(status_ws):
     assert status_payload["lifecycle"] == "final"
 
 
+def test_doc_mark_final_with_draft_build_makes_status_report_final_exists(status_ws):
+    # Fresh-context robustness gap: `mark-final` only flipped the lifecycle
+    # flag -- `output/final/` stayed empty forever, so `doc status`'s
+    # `output.final_exists` could never become meaningful. mark-final now
+    # promotes whatever the current draft build produced.
+    runner.invoke(app, ["doc", "new", "alpha"])
+    (status_ws / "documents" / "alpha" / "output" / "draft" / "tesina-draft.docx").write_bytes(b"fake")
+
+    mark_result = runner.invoke(app, ["doc", "mark-final"])
+    assert mark_result.exit_code == 0, mark_result.output
+
+    status_payload = json.loads(runner.invoke(app, ["doc", "status", "--json"]).output)
+    assert status_payload["lifecycle"] == "final"
+    assert status_payload["output"]["final_exists"] is True
+
+
 # ── PR4: `doc revise` semantic-edit loop (design.md item B) ────────────────
 
 _REVISE_TEMPLATE = {
