@@ -1,0 +1,112 @@
+{
+  "type": "documento-generico",
+  "title": "Documento Genérico",
+  "project_defaults": {
+    "language": "es-MX",
+    "voice": "third_person_singular",
+    "document_type": "documento_generico",
+    "scope_policy": ""
+  },
+  "paths": {},
+  "normative": {
+    "excluded_front_matter": {},
+    "first_person_patterns": [],
+    "subjective_terms": []
+  },
+  "advisor_overrides": [],
+  "structure": [
+    { "type": "fixed_text_page", "text_field": "title" },
+    { "type": "toc" },
+    {
+      "type": "sections",
+      "preliminary_pagination": {},
+      "body_restart_section": "introduccion",
+      "body_pagination": { "format": "decimal", "start": 1 }
+    }
+  ],
+  "format": {
+    "page_size": "letter",
+    "page_margins_cm": {
+      "cover_policy": "preserve_template",
+      "non_cover": { "top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5 }
+    },
+    "body_font": "Times New Roman",
+    "body_font_pt": 12,
+    "line_spacing": 1.5,
+    "first_line_indent_cm": 1.25,
+    "paragraph_space_after_pt": 18,
+    "table_policy": "horizontal_lines_only_no_color",
+    "figure_caption_position": "below",
+    "keyword_bold_terms": {}
+  },
+  "apa7": { "enabled": false },
+  "privacy": { "forbidden_in_body_patterns": [], "sensitive_context_fields": [] },
+  "strict_policy": {
+    "draft": { "allow_pending": true, "length_violations": "warning", "missing_evidence": "warning", "apa_violations": "warning" },
+    "strict": { "allow_pending": false, "length_violations": "error", "missing_evidence": "error", "apa_violations": "error" }
+  },
+  "cross_consistency": { "enabled": true, "contested_stack_terms": [] },
+  "documents_tools": { "enabled": false, "required_in_strict": false, "scripts": [] },
+  "ledger_seed": [],
+  "context_schema": {
+    "topics": [
+      {
+        "id": "documento",
+        "title": "Metadatos del documento",
+        "required": true,
+        "consumed_by": ["introduccion", "desarrollo", "conclusiones"],
+        "fields": [
+          { "key": "titulo", "label": "Título", "required": true },
+          { "key": "autor", "label": "Autor", "required": true },
+          { "key": "fecha", "label": "Fecha", "required": false }
+        ]
+      },
+      {
+        "id": "tema",
+        "title": "Tema y objetivo",
+        "required": true,
+        "multiline": true,
+        "consumed_by": ["introduccion", "desarrollo"],
+        "prompt": "Describe el tema, el objetivo y el alcance del documento."
+      }
+    ]
+  },
+  "sections": [
+    { "id": "indice", "title": "ÍNDICE", "required": true, "order": 10 },
+    { "id": "introduccion", "title": "INTRODUCCIÓN", "required": true, "order": 20 },
+    { "id": "desarrollo", "title": "DESARROLLO", "required": true, "order": 30 },
+    { "id": "conclusiones", "title": "CONCLUSIONES", "required": true, "order": 40 },
+    { "id": "referencias", "title": "REFERENCIAS", "required": false, "order": 50 }
+  ],
+  "section_contracts": {
+    "indice": {
+      "title": "ÍNDICE",
+      "toc": true,
+      "required_content": ["campo TOC dinámico"],
+      "detect": { "campo TOC dinámico": ["[[toc]]", "toc"] },
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": false
+    },
+    "introduccion": {
+      "title": "INTRODUCCIÓN",
+      "required_content": ["tema", "objetivo", "alcance"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "desarrollo": {
+      "title": "DESARROLLO",
+      "required_content": ["contenido principal"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "conclusiones": {
+      "title": "CONCLUSIONES",
+      "required_content": ["síntesis", "hallazgos"],
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    },
+    "referencias": {
+      "title": "REFERENCIAS",
+      "references_list": true,
+      "required_content": ["fuentes citadas"],
+      "detect": { "fuentes citadas": ["referencias", "pendiente"] },
+      "evidence_required": false, "apa_required": false, "pending_allowed_in_draft": true
+    }
+  }
+}

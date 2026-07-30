@@ -48,3 +48,55 @@ def test_template_show_prints_resolved_json(ws):
 def test_template_show_unknown_errors_cleanly(ws):
     result = runner.invoke(app, ["template", "show", "nope"])
     assert result.exit_code == 1  # FileNotFoundError -> ERROR path
+
+
+# ── PR3: built-in template provisioning (design.md item C) ─────────────────
+
+
+def test_template_list_available_lists_builtin_names(ws):
+    result = runner.invoke(app, ["template", "list", "--available"])
+    assert result.exit_code == 0
+    assert "documento-generico" in result.output
+    assert "reporte-estadia-tic" in result.output
+
+
+def test_template_list_available_does_not_read_workspace_templates_dir(ws):
+    # `--available` lists package data, not `templates_dir` (`tesina` from `ws`).
+    result = runner.invoke(app, ["template", "list", "--available"])
+    assert "tesina" not in result.output
+
+
+def test_template_use_copies_builtin_into_workspace(ws):
+    result = runner.invoke(app, ["template", "use", "documento-generico"])
+    assert result.exit_code == 0, result.output
+
+    from importlib.resources import files
+
+    expected = files("docs.templates.builtin").joinpath("documento-generico.json").read_text(encoding="utf-8")
+    written = (ws / "templates" / "documento-generico.json").read_text(encoding="utf-8")
+    assert written == expected
+
+
+def test_template_use_unknown_builtin_errors_cleanly(ws):
+    result = runner.invoke(app, ["template", "use", "no-existe"])
+    assert result.exit_code != 0
+
+
+def test_template_use_refuses_clobber_without_force(ws):
+    target = ws / "templates" / "documento-generico.json"
+    target.write_text('{"type": "documento-generico", "title": "Mine"}', encoding="utf-8")
+
+    result = runner.invoke(app, ["template", "use", "documento-generico"])
+
+    assert result.exit_code != 0
+    assert json.loads(target.read_text(encoding="utf-8"))["title"] == "Mine"
+
+
+def test_template_use_force_overwrites(ws):
+    target = ws / "templates" / "documento-generico.json"
+    target.write_text('{"type": "documento-generico", "title": "Mine"}', encoding="utf-8")
+
+    result = runner.invoke(app, ["template", "use", "documento-generico", "--force"])
+
+    assert result.exit_code == 0
+    assert json.loads(target.read_text(encoding="utf-8"))["title"] == "Documento Genérico"

@@ -1,12 +1,14 @@
 # src/docs/application/docx_assembly.py
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from docs.application.asset import AssetService
 from docs.application.output_names import resolve_body_docx_name, resolve_draft_docx_name
+from docs.domain.cross_reference import number_and_resolve
 from docs.domain.docx_structure import sections_index, structure_parts
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
@@ -104,10 +106,21 @@ class DocxRendererAdapter:
         return output
 
     def _strip_frontmatter_to_temp(self, sections: list[Path]) -> list[Path]:
+        # Item H (design.md, ADR-H): number `[[figure:]]`/`[[table:]]` labels
+        # and resolve `[[ref:]]` cross-references in document order (the
+        # order `sections` already arrives in) before pandoc ever sees the
+        # text -- a pure, deterministic pass; text with no markers (e.g. a
+        # section that already hand-writes `Figura N.`) passes through
+        # unchanged.
         tmp_dir = Path(tempfile.mkdtemp(prefix="docs_sections_"))
+        bodies = [split_frontmatter(path.read_text(encoding="utf-8"))[1] for path in sections]
+        numbered, warnings = number_and_resolve(
+            [(path.stem, body) for path, body in zip(sections, bodies)]
+        )
+        for warning in warnings:
+            print(f"WARN: {warning}", file=sys.stderr)
         stripped: list[Path] = []
-        for section_path in sections:
-            _metadata, body = split_frontmatter(section_path.read_text(encoding="utf-8"))
+        for section_path, (_section_id, body) in zip(sections, numbered):
             target = tmp_dir / section_path.name
             target.write_text(body, encoding="utf-8")
             stripped.append(target)

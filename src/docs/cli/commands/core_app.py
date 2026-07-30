@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from importlib.resources import files
 from pathlib import Path
 
 import typer
@@ -15,6 +16,33 @@ import typer
 from docs.cli._shared import _ctx, emit_result
 
 core_app = typer.Typer()
+
+_AGENTS_MD_PACKAGE = "docs.data"
+_AGENTS_MD_NAME = "AGENTS.md"
+
+
+def _read_agents_guide() -> str:
+    """Single-source contract content (design.md item B, ADR-B): the
+    canonical file is the repo-root AGENTS.md, force-included into the
+    wheel at `docs/data/AGENTS.md` so an installed package can read it with
+    no repo checkout. `pyproject.toml` force-include only copies the file at
+    BUILD time, so a source checkout (dev/test, `pythonpath = ["src"]`) has
+    no packaged copy on disk yet -- fall back to the same file at the repo
+    root in that case. Never two authored copies, only two read paths."""
+    resource = files(_AGENTS_MD_PACKAGE).joinpath(_AGENTS_MD_NAME)
+    if resource.is_file():
+        return resource.read_text(encoding="utf-8")
+    # src/docs/cli/commands/core_app.py -> parents[4] is the repo root.
+    repo_root_guide = Path(__file__).resolve().parents[4] / _AGENTS_MD_NAME
+    return repo_root_guide.read_text(encoding="utf-8")
+
+
+@core_app.command()
+def guide() -> None:
+    """Imprime el contrato del agente (AGENTS.md) — flujo de trabajo
+    completo, convenciones y el límite cognitivo entre el arnés y el
+    agente (spec: agent-contract `docs guide` CLI Command)."""
+    print(_read_agents_guide())
 
 
 @core_app.command()

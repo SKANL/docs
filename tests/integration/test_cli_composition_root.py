@@ -22,6 +22,9 @@ from docs.cli.main import app
 # tip caccb92, after PR2 merged).
 _EXPECTED_FLAT_COMMANDS = {
     "doctor", "pipeline", "verify", "history", "stamp",
+    # `guide` added PR10 of agent-agnostic-real-world-usability (item B,
+    # agent contract) -- deliberate surface growth, not drift.
+    "guide",
     "collect-sources", "build-rules", "review-rules", "collect-issues",
     "collect-code-evidence", "build-ledger", "build-section", "pack-context",
     "review-section", "review-document", "build-docx", "qa-docx",
@@ -29,9 +32,13 @@ _EXPECTED_FLAT_COMMANDS = {
 }
 _EXPECTED_GROUPS = {
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
-    # 1b/1c) -- a deliberate surface growth, not drift.
-    "template": {"list", "show", "init", "validate"},
-    "doc": {"current", "delete", "list", "new", "rename", "show", "use"},
+    # 1b/1c); `use` added PR3 of agent-agnostic-real-world-usability (item C,
+    # built-in template provisioning) -- deliberate surface growth, not drift.
+    "template": {"list", "show", "init", "validate", "use"},
+    # `init` added PR2 of agent-agnostic-real-world-usability (item A,
+    # workspace config + bootstrap); `status` added PR9 (item I, resumable
+    # status summary) -- deliberate surface growth, not drift.
+    "doc": {"current", "delete", "init", "list", "new", "rename", "show", "status", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
 }
@@ -59,7 +66,7 @@ def test_commands_package_splits_by_concern():
     def _names(sub_app: typer.Typer) -> set[str]:
         return set(typer.main.get_command(sub_app).commands.keys())
 
-    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp"}
+    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp", "guide"}
     assert _names(collection_app) == {
         "collect-sources", "build-rules", "review-rules",
         "collect-issues", "collect-code-evidence", "build-ledger",
@@ -71,8 +78,8 @@ def test_commands_package_splits_by_concern():
     assert _names(section_app) == {
         "build-section", "pack-context", "review-section", "review-document",
     }
-    assert _names(template_app) == {"list", "show", "init", "validate"}
-    assert _names(doc_app) == {"current", "delete", "list", "new", "rename", "show", "use"}
+    assert _names(template_app) == {"list", "show", "init", "validate", "use"}
+    assert _names(doc_app) == {"current", "delete", "init", "list", "new", "rename", "show", "status", "use"}
     assert _names(asset_app) == {"add", "list", "rm"}
     assert _names(context_app) == {"elicit", "ingest", "rm", "set", "show", "status"}
 

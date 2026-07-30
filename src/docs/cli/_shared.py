@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -23,16 +24,19 @@ from docs.application.ingest import _SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.application.status import StatusService
 from docs.domain.models.template import Template
 from docs.domain.docx_structure import structure_parts
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_config import resolve_workspace_roots
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.content_probe_adapter import FilesystemContentProbeAdapter
 from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
 from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
@@ -61,12 +65,32 @@ def _ctx(ctx: typer.Context) -> tuple[Deps, str]:
     return ctx.obj["deps"], ctx.obj["doc"]
 
 
+WORKSPACE_CONFIG_FILENAME = "docs.config.json"
+
+
+def _load_workspace_config() -> dict[str, str] | None:
+    """Best-effort read of `docs.config.json` in cwd (spec: workspace-config
+    "Persisted Workspace Configuration"). A malformed file WARNs to stderr and
+    is ignored — fail-open, never bricks a command (design.md item A)."""
+    path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"WARN: no se pudo leer {path}, se ignora ({exc}).", file=sys.stderr)
+        return None
+
+
 def build_workspace() -> Workspace:
-    """Workspace roots from env (injectable in tests), cwd-relative defaults.
-    Legacy hardcoded HARNESS_ROOT/documents & templates; no library equivalent
-    (Judgment call 2)."""
-    documents_dir = Path(os.environ.get("DOCS_DOCUMENTS_DIR", "documents"))
-    templates_dir = Path(os.environ.get("DOCS_TEMPLATES_DIR", "templates"))
+    """Workspace roots: `docs.config.json` (cwd) -> env vars (injectable in
+    tests) -> cwd-relative defaults, in that precedence order (spec:
+    workspace-config "Config Precedence Resolution"). Legacy hardcoded
+    HARNESS_ROOT/documents & templates; no library equivalent (Judgment call
+    2)."""
+    documents_dir, templates_dir = resolve_workspace_roots(
+        _load_workspace_config(), os.environ, (Path("documents"), Path("templates"))
+    )
     return Workspace(documents_dir=documents_dir, templates_dir=templates_dir)
 
 
@@ -95,7 +119,13 @@ class Deps:
         self.renderers: dict[str, DocumentRendererPort] = {docx_assembly_service.output_format: docx_assembly_service}
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
         qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
-        doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
+        # Stateless -- one instance shared by the doctor's manual auto-detect
+        # (item E) and ingest's content-based classification (item D, PR4),
+        # never a second port/adapter (design.md ADR-D).
+        content_probe_adapter = FilesystemContentProbeAdapter()
+        doctor_service = DoctorService(
+            evidence_repo, asset_service, tool_resolver, content_probe=content_probe_adapter
+        )
 
         pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
         pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
@@ -107,11 +137,23 @@ class Deps:
             "md": md_ingest_adapter,
             "txt": md_ingest_adapter,
         }
+        # Item F, PR5: guarded import -- pypdfium2/pillow are optional
+        # toolchain deps (doctor's `pdf_page_render` capability check, item
+        # L). Missing -> `None`, IngestService degrades to WARN + skip
+        # (design.md ADR-F), never a hard dependency for the whole CLI.
+        try:
+            from docs.infrastructure.pdf.pdfium2_pdf_render_adapter import Pdfium2PdfRenderAdapter
+
+            pdf_render_adapter = Pdfium2PdfRenderAdapter()
+        except Exception:
+            pdf_render_adapter = None
         self.ingest = IngestService(
             FiletypeDetectorAdapter(),
             ingest_handlers,
             writer=FilesystemIngestArtifactWriter(),
             image_metadata=PythonDocxImageMetadataAdapter(),
+            content_probe=content_probe_adapter,
+            pdf_render=pdf_render_adapter,
         )
 
         self.assets = asset_service
@@ -126,6 +168,7 @@ class Deps:
         self.documents = DocumentService(document_repo, self.workspace)
         self.corrections = CorrectionsService(section_repo, evidence_repo)
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
+        self.status = StatusService(section_repo, self.context, review_service)
         self.pipeline = PipelineService(
             doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
             review_service, context_pack_service, context_repo, docx_assembly_service,

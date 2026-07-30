@@ -1,12 +1,15 @@
 # tests/unit/domain/test_source_role.py
 """Source-role classification (Front D, design.md Decision 4; spec:
 document-ingest "Source-Role Classification"). Deterministic folder-name
-lexicon (primary) + filename-pattern (secondary, lower weight) signals --
-NO content probes in this cut (design.md's explicit "first cut" scope).
-`classify(relative_path)` is a pure function: zero AI judgment at runtime,
-pure data in, pure data out."""
+lexicon (primary) + filename-pattern (secondary, lower weight) signals,
+PLUS (PR4, item D) optional content signals (weaker than folder, stronger
+than filename) fed in by an already-probed `ContentSignals` -- the pure
+classifier never does I/O itself, it only scores strings it is handed.
+`classify(relative_path, signals=None)` is a pure function: zero AI
+judgment at runtime, pure data in, pure data out."""
 from __future__ import annotations
 
+from docs.domain.ports.content_probe_port import ContentSignals
 from docs.domain.source_role import classify
 
 
@@ -154,3 +157,105 @@ def test_singular_anexo_recognized_alongside_plural_anexos():
     assert role == "evidence"
     assert confidence == "high"
     assert signals == ["folder:anexo"]
+
+
+# --- 4.1: `signals=None` default is a byte-for-byte regression guard -----
+
+
+def test_classify_without_signals_arg_matches_default_none_explicitly():
+    # `classify(path)` and `classify(path, signals=None)` MUST be identical
+    # -- the new optional parameter must never change any existing caller's
+    # behavior (task 4.1 regression guard; every test above already relies
+    # on this since none of them pass `signals`).
+    assert classify("normativa/reglas.md") == classify("normativa/reglas.md", signals=None)
+    assert classify("misc/random-notes.txt") == classify("misc/random-notes.txt", signals=None)
+
+
+# --- 4.2: content signals (item D) -- weaker than folder, stronger than --
+# --- filename, deterministic string matching against the same lexicons --
+
+
+def test_content_signal_alone_on_an_arbitrary_filename_reaches_high_confidence():
+    # Two content-signal lexicon hits (0.4 each = 0.8) beat the 0.5 high
+    # threshold on their own -- an arbitrarily-named file with strong
+    # content signals is routed correctly (spec scenario: "High-confidence
+    # classification acts automatically").
+    role, confidence, signals = classify(
+        "misc/9f3ac1.pdf", signals=ContentSignals(pdf_title="Manual de Normativa Interna")
+    )
+    assert role == "normative"
+    assert confidence == "high"
+    assert signals == ["content:manual", "content:normativa"]
+
+
+def test_single_content_signal_hit_alone_yields_medium_confidence():
+    # A single content hit (0.4) is weaker than a folder hit (0.5) but
+    # present -- medium confidence, held for confirmation (never silently
+    # promoted to high on a single weak signal).
+    role, confidence, signals = classify(
+        "misc/8b21ee.pdf", signals=ContentSignals(head_keywords=("referencia",))
+    )
+    assert role == "example"
+    assert confidence == "medium"
+    assert signals == ["content:referencia"]
+
+
+def test_content_signal_combines_with_filename_signal_to_reach_high():
+    # design.md ADR-D weighting: content (0.4) + filename (0.3) = 0.7 --
+    # crosses the high threshold together even though neither alone would.
+    role, confidence, signals = classify(
+        "misc/referencia-2024.pdf", signals=ContentSignals(head_keywords=("ejemplo",))
+    )
+    assert role == "example"
+    assert confidence == "high"
+    assert signals == ["filename:referencia", "content:ejemplo"]
+
+
+def test_content_signal_weaker_than_folder_signal():
+    folder_role, folder_confidence, _ = classify("normativa/doc.md")
+    content_role, content_confidence, _ = classify(
+        "misc/doc.pdf", signals=ContentSignals(head_keywords=("manual",))
+    )
+    assert folder_role == content_role == "normative"
+    assert folder_confidence == "high"
+    assert content_confidence == "medium"
+
+
+def test_content_signal_is_case_and_accent_folded():
+    # Real PDF titles/headings carry Spanish accents; the classifier must
+    # still match its ASCII lexicon (e.g. "guia" matches "GUÍA").
+    role, confidence, _signals = classify(
+        "misc/random.pdf", signals=ContentSignals(pdf_title="GUÍA Operativa")
+    )
+    assert role == "normative"
+    assert confidence == "medium"
+
+
+def test_evidence_content_keywords_ficha_and_empresa():
+    role, confidence, signals = classify(
+        "misc/001.pdf", signals=ContentSignals(head_keywords=("ficha", "empresa"))
+    )
+    assert role == "evidence"
+    assert confidence == "high"
+    assert signals == ["content:empresa", "content:ficha"]
+
+
+def test_content_signal_conflicting_across_roles_yields_unknown_not_defaulted():
+    # Equally-weighted content-only signals for two roles: still genuinely
+    # ambiguous -- queued, never an arbitrary pick (spec: "Low-confidence
+    # classification is held, not guessed").
+    role, confidence, signals = classify(
+        "misc/data.md", signals=ContentSignals(head_keywords=("manual", "referencia"))
+    )
+    assert role == "unknown"
+    assert confidence == "low"
+    assert signals == []
+
+
+def test_folder_filename_and_content_signals_combine_in_stable_order():
+    role, confidence, signals = classify(
+        "normativa/manual.md", signals=ContentSignals(head_keywords=("normativa",))
+    )
+    assert role == "normative"
+    assert confidence == "high"
+    assert signals == ["folder:normativa", "filename:manual", "content:normativa"]

@@ -1,0 +1,69 @@
+change: agent-agnostic-real-world-usability
+artifact_store: hybrid
+created: 2026-07-29
+updated: 2026-07-29
+
+phases:
+  explore:
+    status: done
+    note: >
+      Exploration done inline this session by the orchestrator; no separate
+      explore artifact persisted. Grounded findings (A-M, file:line evidence)
+      handed to propose directly.
+  propose:
+    status: done
+    artifact: proposal.md
+    mirror: sdd/agent-agnostic-real-world-usability/proposal (engram)
+  spec:
+    status: done
+    artifact: specs/*/spec.md (6 capabilities)
+    mirror: sdd/agent-agnostic-real-world-usability/spec (engram)
+  design:
+    status: done
+    artifact: design.md
+    mirror: sdd/agent-agnostic-real-world-usability/design (engram)
+  tasks:
+    status: done
+    artifact: tasks.md
+    mirror: sdd/agent-agnostic-real-world-usability/tasks (engram)
+  apply:
+    status: done
+    note: >
+      All 10 slices (PR1-PR10, 63 TDD task pairs) implemented on branch
+      feat/agent-agnostic-usability; full suite 1227 passed / 7 skipped, ruff
+      clean. Slices PR9/PR10 built in isolated worktrees and merged in.
+      Opened PR #20 (base fix/docx-figures-and-apa-review, stacked on #19).
+    mirror: sdd/agent-agnostic-real-world-usability/apply-progress (engram)
+  verify:
+    status: pending
+  archive:
+    status: pending
+
+next_recommended:
+  - sdd-verify
+
+capabilities:
+  new:
+    - workspace-config
+    - agent-contract
+    - template-provisioning
+  modified:
+    - document-ingest
+    - document-pipeline
+    - document-render
+  unchanged:
+    - context-curation
+    - asset-management
+
+delivery_strategy: auto-chain
+chain_strategy: stacked-to-main
+notes: >
+  Bring-your-own-agent usability change. Resolves 13 evidence-based gaps
+  (A-M) surfaced by a real end-to-end run that only succeeded via manual
+  agent glue. Bound decisions: (1) mechanical harness + documented agent
+  contract, NO embedded LLM/API keys; (2) content classification + fail-open
+  graceful degradation; (3) section .md prose is durable source of truth,
+  byte-determinism applies to the BUILD not the prose. Multi-front: 10
+  chained/stacked PRs (mechanical core PR1-6 before guided layer PR7-10),
+  see tasks.md. Builds on PR #19 (fix/docx-figures-and-apa-review). Does NOT
+  touch the active universal-schema-harness change.

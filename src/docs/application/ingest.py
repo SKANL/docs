@@ -4,29 +4,44 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
 from docs.domain.figure_catalog import FigureEntry, build as build_figure_catalog
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
+from docs.domain.intake_report import render_intake_report
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
+from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
+from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
+from docs.domain.source_conflict import Conflict, detect_conflicts
 from docs.domain.source_role import classify
 
 _DETECTION_REPORT_NAME = "_detection.json"
 _SOURCE_MANIFEST_NAME = "_source-manifest.json"
 _CLASSIFICATION_QUEUE_NAME = "_classification-queue.json"
 _PLACEMENT_QUEUE_NAME = "_placement-queue.json"
+_INTAKE_REPORT_NAME = "intake-report.md"
 
 # PR3 verify follow-up (finding a): these are the harness's OWN
 # `_`-prefixed bookkeeping files, always written at `inbox_dir` root --
 # a rescan finding them gets a distinct `"harness_artifact"` ignored-reason,
-# never conflated with a genuine user `_`-prefixed file.
+# never conflated with a genuine user `_`-prefixed file. `intake-report.md`
+# (item G, PR8) joins this set too -- it is NOT `_`-prefixed (deliberately
+# discoverable via plain `ls`, design.md ADR-G/AGENTS.md item B), so it must
+# be named here explicitly or a rescan would re-ingest its own prior report.
 _HARNESS_ARTIFACT_NAMES = frozenset(
-    {_DETECTION_REPORT_NAME, _SOURCE_MANIFEST_NAME, _CLASSIFICATION_QUEUE_NAME, _PLACEMENT_QUEUE_NAME}
+    {
+        _DETECTION_REPORT_NAME,
+        _SOURCE_MANIFEST_NAME,
+        _CLASSIFICATION_QUEUE_NAME,
+        _PLACEMENT_QUEUE_NAME,
+        _INTAKE_REPORT_NAME,
+    }
 )
 
 # Verbatim-asset heuristic (design.md Decision 6a): an image anywhere
@@ -138,11 +153,21 @@ class IngestService:
         handlers: dict[str, SourceIngestPort],
         writer: IngestArtifactWriter | None = None,
         image_metadata: ImageMetadataPort | None = None,
+        content_probe: ContentProbePort | None = None,
+        pdf_render: PdfRenderPort | None = None,
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
         self.writer: IngestArtifactWriter = writer or _InlineJsonWriter()
         self.image_metadata = image_metadata
+        # Item D, PR4: optional, injected exactly like `image_metadata`
+        # (design.md ADR-D) -- `None` degrades to folder/filename-only
+        # classification, fail-open, never a hard dependency.
+        self.content_probe = content_probe
+        # Item F, PR5: optional, injected exactly like `content_probe`
+        # (design.md ADR-F) -- `None` (toolchain unavailable) degrades to
+        # "no rendered figures, WARN", never a hard dependency.
+        self.pdf_render = pdf_render
 
     def ingest_inbox(
         self,
@@ -155,6 +180,13 @@ class IngestService:
         sections_dir = Path(sections_dir)
         entries: list[dict[str, Any]] = []
         ignored: list[dict[str, str]] = []
+        manifest_payload: dict[str, Any] = {
+            "schema": 1,
+            "sources": [],
+            "duplicates": [],
+            "placements": [],
+            "conflicts": [],
+        }
         if inbox_dir.is_dir():
             sources, ignored, empty_dir_entries, declared_assets, heuristic_candidates = (
                 self._walk_inbox(inbox_dir)
@@ -179,7 +211,9 @@ class IngestService:
             placements = self._route_and_queue_assets(
                 inbox_dir, declared_assets, heuristic_candidates, assets_dir
             )
-            self._build_figure_catalog(inbox_dir, sections_dir, declared_assets, heuristic_candidates)
+            self._build_figure_catalog(
+                inbox_dir, sections_dir, declared_assets, heuristic_candidates, entries, assets_dir
+            )
 
             # Front D (design.md Decision 4): classify every real source
             # entry, merge any externally-confirmed role from the PRIOR
@@ -191,7 +225,22 @@ class IngestService:
             manifest_sources = self._build_manifest_sources(inbox_dir, entries, strict)
             self._write_classification_queue(inbox_dir, manifest_sources)
             duplicates = self._find_near_duplicates(inbox_dir, manifest_sources)
-            self._write_source_manifest(inbox_dir, manifest_sources, duplicates, placements)
+            # Item K (design.md ADR-K): a deterministic, curated-term-group
+            # check over the just-produced ingested text -- WARN only, never
+            # blocks, never auto-resolves (fail-open, agent decides).
+            conflicts = self._detect_source_conflicts(manifest_sources)
+            self._warn_conflicts(conflicts)
+            manifest_payload = {
+                "schema": 1,
+                "sources": manifest_sources,
+                "duplicates": duplicates,
+                "placements": placements,
+                "conflicts": [
+                    {"group": c.group, "members": list(c.members), "sources": list(c.sources)}
+                    for c in conflicts
+                ],
+            }
+            self._write_source_manifest(inbox_dir, manifest_payload)
         report = {
             "processed": sum(1 for e in entries if e.get("status") != "empty_dir"),
             "files": entries,
@@ -199,6 +248,11 @@ class IngestService:
             "media_cleanup": self._clean_orphan_media(sections_dir / "ingested"),
         }
         self._write_detection_report(inbox_dir, report)
+        # Item G (design.md ADR-G): a VIEW over already-produced artifacts,
+        # never a new source of truth -- gap-report.json and
+        # 00-fact-ledger.md may not exist yet on a first ingest pass
+        # (built by later pipeline stages), so both reads are best-effort.
+        self._write_intake_report(inbox_dir, sections_dir, report, manifest_payload)
         return report
 
     def _walk_inbox(self, inbox_dir: Path) -> tuple[
@@ -454,23 +508,13 @@ class IngestService:
         # port (design.md Decision 9) -- no direct write_text here anymore.
         self.writer.write_json(inbox_dir / _DETECTION_REPORT_NAME, report)
 
-    def _write_source_manifest(
-        self,
-        inbox_dir: Path,
-        manifest_sources: list[dict[str, Any]],
-        duplicates: list[dict[str, Any]],
-        placements: list[dict[str, Any]],
-    ) -> None:
+    def _write_source_manifest(self, inbox_dir: Path, payload: dict[str, Any]) -> None:
         # `inbox/_source-manifest.json` (design.md's artifact map): distinct
         # from the collection stage's `sections/source-manifest.json`.
         # `_`-prefixed, so the recursive walk itself always skips it, same
-        # as `_detection.json`.
-        payload = {
-            "schema": 1,
-            "sources": manifest_sources,
-            "duplicates": duplicates,
-            "placements": placements,
-        }
+        # as `_detection.json`. `payload` already carries schema/sources/
+        # duplicates/placements/conflicts -- built by the caller so it can
+        # be reused verbatim by `_write_intake_report` (item G).
         self.writer.write_json(inbox_dir / _SOURCE_MANIFEST_NAME, payload)
 
     # --- Front D: source-role classification (design.md Decision 4) -----
@@ -478,37 +522,56 @@ class IngestService:
     def _build_manifest_sources(
         self, inbox_dir: Path, entries: list[dict[str, Any]], strict: bool
     ) -> list[dict[str, Any]]:
-        # Classification is a PURE function of relative_path -- zero AI
-        # judgment, zero I/O, zero randomness at runtime (spec:
-        # document-ingest "Source-Role Classification"). External
-        # confirmation enters ONLY through the classification queue file
-        # (an agent/human edits it); a prior confirmation round-trips
-        # forward into this run's manifest AND the freshly-rewritten queue.
+        # Classification is a PURE function of relative_path (+ optional
+        # already-probed content signals) -- zero AI judgment, zero I/O,
+        # zero randomness at runtime (spec: document-ingest "Source-Role
+        # Classification" / item D "Content-Based Source Classification").
+        # External confirmation enters ONLY through the classification
+        # queue file (an agent/human edits it); a prior confirmation
+        # round-trips forward into this run's manifest AND the
+        # freshly-rewritten queue.
         prior_confirmed = self._read_prior_confirmed_roles(inbox_dir)
         sources: list[dict[str, Any]] = []
         for entry in entries:
             if entry.get("status") == "empty_dir":
                 continue
             relative_path = entry["relative_path"]
-            role, confidence, signals = classify(relative_path)
+            signals = self._probe_content(inbox_dir, relative_path)
+            role, confidence, role_signals = classify(relative_path, signals=signals)
             confirmed_role = prior_confirmed.get(relative_path)
             manifest_entry = dict(entry)
             manifest_entry["proposed_role"] = role
             manifest_entry["confidence"] = confidence
-            manifest_entry["signals"] = signals
+            manifest_entry["signals"] = role_signals
             manifest_entry["confirmed_role"] = confirmed_role
-            manifest_entry["role_status"] = self._resolve_role_gate(role, confirmed_role, strict)
+            manifest_entry["role_status"] = self._resolve_role_gate(
+                role, confidence, confirmed_role, strict
+            )
             sources.append(manifest_entry)
         return sources
 
+    def _probe_content(self, inbox_dir: Path, relative_path: str) -> Any:
+        # I/O lives here (application layer, injected adapter), never in
+        # the pure domain classifier (ADR-D "Signals-as-strings boundary").
+        # No probe wired -> None, degrading to folder/filename-only
+        # classification exactly as before PR4 (fail-open).
+        if self.content_probe is None:
+            return None
+        return self.content_probe.probe(inbox_dir / relative_path)
+
     def _resolve_role_gate(
-        self, proposed_role: str, confirmed_role: str | None, strict: bool
+        self, proposed_role: str, confidence: str, confirmed_role: str | None, strict: bool
     ) -> dict[str, Any]:
-        # Gating (design.md Decision 4, spec: "Confirmed role recorded and
-        # enforced"): a confirmed role always routes the source under that
-        # role. Unconfirmed: draft admits with the proposed role and a
-        # PENDIENTE-style gap entry; strict blocks outright (consistent
-        # with the draft/strict split, Decision 7).
+        # Gating (design.md Decision 4 + item D bound decision, spec:
+        # "Confirmed role recorded and enforced" / "High-confidence
+        # classification acts automatically" / "Low-confidence
+        # classification is held, not guessed"): a confirmed role always
+        # routes the source under that role, in any mode. Otherwise, strict
+        # mode blocks outright regardless of confidence (Decision 7). In
+        # draft mode: `high` confidence ACTS automatically (proposed role
+        # admitted, PENDIENTE-style confirmation gap noted); `medium`/`low`
+        # confidence is HELD -- never silently defaulted, always queued for
+        # explicit confirmation (`inbox/_classification-queue.json`).
         if confirmed_role:
             return {"effective_role": confirmed_role, "blocked": False, "gap": None}
         if strict:
@@ -520,10 +583,19 @@ class IngestService:
                     "bloqueado en modo estricto hasta que se confirme."
                 ),
             }
+        if confidence == "high":
+            return {
+                "effective_role": proposed_role,
+                "blocked": False,
+                "gap": f"PENDIENTE: rol sin confirmar (propuesto: {proposed_role}).",
+            }
         return {
-            "effective_role": proposed_role,
-            "blocked": False,
-            "gap": f"PENDIENTE: rol sin confirmar (propuesto: {proposed_role}).",
+            "effective_role": None,
+            "blocked": True,
+            "gap": (
+                f"Rol retenido (confianza {confidence}, propuesto: {proposed_role}); "
+                f"confirma en {_CLASSIFICATION_QUEUE_NAME} antes de continuar."
+            ),
         }
 
     def _read_prior_confirmed_roles(self, inbox_dir: Path) -> dict[str, str]:
@@ -633,6 +705,71 @@ class IngestService:
             )
         return overrides
 
+    # --- Item K: cross-source conflict detection (design.md ADR-K) --------
+
+    def _detect_source_conflicts(self, manifest_sources: list[dict[str, Any]]) -> list[Conflict]:
+        # Reads each ingested source's OWN converted text (same `output`
+        # field `_find_near_duplicates` already reads) -- pure, deterministic
+        # detection lives entirely in `domain/source_conflict.py`; I/O
+        # (reading the produced .md text) stays here in the application
+        # layer.
+        texts: list[tuple[str, str]] = []
+        for source in manifest_sources:
+            output = source.get("output")
+            if not output:
+                continue
+            try:
+                text = Path(output).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            texts.append((source["relative_path"], text))
+        return detect_conflicts(texts)
+
+    def _warn_conflicts(self, conflicts: list[Conflict]) -> None:
+        for conflict in conflicts:
+            sources = ", ".join(conflict.sources)
+            members = ", ".join(conflict.members)
+            print(
+                f"WARN: fuentes en conflicto ({sources}) afirman miembros distintos de "
+                f"`{conflict.group}` ({members}); revisa y resuelve manualmente.",
+                file=sys.stderr,
+            )
+
+    # --- Item G: intake / gap report (design.md ADR-G) --------------------
+
+    def _read_gap_report(self, sections_dir: Path) -> dict[str, Any]:
+        gap_path = Path(sections_dir) / "gap-report.json"
+        if not gap_path.exists():
+            return {}
+        try:
+            return json.loads(gap_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+    def _read_ledger_pending(self, sections_dir: Path) -> list[str]:
+        ledger_path = Path(sections_dir) / "00-fact-ledger.md"
+        if not ledger_path.exists():
+            return []
+        pending: list[str] = []
+        for line in ledger_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if "PENDIENTE" in line:
+                pending.append(line.lstrip("-* ").strip())
+        return pending
+
+    def _write_intake_report(
+        self,
+        inbox_dir: Path,
+        sections_dir: Path,
+        detection: dict[str, Any],
+        manifest: dict[str, Any],
+    ) -> None:
+        if not inbox_dir.is_dir():
+            return
+        gap_report = self._read_gap_report(sections_dir)
+        ledger_pending = self._read_ledger_pending(sections_dir)
+        content = render_intake_report(detection, manifest, gap_report, ledger_pending)
+        (inbox_dir / _INTAKE_REPORT_NAME).write_text(content, encoding="utf-8")
+
     # --- Front F: verbatim assets + placement queue (design.md Decision 6a)
 
     def _route_and_queue_assets(
@@ -738,6 +875,8 @@ class IngestService:
         sections_dir: Path,
         declared_assets: list[tuple[Path, str]],
         heuristic_candidates: list[tuple[Path, str]],
+        entries: list[dict[str, Any]] | None = None,
+        assets_dir: Path | None = None,
     ) -> None:
         image_candidates = [
             (path, rel)
@@ -757,5 +896,68 @@ class IngestService:
                     origin_relative_path=rel,
                 )
             )
+        figures.extend(
+            self._render_vector_pdf_figures(inbox_dir, entries or [], assets_dir)
+        )
         catalog_path = sections_dir / "figure-catalog.json"
         self.writer.write_json(catalog_path, build_figure_catalog(figures))
+
+    def _render_vector_pdf_figures(
+        self,
+        inbox_dir: Path,
+        entries: list[dict[str, Any]],
+        assets_dir: Path | None,
+    ) -> list[FigureEntry]:
+        # Item F (design.md ADR-F): a PDF that yielded zero extracted raster
+        # media (its paired `_media/` dir absent/empty -- opendataloader-pdf
+        # extracts none today) may still hold vector diagrams; render its
+        # pages so they land in the figure catalog too. Gated on the SAME
+        # `_media/` shape `_clean_orphan_media` already checks, so DOCX/ODT
+        # sources (pandoc-extracted) and any PDF with real extracted raster
+        # never get double-counted.
+        figures: list[FigureEntry] = []
+        pdf_entries = sorted(
+            (entry for entry in entries if entry.get("kind") == "pdf" and entry.get("output")),
+            key=lambda entry: entry["relative_path"],
+        )
+        for entry in pdf_entries:
+            output = Path(entry["output"])
+            media_dir = output.with_name(f"{output.stem}_media")
+            if media_dir.is_dir() and any(media_dir.iterdir()):
+                continue  # raster already extracted -- never double-count
+            if self.pdf_render is None:
+                print(
+                    f"WARN: {entry['relative_path']} podría contener figuras vectoriales, pero "
+                    "la herramienta de renderizado (pypdfium2/pillow) no está disponible; se "
+                    "omite la extracción de figuras por renderizado de página.",
+                    file=sys.stderr,
+                )
+                continue
+            if assets_dir is None:
+                continue
+            src_pdf = inbox_dir / entry["relative_path"]
+            render_dir = assets_dir / "figures"
+            try:
+                rendered_pages = self.pdf_render.render_pages(src_pdf, render_dir)
+            except Exception as exc:
+                print(
+                    f"WARN: no se pudo renderizar {entry['relative_path']} ({exc}); se omite "
+                    "la extracción de figuras por renderizado de página.",
+                    file=sys.stderr,
+                )
+                continue
+            for page_path in rendered_pages:
+                data = page_path.read_bytes()
+                dimensions = (
+                    self.image_metadata.read_dimensions(page_path) if self.image_metadata else None
+                )
+                width, height = dimensions if dimensions is not None else (None, None)
+                figures.append(
+                    FigureEntry(
+                        sha256=sha256_hex(data),
+                        width_px=width,
+                        height_px=height,
+                        origin_relative_path=f"assets/figures/{page_path.name}",
+                    )
+                )
+        return figures
