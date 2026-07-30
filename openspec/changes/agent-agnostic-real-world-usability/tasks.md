@@ -64,12 +64,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 4: Content classification (D) — PR 4, depends on PR 1 (ContentProbePort)
 
-- [ ] 4.1 RED: `classify(path, signals=None)` byte-for-byte unchanged (regression guard)
-- [ ] 4.2 GREEN: extend `classify()` signature (`domain/source_role.py:51`) with optional weighted content signals
-- [ ] 4.3 RED: extended probe extracts PDF title/headings/keywords; failure → empty signals (case-folded, ASCII-sorted)
-- [ ] 4.4 GREEN: extend `content_probe_adapter.py` with PDF/text extraction
-- [ ] 4.5 RED: high-confidence classification acts automatically; medium/low held to classification queue, never defaulted
-- [ ] 4.6 GREEN: wire probe output into `IngestService` classify call, inject adapter via `Deps`
+- [x] 4.1 RED: `classify(path, signals=None)` byte-for-byte unchanged (regression guard)
+- [x] 4.2 GREEN: extend `classify()` signature (`domain/source_role.py:51`) with optional weighted content signals
+- [x] 4.3 RED: extended probe extracts PDF title/headings/keywords; failure → empty signals (case-folded, ASCII-sorted)
+- [x] 4.4 GREEN: extend `content_probe_adapter.py` with PDF/text extraction
+- [x] 4.5 RED: high-confidence classification acts automatically; medium/low held to classification queue, never defaulted
+- [x] 4.6 GREEN: wire probe output into `IngestService` classify call, inject adapter via `Deps`
 
 ## Phase 5: Wire PDF render adapter (F) — PR 5, depends on PR 4
 

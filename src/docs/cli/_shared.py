@@ -118,8 +118,12 @@ class Deps:
         self.renderers: dict[str, DocumentRendererPort] = {docx_assembly_service.output_format: docx_assembly_service}
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
         qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
+        # Stateless -- one instance shared by the doctor's manual auto-detect
+        # (item E) and ingest's content-based classification (item D, PR4),
+        # never a second port/adapter (design.md ADR-D).
+        content_probe_adapter = FilesystemContentProbeAdapter()
         doctor_service = DoctorService(
-            evidence_repo, asset_service, tool_resolver, content_probe=FilesystemContentProbeAdapter()
+            evidence_repo, asset_service, tool_resolver, content_probe=content_probe_adapter
         )
 
         pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
@@ -137,6 +141,7 @@ class Deps:
             ingest_handlers,
             writer=FilesystemIngestArtifactWriter(),
             image_metadata=PythonDocxImageMetadataAdapter(),
+            content_probe=content_probe_adapter,
         )
 
         self.assets = asset_service

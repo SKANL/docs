@@ -10,6 +10,7 @@ from typing import Any
 from docs.domain.figure_catalog import FigureEntry, build as build_figure_catalog
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
+from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.source_ingest_port import SourceIngestPort
@@ -138,11 +139,16 @@ class IngestService:
         handlers: dict[str, SourceIngestPort],
         writer: IngestArtifactWriter | None = None,
         image_metadata: ImageMetadataPort | None = None,
+        content_probe: ContentProbePort | None = None,
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
         self.writer: IngestArtifactWriter = writer or _InlineJsonWriter()
         self.image_metadata = image_metadata
+        # Item D, PR4: optional, injected exactly like `image_metadata`
+        # (design.md ADR-D) -- `None` degrades to folder/filename-only
+        # classification, fail-open, never a hard dependency.
+        self.content_probe = content_probe
 
     def ingest_inbox(
         self,
@@ -478,37 +484,56 @@ class IngestService:
     def _build_manifest_sources(
         self, inbox_dir: Path, entries: list[dict[str, Any]], strict: bool
     ) -> list[dict[str, Any]]:
-        # Classification is a PURE function of relative_path -- zero AI
-        # judgment, zero I/O, zero randomness at runtime (spec:
-        # document-ingest "Source-Role Classification"). External
-        # confirmation enters ONLY through the classification queue file
-        # (an agent/human edits it); a prior confirmation round-trips
-        # forward into this run's manifest AND the freshly-rewritten queue.
+        # Classification is a PURE function of relative_path (+ optional
+        # already-probed content signals) -- zero AI judgment, zero I/O,
+        # zero randomness at runtime (spec: document-ingest "Source-Role
+        # Classification" / item D "Content-Based Source Classification").
+        # External confirmation enters ONLY through the classification
+        # queue file (an agent/human edits it); a prior confirmation
+        # round-trips forward into this run's manifest AND the
+        # freshly-rewritten queue.
         prior_confirmed = self._read_prior_confirmed_roles(inbox_dir)
         sources: list[dict[str, Any]] = []
         for entry in entries:
             if entry.get("status") == "empty_dir":
                 continue
             relative_path = entry["relative_path"]
-            role, confidence, signals = classify(relative_path)
+            signals = self._probe_content(inbox_dir, relative_path)
+            role, confidence, role_signals = classify(relative_path, signals=signals)
             confirmed_role = prior_confirmed.get(relative_path)
             manifest_entry = dict(entry)
             manifest_entry["proposed_role"] = role
             manifest_entry["confidence"] = confidence
-            manifest_entry["signals"] = signals
+            manifest_entry["signals"] = role_signals
             manifest_entry["confirmed_role"] = confirmed_role
-            manifest_entry["role_status"] = self._resolve_role_gate(role, confirmed_role, strict)
+            manifest_entry["role_status"] = self._resolve_role_gate(
+                role, confidence, confirmed_role, strict
+            )
             sources.append(manifest_entry)
         return sources
 
+    def _probe_content(self, inbox_dir: Path, relative_path: str) -> Any:
+        # I/O lives here (application layer, injected adapter), never in
+        # the pure domain classifier (ADR-D "Signals-as-strings boundary").
+        # No probe wired -> None, degrading to folder/filename-only
+        # classification exactly as before PR4 (fail-open).
+        if self.content_probe is None:
+            return None
+        return self.content_probe.probe(inbox_dir / relative_path)
+
     def _resolve_role_gate(
-        self, proposed_role: str, confirmed_role: str | None, strict: bool
+        self, proposed_role: str, confidence: str, confirmed_role: str | None, strict: bool
     ) -> dict[str, Any]:
-        # Gating (design.md Decision 4, spec: "Confirmed role recorded and
-        # enforced"): a confirmed role always routes the source under that
-        # role. Unconfirmed: draft admits with the proposed role and a
-        # PENDIENTE-style gap entry; strict blocks outright (consistent
-        # with the draft/strict split, Decision 7).
+        # Gating (design.md Decision 4 + item D bound decision, spec:
+        # "Confirmed role recorded and enforced" / "High-confidence
+        # classification acts automatically" / "Low-confidence
+        # classification is held, not guessed"): a confirmed role always
+        # routes the source under that role, in any mode. Otherwise, strict
+        # mode blocks outright regardless of confidence (Decision 7). In
+        # draft mode: `high` confidence ACTS automatically (proposed role
+        # admitted, PENDIENTE-style confirmation gap noted); `medium`/`low`
+        # confidence is HELD -- never silently defaulted, always queued for
+        # explicit confirmation (`inbox/_classification-queue.json`).
         if confirmed_role:
             return {"effective_role": confirmed_role, "blocked": False, "gap": None}
         if strict:
@@ -520,10 +545,19 @@ class IngestService:
                     "bloqueado en modo estricto hasta que se confirme."
                 ),
             }
+        if confidence == "high":
+            return {
+                "effective_role": proposed_role,
+                "blocked": False,
+                "gap": f"PENDIENTE: rol sin confirmar (propuesto: {proposed_role}).",
+            }
         return {
-            "effective_role": proposed_role,
-            "blocked": False,
-            "gap": f"PENDIENTE: rol sin confirmar (propuesto: {proposed_role}).",
+            "effective_role": None,
+            "blocked": True,
+            "gap": (
+                f"Rol retenido (confianza {confidence}, propuesto: {proposed_role}); "
+                f"confirma en {_CLASSIFICATION_QUEUE_NAME} antes de continuar."
+            ),
         }
 
     def _read_prior_confirmed_roles(self, inbox_dir: Path) -> dict[str, str]:
