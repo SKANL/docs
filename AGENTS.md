@@ -106,6 +106,17 @@ available at any point to fail-open-diagnose the workspace (missing
 optional inputs WARN with a next step; `--strict` restores hard-fail for
 CI).
 
+**Exit codes are reliable (usable in CI).** The process exits non-zero when
+a stage genuinely fails or crashes, and `0` on success — including graceful
+degradation, where a recoverable problem (an unreadable image, an
+unclassified source, a missing optional input, a non-git workspace) WARNs on
+stderr, is skipped, and the run continues. `--strict` does not change how
+exit codes propagate; it promotes optional checks (pending markers,
+classification gaps, length/APA warnings) into genuine failures, so more
+conditions exit non-zero under `--strict`. One malformed input (e.g. a
+corrupt image) never aborts the whole run: it degrades to a WARN and the
+remaining sources still ingest.
+
 **A git repository is optional.** The workspace does not need to be a git
 repo. On a non-git workspace, commands that opportunistically read git
 metadata (revision, remote, per-file history) fail closed internally and

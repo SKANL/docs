@@ -78,6 +78,18 @@ review per the archive instructions, not added):
   intake report's human-readable surface and add it, or (b) confirm it's
   fully superseded and formally drop it.
 
+  **ORCHESTRATOR DECISION (resolved): option (a) — ADDED.** Verified against
+  live code: `gap-report.json` is produced by `ContextService.build_gap_report`
+  (`application/context.py`) during the pipeline `stage_gap_report`
+  (`application/pipeline.py`), and the Intake Report *consumes* it as input
+  (`render_intake_report(detection, manifest, gap_report, ledger_pending)`,
+  `application/ingest.py` → `domain/intake_report.py`). The two are distinct
+  and complementary: the gap report is the machine-readable data source; the
+  intake report is a human-readable view layered over it. The requirement was
+  added to `openspec/specs/document-pipeline/spec.md` with an explicit
+  reconciliation note that it underlies (not is superseded by) the Intake
+  Report. No contradiction introduced.
+
 ## document-ingest
 
 Checked against the CURRENT `openspec/specs/document-ingest/spec.md`

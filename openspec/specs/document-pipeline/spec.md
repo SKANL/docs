@@ -307,3 +307,32 @@ target directory without manual setup.
 - GIVEN a user creates a new document
 - WHEN workspace creation completes
 - THEN all previously created subdirectories (e.g., `corrections/`) still exist
+
+### Requirement: Machine-Readable Gap Report
+
+The system MUST produce a machine-readable gap report (`gap-report.json`)
+combining context required-field gaps and section `required_content` gaps.
+In draft mode the pipeline MUST proceed, marking gaps with `PENDIENTE`
+markers; in strict mode the pipeline MUST block on any reported gap. This
+report is the machine-readable data source that the document-ingest
+capability's human/agent-readable Intake Report renders over — it underlies,
+and is not superseded by, that readable surface.
+
+#### Scenario: Draft mode proceeds with PENDIENTE markers
+
+- GIVEN required context fields or section content are missing
+- WHEN the pipeline runs in draft mode
+- THEN it completes, inserting `PENDIENTE` markers at each gap
+- AND the gap report lists every marker's location and cause
+
+#### Scenario: Strict mode blocks on gaps
+
+- GIVEN the same missing fields/content
+- WHEN the pipeline runs in strict mode
+- THEN it stops before producing final output and surfaces the gap report
+
+#### Scenario: Gap report is structured, not free text
+
+- GIVEN a pipeline run that produced any gaps
+- WHEN the gap report is inspected
+- THEN it is machine-parseable (e.g., JSON) listing field/section identifiers
