@@ -13,6 +13,11 @@ class Document(BaseModel):
     project: dict = {}
     structure: list[dict] = []
     overrides: dict = {}
+    # Lifecycle-lite (design.md item F, spec: document-lifecycle): user-set
+    # state, never derived. Build version/timestamp live in `runs/` instead
+    # -- kept out of this model so it never leaks into the deterministic
+    # rendered artifacts.
+    lifecycle: str = "draft"
 
     def to_json(self) -> str:
         return json.dumps(

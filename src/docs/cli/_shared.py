@@ -183,7 +183,7 @@ class Deps:
         self.documents = DocumentService(document_repo, self.workspace)
         self.corrections = CorrectionsService(section_repo, evidence_repo)
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
-        self.status = StatusService(section_repo, self.context, review_service)
+        self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
         self.pipeline = PipelineService(
             doctor_service, evidence_service, evidence_repo, collection_service, source_repo,

@@ -182,6 +182,31 @@ def test_doc_status_markdown_output_mentions_document_id(status_ws):
     assert "Contexto" in result.output
 
 
+# ── PR6: lifecycle + build version (design.md item F) ───────────────────────
+
+
+def test_doc_status_reports_draft_lifecycle_and_no_build_version_before_assemble(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    result = runner.invoke(app, ["doc", "status", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["lifecycle"] == "draft"
+    assert payload["build_version"] is None
+
+
+def test_doc_mark_final_sets_lifecycle_reported_by_status(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    mark_result = runner.invoke(app, ["doc", "mark-final"])
+    assert mark_result.exit_code == 0, mark_result.output
+    assert "final" in mark_result.output
+
+    status_payload = json.loads(runner.invoke(app, ["doc", "status", "--json"]).output)
+    assert status_payload["lifecycle"] == "final"
+
+
 # ── PR4: `doc revise` semantic-edit loop (design.md item B) ────────────────
 
 _REVISE_TEMPLATE = {

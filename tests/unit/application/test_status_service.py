@@ -54,18 +54,21 @@ def workspace(tmp_path: Path) -> Workspace:
 
 
 @pytest.fixture
-def service(workspace: Workspace) -> StatusService:
+def document_repo(workspace: Workspace) -> JsonDocumentRepository:
+    repo = JsonDocumentRepository(workspace)
+    workspace.doc_root("alpha").mkdir(parents=True)
+    repo.write_document(Document(id="alpha", title="Alpha", template="documento-generico"))
+    repo.register(DocumentSummary(id="alpha", title="Alpha", template="documento-generico", created_at="t"))
+    return repo
+
+
+@pytest.fixture
+def service(workspace: Workspace, document_repo: JsonDocumentRepository) -> StatusService:
     section_repo = JsonSectionRepository(workspace)
     context_repo = JsonContextRepository(workspace)
-    document_repo = JsonDocumentRepository(workspace)
-    workspace.doc_root("alpha").mkdir(parents=True)
-    document_repo.write_document(Document(id="alpha", title="Alpha", template="documento-generico"))
-    document_repo.register(
-        DocumentSummary(id="alpha", title="Alpha", template="documento-generico", created_at="t")
-    )
     context_service = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
     review_service = ReviewService(section_repo)
-    return StatusService(section_repo, context_service, review_service)
+    return StatusService(section_repo, context_service, review_service, document_repo)
 
 
 def _config(tmp_path: Path) -> dict:
@@ -76,6 +79,7 @@ def _config(tmp_path: Path) -> dict:
             "sections_dir": str(doc_root / "sections"),
             "output_draft_dir": str(doc_root / "output" / "draft"),
             "output_final_dir": str(doc_root / "output" / "final"),
+            "runs_dir": str(doc_root / "runs"),
         },
     }
 
@@ -94,6 +98,8 @@ def test_status_summary_reports_fresh_document(tmp_path, service):
     assert status.figures_count == 0
     assert status.output_draft_exists is False
     assert status.output_final_exists is False
+    assert status.lifecycle == "draft"
+    assert status.build_version is None
 
 
 def test_status_summary_reports_partially_completed_document(tmp_path, workspace, service):
@@ -158,3 +164,26 @@ def test_status_summary_reports_partially_completed_document(tmp_path, workspace
     assert status.figures_count == 2
     assert status.output_draft_exists is True
     assert status.output_final_exists is False
+
+
+# --- Phase 6: lifecycle + build version (item F, spec: document-lifecycle) -
+
+
+def test_status_summary_reports_final_lifecycle_after_mark_final(tmp_path, document_repo, service):
+    document = document_repo.read_document("alpha")
+    document_repo.write_document(document.model_copy(update={"lifecycle": "final"}))
+
+    status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
+
+    assert status.lifecycle == "final"
+
+
+def test_status_summary_reports_latest_build_version_from_runs_dir(tmp_path, service):
+    runs_dir = tmp_path / "documents" / "alpha" / "runs"
+    runs_dir.mkdir(parents=True)
+    (runs_dir / "1-pipeline-assemble.json").write_text(json.dumps({"build_version": 1}), encoding="utf-8")
+    (runs_dir / "2-pipeline-assemble.json").write_text(json.dumps({"build_version": 2}), encoding="utf-8")
+
+    status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
+
+    assert status.build_version == 2

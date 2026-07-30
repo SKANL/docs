@@ -98,6 +98,25 @@ class PipelineService:
             return Path(configured)
         return self.workspace.doc_root(doc_id) / "runs"
 
+    def _next_build_version(self, doc_id: str, config: dict[str, Any]) -> int:
+        """Monotonic build version (design.md item F, spec: document-lifecycle
+        "Monotonic Build Version"): the highest `build_version` already
+        logged under `runs/`, plus one. No separate counter file -- `runs/`
+        is already the wall-clock build log, so it stays the single source."""
+        runs_dir = self._runs_dir(doc_id, config)
+        if not runs_dir.exists():
+            return 1
+        latest = 0
+        for path in runs_dir.glob("*.json"):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            version = record.get("build_version")
+            if isinstance(version, int) and version > latest:
+                latest = version
+        return latest + 1
+
     def rules_manifest_state(self, config: dict[str, Any]) -> tuple[bool, int]:
         rules_path = Path(config["paths"]["rules_manifest"])
         exists = self.evidence_repository.file_exists(rules_path)
@@ -394,6 +413,8 @@ class PipelineService:
                 if fail_fast:
                     break
         summary = {"stage_set": stage_set, "strict": strict, "passed": passed, "stages": results}
+        if stage_set in ("assemble", "all"):
+            summary["build_version"] = self._next_build_version(doc_id, config)
         self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)
         return summary
 

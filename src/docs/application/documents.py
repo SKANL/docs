@@ -89,3 +89,13 @@ class DocumentService:
     def delete(self, doc_id: str) -> None:
         validate_slug(doc_id)
         self.repository.remove(doc_id)
+
+    def mark_final(self, doc_id: str) -> Document:
+        """Lifecycle-lite (design.md item F): user-set `final` marker, no
+        heavier VCS/workflow. Read-modify-write through the same port
+        `write_document` already uses elsewhere in this class."""
+        validate_slug(doc_id)
+        document = self.repository.read_document(doc_id)
+        updated = document.model_copy(update={"lifecycle": "final"})
+        self.repository.write_document(updated)
+        return updated

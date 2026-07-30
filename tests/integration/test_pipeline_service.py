@@ -845,6 +845,48 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
     assert {Path(name).name for name in first_docx} == {"tesina-draft.docx", "tesina-body.docx"}
 
 
+# --- Phase 6: lifecycle + build version (item F) -------------------------
+
+
+class _FakeRenderer:
+    """Minimal renderer for build-version tests -- an empty stage_plan means
+    run_pipeline("assemble"/"all") completes with zero renderer stages;
+    build() is never invoked since no stage name resolves to it."""
+
+    output_format = "docx"
+
+    def stage_plan(self) -> list[tuple[str, bool]]:
+        return []
+
+
+def test_run_pipeline_assemble_records_build_version_1_on_first_run(tmp_path):
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+    assert summary["build_version"] == 1
+
+
+def test_run_pipeline_assemble_increments_build_version_on_repeated_runs(tmp_path):
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer())
+    second = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+    assert second["build_version"] == 2
+
+
+def test_run_pipeline_prep_does_not_record_a_build_version(tmp_path, monkeypatch):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    _patch_doctor_tools(monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
+    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
+    assert "build_version" not in summary
+
+
 @pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")
 def test_verify_all_completes_qa_without_qa_failed_when_libreoffice_available(tmp_path):
     Path(tmp_path / "context").mkdir()

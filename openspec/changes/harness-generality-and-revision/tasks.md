@@ -88,13 +88,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 6: Lifecycle + build version + `doc status` (F) — PR 6, independent
 
-- [ ] 6.1 RED (`tests/unit/application/test_pipeline_service.py`, extend): first `run_pipeline`/assemble records build version `1`; a repeated run increments to `N + 1`
-- [ ] 6.2 GREEN: track build version from `runs/` (existing wall-clock log) or a small counter file; increment in `PipelineService.log_run`/`stage_build_docx`
-- [ ] 6.3 RED (`tests/unit/application/test_documents.py`, extend): `Document` defaults `lifecycle="draft"`; an explicit mark sets `"final"`
-- [ ] 6.4 GREEN: add `lifecycle: str = "draft"` to `Document` (`domain/models/document.py:8`); add a `DocumentService.mark_final`/`doc mark-final <id>` write path
-- [ ] 6.5 RED (`tests/unit/application/test_status_service.py`, extend): `doc status` reports `lifecycle` + latest `build_version`; pre-assemble shows `draft` + no version
-- [ ] 6.6 GREEN: extend `DocumentStatus` (`domain/document_status.py:9`) with `lifecycle`/`build_version`; `StatusService.status_summary` reads `Document.lifecycle` + latest `runs/` version
-- [ ] 6.7 Run `tests/unit/application/test_status_service.py` + `tests/unit/application/test_pipeline_service.py` — regression check
+- [x] 6.1 RED (`tests/unit/application/test_pipeline_service.py`, extend): first `run_pipeline`/assemble records build version `1`; a repeated run increments to `N + 1`
+- [x] 6.2 GREEN: track build version from `runs/` (existing wall-clock log) or a small counter file; increment in `PipelineService.log_run`/`stage_build_docx` — implemented as `PipelineService._next_build_version` (scans `runs/*.json` for the highest existing `build_version`, +1), added to `run_pipeline`'s summary only for `stage_set in ("assemble", "all")` before `log_run` persists it
+- [x] 6.3 RED (`tests/unit/application/test_documents.py`, extend): `Document` defaults `lifecycle="draft"`; an explicit mark sets `"final"`
+- [x] 6.4 GREEN: add `lifecycle: str = "draft"` to `Document` (`domain/models/document.py:8`); add a `DocumentService.mark_final`/`doc mark-final <id>` write path
+- [x] 6.5 RED (`tests/unit/application/test_status_service.py`, extend): `doc status` reports `lifecycle` + latest `build_version`; pre-assemble shows `draft` + no version
+- [x] 6.6 GREEN: extend `DocumentStatus` (`domain/document_status.py:9`) with `lifecycle`/`build_version`; `StatusService.status_summary` reads `Document.lifecycle` (new `document_repository` constructor param) + latest `runs/` version (`StatusService._latest_build_version`, reads `paths["runs_dir"]` directly — stays aggregate-and-read only, ADR-I, no PipelineService dependency)
+- [x] 6.7 Run `tests/unit/application/test_status_service.py` + `tests/unit/application/test_pipeline_service.py` — regression check (both green, full suite 1290 passed/0 failed/7 skipped)
 
 ## Phase 7: AGENTS.md documentation coverage — PR 7, depends on PR 3, PR 4, PR 6
 

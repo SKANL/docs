@@ -129,6 +129,18 @@ def doc_delete(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id
     print(f"Documento `{doc_id}` eliminado.")
 
 
+@doc_app.command("mark-final")
+def doc_mark_final(ctx: typer.Context, doc_id: str = typer.Argument("", metavar="id")) -> None:
+    """Marca el documento (activo por defecto) como `final` (design.md item F,
+    spec: document-lifecycle). `doc status` refleja el cambio de inmediato."""
+    deps, _ = _ctx(ctx)
+    target = doc_id or deps.documents.current()
+    if not target:
+        raise RuntimeError("No hay documento activo.")
+    deps.documents.mark_final(target)
+    print(f"Documento `{target}` marcado como final.")
+
+
 @doc_app.command("status")
 def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")) -> None:
     """Resumen retomable del documento activo (design.md item I): contexto

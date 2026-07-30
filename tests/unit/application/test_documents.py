@@ -40,7 +40,7 @@ class _NarrowPortFake:
         self.documents[summary.id] = summary
 
     def read_document(self, doc_id: str):
-        raise NotImplementedError
+        return self.documents[doc_id]
 
     def write_document(self, document) -> None:
         self.documents[document.id] = document
@@ -90,3 +90,26 @@ def test_create_still_creates_previously_existing_subdirectories(tmp_path: Path)
 
     for sub in ("context", "assets", "sections", "output/draft", "output/final", "output/qa", "runs", "corrections/inbox"):
         assert (ws.doc_root("alpha") / sub).is_dir()
+
+
+# --- Phase 6: lifecycle (item F, spec: document-lifecycle) -----------------
+
+
+def test_create_defaults_lifecycle_to_draft(tmp_path: Path):
+    ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    service = DocumentService(_NarrowPortFake(), ws)
+
+    document = service.create("alpha", "fake")
+
+    assert document.lifecycle == "draft"
+
+
+def test_mark_final_sets_lifecycle_to_final(tmp_path: Path):
+    ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    service = DocumentService(_NarrowPortFake(), ws)
+    service.create("alpha", "fake")
+
+    document = service.mark_final("alpha")
+
+    assert document.lifecycle == "final"
+    assert service.repository.read_document("alpha").lifecycle == "final"
