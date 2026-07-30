@@ -90,7 +90,9 @@ docs doc mark-final                 # 15. optional: flip lifecycle draft -> fina
 scaffold** — it is the initial-scaffolding command (`pipeline prep` runs it
 once for every section) and must **not** be run again on a section you have
 already hand-authored. The harness protects you — if it detects authored
-content it diverts the regenerated scaffold to `sections/_proposals/<id>.candidate.md`
+content it diverts the regenerated scaffold to
+`sections/_proposals/<NN>-<id>.candidate.md` (number-prefixed by the
+section's template order, e.g. `sections/_proposals/010-overview.candidate.md`)
 and leaves your prose untouched — but you are then left with a stray candidate
 to reconcile, and the command is simply the wrong tool once authoring has begun.
 `docs stamp-section <id> --by <agent>` is the safe command to
@@ -301,6 +303,29 @@ a citation, a quantified figure, or an explicit qualifying statement in
 the same clause is NOT flagged — only a bare, unsubstantiated claim is.
 `--strict` tightens optional checks to hard failures (useful in CI).
 
+**A green non-strict `review-section` does not by itself mean a section is
+authored.** Whether a literal `PENDIENTE` marker blocks review is per
+section (`pending_allowed_in_draft` in the template's `section_contracts`,
+default `true`) and per mode (`strict_policy.draft.allow_pending`, `true`
+in every built-in template) — so an untouched scaffold section commonly
+still reports `"passed": true` under non-strict `review-section`; only
+`--strict` (error `content.pending_not_allowed`) or `docs doc status
+--json`'s `sections.scaffold` field (§6) reliably flags unresolved
+`PENDIENTE`. Treat a green non-strict `review-section` as necessary, not
+sufficient — cross-check `doc status`'s `sections.scaffold` before
+considering a section done.
+
+**Section H1 titles must be in sustained uppercase — checked at `docs
+verify` time, not by `review-section`.** The `.docx` format audit
+(`docs verify`, run against the rendered output — a separate check from
+`review-section`/`review-document`) WARNs `Título de primer orden no está
+en mayúsculas sostenidas: <title>` whenever a rendered Heading-1
+paragraph's text is not fully upper-case; this is why built-in scaffolds
+render titles as `# OVERVIEW`, not `# Overview`. The check is universal —
+not gated by `citation_style` or any other per-template setting — and only
+WARNs, never blocks, but keep authored H1 titles in sustained caps to
+avoid tripping it.
+
 **Scaffold hint text can be generic — the template's declared rules win,
 not the hint.** `pipeline prep`'s scaffolded section bodies include
 boilerplate reminders (e.g. a references-section hint mentioning "APA 7")
@@ -336,7 +361,11 @@ docs doc revise <target-id> "<request>" <body-file> [--field <key>] [--json]
 What the harness does mechanically, every call:
 1. Writes the new body/value, replacing the old.
 2. Computes a unified diff (before → after) and snapshots it under
-   `sections/_revisions/<target>.<n>.diff`.
+   `sections/_revisions/<NN>-<id>.<n>.diff` for a section target
+   (number-prefixed by the section's template order, e.g.
+   `sections/_revisions/010-overview.1.diff`) or
+   `sections/_revisions/topic-<topic-id>.<n>.diff` for a context-topic
+   target (topics have no section order, so no number prefix).
 3. Re-validates **only what changed**: the edited section (`review-section`)
    or, for a context-topic edit, every section that topic's template
    declares as a consumer (the "ripple") — plus one `review-document` sweep.
