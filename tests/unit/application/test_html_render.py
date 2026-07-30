@@ -81,13 +81,13 @@ def test_build_raises_when_no_markdown_sections_exist(tmp_path, service):
 # --- build: output naming --------------------------------------------------------
 
 
-def test_html_name_defaults_to_tesina_draft_html(service):
-    assert service._html_name({}) == "tesina-draft.html"
+def test_html_name_defaults_to_doc_id_derived_name(service):
+    assert service._html_name("doc-1", {}) == "doc-1-draft.html"
 
 
 def test_html_name_uses_configured_html_name_when_present(service):
     config = {"output": {"html_name": "custom.html"}}
-    assert service._html_name(config) == "custom.html"
+    assert service._html_name("doc-1", config) == "custom.html"
 
 
 # --- build: real pandoc invocation -----------------------------------------------
@@ -107,11 +107,50 @@ def test_build_produces_html_at_default_output_path(tmp_path, service):
 
     output = service.build("doc-1", config)
 
-    assert output == draft_dir / "tesina-draft.html"
+    assert output == draft_dir / "doc-1-draft.html"
     assert output.exists()
     text = output.read_text(encoding="utf-8")
     assert "Contenido del resumen" in text
     assert "<!DOCTYPE html>" in text
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_sets_html_title_to_configured_document_title(tmp_path, service):
+    # Regression: the <title> used to end up as the first section's filename
+    # stem (e.g. "010-overview") because pandoc falls back to the first input
+    # filename when no title metadata is given. It must reflect the document.
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-overview.md").write_text("Contenido.\n", encoding="utf-8")
+
+    config = {
+        "title": "Technical Report (SRS)",
+        "sections": [{"id": "overview", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")},
+    }
+
+    output = service.build("doc-1", config)
+    text = output.read_text(encoding="utf-8")
+
+    assert "<title>Technical Report (SRS)</title>" in text
+    assert "001-overview" not in text
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_falls_back_to_doc_id_for_title_when_config_has_no_title(tmp_path, service):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-overview.md").write_text("Contenido.\n", encoding="utf-8")
+
+    config = {
+        "sections": [{"id": "overview", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")},
+    }
+
+    output = service.build("doc-1", config)
+    text = output.read_text(encoding="utf-8")
+
+    assert "<title>doc-1</title>" in text
 
 
 @pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")

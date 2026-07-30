@@ -612,15 +612,17 @@ def test_run_pipeline_assemble_runs_build_pdf_stage_for_pdf_renderer(tmp_path):
 def test_pipeline_and_renderer_resolve_draft_name_from_one_shared_default(tmp_path, monkeypatch):
     # D1 (tech-debt closeout): pipeline.py and docx_assembly.py each used to
     # declare their own "tesina-draft.docx" literal. Both must now resolve
-    # the default from a single shared definition (docs.application.output_names)
-    # -- patching that one place must change what BOTH modules resolve.
-    monkeypatch.setattr("docs.application.output_names.DEFAULT_DRAFT_DOCX_NAME", "patched-draft.docx")
+    # the default (now doc-id derived, not a hardcoded literal -- residual
+    # estadia-coupling fix) from a single shared definition
+    # (docs.application.output_names) -- patching that one place must change
+    # what BOTH modules resolve.
+    monkeypatch.setattr("docs.application.output_names.DEFAULT_DRAFT_DOCX_NAME_FORMAT", "patched-{doc_id}.docx")
     service, workspace = _service(tmp_path)
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     renderer = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
 
-    assert service._resolve_draft_docx_name({}) == "patched-draft.docx"
-    assert renderer._draft_docx_name({}) == "patched-draft.docx"
+    assert service._resolve_draft_docx_name("doc1", {}) == "patched-doc1.docx"
+    assert renderer._draft_docx_name("doc1", {}) == "patched-doc1.docx"
 
 
 # --- Task 6: verify_all --------------------------------------------------
@@ -667,7 +669,7 @@ def test_verify_all_reports_qa_skipped_when_libreoffice_unavailable_in_draft(tmp
     draft_dir.mkdir()
     config["paths"]["output_draft_dir"] = str(draft_dir)
     config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    docx_path = draft_dir / "tesina-draft.docx"
+    docx_path = draft_dir / "doc1-draft.docx"
     Document().save(docx_path)
     monkeypatch.setattr(
         "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
@@ -826,8 +828,8 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
     def run_once() -> tuple[dict[str, bytes], dict[str, bytes], dict[str, bytes]]:
         service.run_pipeline("doc1", _template(), config, "ingest", repo_root=tmp_path)
         service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path)
-        # Coverage gap closed here: this used to read only tesina-draft.docx,
-        # so it never caught the body docx (tesina-body.docx, written
+        # Coverage gap closed here: this used to read only doc1-draft.docx,
+        # so it never caught the body docx (doc1-body.docx, written
         # directly by the pandoc subprocess) being non-deterministic --
         # every .docx persisted anywhere under the doc's output tree must be
         # byte-identical across runs, not just the final draft.
@@ -842,7 +844,7 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
     assert first_ingested and first_ingested == second_ingested
     assert first_context and first_context == second_context
     assert first_docx and first_docx == second_docx
-    assert {Path(name).name for name in first_docx} == {"tesina-draft.docx", "tesina-body.docx"}
+    assert {Path(name).name for name in first_docx} == {"doc1-draft.docx", "doc1-body.docx"}
 
 
 # --- Phase 6: lifecycle + build version (item F) -------------------------
@@ -896,7 +898,7 @@ def test_verify_all_completes_qa_without_qa_failed_when_libreoffice_available(tm
     draft_dir.mkdir()
     config["paths"]["output_draft_dir"] = str(draft_dir)
     config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    docx_path = draft_dir / "tesina-draft.docx"
+    docx_path = draft_dir / "doc1-draft.docx"
     Document().save(docx_path)
     result = service.verify_all("doc1", _template(), config, strict=False)
     assert not any(issue.code == "qa.failed" for issue in result.issues)

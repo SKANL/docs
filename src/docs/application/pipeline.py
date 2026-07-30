@@ -155,7 +155,8 @@ class PipelineService:
             if self.context_repository.topic_exists(doc_id, topic.id):
                 context[topic.id] = self.context_repository.read_topic_raw(doc_id, topic.id)
         keyword_bold_terms = config.get("format", {}).get("keyword_bold_terms", {}).get(section_id, [])
-        body = render_section_draft(section_id, section.title, contract, context, keyword_bold_terms)
+        citation_style = resolve_normative_settings(config).citation_style
+        body = render_section_draft(section_id, section.title, contract, context, keyword_bold_terms, citation_style)
         return self.review_service.build_section(
             doc_id, template, section_id, body,
             source_hash=self.evidence_service.source_hash(config),
@@ -168,8 +169,8 @@ class PipelineService:
             prompt_hash=self.evidence_service.prompt_hash(config),
         )
 
-    def _resolve_draft_docx_name(self, config: dict[str, Any]) -> str:
-        return resolve_draft_docx_name(config)
+    def _resolve_draft_docx_name(self, doc_id: str, config: dict[str, Any]) -> str:
+        return resolve_draft_docx_name(doc_id, config)
 
     def _stage_callables(
         self,
@@ -187,7 +188,7 @@ class PipelineService:
 
         def _draft_docx_path() -> Path:
             return built_docx_path.get("path") or (
-                Path(config["paths"]["output_draft_dir"]) / self._resolve_draft_docx_name(config)
+                Path(config["paths"]["output_draft_dir"]) / self._resolve_draft_docx_name(doc_id, config)
             )
 
         def stage_doctor() -> tuple[bool, str]:
@@ -437,7 +438,7 @@ class PipelineService:
             ).issues
         )
         if docx_path is None:
-            candidate = Path(config["paths"]["output_draft_dir"]) / self._resolve_draft_docx_name(config)
+            candidate = Path(config["paths"]["output_draft_dir"]) / self._resolve_draft_docx_name(doc_id, config)
             docx_path = candidate if candidate.exists() else None
         if docx_path and docx_path.exists():
             issues.extend(self.format_audit_service.audit_format(docx_path, config, strict=strict).issues)

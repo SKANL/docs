@@ -170,3 +170,65 @@ def test_run_git_rev_parse_head_logs_warning_on_any_exception(tmp_path: Path, re
         repo.run_git_rev_parse_head(tmp_path)
     assert any("git not found" in record.message for record in caplog.records)
     assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+# --- Non-git-workspace noise (fresh-context robustness gap) ---------------
+# `git rev-parse --short HEAD` / `git remote get-url origin` on a NON-git
+# workspace is an EXPECTED, routine case (every pipeline/verify/doctor run
+# outside a repo hits it) -- it must never leak the raw `fatal: not a git
+# repository ...` subprocess stderr to the console, and it must not log at
+# WARNING (that's noise on every single command). A genuinely unexpected git
+# failure must still WARN -- git failures are surfaced, never silently
+# swallowed (spec requirement).
+
+_NOT_A_GIT_REPO_STDERR = "fatal: not a git repository (or any of the parent directories): .git\n"
+
+
+def test_run_git_rev_parse_head_downgrades_not_a_git_repo_to_debug(tmp_path: Path, repo, monkeypatch, caplog):
+    def fake_run(args, **kwargs):
+        raise subprocess.CalledProcessError(128, args, output="", stderr=_NOT_A_GIT_REPO_STDERR)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with caplog.at_level(logging.DEBUG):
+        result = repo.run_git_rev_parse_head(tmp_path)
+    assert result == ""
+    assert not any(record.levelno == logging.WARNING for record in caplog.records)
+    assert any(record.levelno == logging.DEBUG for record in caplog.records)
+
+
+def test_run_git_rev_parse_head_logs_warning_for_unexpected_called_process_error(
+    tmp_path: Path, repo, monkeypatch, caplog
+):
+    def fake_run(args, **kwargs):
+        raise subprocess.CalledProcessError(1, args, output="", stderr="fatal: unable to read config\n")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with caplog.at_level(logging.DEBUG):
+        result = repo.run_git_rev_parse_head(tmp_path)
+    assert result == ""
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+def test_detect_github_remote_downgrades_not_a_git_repo_to_debug(tmp_path: Path, repo, monkeypatch, caplog):
+    def fake_run(args, **kwargs):
+        raise subprocess.CalledProcessError(128, args, output="", stderr=_NOT_A_GIT_REPO_STDERR)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    with caplog.at_level(logging.DEBUG):
+        result = repo.detect_github_remote(tmp_path)
+    assert result == ""
+    assert not any(record.levelno == logging.WARNING for record in caplog.records)
+    assert any(record.levelno == logging.DEBUG for record in caplog.records)
+
+
+def test_run_git_rev_parse_head_in_real_non_git_dir_never_leaks_raw_stderr(tmp_path: Path, repo, capfd, caplog):
+    # No monkeypatch -- exercises the REAL subprocess against a genuine
+    # non-git tmp_path, matching the actual reported symptom (raw git
+    # stderr visible on the console during pipeline/verify/doctor).
+    with caplog.at_level(logging.DEBUG):
+        result = repo.run_git_rev_parse_head(tmp_path)
+    assert result == ""
+    captured = capfd.readouterr()
+    assert "fatal" not in captured.err
+    assert "fatal" not in captured.out
+    assert not any(record.levelno == logging.WARNING for record in caplog.records)

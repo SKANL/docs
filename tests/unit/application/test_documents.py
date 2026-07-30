@@ -113,3 +113,40 @@ def test_mark_final_sets_lifecycle_to_final(tmp_path: Path):
 
     assert document.lifecycle == "final"
     assert service.repository.read_document("alpha").lifecycle == "final"
+
+
+def test_mark_final_promotes_draft_build_artifacts_to_output_final(tmp_path: Path):
+    # Fresh-context robustness gap: `mark_final` set the lifecycle flag but
+    # never populated `output/final/`, so `doc status`'s `output_final_exists`
+    # (status.py) could never become true. A published snapshot is a COPY of
+    # whatever the current draft build produced -- draft stays untouched,
+    # so a later re-build still reflects "draft" honestly.
+    ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    service = DocumentService(_NarrowPortFake(), ws)
+    service.create("alpha", "fake")
+    draft_dir = ws.doc_root("alpha") / "output" / "draft"
+    (draft_dir / "tesina-draft.docx").write_bytes(b"fake docx bytes")
+    (draft_dir / "tesina-draft.html").write_text("<html></html>", encoding="utf-8")
+
+    service.mark_final("alpha")
+
+    final_dir = ws.doc_root("alpha") / "output" / "final"
+    assert (final_dir / "tesina-draft.docx").read_bytes() == b"fake docx bytes"
+    assert (final_dir / "tesina-draft.html").read_text(encoding="utf-8") == "<html></html>"
+    # Draft artifacts are untouched -- promotion copies, never moves.
+    assert (draft_dir / "tesina-draft.docx").exists()
+
+
+def test_mark_final_with_no_draft_build_warns_and_does_not_crash(tmp_path: Path, capsys):
+    ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    service = DocumentService(_NarrowPortFake(), ws)
+    service.create("alpha", "fake")
+
+    document = service.mark_final("alpha")
+
+    assert document.lifecycle == "final"
+    final_dir = ws.doc_root("alpha") / "output" / "final"
+    assert not any(final_dir.iterdir())
+    captured = capsys.readouterr()
+    assert "alpha" in captured.err
+    assert "borrador" in captured.err.lower() or "draft" in captured.err.lower()

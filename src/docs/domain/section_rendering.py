@@ -51,7 +51,12 @@ def _summarize_context(context: dict[str, str]) -> list[str]:
     return lines
 
 
-def render_contract_scaffold(section_title: str, contract: SectionContract, context: dict[str, str]) -> str:
+def render_contract_scaffold(
+    section_title: str,
+    contract: SectionContract,
+    context: dict[str, str],
+    citation_style: str = "apa7",
+) -> str:
     lines = [
         f"# {section_title}",
         "",
@@ -67,7 +72,13 @@ def render_contract_scaffold(section_title: str, contract: SectionContract, cont
         for item in required:
             lines.append(f"- PENDIENTE: documentar {item} con evidencia del ledger, contexto o fuentes.")
         lines.append("")
-    if contract.apa_required:
+    # APA-specific scaffold hints are gated on the TEMPLATE's citation_style,
+    # not merely on the per-section apa_required flag: a section can declare
+    # apa_required=True while its template still has citation_style: none
+    # (contract data isn't always kept in lockstep with the global setting),
+    # so gating on apa_required alone leaks APA-only text into non-APA
+    # templates like technical-report-srs.
+    if contract.apa_required and citation_style == "apa7":
         lines.extend(
             [
                 "## Fuentes APA 7",
@@ -76,7 +87,7 @@ def render_contract_scaffold(section_title: str, contract: SectionContract, cont
                 "",
             ]
         )
-    if contract.references_list:
+    if contract.references_list and citation_style == "apa7":
         lines.extend(
             [
                 "PENDIENTE: ordenar alfabéticamente todas las fuentes citadas en el cuerpo conforme a APA 7.",
@@ -92,11 +103,12 @@ def render_section_draft(
     contract: SectionContract,
     context: dict[str, str],
     keyword_bold_terms: list[str],
+    citation_style: str = "apa7",
 ) -> str:
     if contract.toc:
         body = render_toc_section(section_title)
     else:
-        body = render_contract_scaffold(section_title, contract, context)
+        body = render_contract_scaffold(section_title, contract, context, citation_style)
     return apply_keyword_bold(body, keyword_bold_terms)
 
 

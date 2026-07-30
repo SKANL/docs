@@ -85,7 +85,7 @@ class StatusService:
             ingest_ran=(inbox_dir / _DETECTION_REPORT_NAME).exists(),
             classification_pending=self._count_pending_classifications(inbox_dir),
             figures_count=self._count_figures(sections_dir),
-            output_draft_exists=(output_draft_dir / resolve_draft_docx_name(config)).exists(),
+            output_draft_exists=(output_draft_dir / resolve_draft_docx_name(doc_id, config)).exists(),
             output_final_exists=output_final_dir.is_dir() and any(output_final_dir.iterdir()),
             lifecycle=self.document_repository.read_document(doc_id).lifecycle,
             build_version=self._latest_build_version(paths),

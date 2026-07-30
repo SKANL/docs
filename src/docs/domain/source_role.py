@@ -49,6 +49,12 @@ _ROLE_LEXICONS: dict[str, frozenset[str]] = {
     "evidence": _EVIDENCE_LEXICON,
 }
 
+# Public: the only roles `classify()` can ever return besides "unknown" --
+# "unknown" is a low-confidence fallback, never a valid EXTERNAL confirmation
+# (a human/agent confirming a role must pick a real one). Single source of
+# truth for `ingest.py`'s `confirmed_role` validation, so the two never drift.
+ROLES = frozenset(_ROLE_LEXICONS)
+
 # Content-signal weight (design.md ADR-D, item D, PR4): "a lower weight
 # than a folder hit [0.5], higher than a filename-stem hit [0.3]" -- an
 # already-probed `ContentSignals` (adapter I/O, never read here) is scored

@@ -27,8 +27,14 @@ class HtmlRendererAdapter:
     def stage_plan(self) -> list[tuple[str, bool]]:
         return [("build-html", True)]
 
-    def _html_name(self, config: dict[str, Any]) -> str:
-        return resolve_html_name(config)
+    def _html_name(self, doc_id: str, config: dict[str, Any]) -> str:
+        return resolve_html_name(doc_id, config)
+
+    def _title(self, doc_id: str, config: dict[str, Any]) -> str:
+        # The document's declared template title if present, else the doc id
+        # -- never the first section's filename stem, which is what pandoc
+        # falls back to for <title> when no metadata title is passed.
+        return str(config.get("title") or doc_id)
 
     def build(self, doc_id: str, config: dict[str, Any], output: Path | None = None) -> Path | None:
         pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
@@ -49,7 +55,7 @@ class HtmlRendererAdapter:
 
         output_dir = Path(config["paths"]["output_draft_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output or output_dir / self._html_name(config)
+        output = output or output_dir / self._html_name(doc_id, config)
 
         stripped_sections = strip_frontmatter_to_temp(existing_sections)
         # `--standalone` produces a full HTML document (not a fragment);
@@ -58,9 +64,21 @@ class HtmlRendererAdapter:
         # single-file, default). No `--metadata date=...`/wall-clock input is
         # ever passed, so pandoc has nothing non-deterministic to stamp into
         # the output (unlike docx's zip container, plain HTML has no
-        # container-level timestamp to normalize).
+        # container-level timestamp to normalize). `--metadata title=` is
+        # passed explicitly -- without it pandoc's standalone HTML falls back
+        # to the first input filename (a section stem like "010-overview")
+        # for <title>, which is not the document's title.
         subprocess.run(
-            [pandoc, *map(str, stripped_sections), "--standalone", "--embed-resources", "-o", str(output)],
+            [
+                pandoc,
+                *map(str, stripped_sections),
+                "--standalone",
+                "--embed-resources",
+                "--metadata",
+                f"title={self._title(doc_id, config)}",
+                "-o",
+                str(output),
+            ],
             check=True,
         )
         return output
