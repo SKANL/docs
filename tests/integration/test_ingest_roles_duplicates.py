@@ -165,6 +165,37 @@ def test_unconfirmed_role_blocks_in_strict_mode(tmp_path: Path):
     assert entry["role_status"]["effective_role"] is None
 
 
+def test_invalid_confirmed_role_is_rejected_and_stays_pending(tmp_path: Path, capsys):
+    # Fresh-context robustness gap: a hand-edited `confirmed_role` that is
+    # not one of the roles `source_role.classify` actually produces (e.g. a
+    # section id like "architecture") must not be silently accepted as a
+    # confirmation -- it stays pending, with a clear WARNING naming the
+    # file and the invalid value (design.md Decision 4: "External
+    # confirmation enters ONLY through the classification queue" implies
+    # that entry point must validate what it accepts).
+    inbox = tmp_path / "inbox"
+    (inbox / "misc").mkdir(parents=True)
+    (inbox / "misc" / "doc.md").write_text("Contenido sin señal.", encoding="utf-8")
+    service = _service({"doc.md": "md"})
+    service.ingest_inbox(inbox, tmp_path / "sections")
+    queue_path = inbox / "_classification-queue.json"
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    queue["entries"]["misc/doc.md"]["confirmed_role"] = "architecture"
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    manifest = json.loads((inbox / "_source-manifest.json").read_text(encoding="utf-8"))
+    entry = next(s for s in manifest["sources"] if s["relative_path"] == "misc/doc.md")
+    assert entry["confirmed_role"] is None
+    assert entry["role_status"]["blocked"] is True
+    second_queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    assert second_queue["entries"]["misc/doc.md"]["confirmed_role"] is None
+    captured = capsys.readouterr()
+    assert "misc/doc.md" in captured.err
+    assert "architecture" in captured.err
+
+
 def test_confirmed_role_routes_source_correctly_in_strict_mode(tmp_path: Path):
     inbox = tmp_path / "inbox"
     (inbox / "misc").mkdir(parents=True)

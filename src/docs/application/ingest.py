@@ -19,6 +19,7 @@ from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
 from docs.domain.source_conflict import Conflict, detect_conflicts
+from docs.domain.source_role import ROLES as _VALID_ROLES
 from docs.domain.source_role import classify
 
 _DETECTION_REPORT_NAME = "_detection.json"
@@ -609,8 +610,21 @@ class IngestService:
         confirmed: dict[str, str] = {}
         for relative_path, entry in data.get("entries", {}).items():
             role = entry.get("confirmed_role")
-            if role:
-                confirmed[relative_path] = role
+            if not role:
+                continue
+            if role not in _VALID_ROLES:
+                # A hand-edited `confirmed_role` that is not one of
+                # `source_role.classify`'s actual roles (e.g. a section id
+                # like "architecture") must never be silently accepted as a
+                # confirmation -- it stays pending, same as unconfirmed.
+                print(
+                    f"WARN: `confirmed_role` inválido para {relative_path} en "
+                    f"{_CLASSIFICATION_QUEUE_NAME}: '{role}'; valores permitidos: "
+                    f"{', '.join(sorted(_VALID_ROLES))}. Se mantiene pendiente.",
+                    file=sys.stderr,
+                )
+                continue
+            confirmed[relative_path] = role
         return confirmed
 
     def _write_classification_queue(
