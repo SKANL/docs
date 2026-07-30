@@ -98,10 +98,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 7: AGENTS.md documentation coverage — PR 7, depends on PR 3, PR 4, PR 6
 
-- [ ] 7.1 GREEN: amend `AGENTS.md` §5 — PDF explicitly non-byte-deterministic + WARN+skip caveat; document `--format html/pdf` selection
-- [ ] 7.2 GREEN: document the `doc revise <section|topic> "<request>"` loop (diff + scoped re-validation + provenance) in `AGENTS.md`
-- [ ] 7.3 GREEN: document `doc status`'s lifecycle/build-version fields in `AGENTS.md`
-- [ ] 7.4 Run `tests/unit/test_agents_md_packaging.py` — confirm repo-root/packaged-copy bytes stay in sync
+- [x] 7.0 RED (`tests/unit/test_agents_md_content.py`, new): 4 content-check tests assert repo-root `AGENTS.md` mentions `--format`/html/pdf/non-byte-deterministic/soffice, `doc revise`/diff/revision-log, `mark-final`/lifecycle/build_version, and `technical-report-srs` — all fail against the pre-PR7 file (RED confirmed)
+- [x] 7.1 GREEN: amend `AGENTS.md` §7 (renumbered from §5; two new sections inserted before it) — PDF explicitly non-byte-deterministic + WARN+skip caveat, byte-determinism now scoped to `.md`→`.docx`/HTML only; document `--format html/pdf/docx` selection (repeatable, default `docx`) in a new §1 subsection
+- [x] 7.2 GREEN: document the `docs doc revise <target-id> "<request>" <body-file> [--field]` loop (diff snapshot + scoped re-validation + section/topic-ripple + append-only provenance log; distinguished from `apply-corrections`) in new `AGENTS.md` §5
+- [x] 7.3 GREEN: document `doc status`'s lifecycle (`draft`/`final` via `doc mark-final`) + `build_version` fields in new `AGENTS.md` §6; also documented the 2nd built-in template (`technical-report-srs`) and template-driven review rules in §2, and added `sections/_revisions/` to the "where things live" tree (renumbered §6→§8)
+- [x] 7.4 Run `tests/unit/test_agents_md_packaging.py` — confirms repo-root/packaged-copy bytes stay in sync (3 passed, real `uv build --wheel`); `tests/unit/test_agents_md_content.py` also green (4 passed)
 
 ## Verify-phase note (E, not an apply task)
 

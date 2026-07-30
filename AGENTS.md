@@ -38,8 +38,10 @@ docs context set <topic> <field> <value>   # 7. fill required context fields
 docs pipeline prep                  # 8. scaffold section files from the template
 # 9. author: edit sections/NNN-<id>.md bodies (the cognitive slot)
 docs review-section <id> --json     # 10. iterate to green (see loop below)
-docs pipeline assemble              # 11. render the final .docx
+docs pipeline assemble              # 11. render the final output(s), --format html|pdf|docx
 docs verify                         # 12. structural + audit verification
+# 13. optional, after a first assemble: docs doc revise <id> "<request>" <file>
+docs doc mark-final                 # 14. optional: flip lifecycle draft -> final
 ```
 
 Every step has a corresponding CLI command; run `docs --help` or
@@ -52,7 +54,7 @@ CI).
 
 | Group | Purpose |
 |---|---|
-| `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status` |
+| `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `mark-final` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
 | (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `build-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
@@ -65,6 +67,22 @@ CI).
 **`ingest` must run before `assemble`/`all` whenever sources exist in
 `inbox/`** — `all` does NOT include the ingest stages by design (ingest is
 a separate, re-runnable conversion step, not always needed).
+
+### Output-format selection: `--format`
+
+`docs pipeline assemble --format <fmt>` selects which artifact(s) to build;
+the flag is repeatable (`--format html --format pdf --format docx`) and
+defaults to the document's configured `output.format` (`docx`) when
+omitted — existing single-format workflows are unaffected.
+
+- `docx` and `html` are **byte-deterministic**: rebuilding unchanged
+  sections twice produces byte-identical output (see §5).
+- `pdf` is a **derived, non-byte-deterministic** artifact, rendered from
+  the built `.docx` via LibreOffice/`soffice`. It is explicitly NOT held to
+  the byte-identity guarantee (rendering engine/version affects output
+  bytes even for identical inputs). When `soffice` is not on `PATH`, the
+  build WARNs to stderr and **skips** the PDF artifact — every other
+  requested format still builds successfully; this is not a failure.
 
 ## 2. Config resolution
 
@@ -85,6 +103,14 @@ empty — seeds it with the built-in templates (`docs template list
 --available` lists what is shippable; `docs template use <id>` copies one
 in explicitly). Both `init` and `use` refuse to clobber an existing,
 differing file unless `--force` is passed.
+
+Two built-in templates ship today: `reporte-estadia-tic` (Spanish, APA7
+citations) and `technical-report-srs` (English, no citation style). Review
+rules (contested/forbidden terms, citation style, structural sections) are
+declared **per template**, not hardcoded — a new template can define its
+own review behavior without any code change; `technical-report-srs` is a
+concrete example of a structurally different, non-APA template working
+end-to-end.
 
 ## 3. Figure/table convention: symbolic labels, numbers computed at build
 
@@ -130,37 +156,103 @@ a citation, a quantified figure, or an explicit qualifying statement in
 the same clause is NOT flagged — only a bare, unsubstantiated claim is.
 `--strict` tightens optional checks to hard failures (useful in CI).
 
-## 5. Reproducibility boundary (read this before worrying about "identical output")
+## 5. Semantic revision loop: `docs doc revise`
+
+Use `docs doc revise` for a targeted, post-completion edit to already-authored
+content — not the first-pass authoring in §4, which is direct `.md` editing.
+It is the tool for "the reviewer/agent asked for this one change" after a
+section (or a context topic) is already written and reviewed:
+
+```
+docs doc revise <target-id> "<request>" <body-file> [--field <key>] [--json]
+```
+
+- `<target-id>` is either a **section id** (edits that section's prose) or a
+  **context topic id** (edits a context field/value — the "ripple" case
+  below). Anything else (an unknown id, or a request to add/remove a
+  section) is rejected: `revise` never performs structural changes — use
+  `docs pipeline prep`/`docs context set`/ingest for that.
+- `<body-file>` is a `.md` file the agent has already written out-of-band
+  with the full replacement body/value — `revise` never generates prose
+  itself, it only applies, diffs, and re-validates it.
+- `--field <key>` is required only when the target is a non-prose context
+  topic with multiple fields.
+
+What the harness does mechanically, every call:
+1. Writes the new body/value, replacing the old.
+2. Computes a unified diff (before → after) and snapshots it under
+   `sections/_revisions/<target>.<n>.diff`.
+3. Re-validates **only what changed**: the edited section (`review-section`)
+   or, for a context-topic edit, every section that topic's template
+   declares as a consumer (the "ripple") — plus one `review-document` sweep.
+   Unrelated sections are never re-reviewed.
+4. Appends one entry (`request`, `section_id`/topic id, `diff_path`,
+   `before_hash`, `after_hash`, `ripple: [...]`, timestamp) to
+   `sections/_revisions/revision-log.json` — an append-only provenance log,
+   never rewritten in place.
+
+`docs apply-corrections` is a different, narrower tool: mechanical
+find/replace over already-authored text (typo/wording fixes), with no diff
+snapshot or ripple. Use `revise` for a semantic rewrite of a section's
+argument/content; use `apply-corrections` for literal text substitutions.
+
+## 6. Document lifecycle and build version
+
+Every document starts `lifecycle: draft`. `docs doc mark-final [<id>]`
+(defaults to the active document) flips it to `final` — a one-way,
+user-driven signal with no effect on build mechanics; it exists so an agent
+or reviewer can tell, from `docs doc status --json`, whether a document is
+still being iterated on or considered done.
+
+Each `docs pipeline assemble`/`all` run appends a `build_version` (an
+incrementing integer, starting at `1`) to the document's `runs/` history —
+this is a wall-clock log, not part of the deterministic build artifact
+(§7). `docs doc status --json` surfaces both fields directly:
+
+```json
+{ "doc_id": "...", "lifecycle": "draft", "build_version": 2, ... }
+```
+
+`build_version` is `null`/absent before the first assemble run.
+
+## 7. Reproducibility boundary (read this before worrying about "identical output")
 
 **Section `.md` files are the durable source of truth.** The built
-`.docx` (or any other rendered format) is a **deterministic pure function**
-of those `.md` files plus the template and configuration — same inputs,
-byte-identical output, every time, on every machine. No timestamps, no
-wall-clock, no non-deterministic iteration order anywhere in the build
-path.
+`.docx`/HTML output is a **deterministic pure function** of those `.md`
+files plus the template and configuration — same inputs, byte-identical
+output, every time, on every machine. No timestamps, no wall-clock, no
+non-deterministic iteration order anywhere in the build path.
+
+**Byte-determinism binds `.md` → `.docx`/HTML only.** `pdf` (see §1
+Output-format selection) is an explicitly excepted, derived artifact:
+non-byte-deterministic and never held to this guarantee.
 
 This means:
 - Rebuilding **without editing any section** twice in a row MUST produce a
-  byte-identical `.docx`. If it doesn't, that is a harness bug, not
+  byte-identical `.docx`/HTML. If it doesn't, that is a harness bug, not
   environmental noise.
 - **Editing a section's prose between two builds is not a determinism
   violation.** The output legitimately changes because the source changed
   — that is authoring, not nondeterminism. Only an *unchanged* source
-  producing a *different* output is a bug.
+  producing a *different* `.docx`/HTML output is a bug.
 - Figure/table numbering (§3), provisioned templates, and config files are
   all held to the same standard: deterministic functions of their inputs.
+- A PDF differing byte-for-byte between two builds of the same unchanged
+  sources is expected (rendering-engine/version dependent) and is NOT a
+  bug — see §1.
 
-## 6. Where things live (for orienting, not for hand-editing)
+## 8. Where things live (for orienting, not for hand-editing)
 
 ```
 <documents_dir>/<doc-id>/
-  document.json           # active template/config for this document
+  document.json           # active template/config; lifecycle (draft|final)
   inbox/                  # drop raw source material here; docs pipeline ingest converts it
   sections/                # your cognitive-slot .md files (NNN-<id>.md) + generated manifests
+    _revisions/             # docs doc revise: per-edit .diff snapshots + revision-log.json
   context/                # per-topic context fields (docs context set/status)
   assets/                 # figures/images referenced by sections
-  output/draft|final/     # rendered .docx output
-  runs/                   # command history (docs history)
+  output/draft|final/     # rendered .docx/html/pdf output
+  runs/                   # command history + build_version (docs history, docs doc status)
 ```
 
 ## Single source of truth
