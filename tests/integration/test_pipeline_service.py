@@ -42,7 +42,7 @@ from docs.application.asset import AssetService
 _HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
 
 
-def _service(tmp_path) -> tuple[PipelineService, Workspace]:
+def _service(tmp_path, image_metadata=None) -> tuple[PipelineService, Workspace]:
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     evidence_repo = JsonEvidenceRepository()
     section_repo = JsonSectionRepository(workspace)
@@ -72,6 +72,7 @@ def _service(tmp_path) -> tuple[PipelineService, Workspace]:
             "md": md_ingest_adapter,
             "txt": md_ingest_adapter,
         },
+        image_metadata=image_metadata,
     )
     service = PipelineService(
         doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
@@ -788,6 +789,62 @@ def test_run_pipeline_ingest_stage_detail_omits_media_cleanup_when_nothing_happe
 
     stage = next(s for s in summary["stages"] if s["stage"] == "ingest")
     assert "media" not in stage["detail"].lower()
+
+
+def _malformed_but_pillow_openable_png() -> bytes:
+    """See `tests/integration/test_ingest_assets_figures.py`'s copy of this
+    helper for the full explanation: a hand-built PNG whose IDAT chunk
+    declares a length longer than its actual data. Pillow tolerates it;
+    python-docx's minimal chunk walker raises `UnexpectedEndOfFileError`
+    (empty message) trying to skip past it -- the real, deterministic
+    trigger for the reported clean-room bug."""
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+    def chunk_with_declared_len(tag: bytes, data: bytes, declared_len: int) -> bytes:
+        return struct.pack(">I", declared_len) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+    width = height = 4
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    raw = b"".join(b"\x00" + bytes([255, 0, 0, 255] * width) for _ in range(height))
+    idat_data = zlib.compress(raw)
+    idat_chunk = chunk_with_declared_len(b"IDAT", idat_data, len(idat_data) + 8)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + idat_chunk + chunk(b"IEND", b"")
+
+
+def test_run_pipeline_ingest_stage_survives_a_crashing_image_and_runs_downstream_stages(tmp_path):
+    # HIGH robustness fix, pipeline-level regression: before the fix, a
+    # single malformed-but-Pillow-openable image in the inbox made the
+    # `ingest` stage crash with an EMPTY `"ERROR: "` detail and, because
+    # `ingest` is `fail_fast=True` in `_INGEST_STAGES`, aborted the whole
+    # `ingest` stage_set -- `build-context-files`/`build-context-index`
+    # never ran. This must now degrade gracefully: `ingest` stays `ok=True`,
+    # every stage in the set runs, and the good source is still ingested.
+    from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
+
+    service, workspace = _service(tmp_path, image_metadata=PythonDocxImageMetadataAdapter())
+    doc_id = "doc1"
+    config = _ingest_stage_config(workspace, doc_id)
+    inbox = Path(config["paths"]["inbox_dir"])
+    inbox.mkdir(parents=True)
+    (inbox / "bad.png").write_bytes(_malformed_but_pillow_openable_png())
+    (inbox / "notes.md").write_text("# hello\n", encoding="utf-8")
+
+    template = Template(type="doc", title="Doc")
+    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
+
+    assert summary["passed"] is True
+    stage_names = [s["stage"] for s in summary["stages"]]
+    assert stage_names == ["ingest", "build-context-files", "build-context-index"]
+    ingest_stage = summary["stages"][0]
+    assert ingest_stage["ok"] is True
+    assert ingest_stage["detail"] != "ERROR: "
+
+    ingested_dir = Path(config["paths"]["sections_dir"]) / "ingested"
+    assert any(p.name.startswith("notes-md-") for p in ingested_dir.glob("*.md"))
 
 
 # --- Task 8.6: full-pipeline determinism (proposal success criterion) ---

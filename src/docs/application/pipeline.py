@@ -406,7 +406,12 @@ class PipelineService:
             try:
                 ok, detail = callables[name]()
             except Exception as exc:
-                ok, detail = False, f"ERROR: {exc}"
+                # `type(exc).__name__` is always present even when `str(exc)`
+                # is empty (e.g. `docx.image.exceptions.UnexpectedEndOfFileError`,
+                # raised with zero arguments) -- without it, a crashed stage's
+                # detail used to render as the literally uninformative
+                # "ERROR: ", which cannot tell an agent/user what to act on.
+                ok, detail = False, f"ERROR: {type(exc).__name__}: {exc}"
             duration = (datetime.now() - started).total_seconds()
             results.append({"stage": name, "ok": ok, "duration_s": round(duration, 3), "detail": detail})
             if not ok:
