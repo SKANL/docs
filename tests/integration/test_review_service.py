@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.domain.models.template import Section, SectionContract, Template
+from docs.domain.models.template import Section, Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.workspace import Workspace
 from docs.application.review import ReviewService
@@ -436,6 +436,51 @@ def test_build_section_writes_proposal_when_authored_content_has_stale_body_hash
     assert result_path == proposal_path
     assert proposal_path.exists()
     assert "PENDIENTE" in proposal_path.read_text(encoding="utf-8")
+
+
+def test_build_section_protects_unstamped_section_when_body_drifted_from_fresh_render(workspace, service):
+    """Locks the deliberate safe side of an ambiguity (see review.py): a
+    managed section that was NEVER stamped (authored_by == 'harness-scaffold')
+    but whose stored body no longer matches a fresh scaffold re-render is
+    treated as authored and routed to a `_proposals` candidate, NOT
+    regenerated in place. We cannot tell "agent authored but forgot to stamp"
+    from "scaffold drifted" by content alone; erring toward protection never
+    loses authored work. Regressing this to in-place regeneration would reopen
+    the data-loss window."""
+    template = _template(sections=[Section(id="introduccion", title="Introducción", order=1, required=True)])
+    stored_body = "# Introducción\n\nContenido que quizá el autor escribió y no selló.\n"
+    written_path = _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body=stored_body,
+        metadata={
+            "managed_by": "docs-harness",
+            "authored_by": "harness-scaffold",  # never stamped
+            "schema": 3,
+            "section_id": "introduccion",
+            "title": "Introducción",
+            "body_hash": hashlib.sha256(stored_body.encode("utf-8")).hexdigest(),
+        },
+    )
+    before = written_path.read_text(encoding="utf-8")
+
+    fresh_scaffold_body = "# Introducción\n\nPENDIENTE: documentar alcance con evidencia del ledger, contexto o fuentes.\n"
+    result_path = service.build_section(
+        "doc-1",
+        template,
+        "introduccion",
+        fresh_scaffold_body,
+        source_hash="sh",
+        source_manifest_hash="smh",
+        code_evidence_manifest_hash="cemh",
+        rules_hash="rh",
+        contract_hash="ch",
+        prompt_hash="ph",
+    )
+
+    assert written_path.read_text(encoding="utf-8") == before
+    proposal_path = workspace.doc_root("doc-1") / "sections" / "_proposals" / "001-introduccion.candidate.md"
+    assert result_path == proposal_path
+    assert proposal_path.exists()
 
 
 def test_build_section_writes_proposal_when_unmanaged_and_modified(workspace, service):

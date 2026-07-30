@@ -64,6 +64,19 @@ class StatusService:
             # carry the default "harness-scaffold" value forever. Leftover
             # PENDIENTE markers are the real signal that a section still
             # needs authoring.
+            #
+            # Coverage note (holds for every real section kind): a contract
+            # scaffold ALWAYS carries the disclaimer line
+            # (`section_rendering.render_contract_scaffold`, "...resolver todos
+            # los PENDIENTE...") until authored, so it is correctly flagged
+            # regardless of whether it declares any `required_content`. The
+            # only fresh scaffold with no PENDIENTE is a TOC section
+            # (`render_toc_section` -> `[[TOC]]`), and that is correct: a TOC
+            # is fully harness-generated and resolves at build time, so it
+            # needs no authoring and must NOT be reported as pending.
+            # ponytail: this couples "still-scaffold" to the disclaimer wording
+            # carrying "PENDIENTE"; if that line ever drops the word, switch to
+            # comparing `body` against a fresh scaffold render instead.
             if "PENDIENTE" in body:
                 sections_scaffold.append(section.id)
             review = self.review_service.review_section(

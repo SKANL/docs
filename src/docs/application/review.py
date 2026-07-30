@@ -205,6 +205,18 @@ class ReviewService:
             # current body against the actual fresh render does.
             authored_by = current_metadata.get("authored_by", "harness-scaffold")
             looks_authored = current_body != body or authored_by != "harness-scaffold"
+            # ponytail: the `current_body != body` term also fires for an
+            # UNstamped, never-authored scaffold section whose fresh render
+            # merely drifted (e.g. upstream evidence/context changed the
+            # scaffold text). That routes it to a `_proposals` candidate
+            # instead of regenerating in place -- a minor cost. It is the
+            # deliberate safe side of an ambiguity we cannot resolve by content
+            # alone: an unstamped section with a drifted body is
+            # indistinguishable from one the agent authored but forgot to
+            # stamp. Erring toward proposal-protection never loses authored
+            # work; erring toward in-place regeneration would reopen the exact
+            # data-loss bug this check exists to close. Do not "optimize" the
+            # spurious proposal away without provenance to disambiguate.
             if is_managed and not looks_authored:
                 if generated_metadata_changed(current_metadata, metadata):
                     self.repository.write_section(doc_id, section.order, section.id, generated)
