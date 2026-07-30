@@ -58,6 +58,20 @@ def test_template_list_available_lists_builtin_names(ws):
     assert result.exit_code == 0
     assert "documento-generico" in result.output
     assert "reporte-estadia-tic" in result.output
+    # PR5 (item D): second built-in, structurally different, non-APA English
+    # template — proves `--available` generalizes past a fixed 2-name list.
+    assert "technical-report-srs" in result.output
+
+
+def test_template_use_copies_technical_report_srs_into_workspace(ws):
+    result = runner.invoke(app, ["template", "use", "technical-report-srs"])
+    assert result.exit_code == 0, result.output
+
+    from importlib.resources import files
+
+    expected = files("docs.templates.builtin").joinpath("technical-report-srs.json").read_text(encoding="utf-8")
+    written = (ws / "templates" / "technical-report-srs.json").read_text(encoding="utf-8")
+    assert written == expected
 
 
 def test_template_list_available_does_not_read_workspace_templates_dir(ws):

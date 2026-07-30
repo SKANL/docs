@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 # Document-type normative writing-pattern lexicons (excluded front matter,
@@ -25,6 +25,12 @@ SECRET_PATTERNS: list[str] = [
     r"\btoken\s*[:=]\s*['\"]?[A-Za-z0-9_\-.]{24,}",
 ]
 
+# `citation_style` is the canonical per-template citation-style selector
+# (spec: template-provisioning "Template-Driven Review-Rule Configuration").
+# Only "apa7" (current behavior) and "none" (skip APA-specific checks) are
+# implemented; the enum is the seam for future styles.
+CITATION_STYLES: frozenset[str] = frozenset({"apa7", "none"})
+
 
 @dataclass(frozen=True)
 class NormativeSettings:
@@ -41,6 +47,8 @@ class NormativeSettings:
     secret_patterns: list[str]
     scope_term: str = ""
     scope_focus: str = ""
+    contested_stack_terms: list[str] = field(default_factory=list)
+    citation_style: str = "apa7"
 
 
 def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
@@ -52,6 +60,10 @@ def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
     normative = config.get("normative", {})
     excluded = normative.get("excluded_front_matter", EXCLUDED_FRONT_MATTER)
     excluded_terms = excluded if isinstance(excluded, dict) else {term: "" for term in excluded}
+    citation_style = config.get("apa7", {}).get("citation_style", "apa7")
+    if citation_style not in CITATION_STYLES:
+        allowed = ", ".join(sorted(CITATION_STYLES))
+        raise ValueError(f"citation_style inválido: '{citation_style}'. Valores permitidos: {allowed}.")
     return NormativeSettings(
         excluded_terms=excluded_terms,
         is_policy_file=False,
@@ -60,4 +72,6 @@ def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
         secret_patterns=SECRET_PATTERNS + list(config.get("privacy", {}).get("forbidden_in_body_patterns", [])),
         scope_term=normative.get("scope_term", ""),
         scope_focus=normative.get("scope_focus", ""),
+        contested_stack_terms=list(config.get("cross_consistency", {}).get("contested_stack_terms", [])),
+        citation_style=citation_style,
     )

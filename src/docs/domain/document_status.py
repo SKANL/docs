@@ -25,10 +25,17 @@ class DocumentStatus:
     figures_count: int = 0
     output_draft_exists: bool = False
     output_final_exists: bool = False
+    # Lifecycle-lite (design.md item F, spec: document-lifecycle): the
+    # document's user-set state and the latest build version logged under
+    # `runs/`. `build_version` is `None` before any assemble run.
+    lifecycle: str = "draft"
+    build_version: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "doc_id": self.doc_id,
+            "lifecycle": self.lifecycle,
+            "build_version": self.build_version,
             "context": {
                 "filled": self.context_filled,
                 "total": self.context_total,
@@ -54,6 +61,9 @@ class DocumentStatus:
 
     def to_markdown(self) -> str:
         lines = [f"# Estado del documento `{self.doc_id}`", ""]
+        build_version = self.build_version if self.build_version is not None else "sin compilar"
+        lines.append(f"## Ciclo de vida: {self.lifecycle} (build: {build_version})")
+        lines.append("")
         lines.append(f"## Contexto: {self.context_filled}/{self.context_total} temas completos")
         if self.context_missing_topics:
             lines.append(f"- Faltan: {', '.join(self.context_missing_topics)}")

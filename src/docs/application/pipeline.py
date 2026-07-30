@@ -98,6 +98,25 @@ class PipelineService:
             return Path(configured)
         return self.workspace.doc_root(doc_id) / "runs"
 
+    def _next_build_version(self, doc_id: str, config: dict[str, Any]) -> int:
+        """Monotonic build version (design.md item F, spec: document-lifecycle
+        "Monotonic Build Version"): the highest `build_version` already
+        logged under `runs/`, plus one. No separate counter file -- `runs/`
+        is already the wall-clock build log, so it stays the single source."""
+        runs_dir = self._runs_dir(doc_id, config)
+        if not runs_dir.exists():
+            return 1
+        latest = 0
+        for path in runs_dir.glob("*.json"):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            version = record.get("build_version")
+            if isinstance(version, int) and version > latest:
+                latest = version
+        return latest + 1
+
     def rules_manifest_state(self, config: dict[str, Any]) -> tuple[bool, int]:
         rules_path = Path(config["paths"]["rules_manifest"])
         exists = self.evidence_repository.file_exists(rules_path)
@@ -252,6 +271,28 @@ class PipelineService:
             built_docx_path["path"] = path
             return True, str(path)
 
+        def stage_build_html() -> tuple[bool, str]:
+            # HtmlRendererAdapter.build() returns None (already WARNed to
+            # stderr) when pandoc is absent -- degrade like the best-effort
+            # `stage_collect_issues` pattern (ok=True, "omitido: ..." detail)
+            # rather than failing the whole pipeline for a secondary,
+            # opt-in output format (item C-html).
+            path = renderer.build(doc_id, config)
+            if path is None:
+                return True, "omitido: pandoc no disponible"
+            return True, str(path)
+
+        def stage_build_pdf() -> tuple[bool, str]:
+            # PdfRendererAdapter.build() returns None (already WARNed to
+            # stderr) when the LibreOffice/soffice toolchain is absent --
+            # degrade like build-html/stage_collect_issues (ok=True,
+            # "omitido: ..." detail) rather than failing the whole pipeline
+            # for a secondary, opt-in output format (item C-pdf).
+            path = renderer.build(doc_id, config)
+            if path is None:
+                return True, "omitido: LibreOffice/soffice no disponible"
+            return True, str(path)
+
         def stage_format_audit() -> tuple[bool, str]:
             docx_path = _draft_docx_path()
             result = self.format_audit_service.audit_format(docx_path, config, strict=strict)
@@ -330,6 +371,8 @@ class PipelineService:
             "pack-context": stage_pack_context,
             "review-document": stage_review_document,
             "build-docx": stage_build_docx,
+            "build-html": stage_build_html,
+            "build-pdf": stage_build_pdf,
             "format-audit-docx": stage_format_audit,
             "ingest": stage_ingest,
             "build-context-files": stage_build_context_files,
@@ -370,6 +413,8 @@ class PipelineService:
                 if fail_fast:
                     break
         summary = {"stage_set": stage_set, "strict": strict, "passed": passed, "stages": results}
+        if stage_set in ("assemble", "all"):
+            summary["build_version"] = self._next_build_version(doc_id, config)
         self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)
         return summary
 

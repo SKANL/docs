@@ -496,6 +496,119 @@ def test_run_pipeline_assemble_threads_custom_draft_name_to_audit_and_qa(tmp_pat
     assert not (draft_dir / "tesina-draft.docx").exists()
 
 
+# --- build-html stage (PR2, item C-html) ----------------------------------
+
+
+def test_run_pipeline_assemble_runs_build_html_stage_for_html_renderer(tmp_path):
+    class _FakeHtmlRenderer:
+        output_format = "html"
+
+        def stage_plan(self):
+            return [("build-html", True)]
+
+        def build(self, doc_id, config, output=None):
+            output_dir = Path(config["paths"]["output_draft_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output or (output_dir / "tesina-draft.html")
+            path.write_text("<html></html>", encoding="utf-8")
+            return path
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeHtmlRenderer()
+    )
+
+    html_stage = next(s for s in summary["stages"] if s["stage"] == "build-html")
+    assert html_stage["ok"] is True
+    assert (tmp_path / "draft" / "tesina-draft.html").exists()
+
+
+def test_run_pipeline_build_html_stage_degrades_cleanly_when_renderer_skips(tmp_path):
+    # HtmlRendererAdapter.build() returns None (WARN + skip) when pandoc is
+    # absent -- the stage must stay ok=True with an "omitido" detail, the same
+    # best-effort pattern as stage_collect_issues, never a pipeline failure
+    # for a secondary, opt-in output format.
+    class _FakeSkippingHtmlRenderer:
+        output_format = "html"
+
+        def stage_plan(self):
+            return [("build-html", True)]
+
+        def build(self, doc_id, config, output=None):
+            return None
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingHtmlRenderer()
+    )
+
+    html_stage = next(s for s in summary["stages"] if s["stage"] == "build-html")
+    assert html_stage["ok"] is True
+    assert "omitido" in html_stage["detail"]
+
+
+# --- build-pdf stage (PR3, item C-pdf) -------------------------------------
+
+
+def test_run_pipeline_build_pdf_stage_degrades_cleanly_when_renderer_skips(tmp_path):
+    # PdfRendererAdapter.build() returns None (WARN + skip) when soffice is
+    # absent -- the stage must stay ok=True with an "omitido" detail, same
+    # best-effort pattern as build-html, never a pipeline failure for a
+    # secondary, opt-in output format (spec: document-render "Best-Effort PDF
+    # Renderer With Graceful Degradation").
+    class _FakeSkippingPdfRenderer:
+        output_format = "pdf"
+
+        def stage_plan(self):
+            return [("build-pdf", True)]
+
+        def build(self, doc_id, config, output=None):
+            return None
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingPdfRenderer()
+    )
+
+    pdf_stage = next(s for s in summary["stages"] if s["stage"] == "build-pdf")
+    assert pdf_stage["ok"] is True
+    assert "omitido" in pdf_stage["detail"]
+
+
+def test_run_pipeline_assemble_runs_build_pdf_stage_for_pdf_renderer(tmp_path):
+    class _FakePdfRenderer:
+        output_format = "pdf"
+
+        def stage_plan(self):
+            return [("build-pdf", True)]
+
+        def build(self, doc_id, config, output=None):
+            output_dir = Path(config["paths"]["output_draft_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            path = output or (output_dir / "tesina-draft.pdf")
+            path.write_bytes(b"fake pdf")
+            return path
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakePdfRenderer()
+    )
+
+    pdf_stage = next(s for s in summary["stages"] if s["stage"] == "build-pdf")
+    assert pdf_stage["ok"] is True
+    assert (tmp_path / "draft" / "tesina-draft.pdf").exists()
+
+
 def test_pipeline_and_renderer_resolve_draft_name_from_one_shared_default(tmp_path, monkeypatch):
     # D1 (tech-debt closeout): pipeline.py and docx_assembly.py each used to
     # declare their own "tesina-draft.docx" literal. Both must now resolve
@@ -730,6 +843,48 @@ def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_pat
     assert first_context and first_context == second_context
     assert first_docx and first_docx == second_docx
     assert {Path(name).name for name in first_docx} == {"tesina-draft.docx", "tesina-body.docx"}
+
+
+# --- Phase 6: lifecycle + build version (item F) -------------------------
+
+
+class _FakeRenderer:
+    """Minimal renderer for build-version tests -- an empty stage_plan means
+    run_pipeline("assemble"/"all") completes with zero renderer stages;
+    build() is never invoked since no stage name resolves to it."""
+
+    output_format = "docx"
+
+    def stage_plan(self) -> list[tuple[str, bool]]:
+        return []
+
+
+def test_run_pipeline_assemble_records_build_version_1_on_first_run(tmp_path):
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+    assert summary["build_version"] == 1
+
+
+def test_run_pipeline_assemble_increments_build_version_on_repeated_runs(tmp_path):
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+    service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer())
+    second = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+    assert second["build_version"] == 2
+
+
+def test_run_pipeline_prep_does_not_record_a_build_version(tmp_path, monkeypatch):
+    Path(tmp_path / "context").mkdir()
+    service, _ = _service(tmp_path)
+    _patch_doctor_tools(monkeypatch)
+    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
+    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
+    assert "build_version" not in summary
 
 
 @pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")

@@ -17,7 +17,7 @@ from pathlib import Path
 from docs.domain.evidence import build_manifest
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
-from docs.domain.rules import review_rules, review_section_text
+from docs.domain.rules import review_cross_consistency, review_rules, review_section_text
 
 _FIXTURE = (
     Path(__file__).resolve().parents[2] / "fixtures" / "templates" / "reporte-estadia-tic.json"
@@ -345,6 +345,31 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
         ],
     },
 }
+
+
+def test_review_cross_consistency_reporte_estadia_tic_contested_stack_terms_snapshot():
+    # Compat gate (task 1.6): estadia's template-config-driven contested_stack_terms
+    # (resolved via NormativeSettings, no hardcoded DEFAULT_CONTESTED_STACK_TERMS)
+    # MUST reproduce the exact judgment the deleted constant produced pre-refactor.
+    raw = _load_raw()
+    template = _load_template()
+    normative = resolve_normative_settings(raw)
+    bodies = {
+        "capitulo-iii-metodologia": "El sistema usa MySQL como base de datos definitiva.",
+    }
+    result = review_cross_consistency(
+        template, bodies, strict=False, contested_stack_terms=normative.contested_stack_terms
+    )
+    assert [issue.to_dict() for issue in result.issues] == [
+        {
+            "severity": "warning",
+            "message": (
+                "`capitulo-iii-metodologia` menciona tecnología en disputa `MySQL` como "
+                "definitiva sin delimitarla ni marcar PENDIENTE."
+            ),
+            "code": "coherence.contested_stack_unqualified",
+        }
+    ]
 
 
 def test_review_section_text_reporte_estadia_tic_corpus_snapshot():

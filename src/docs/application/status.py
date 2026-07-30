@@ -12,6 +12,7 @@ from docs.application.review import ReviewService
 from docs.domain.document_status import DocumentStatus
 from docs.domain.models.template import Template
 from docs.domain.normative import NormativeSettings
+from docs.domain.ports.document_repository import DocumentRepository
 from docs.domain.ports.section_repository import SectionRepository
 
 _FIGURE_CATALOG_NAME = "figure-catalog.json"
@@ -29,10 +30,12 @@ class StatusService:
         section_repository: SectionRepository,
         context_service: ContextService,
         review_service: ReviewService,
+        document_repository: DocumentRepository,
     ) -> None:
         self.section_repository = section_repository
         self.context_service = context_service
         self.review_service = review_service
+        self.document_repository = document_repository
 
     def status_summary(
         self,
@@ -84,7 +87,31 @@ class StatusService:
             figures_count=self._count_figures(sections_dir),
             output_draft_exists=(output_draft_dir / resolve_draft_docx_name(config)).exists(),
             output_final_exists=output_final_dir.is_dir() and any(output_final_dir.iterdir()),
+            lifecycle=self.document_repository.read_document(doc_id).lifecycle,
+            build_version=self._latest_build_version(paths),
         )
+
+    def _latest_build_version(self, paths: dict[str, Any]) -> int | None:
+        """Reads the highest `build_version` already logged under `runs/`
+        (design.md item F) -- same artifact `PipelineService._next_build_version`
+        writes to, read directly here rather than through a PipelineService
+        dependency (StatusService stays aggregate-and-read only, ADR-I)."""
+        runs_dir_value = paths.get("runs_dir")
+        if not runs_dir_value:
+            return None
+        runs_dir = Path(runs_dir_value)
+        if not runs_dir.exists():
+            return None
+        latest: int | None = None
+        for path in runs_dir.glob("*.json"):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            version = record.get("build_version")
+            if isinstance(version, int) and (latest is None or version > latest):
+                latest = version
+        return latest
 
     def _count_pending_classifications(self, inbox_dir: Path) -> int:
         queue_path = inbox_dir / _CLASSIFICATION_QUEUE_NAME

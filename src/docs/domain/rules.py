@@ -409,9 +409,10 @@ def review_section_text(
     has_global_bibliography = any(
         getattr(c, "references_list", False) for c in template.section_contracts.values()
     )
+    apa7_enabled = template.apa7.enabled and normative.citation_style != "none"
     issues.extend(
         review_apa7_text(
-            text, template.apa7.enabled, strict_policy, contract.references_list, has_global_bibliography
+            text, apa7_enabled, strict_policy, contract.references_list, has_global_bibliography
         )
     )
     issues.extend(_check_results_evidence(lowered))
@@ -568,9 +569,6 @@ _DURATION_RE = re.compile(r"\b(\d{2,4})\s*horas\b", re.IGNORECASE)
 _HEDGE_RE = re.compile(r"\b(contexto|prototipo|dependencia|externa|posible|planea|futur\w*)")
 _STACK_DECLARATION_RE = re.compile(r"se usa|se utiliza|stack:")
 
-DEFAULT_CONTESTED_STACK_TERMS = ["Laravel", "Supabase", "bun.js", "MySQL", "GCP", "Firebase"]
-
-
 def review_cross_consistency(
     template: Template,
     section_bodies: dict[str, str],
@@ -579,7 +577,7 @@ def review_cross_consistency(
 ) -> ReviewResult:
     issues: list[Issue] = []
     severity = "error" if strict else "warning"
-    terms = contested_stack_terms if contested_stack_terms is not None else DEFAULT_CONTESTED_STACK_TERMS
+    terms = contested_stack_terms or []
 
     references_body = section_bodies.get("referencias", "")
     references_pending = "pendiente" in clean_markdown_text(references_body).lower()

@@ -11,6 +11,9 @@ from typing import Any
 DEFAULT_DRAFT_DOCX_NAME = "tesina-draft.docx"
 DEFAULT_BODY_DOCX_NAME = "tesina-body.docx"
 
+# Same seam for the HTML renderer's single-file output name (PR2, item C-html).
+DEFAULT_HTML_NAME = "tesina-draft.html"
+
 
 def resolve_draft_docx_name(config: dict[str, Any]) -> str:
     return config.get("output", {}).get("draft_name", DEFAULT_DRAFT_DOCX_NAME)
@@ -18,3 +21,7 @@ def resolve_draft_docx_name(config: dict[str, Any]) -> str:
 
 def resolve_body_docx_name(config: dict[str, Any]) -> str:
     return config.get("output", {}).get("body_name", DEFAULT_BODY_DOCX_NAME)
+
+
+def resolve_html_name(config: dict[str, Any]) -> str:
+    return config.get("output", {}).get("html_name", DEFAULT_HTML_NAME)

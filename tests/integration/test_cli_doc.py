@@ -180,3 +180,97 @@ def test_doc_status_markdown_output_mentions_document_id(status_ws):
     assert result.exit_code == 0, result.output
     assert "alpha" in result.output
     assert "Contexto" in result.output
+
+
+# ── PR6: lifecycle + build version (design.md item F) ───────────────────────
+
+
+def test_doc_status_reports_draft_lifecycle_and_no_build_version_before_assemble(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    result = runner.invoke(app, ["doc", "status", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["lifecycle"] == "draft"
+    assert payload["build_version"] is None
+
+
+def test_doc_mark_final_sets_lifecycle_reported_by_status(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    mark_result = runner.invoke(app, ["doc", "mark-final"])
+    assert mark_result.exit_code == 0, mark_result.output
+    assert "final" in mark_result.output
+
+    status_payload = json.loads(runner.invoke(app, ["doc", "status", "--json"]).output)
+    assert status_payload["lifecycle"] == "final"
+
+
+# ── PR4: `doc revise` semantic-edit loop (design.md item B) ────────────────
+
+_REVISE_TEMPLATE = {
+    "type": "tesina",
+    "title": "Tesina",
+    "context_schema": {
+        "topics": [
+            {"id": "alumno", "title": "Alumno", "required": True, "multiline": True, "consumed_by": ["introduccion"]}
+        ]
+    },
+    "sections": [{"id": "introduccion", "title": "Introducción", "order": 1, "required": True}],
+    "section_contracts": {"introduccion": {}},
+}
+
+
+@pytest.fixture
+def revise_ws(tmp_path, monkeypatch):
+    (tmp_path / "documents").mkdir()
+    templates = tmp_path / "templates"
+    templates.mkdir()
+    (templates / "tesina.json").write_text(json.dumps(_REVISE_TEMPLATE), encoding="utf-8")
+    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(tmp_path / "documents"))
+    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
+    return tmp_path
+
+
+def test_doc_revise_section_applies_diffs_and_records_provenance(revise_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+    sections_dir = revise_ws / "documents" / "alpha" / "sections"
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    (sections_dir / "001-introduccion.md").write_text("Texto original.", encoding="utf-8")
+    body_file = revise_ws / "nuevo.md"
+    body_file.write_text("Texto revisado.", encoding="utf-8")
+
+    result = runner.invoke(app, ["doc", "revise", "introduccion", "aclarar alcance", str(body_file)])
+
+    assert result.exit_code == 0, result.output
+    assert (sections_dir / "001-introduccion.md").read_text(encoding="utf-8").endswith("Texto revisado.")
+    log = json.loads((sections_dir / "_revisions" / "revision-log.json").read_text(encoding="utf-8"))
+    assert log["entries"][0]["request"] == "aclarar alcance"
+    assert log["entries"][0]["section_id"] == "introduccion"
+
+
+def test_doc_revise_topic_ripples_and_reports_dependent_sections(revise_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+    sections_dir = revise_ws / "documents" / "alpha" / "sections"
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    (sections_dir / "001-introduccion.md").write_text("Texto original.", encoding="utf-8")
+    body_file = revise_ws / "nuevo.md"
+    body_file.write_text("Nuevo valor de contexto.", encoding="utf-8")
+
+    result = runner.invoke(app, ["doc", "revise", "alumno", "actualizar alumno", str(body_file), "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["changed_sections"] == ["introduccion"]
+
+
+def test_doc_revise_rejects_unknown_id_as_structural_change(revise_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+    body_file = revise_ws / "nuevo.md"
+    body_file.write_text("x", encoding="utf-8")
+
+    result = runner.invoke(app, ["doc", "revise", "seccion-nueva", "agregar sección", str(body_file)])
+
+    assert result.exit_code != 0
+    assert "revise" in (result.output + str(result.exception or ""))

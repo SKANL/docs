@@ -105,14 +105,16 @@ def test_pipeline_unregistered_output_format_errors_cleanly_no_silent_docx(works
     # Remediation (fresh-context review, CRITICAL): the renderer registry
     # must actually be consulted at runtime — an unregistered output.format
     # must raise the clear Spanish error instead of silently building DOCX.
+    # "epub" (not "pdf" — PR3/item C-pdf registered a real "pdf" renderer,
+    # so it is no longer an unregistered-format example).
     templates_dir = workspace / "templates"
-    pdf_template = dict(_TEMPLATE, output={"format": "pdf"})
-    (templates_dir / "tesina-pdf.json").write_text(json.dumps(pdf_template), encoding="utf-8")
-    Deps().documents.create("doc-pdf", "tesina-pdf")
+    epub_template = dict(_TEMPLATE, output={"format": "epub"})
+    (templates_dir / "tesina-epub.json").write_text(json.dumps(epub_template), encoding="utf-8")
+    Deps().documents.create("doc-epub", "tesina-epub")
 
     result = runner.invoke(app, ["pipeline", "assemble"])
 
     combined = result.output + str(result.exception or "")
     assert result.exit_code == 1
     assert "Formato de salida no registrado" in combined
-    assert "pdf" in combined
+    assert "epub" in combined

@@ -182,7 +182,7 @@
   },
   "cross_consistency": {
     "enabled": true,
-    "contested_stack_terms": []
+    "contested_stack_terms": ["Laravel", "Supabase", "bun.js", "MySQL", "GCP", "Firebase"]
   },
   "documents_tools": {
     "enabled": true,
