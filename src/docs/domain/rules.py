@@ -53,14 +53,41 @@ _SCAFFOLD_PENDIENTE_RE = re.compile(r"pendiente:\s*(?:documentar|agregar citas|o
 # forced authors to reword legitimate prose.
 _PENDIENTE_MARKER_RE = re.compile(r"\bpendientes?\b", re.IGNORECASE)
 
+# Item J (design.md "Required-content"): a plain `candidate in scrubbed`
+# substring test both under- and over-matches -- a short keyword like "plan"
+# substring-matches inside an unrelated larger word ("planificación"), and a
+# requirement word in one grammatical number ("procesos") never matches the
+# document's other number ("proceso"), forcing verbatim plural/singular
+# agreement authors have no reason to know about. `_stem_es` + a
+# word-boundary regex with an optional plural suffix fixes both without
+# degrading into a same-prefix free-for-all (upgrade path: a real stemmer if
+# other inflections beyond singular/plural prove necessary).
+_PLURAL_STRIP_ES_MIN_LEN = 5
+_PLURAL_STRIP_S_MIN_LEN = 4
+
+
+def _stem_es(word: str) -> str:
+    if len(word) > _PLURAL_STRIP_ES_MIN_LEN and word.endswith("es"):
+        return word[:-2]
+    if len(word) > _PLURAL_STRIP_S_MIN_LEN and word.endswith("s"):
+        return word[:-1]
+    return word
+
 
 def requirement_present(requirement: str, plain: str, detect: dict[str, list[str]]) -> bool:
     scrubbed = _SCAFFOLD_PENDIENTE_RE.sub(" ", plain)
     candidates = detect.get(requirement)
-    if not candidates:
-        words = [w for w in _REQUIREMENT_WORD_SPLIT_RE.split(requirement.lower()) if len(w) >= 4]
-        candidates = [requirement] + words
-    return any(str(candidate).lower() in scrubbed for candidate in candidates)
+    if candidates:
+        # detect alias escape hatch: author-declared aliases are an explicit,
+        # intentional override -- keep plain substring matching for them,
+        # unlike the generic word-derived fallback below.
+        return any(str(candidate).lower() in scrubbed for candidate in candidates)
+
+    words = [w for w in _REQUIREMENT_WORD_SPLIT_RE.split(requirement.lower()) if len(w) >= 4]
+    candidates = [requirement.lower()] + words
+    return any(
+        re.search(rf"\b{re.escape(_stem_es(candidate))}(?:es|s)?\b", scrubbed) for candidate in candidates
+    )
 
 
 def review_section_contract(
@@ -246,10 +273,35 @@ def _check_first_person(lowered: str, first_person_patterns: list[str]) -> list[
     return issues
 
 
+# Item J (design.md "Subjective terms" / "Contested-stack", ADR-J: local
+# window, not global): a citation, a nearby quantified number, or an
+# evidence keyword substantiates a claim only in its OWN clause -- a signal
+# elsewhere in the section must not suppress an unrelated bare valorative or
+# unqualified contested-stack mention. `_clause_window` scopes the check to
+# the sentence/line containing the match (bounded by ".", "!", "?", "\n").
+_CLAUSE_BOUNDARY_CHARS = ".!?\n"
+_CITATION_ADJACENT_RE = re.compile(r"\([^)]*\d{4}[^)]*\)")
+
+
+def _clause_window(lowered: str, start: int, end: int) -> str:
+    left = max(lowered.rfind(ch, 0, start) for ch in _CLAUSE_BOUNDARY_CHARS)
+    right_candidates = [pos for ch in _CLAUSE_BOUNDARY_CHARS if (pos := lowered.find(ch, end)) != -1]
+    right = min(right_candidates) if right_candidates else len(lowered)
+    return lowered[left + 1 : right]
+
+
+def _has_local_evidence(window: str) -> bool:
+    """Quantified evidence (any digit) or a citation-shaped parenthetical
+    substantiates a valorative/contested claim in its own clause."""
+    return bool(_EVIDENCE_RE.search(window) or _CITATION_ADJACENT_RE.search(window) or re.search(r"\d", window))
+
+
 def _check_subjective_terms(lowered: str, subjective_terms: list[str]) -> list[Issue]:
     issues: list[Issue] = []
     for term in subjective_terms:
-        if re.search(rf"\b{re.escape(term)}\b", lowered):
+        for match in re.finditer(rf"\b{re.escape(term)}\b", lowered):
+            if _has_local_evidence(_clause_window(lowered, match.start(), match.end())):
+                continue
             issues.append(
                 Issue(
                     "warning",
@@ -257,6 +309,7 @@ def _check_subjective_terms(lowered: str, subjective_terms: list[str]) -> list[I
                     code="voice.subjective_term",
                 )
             )
+            break
     return issues
 
 
@@ -507,6 +560,7 @@ def review_rules(
 
 _DURATION_RE = re.compile(r"\b(\d{2,4})\s*horas\b", re.IGNORECASE)
 _HEDGE_RE = re.compile(r"\b(contexto|prototipo|dependencia|externa|posible|planea|futur\w*)")
+_STACK_DECLARATION_RE = re.compile(r"se usa|se utiliza|stack:")
 
 DEFAULT_CONTESTED_STACK_TERMS = ["Laravel", "Supabase", "bun.js", "MySQL", "GCP", "Firebase"]
 
@@ -575,8 +629,16 @@ def review_cross_consistency(
         lowered = body.lower()
         section_pending = "pendiente" in lowered
         for term in terms:
+            if section_pending:
+                continue
             pattern = re.compile(rf"(?<![\w]){re.escape(term.lower())}(?![\w])")
-            if pattern.search(lowered) and not section_pending and not _HEDGE_RE.search(lowered):
+            unqualified = any(
+                not _HEDGE_RE.search(window := _clause_window(lowered, match.start(), match.end()))
+                and not _STACK_DECLARATION_RE.search(window)
+                and not _CITATION_ADJACENT_RE.search(window)
+                for match in pattern.finditer(lowered)
+            )
+            if unqualified:
                 issues.append(
                     Issue(
                         "warning",

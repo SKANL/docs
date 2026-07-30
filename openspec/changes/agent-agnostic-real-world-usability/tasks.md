@@ -92,13 +92,13 @@ Chain strategy: stacked-to-main
 
 ## Phase 7: Evidence-aware review precision (J) — PR 7, independent
 
-- [ ] 7.1 RED: paired fixture — delimited "Firebase" w/ evidence NOT flagged; genuinely contested still flagged
-- [ ] 7.2 GREEN: local-window evidence predicate in `review_cross_consistency` (`rules.py:574`)
-- [ ] 7.3 RED: paired fixture — short keyword no longer matches inside larger word; full keyword still matches
-- [ ] 7.4 GREEN: word-boundary match in `requirement_present` (`rules.py:57`)
-- [ ] 7.5 RED: paired fixture — subjective term next to citation not flagged; bare term still flagged
-- [ ] 7.6 GREEN: evidence-aware suppression in `_check_subjective_terms` (`rules.py:249`)
-- [ ] 7.7 Run `test_rules_characterization.py` to confirm no existing catch regresses
+- [x] 7.1 RED: paired fixture — delimited "Firebase" w/ evidence NOT flagged; genuinely contested still flagged
+- [x] 7.2 GREEN: local-window evidence predicate in `review_cross_consistency` (`rules.py:574`)
+- [x] 7.3 RED: paired fixture — short keyword no longer matches inside larger word; full keyword still matches
+- [x] 7.4 GREEN: word-boundary match in `requirement_present` (`rules.py:57`)
+- [x] 7.5 RED: paired fixture — subjective term next to citation not flagged; bare term still flagged
+- [x] 7.6 GREEN: evidence-aware suppression in `_check_subjective_terms` (`rules.py:249`)
+- [x] 7.7 Run `test_rules_characterization.py` to confirm no existing catch regresses
 
 ## Phase 8: Cross-source conflict + intake/gap report (G, K) — PR 8, depends on PR 5
 

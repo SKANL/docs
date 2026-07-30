@@ -63,6 +63,43 @@ def test_requirement_present_still_true_for_a_hand_authored_pendiente_note():
     assert requirement_present("resultados importantes o pendiente", plain, detect) is True
 
 
+def test_requirement_present_word_boundary_short_keyword_does_not_match_inside_larger_word():
+    # Item J (design.md, "Required-content"): before the word-boundary fix,
+    # `"plan" in "...planificación..."` substring-matched because "plan" is a
+    # literal prefix of "planificación" -- a false PRESENT that hid a genuine
+    # absence. Negative fixture: unrelated larger word must NOT satisfy it.
+    plain = "el proyecto sigue una planificación estricta y documentada"
+    assert requirement_present("plan", plain, {}) is False
+
+
+def test_requirement_present_word_boundary_full_keyword_still_matches():
+    # Paired positive: the standalone word itself must still be detected.
+    plain = "el plan de trabajo fue aprobado por el comité"
+    assert requirement_present("plan", plain, {}) is True
+
+
+def test_requirement_present_inflection_allowance_plural_requirement_matches_singular_text():
+    # Item J: "procesos" (plural, from the real reporte-estadia-tic template's
+    # required_content) forced verbatim plural matching -- a section that
+    # legitimately describes "el proceso" (singular) was falsely flagged
+    # missing. Lemma-lite singular/plural allowance fixes this without
+    # becoming a same-prefix free-for-all (still word-boundary anchored).
+    plain = "se documentó el proceso utilizado durante la estadía"
+    assert requirement_present("procesos", plain, {}) is True
+
+
+def test_requirement_present_inflection_allowance_singular_requirement_matches_plural_text():
+    plain = "los instrumentos de recolección fueron una encuesta y una entrevista"
+    assert requirement_present("instrumento", plain, {}) is True
+
+
+def test_requirement_present_inflection_allowance_does_not_always_pass_when_genuinely_absent():
+    # Regression guard: the inflection allowance must not degrade into an
+    # always-passing check -- a genuinely unrelated section still misses.
+    plain = "este texto no menciona nada relacionado con el tema"
+    assert requirement_present("instrumentos", plain, {}) is False
+
+
 def test_scaffold_scrub_regex_covers_every_pendiente_sentence_the_scaffold_emits():
     # Drift guard: `_SCAFFOLD_PENDIENTE_RE` hardcodes the opening verbs of
     # `render_contract_scaffold`'s PENDIENTE sentences. A fourth sentence
@@ -437,6 +474,38 @@ def test_review_section_text_subjective_term_always_warning():
     issues = _call(text, subjective_terms=["excelente"])
     issue = next(i for i in issues if i.code == "voice.subjective_term")
     assert issue.severity == "warning"
+
+
+def test_review_section_text_subjective_term_bare_still_flagged():
+    # Item J paired positive: a bare valorative with no adjacent evidence in
+    # its own clause must still be flagged (regression guard).
+    text = "# Título\n\nEl proyecto fue un éxito. Nada más se documentó aquí."
+    issues = _call(text, subjective_terms=["éxito"])
+    assert any(i.code == "voice.subjective_term" for i in issues)
+
+
+def test_review_section_text_subjective_term_with_adjacent_quantified_evidence_not_flagged():
+    # Item J paired negative: the same clause carries quantified evidence (a
+    # number) substantiating the valorative claim -- must NOT flag.
+    text = "# Título\n\nEl proceso fue eficiente, reduciendo el tiempo en un 40 por ciento."
+    issues = _call(text, subjective_terms=["eficiente"])
+    assert not any(i.code == "voice.subjective_term" for i in issues)
+
+
+def test_review_section_text_subjective_term_with_adjacent_citation_not_flagged():
+    # Item J paired negative: the same clause carries an APA-style citation.
+    text = "# Título\n\nEl resultado fue el mejor de la cohorte (García, 2020)."
+    issues = _call(text, subjective_terms=["mejor"])
+    assert not any(i.code == "voice.subjective_term" for i in issues)
+
+
+def test_review_section_text_subjective_term_evidence_in_other_clause_still_flagged():
+    # Regression guard for ADR-J (local-window, not global): evidence
+    # elsewhere in the section must NOT suppress an unrelated bare valorative
+    # in a different sentence.
+    text = "# Título\n\nEl equipo fue excelente. Se adjunta evidencia en el anexo B para otro punto."
+    issues = _call(text, subjective_terms=["excelente"])
+    assert any(i.code == "voice.subjective_term" for i in issues)
 
 
 def test_review_section_text_secret_pattern_checked_against_raw_text_case_insensitive():
@@ -1012,6 +1081,42 @@ def test_review_cross_consistency_contested_stack_terms_overridable():
     bodies = {"infraestructura": "El sistema usa Redis como base definitiva."}
     result = review_cross_consistency(_template(), bodies, strict=False, contested_stack_terms=["Redis"])
     assert any(i.code == "coherence.contested_stack_unqualified" and "Redis" in i.message for i in result.issues)
+
+
+def test_review_cross_consistency_contested_stack_term_bare_still_flagged():
+    # Item J paired positive: "Firebase" used as a definitive claim with no
+    # delimiting/evidence signal in its own clause must still be flagged
+    # (the genuine catch this rule exists for).
+    bodies = {"infraestructura": "El backend usa Firebase para todo el sistema sin ninguna alternativa."}
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    issue = next(i for i in result.issues if i.code == "coherence.contested_stack_unqualified")
+    assert "Firebase" in issue.message
+
+
+def test_review_cross_consistency_contested_stack_term_delimited_with_citation_not_flagged():
+    # Item J paired negative: the same clause carries a scope-delimiting
+    # declaration and a citation -- a legitimate, evidenced mention must NOT
+    # warn just because "Firebase" is on the contested-stack list.
+    bodies = {
+        "infraestructura": (
+            "Firebase se utiliza exclusivamente para notificaciones push (ADR-014, 2023)."
+        )
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
+
+
+def test_review_cross_consistency_contested_stack_evidence_in_other_clause_still_flagged():
+    # Regression guard for ADR-J (local-window, not global): a citation
+    # elsewhere in the section must NOT suppress an unrelated unqualified
+    # mention in a different sentence.
+    bodies = {
+        "infraestructura": (
+            "El backend usa Firebase para todo el sistema. Otra decisión se documentó (García, 2020)."
+        )
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert any(i.code == "coherence.contested_stack_unqualified" for i in result.issues)
 
 
 def test_review_cross_consistency_no_issues_for_empty_bodies():
