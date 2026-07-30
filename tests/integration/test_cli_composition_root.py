@@ -33,8 +33,9 @@ _EXPECTED_GROUPS = {
     # built-in template provisioning) -- deliberate surface growth, not drift.
     "template": {"list", "show", "init", "validate", "use"},
     # `init` added PR2 of agent-agnostic-real-world-usability (item A,
-    # workspace config + bootstrap) -- deliberate surface growth, not drift.
-    "doc": {"current", "delete", "init", "list", "new", "rename", "show", "use"},
+    # workspace config + bootstrap); `status` added PR9 (item I, resumable
+    # status summary) -- deliberate surface growth, not drift.
+    "doc": {"current", "delete", "init", "list", "new", "rename", "show", "status", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
 }
@@ -75,7 +76,7 @@ def test_commands_package_splits_by_concern():
         "build-section", "pack-context", "review-section", "review-document",
     }
     assert _names(template_app) == {"list", "show", "init", "validate", "use"}
-    assert _names(doc_app) == {"current", "delete", "init", "list", "new", "rename", "show", "use"}
+    assert _names(doc_app) == {"current", "delete", "init", "list", "new", "rename", "show", "status", "use"}
     assert _names(asset_app) == {"add", "list", "rm"}
     assert _names(context_app) == {"elicit", "ingest", "rm", "set", "show", "status"}
 

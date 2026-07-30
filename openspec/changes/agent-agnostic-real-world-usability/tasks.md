@@ -111,10 +111,10 @@ Chain strategy: stacked-to-main
 
 ## Phase 9: `doc status` (I) — PR 9, depends on PR 8
 
-- [ ] 9.1 RED: `doc status --json` reports fresh document context/sections/ingest/figures/output
-- [ ] 9.2 GREEN: aggregator reading `ContextService.status`, `gap-report.json`, `figure-catalog.json`, `_detection.json`, `output/` mtimes
-- [ ] 9.3 RED: partially completed document shows filled N/M, scaffold sections, queued classifications
-- [ ] 9.4 GREEN: wire `doc status [--json]` on `doc_app.py:15`, dual Markdown/JSON output
+- [x] 9.1 RED: `doc status --json` reports fresh document context/sections/ingest/figures/output
+- [x] 9.2 GREEN: aggregator reading `ContextService.status`, `figure-catalog.json`, `_detection.json`/`_classification-queue.json`, `output/` presence (new `application/status.py:StatusService` + `domain/document_status.py:DocumentStatus`; PR8 not landed yet, so this reads `_detection.json`/classification queue directly rather than `intake-report.md` — matches design.md item I's actual artifact list, not the PR8 filename)
+- [x] 9.3 RED: partially completed document shows filled N/M, scaffold sections, queued classifications
+- [x] 9.4 GREEN: wire `doc status [--json]` on `doc_app.py`, dual Markdown/JSON output (reuses `emit_result`)
 
 ## Phase 10: Agent contract + reproducibility principle (B, M) — PR 10, depends on all
 
