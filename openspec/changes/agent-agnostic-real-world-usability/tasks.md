@@ -55,12 +55,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Built-in template provisioning (C) — PR 3, depends on PR 2
 
-- [ ] 3.1 RED: `template list --available` lists builtin names
-- [ ] 3.2 GREEN: seed `src/docs/templates/builtin/reporte-estadia-tic.json`, implement `list --available` via `importlib.resources`
-- [ ] 3.3 RED: `template use <builtin>` copies into `templates_dir`; refuse-clobber w/o `--force`; unknown id errors
-- [ ] 3.4 GREEN: implement `template use` on `template_app.py:18`
-- [ ] 3.5 RED: build+install test — builtin template importable from installed wheel (package-data risk)
-- [ ] 3.6 GREEN: verify/add `pyproject.toml` hatch inclusion for `.json` under `docs.templates.builtin`
+- [x] 3.1 RED: `template list --available` lists builtin names
+- [x] 3.2 GREEN: seed `src/docs/templates/builtin/reporte-estadia-tic.json`, implement `list --available` via `importlib.resources`
+- [x] 3.3 RED: `template use <builtin>` copies into `templates_dir`; refuse-clobber w/o `--force`; unknown id errors
+- [x] 3.4 GREEN: implement `template use` on `template_app.py:18`
+- [x] 3.5 RED: build+install test — builtin template importable from installed wheel (package-data risk)
+- [x] 3.6 GREEN: verify/add `pyproject.toml` hatch inclusion for `.json` under `docs.templates.builtin`
 
 ## Phase 4: Content classification (D) — PR 4, depends on PR 1 (ContentProbePort)
 

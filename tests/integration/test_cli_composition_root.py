@@ -29,8 +29,9 @@ _EXPECTED_FLAT_COMMANDS = {
 }
 _EXPECTED_GROUPS = {
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
-    # 1b/1c) -- a deliberate surface growth, not drift.
-    "template": {"list", "show", "init", "validate"},
+    # 1b/1c); `use` added PR3 of agent-agnostic-real-world-usability (item C,
+    # built-in template provisioning) -- deliberate surface growth, not drift.
+    "template": {"list", "show", "init", "validate", "use"},
     "doc": {"current", "delete", "list", "new", "rename", "show", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
@@ -71,7 +72,7 @@ def test_commands_package_splits_by_concern():
     assert _names(section_app) == {
         "build-section", "pack-context", "review-section", "review-document",
     }
-    assert _names(template_app) == {"list", "show", "init", "validate"}
+    assert _names(template_app) == {"list", "show", "init", "validate", "use"}
     assert _names(doc_app) == {"current", "delete", "list", "new", "rename", "show", "use"}
     assert _names(asset_app) == {"add", "list", "rm"}
     assert _names(context_app) == {"elicit", "ingest", "rm", "set", "show", "status"}
