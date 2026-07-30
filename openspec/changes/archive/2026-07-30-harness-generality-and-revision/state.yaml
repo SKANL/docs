@@ -2,6 +2,7 @@ change: harness-generality-and-revision
 artifact_store: hybrid
 created: 2026-07-30
 updated: 2026-07-30
+archived: 2026-07-30
 
 phases:
   explore:
@@ -39,7 +40,7 @@ phases:
     mirror: sdd/harness-generality-and-revision/apply-progress (engram)
     note: >
       All 7 chained PRs landed on branch feat/harness-generality (PR #22,
-      open/unmerged): 40f0482 (A rules), 87290f5 (C-html), 26d9995 (C-pdf),
+      merged to main): 40f0482 (A rules), 87290f5 (C-html), 26d9995 (C-pdf),
       6a28f4c (B revise), 6d4fb9e (D srs template), b3c04ea (F lifecycle),
       8b76b3f (E AGENTS.md). tasks.md all 54 checkboxes [x]. Full suite
       1300 passed/0 failed/7 skipped.
@@ -50,12 +51,29 @@ phases:
     note: >
       0 CRITICAL, 1 WARNING (clean-room agent-contract scenario ran as a
       static content-check proxy, not a literal independent dynamic
-      role-play), 1 SUGGESTION (this state.yaml phase-tracking drift, now
-      fixed). Branch not yet merged to main (PR #22 open).
+      role-play), 1 SUGGESTION (state.yaml phase-tracking drift, fixed).
+      WARNING later resolved: a true clean-room sub-agent pass ran
+      pre-archive against AGENTS.md + raw files only, confirmed the harness
+      is agent-replicable end-to-end, found 12 contract gaps, closed by
+      commit 8d58427.
   archive:
-    status: pending
+    status: done
+    artifact: archive-report.md
+    mirror: sdd/harness-generality-and-revision/archive-report (engram)
+    note: >
+      PR #22 merged to main. Specs merged for 6 capabilities (2 new:
+      document-revise, document-lifecycle; 4 modified: template-provisioning,
+      document-pipeline, document-render, agent-contract). Pre-existing
+      duplicate "Reproducibility Boundary Principle" block in
+      document-pipeline/spec.md deduped and replaced with the single
+      PDF-amended version. Change folder archived.
+      TOOLING CAVEAT: this archive pass had no shell/git tool available, so
+      the original active change folder could only be copied to the archive
+      path, not deleted, and `uv run pytest` / `git add`/`commit`/`push`
+      could not be executed by this agent — see archive-report.md for the
+      exact follow-up commands the orchestrator/maintainer must still run.
 
-next_recommended: sdd-archive (pending PR #22 merge + explicit clean-room decision)
+next_recommended: none
 
 capabilities:
   new:

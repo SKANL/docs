@@ -99,3 +99,17 @@ the code on `feat/harness-generality`. Full test suite green (1300/0/7).
 Branch is NOT yet merged to `main` (PR #22 open). Recommend `sdd-archive`
 once the maintainer either runs the clean-room pass or explicitly accepts the
 static substitute, and once PR #22 is merged.
+
+## Post-Verify Update (archive phase)
+
+PR #22 has since been merged to `main` (commits 40f0482, 87290f5, 26d9995,
+6a28f4c, 6d4fb9e, b3c04ea, 8b76b3f), plus a clean-room-driven `AGENTS.md`
+fix (8d58427) landed after the clean-room re-run below. The WARNING above is
+now resolved: option (a) was taken — a clean-room sub-agent pass ran against
+`AGENTS.md` + raw files only (no source/tests access) and confirmed the
+harness is agent-replicable end-to-end. That pass surfaced 12 contract gaps
+in `AGENTS.md` (undocumented flags/behaviors an agent following only the
+doc would have stumbled on), all closed by commit 8d58427. See
+`archive-report.md` in this folder for the full clean-room finding list and
+PR ledger. The SUGGESTION (state.yaml drift) was fixed inline during this
+verify pass, as noted above.

@@ -116,12 +116,12 @@ The pipeline MUST include an `ingest` stage set (format-agnostic like `prep`) fo
 
 ### Requirement: Reproducibility Boundary Principle
 
-The system MUST treat section Markdown files as the durable source of truth for document content, and the built `.docx` (or other rendered format) as a deterministic function of those Markdown files plus configuration. Byte-for-byte determinism applies to the build step; it MUST NOT be required of agent-authored prose across independent authoring sessions.
+The system MUST treat section Markdown files as the durable source of truth for document content, and the built `.docx`/HTML output as a deterministic function of those Markdown files plus configuration. Byte-for-byte determinism applies to the docx and HTML build steps; it MUST NOT be required of agent-authored prose across independent authoring sessions. PDF output is an explicitly non-byte-deterministic derived artifact (rendered via external toolchains), and MUST NOT be held to the byte-identity guarantee.
 
-#### Scenario: Rebuilding from unchanged sources is byte-identical
+#### Scenario: Rebuilding from unchanged sources is byte-identical (docx/HTML)
 
 - GIVEN unchanged section Markdown files and configuration
-- WHEN the document is built (assembled/rendered) twice
+- WHEN the docx or HTML output is built twice
 - THEN the two output files are byte-identical
 
 #### Scenario: Prose changes are not a determinism violation
@@ -129,6 +129,18 @@ The system MUST treat section Markdown files as the durable source of truth for 
 - GIVEN an agent edits a section's Markdown content between two authoring sessions
 - WHEN the document is rebuilt after the edit
 - THEN the output legitimately differs, and this is not treated as a determinism failure
+
+#### Scenario: PDF output is not required to be byte-identical
+
+- GIVEN unchanged section Markdown files and configuration
+- WHEN the PDF output is built twice
+- THEN the two PDF files may legitimately differ, and this is not treated as a determinism failure
+
+#### Scenario: PDF toolchain absent degrades gracefully
+
+- GIVEN neither `soffice` nor a PDF-capable `pandoc` path is available
+- WHEN a build requests PDF output
+- THEN the system WARNs and skips the PDF artifact, and other requested formats still build successfully
 
 ### Requirement: Fail-Open Doctor for Optional Inputs
 
@@ -192,18 +204,34 @@ The system MUST provide a `doc status` command reporting, for the active documen
 - THEN it WARNs that page-render figure extraction is degraded, with install guidance
 - AND does not fail the doctor run for this reason alone
 
-### Requirement: Reproducibility Boundary Principle (Item M)
+### Requirement: Review Reads Rule Data From Template Config
 
-Section Markdown files MUST be treated as the durable source of truth for document content; the built `.docx`/format output MUST be a deterministic function of them + config. Byte-determinism applies to the BUILD, not agent prose across sessions.
+Review logic MUST read citation style, contested-stack terms, subjective/forbidden word lists, and format params from the active document's template config at runtime, rather than from hardcoded module-level constants.
 
-#### Scenario: Rebuilding from unchanged sources is byte-identical
+#### Scenario: No hardcoded rule identifiers remain
 
-- GIVEN unchanged section Markdown files and configuration
-- WHEN the document is built (assembled/rendered) twice
-- THEN the two output files are byte-identical
+- GIVEN `domain/rules.py` and `domain/source_role.py` after this change
+- WHEN inspected
+- THEN they contain no estadia-specific term lists or citation-style literals; all such data is loaded from template config
 
-#### Scenario: Prose changes are not a determinism violation
+#### Scenario: Estadia review is byte-identical after the refactor
 
-- GIVEN an agent edits a section's Markdown content between two authoring sessions
-- WHEN the document is rebuilt after the edit
-- THEN the output legitimately differs, and this is not treated as a determinism failure
+- GIVEN the estadia template's config (declaring current values) and an unchanged estadia document
+- WHEN review runs before and after this refactor
+- THEN both produce byte-identical findings
+
+### Requirement: Output-Format Selection
+
+The pipeline/CLI MUST allow selecting `html` and/or `pdf` as target output formats alongside the existing `docx`, resolved through the same format-registry mechanism as `document-render`.
+
+#### Scenario: Select html output
+
+- GIVEN a document config requesting `html` output
+- WHEN assemble runs
+- THEN an HTML artifact is produced via the format registry
+
+#### Scenario: Select pdf output
+
+- GIVEN a document config requesting `pdf` output
+- WHEN assemble runs
+- THEN a PDF artifact is produced via the format registry, or a WARN+skip if the PDF toolchain is absent
