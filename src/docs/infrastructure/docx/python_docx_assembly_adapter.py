@@ -243,6 +243,31 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
                     archive.write(path, path.relative_to(tmp_path).as_posix())
 
 
+def _run_has_drawing(run: Any) -> bool:
+    from docx.oxml.ns import qn
+
+    return run._r.find(qn("w:drawing")) is not None or run._r.find(qn("w:pict")) is not None
+
+
+def _transfer_drawing_run(run: Any, new_paragraph: Any, source_part: Any, dest_part: Any) -> None:
+    # Inline images live as a <w:drawing> inside the run element, not in
+    # run.text. Deep-copy the run XML and re-embed each referenced image part
+    # into the destination package, remapping its relationship id.
+    import copy
+
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    from docx.oxml.ns import qn
+
+    new_r = copy.deepcopy(run._r)
+    for embed_attr in (qn("r:embed"), qn("r:link")):
+        for blip in new_r.iter(qn("a:blip")):
+            rid = blip.get(embed_attr)
+            if rid:
+                image_part = source_part.related_parts[rid]
+                blip.set(embed_attr, dest_part.relate_to(image_part, RT.IMAGE))
+    new_paragraph._p.append(new_r)
+
+
 def add_fixed_text_page(document: Any, text: str) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm, Pt
@@ -391,8 +416,7 @@ class PythonDocxAssemblyAdapter:
 
         self._configure_preliminary_pagination(cover, sections_part, config)
         self._render_leading_parts(cover, config, leading)
-        self._transfer_body_paragraphs(cover, body, sections_part, config)
-        self._transfer_body_tables(cover, body)
+        self._transfer_body_content(cover, body, sections_part, config)
 
         return cover
 
@@ -426,56 +450,125 @@ class PythonDocxAssemblyAdapter:
                     add_fixed_text_page(cover, resolve_part_text(config, part))
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
-    def _transfer_body_paragraphs(self, cover: Any, body: Any, sections_part: dict[str, Any], config: dict[str, Any]) -> None:
-        from docx.enum.section import WD_SECTION_START
-        from docx.enum.text import WD_BREAK
-        from docx.shared import Pt, RGBColor
-
+    def _body_transfer_context(self, sections_part: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         restart_id = sections_part.get("body_restart_section", "")
         restart_heading = ""
         if restart_id:
             section = next((s for s in config.get("sections", []) if s.get("id") == restart_id), None)
             restart_heading = normalize_heading(section["title"] if section else restart_id)
-        body_pag = sections_part.get("body_pagination", {"format": "decimal", "start": 1})
+        return {
+            "restart_heading": restart_heading,
+            "body_pag": sections_part.get("body_pagination", {"format": "decimal", "start": 1}),
+            "body_heading_seen": False,
+            "restart_started": False,
+        }
 
-        body_heading_seen = False
-        restart_started = False
+    def _iter_body_blocks(self, body: Any):
+        # Walk block-level content (paragraphs AND tables) in DOCUMENT ORDER so
+        # a table lands where it belongs, not appended after every paragraph.
+        from docx.oxml.ns import qn
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+
+        if hasattr(body, "iter_inner_content"):
+            yield from body.iter_inner_content()
+            return
+        for child in body.element.body.iterchildren():
+            if child.tag == qn("w:p"):
+                yield Paragraph(child, body)
+            elif child.tag == qn("w:tbl"):
+                yield Table(child, body)
+
+    def _transfer_body_content(self, cover: Any, body: Any, sections_part: dict[str, Any], config: dict[str, Any]) -> None:
+        from docx.table import Table
+
+        ctx = self._body_transfer_context(sections_part, config)
+        for block in self._iter_body_blocks(body):
+            if isinstance(block, Table):
+                self._transfer_one_table(cover, block)
+            else:
+                self._transfer_one_paragraph(cover, body, block, ctx, config)
+
+    def _transfer_body_paragraphs(self, cover: Any, body: Any, sections_part: dict[str, Any], config: dict[str, Any]) -> None:
+        ctx = self._body_transfer_context(sections_part, config)
         for paragraph in body.paragraphs:
-            style_name = safe_style_name(cover, paragraph.style.name if paragraph.style else None)
-            is_list = paragraph_has_numbering(paragraph)
-            if is_list:
-                style_name = safe_style_name(cover, "List Bullet") or style_name
-            paragraph_text = paragraph.text.strip()
-            is_heading_1 = style_name == "Heading 1"
-            is_restart = is_heading_1 and restart_heading and normalize_heading(paragraph_text) == restart_heading
-            if is_restart and not restart_started:
-                numbered_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
-                configure_numbered_body_section(numbered_section, config)
-                set_section_page_number_start(
-                    numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
-                )
-                restart_started = True
-            elif is_heading_1 and body_heading_seen:
-                cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-            new_paragraph = cover.add_paragraph(style=style_name)
-            apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, is_list=is_list)
-            if is_heading_1:
-                body_heading_seen = True
-            for run in paragraph.runs:
-                new_run = new_paragraph.add_run(run.text)
-                new_run.bold = run.bold
-                new_run.italic = run.italic
-                new_run.underline = run.underline
-                new_run.font.name = "Times New Roman"
-                new_run.font.size = Pt(12)
-                new_run.font.color.rgb = RGBColor(0, 0, 0)
+            self._transfer_one_paragraph(cover, body, paragraph, ctx, config)
+
+    def _transfer_one_paragraph(self, cover: Any, body: Any, paragraph: Any, ctx: dict[str, Any], config: dict[str, Any]) -> None:
+        from docx.enum.section import WD_SECTION_START
+        from docx.enum.text import WD_BREAK
+        from docx.shared import Pt, RGBColor
+
+        restart_heading = ctx["restart_heading"]
+        body_pag = ctx["body_pag"]
+        style_name = safe_style_name(cover, paragraph.style.name if paragraph.style else None)
+        is_list = paragraph_has_numbering(paragraph)
+        if is_list:
+            style_name = safe_style_name(cover, "List Bullet") or style_name
+        paragraph_text = paragraph.text.strip()
+        is_heading_1 = style_name == "Heading 1"
+        is_restart = is_heading_1 and restart_heading and normalize_heading(paragraph_text) == restart_heading
+        if is_restart and not ctx["restart_started"]:
+            numbered_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
+            configure_numbered_body_section(numbered_section, config)
+            set_section_page_number_start(
+                numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
+            )
+            ctx["restart_started"] = True
+        elif is_heading_1 and ctx["body_heading_seen"]:
+            cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+        new_paragraph = cover.add_paragraph(style=style_name)
+        apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, is_list=is_list)
+        if is_heading_1:
+            ctx["body_heading_seen"] = True
+        for run in paragraph.runs:
+            if _run_has_drawing(run):
+                _transfer_drawing_run(run, new_paragraph, body.part, cover.part)
+                continue
+            new_run = new_paragraph.add_run(run.text)
+            new_run.bold = run.bold
+            new_run.italic = run.italic
+            new_run.underline = run.underline
+            new_run.font.name = "Times New Roman"
+            new_run.font.size = Pt(12)
+            new_run.font.color.rgb = RGBColor(0, 0, 0)
 
     def _transfer_body_tables(self, cover: Any, body: Any) -> None:
         for table in body.tables:
-            new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
-            for row_idx, row in enumerate(table.rows):
-                for col_idx, cell in enumerate(row.cells):
-                    new_table.cell(row_idx, col_idx).text = cell.text
+            self._transfer_one_table(cover, table)
+
+    def _transfer_one_table(self, cover: Any, table: Any) -> None:
+        new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
+        self._apply_horizontal_only_borders(new_table)
+        for row_idx, row in enumerate(table.rows):
+            for col_idx, cell in enumerate(row.cells):
+                new_cell = new_table.cell(row_idx, col_idx)
+                new_cell.text = cell.text
+                for paragraph in new_cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.name = "Times New Roman"
+                        if row_idx == 0:
+                            run.bold = True
+
+    def _apply_horizontal_only_borders(self, table: Any) -> None:
+        # Institutional guide: horizontal lines only, no vertical lines, no
+        # shading. Emit only top/bottom/insideH borders. Vertical edges are
+        # deliberately OMITTED (not set to "nil"): the format audit
+        # (`table_has_vertical_borders_or_shading`) flags the mere presence of
+        # <w:left|right|insideV>, so declaring them — even as nil — would fail
+        # it, and a default python-docx table renders no vertical rule anyway.
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+
+        borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "bottom", "insideH"):
+            element = OxmlElement(f"w:{edge}")
+            element.set(qn("w:val"), "single")
+            element.set(qn("w:sz"), "4")
+            element.set(qn("w:space"), "0")
+            element.set(qn("w:color"), "000000")
+            borders.append(element)
+        table._tbl.tblPr.append(borders)
 
     def assemble(
         self,

@@ -277,6 +277,12 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
         ],
     },
     "capitulo-ii-marco-teorico": {
+        # A citing chapter (references_list=False) whose references live in the
+        # consolidated `referencias` bibliography no longer emits the
+        # per-section apa.no_reference_list / apa.citation_without_reference
+        # false positives: with a document-level bibliography present, that
+        # citation<->reference reciprocity is review_cross_consistency's job,
+        # not this per-section audit. Only the unrelated content checks remain.
         "draft": [
             {
                 "severity": "warning",
@@ -291,16 +297,6 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                 "severity": "warning",
                 "message": "`capitulo-ii-marco-teorico` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
-            },
-            {
-                "severity": "warning",
-                "message": "Hay citas APA en texto pero no hay lista de referencias detectable.",
-                "code": "apa.no_reference_list",
-            },
-            {
-                "severity": "warning",
-                "message": "Cita sin referencia correspondiente: `García, 2020`.",
-                "code": "apa.citation_without_reference",
             },
         ],
         "strict": [
@@ -317,20 +313,16 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                 "severity": "error",
                 "message": "`capitulo-ii-marco-teorico` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
-            },
-            {
-                "severity": "error",
-                "message": "Hay citas APA en texto pero no hay lista de referencias detectable.",
-                "code": "apa.no_reference_list",
-            },
-            {
-                "severity": "error",
-                "message": "Cita sin referencia correspondiente: `García, 2020`.",
-                "code": "apa.citation_without_reference",
             },
         ],
     },
     "referencias": {
+        # A references_list section is a bibliography: it holds reference
+        # entries with no in-text citations. The per-section APA audit no
+        # longer demands citations here (apa.required) nor flags each entry as
+        # uncited (apa.reference_without_citation) -- that reciprocity is the
+        # document-level review_cross_consistency's job. Only the unrelated
+        # contract.missing_required check (required_content phrasing) remains.
         "draft": [
             {
                 "severity": "warning",
@@ -339,19 +331,6 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "APA 7, orden alfabético."
                 ),
                 "code": "contract.missing_required",
-            },
-            {
-                "severity": "warning",
-                "message": "`referencias` requiere citas APA 7 o marcador PENDIENTE.",
-                "code": "apa.required",
-            },
-            {
-                "severity": "warning",
-                "message": (
-                    "Referencia sin cita correspondiente: `García, A. (2020). Un "
-                    "título largo cualquiera. Editorial.`."
-                ),
-                "code": "apa.reference_without_citation",
             },
         ],
         "strict": [
@@ -362,19 +341,6 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "APA 7, orden alfabético."
                 ),
                 "code": "contract.missing_required",
-            },
-            {
-                "severity": "error",
-                "message": "`referencias` requiere citas APA 7 o marcador PENDIENTE.",
-                "code": "apa.required",
-            },
-            {
-                "severity": "error",
-                "message": (
-                    "Referencia sin cita correspondiente: `García, A. (2020). Un "
-                    "título largo cualquiera. Editorial.`."
-                ),
-                "code": "apa.reference_without_citation",
             },
         ],
     },
