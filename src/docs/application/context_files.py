@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import re
 
-from docs.domain.context_index_files import is_context_content_filename
+# CURATED_INDEX_FILENAME is re-exported here for docs.application.pipeline
+# (which imports it from this module alongside build_context_files/index).
+from docs.domain.context_index_files import CURATED_INDEX_FILENAME, is_context_content_filename  # noqa: F401
 from docs.domain.markdown_text import dedupe_strings, extract_markdown_headings, keyword_set
 
 # PR8 task 8.1 (index.md collision, binding note carried from PR7's fresh
