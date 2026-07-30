@@ -1,4 +1,5 @@
 # tests/unit/application/test_ingest_service.py
+import hashlib
 import json
 from pathlib import Path
 
@@ -116,6 +117,134 @@ def test_missing_inbox_dir_reports_zero_files_processed_no_error(tmp_path: Path)
 
     assert report["processed"] == 0
     assert report["files"] == []
+
+
+# --- Item F (PR5): wire the PDF render adapter into ingest ----------------
+
+
+class _FakePdfHandler:
+    """Writes the deterministic `<stem>-pdf-<sha8>.md` name a real PDF
+    handler (OpendataloaderPdfAdapter) would, optionally alongside a
+    `_media/` sibling directory -- so the render-gate check (paired `_media`
+    absent/empty) has something real to inspect."""
+
+    def __init__(self, with_media: bool = False) -> None:
+        self.with_media = with_media
+
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
+        sha8 = hashlib.sha256(src.read_bytes()).hexdigest()[:8]
+        target = out_dir / f"{src.stem}-{kind}-{sha8}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"# {src.name}", encoding="utf-8")
+        if self.with_media:
+            media_dir = out_dir / f"{src.stem}-{kind}-{sha8}_media"
+            media_dir.mkdir(exist_ok=True)
+            (media_dir / "image1.png").write_bytes(b"raster-bytes")
+        return target
+
+
+class _FakePdfRender:
+    """Fake `PdfRenderPort`: records calls, writes N deterministic PNGs."""
+
+    def __init__(self, page_count: int = 2) -> None:
+        self.page_count = page_count
+        self.calls: list[Path] = []
+
+    def render_pages(
+        self, pdf_path: Path, out_dir: Path, dpi: int = 150, pages: str | None = None, autotrim: bool = True
+    ) -> list[Path]:
+        self.calls.append(Path(pdf_path))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        written = []
+        for index in range(self.page_count):
+            dest = out_dir / f"{Path(pdf_path).stem}-p{index + 1:02d}.png"
+            dest.write_bytes(f"page-{index + 1}".encode())
+            written.append(dest)
+        return written
+
+
+def test_pdf_render_adds_figures_for_vector_only_pdf_with_no_extracted_media(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "diagram.pdf").write_bytes(b"vector-pdf-bytes")
+    assets_dir = tmp_path / "assets"
+    fake_render = _FakePdfRender(page_count=2)
+    service = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler(with_media=False)},
+        pdf_render=fake_render,
+    )
+
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+
+    assert fake_render.calls == [inbox / "diagram.pdf"]
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    origins = sorted(f["origin_relative_path"] for f in catalog["figures"])
+    assert origins == ["assets/figures/diagram-p01.png", "assets/figures/diagram-p02.png"]
+    assert (assets_dir / "figures" / "diagram-p01.png").exists()
+
+
+def test_pdf_render_skips_pdf_that_already_yielded_raster_media(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "scanned.pdf").write_bytes(b"raster-pdf-bytes")
+    fake_render = _FakePdfRender()
+    service = IngestService(
+        _FakeDetector({"scanned.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler(with_media=True)},
+        pdf_render=fake_render,
+    )
+
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=tmp_path / "assets")
+
+    assert fake_render.calls == []  # raster already extracted -- never double-count
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert catalog["figures"] == []
+
+
+def test_pdf_render_toolchain_absent_skips_gracefully_and_warns(tmp_path: Path, capsys):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "diagram.pdf").write_bytes(b"vector-pdf-bytes")
+    service = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler(with_media=False)},
+        pdf_render=None,  # toolchain absent, exactly as `Deps` degrades it
+    )
+
+    report = service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=tmp_path / "assets")
+
+    assert report["files"][0]["status"] == "ingested"  # document still assembles
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert catalog["figures"] == []
+    assert "WARN" in capsys.readouterr().err
+
+
+def test_pdf_render_figure_catalog_deterministic_across_runs(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "diagram.pdf").write_bytes(b"vector-pdf-bytes")
+    assets_dir = tmp_path / "assets"
+
+    service_a = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler(with_media=False)},
+        pdf_render=_FakePdfRender(page_count=2),
+    )
+    service_a.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+    first = (tmp_path / "sections" / "figure-catalog.json").read_bytes()
+
+    service_b = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler(with_media=False)},
+        pdf_render=_FakePdfRender(page_count=2),
+    )
+    service_b.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+    second = (tmp_path / "sections" / "figure-catalog.json").read_bytes()
+
+    assert first == second
+    ids = [f["id"] for f in json.loads(first)["figures"]]
+    assert ids == sorted(ids)
 
 
 def test_writes_detection_report_to_inbox_with_stable_key_ordering(tmp_path: Path):

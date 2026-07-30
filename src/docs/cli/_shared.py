@@ -136,12 +136,23 @@ class Deps:
             "md": md_ingest_adapter,
             "txt": md_ingest_adapter,
         }
+        # Item F, PR5: guarded import -- pypdfium2/pillow are optional
+        # toolchain deps (doctor's `pdf_page_render` capability check, item
+        # L). Missing -> `None`, IngestService degrades to WARN + skip
+        # (design.md ADR-F), never a hard dependency for the whole CLI.
+        try:
+            from docs.infrastructure.pdf.pdfium2_pdf_render_adapter import Pdfium2PdfRenderAdapter
+
+            pdf_render_adapter = Pdfium2PdfRenderAdapter()
+        except Exception:
+            pdf_render_adapter = None
         self.ingest = IngestService(
             FiletypeDetectorAdapter(),
             ingest_handlers,
             writer=FilesystemIngestArtifactWriter(),
             image_metadata=PythonDocxImageMetadataAdapter(),
             content_probe=content_probe_adapter,
+            pdf_render=pdf_render_adapter,
         )
 
         self.assets = asset_service

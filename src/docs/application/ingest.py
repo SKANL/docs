@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplic
 from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
+from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
 from docs.domain.source_role import classify
@@ -140,6 +142,7 @@ class IngestService:
         writer: IngestArtifactWriter | None = None,
         image_metadata: ImageMetadataPort | None = None,
         content_probe: ContentProbePort | None = None,
+        pdf_render: PdfRenderPort | None = None,
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
@@ -149,6 +152,10 @@ class IngestService:
         # (design.md ADR-D) -- `None` degrades to folder/filename-only
         # classification, fail-open, never a hard dependency.
         self.content_probe = content_probe
+        # Item F, PR5: optional, injected exactly like `content_probe`
+        # (design.md ADR-F) -- `None` (toolchain unavailable) degrades to
+        # "no rendered figures, WARN", never a hard dependency.
+        self.pdf_render = pdf_render
 
     def ingest_inbox(
         self,
@@ -185,7 +192,9 @@ class IngestService:
             placements = self._route_and_queue_assets(
                 inbox_dir, declared_assets, heuristic_candidates, assets_dir
             )
-            self._build_figure_catalog(inbox_dir, sections_dir, declared_assets, heuristic_candidates)
+            self._build_figure_catalog(
+                inbox_dir, sections_dir, declared_assets, heuristic_candidates, entries, assets_dir
+            )
 
             # Front D (design.md Decision 4): classify every real source
             # entry, merge any externally-confirmed role from the PRIOR
@@ -772,6 +781,8 @@ class IngestService:
         sections_dir: Path,
         declared_assets: list[tuple[Path, str]],
         heuristic_candidates: list[tuple[Path, str]],
+        entries: list[dict[str, Any]] | None = None,
+        assets_dir: Path | None = None,
     ) -> None:
         image_candidates = [
             (path, rel)
@@ -791,5 +802,68 @@ class IngestService:
                     origin_relative_path=rel,
                 )
             )
+        figures.extend(
+            self._render_vector_pdf_figures(inbox_dir, entries or [], assets_dir)
+        )
         catalog_path = sections_dir / "figure-catalog.json"
         self.writer.write_json(catalog_path, build_figure_catalog(figures))
+
+    def _render_vector_pdf_figures(
+        self,
+        inbox_dir: Path,
+        entries: list[dict[str, Any]],
+        assets_dir: Path | None,
+    ) -> list[FigureEntry]:
+        # Item F (design.md ADR-F): a PDF that yielded zero extracted raster
+        # media (its paired `_media/` dir absent/empty -- opendataloader-pdf
+        # extracts none today) may still hold vector diagrams; render its
+        # pages so they land in the figure catalog too. Gated on the SAME
+        # `_media/` shape `_clean_orphan_media` already checks, so DOCX/ODT
+        # sources (pandoc-extracted) and any PDF with real extracted raster
+        # never get double-counted.
+        figures: list[FigureEntry] = []
+        pdf_entries = sorted(
+            (entry for entry in entries if entry.get("kind") == "pdf" and entry.get("output")),
+            key=lambda entry: entry["relative_path"],
+        )
+        for entry in pdf_entries:
+            output = Path(entry["output"])
+            media_dir = output.with_name(f"{output.stem}_media")
+            if media_dir.is_dir() and any(media_dir.iterdir()):
+                continue  # raster already extracted -- never double-count
+            if self.pdf_render is None:
+                print(
+                    f"WARN: {entry['relative_path']} podría contener figuras vectoriales, pero "
+                    "la herramienta de renderizado (pypdfium2/pillow) no está disponible; se "
+                    "omite la extracción de figuras por renderizado de página.",
+                    file=sys.stderr,
+                )
+                continue
+            if assets_dir is None:
+                continue
+            src_pdf = inbox_dir / entry["relative_path"]
+            render_dir = assets_dir / "figures"
+            try:
+                rendered_pages = self.pdf_render.render_pages(src_pdf, render_dir)
+            except Exception as exc:
+                print(
+                    f"WARN: no se pudo renderizar {entry['relative_path']} ({exc}); se omite "
+                    "la extracción de figuras por renderizado de página.",
+                    file=sys.stderr,
+                )
+                continue
+            for page_path in rendered_pages:
+                data = page_path.read_bytes()
+                dimensions = (
+                    self.image_metadata.read_dimensions(page_path) if self.image_metadata else None
+                )
+                width, height = dimensions if dimensions is not None else (None, None)
+                figures.append(
+                    FigureEntry(
+                        sha256=sha256_hex(data),
+                        width_px=width,
+                        height_px=height,
+                        origin_relative_path=f"assets/figures/{page_path.name}",
+                    )
+                )
+        return figures

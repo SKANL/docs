@@ -73,11 +73,11 @@ Chain strategy: stacked-to-main
 
 ## Phase 5: Wire PDF render adapter (F) — PR 5, depends on PR 4
 
-- [ ] 5.1 RED: vector-only PDF (no extracted raster) gains rendered-page figures
-- [ ] 5.2 GREEN: inject optional `pdf_render: PdfRenderPort | None` into `IngestService`, wire `Pdfium2PdfRenderAdapter` in `Deps` (guarded import → `None`)
-- [ ] 5.3 RED: render toolchain absent → no figures, WARN, document still assembles
-- [ ] 5.4 GREEN: gate render on empty raster extraction; append `FigureEntry` per page in `_build_figure_catalog` (`ingest.py:735`)
-- [ ] 5.5 RED: golden byte test — deterministic adapter names + sorted catalog across runs
+- [x] 5.1 RED: vector-only PDF (no extracted raster) gains rendered-page figures
+- [x] 5.2 GREEN: inject optional `pdf_render: PdfRenderPort | None` into `IngestService`, wire `Pdfium2PdfRenderAdapter` in `Deps` (guarded import → `None`)
+- [x] 5.3 RED: render toolchain absent → no figures, WARN, document still assembles
+- [x] 5.4 GREEN: gate render on empty raster extraction; append `FigureEntry` per page in `_build_figure_catalog` (`ingest.py:735`)
+- [x] 5.5 RED: golden byte test — deterministic adapter names + sorted catalog across runs
 
 ## Phase 6: Figure/table numbering + cross-ref (H) — PR 6, depends on PR 5
 

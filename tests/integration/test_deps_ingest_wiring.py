@@ -42,3 +42,13 @@ def test_deps_routes_md_and_txt_to_the_same_normalize_adapter_instance(tmp_path:
     deps = _deps(tmp_path)
     assert isinstance(deps.ingest.handlers["md"], MdNormalizeAdapter)
     assert deps.ingest.handlers["md"] is deps.ingest.handlers["txt"]
+
+
+def test_deps_wires_pdf_render_adapter_when_toolchain_available(tmp_path: Path):
+    # Item F, PR5: `pypdfium2`/`pillow` are real declared deps (pyproject.toml),
+    # so the guarded import in `Deps.__init__` must succeed here and wire a
+    # real `Pdfium2PdfRenderAdapter` into `IngestService` -- not `None`.
+    from docs.infrastructure.pdf.pdfium2_pdf_render_adapter import Pdfium2PdfRenderAdapter
+
+    deps = _deps(tmp_path)
+    assert isinstance(deps.ingest.pdf_render, Pdfium2PdfRenderAdapter)
