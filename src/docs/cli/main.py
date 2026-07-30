@@ -40,13 +40,26 @@ app.add_typer(context_app, name="context")
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        app(args=argv, standalone_mode=False)
+        # MEDIUM contract-violation fix: with `standalone_mode=False`, Click
+        # never re-raises `typer.Exit` here -- it catches it internally and
+        # returns `exit_code` as this call's RETURN VALUE instead (verified
+        # against the installed typer/click; `except typer.Exit` below is
+        # thus effectively unreachable but kept as a defensive fallback for
+        # any code path that does raise it). The old code discarded this
+        # return value and unconditionally fell through to `return 0`, so
+        # every command signaling failure via `raise typer.Exit(code=1)`
+        # (doctor, pipeline, docx/section build, ...) silently exited 0 --
+        # including `docs pipeline ingest --strict`, which AGENTS.md §1
+        # documents as restoring hard-fail for CI. A command that completes
+        # without raising `typer.Exit` returns `None` here, not an int --
+        # normalized to 0 (success).
+        result = app(args=argv, standalone_mode=False)
     except typer.Exit as exc:
         return exc.exit_code
     except Exception as exc:  # legacy main() parity (3945-3947)
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    return 0
+    return result if isinstance(result, int) else 0
 
 
 if __name__ == "__main__":
