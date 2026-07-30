@@ -75,3 +75,18 @@ def test_main_returns_nonzero_when_pipeline_ingest_reports_a_failed_stage(worksp
 def test_main_returns_zero_when_pipeline_ingest_has_nothing_to_fail(workspace):
     Deps().documents.create("doc1", "tesina")
     assert main(["pipeline", "ingest"]) == 0
+
+
+def test_main_propagates_a_nonzero_nonone_exit_code(workspace, monkeypatch):
+    # The fix must propagate an ARBITRARY exit code, not only 0/1 -- guards
+    # against a future regression that special-cases 1. `doctor` raises
+    # `typer.Exit(code=2)` when a required check fails (core_app.py). Under
+    # `--strict` the `gh` check becomes required (doctor.py); forcing
+    # `shutil.which` to None (same deterministic, environment-independent
+    # technique as the pandoc test above) makes gh unavailable -> required
+    # failure -> `result.passed` False -> exit 2 through the real entrypoint.
+    # Closes the review coverage gap where only codes 0 and 1 were exercised
+    # via main() -- the exact blind spot (CliRunner-only) that hid the bug.
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    Deps().documents.create("doc1", "tesina")
+    assert main(["doctor", "--strict"]) == 2
