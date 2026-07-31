@@ -101,7 +101,11 @@ class ReviewService:
 
         issues.extend(
             review_cross_consistency(
-                template, section_bodies, strict=strict, contested_stack_terms=normative.contested_stack_terms
+                template,
+                section_bodies,
+                strict=strict,
+                contested_stack_terms=normative.contested_stack_terms,
+                duration_consistency=normative.duration_consistency_enabled,
             ).issues
         )
 

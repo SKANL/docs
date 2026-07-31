@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from docs.application.ingest import _InlineJsonWriter
+from docs.application.inline_json_writer import InlineJsonWriter
 from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
 from docs.domain.markdown_text import clean_markdown_text
 from docs.domain.models.template import Template, Topic
@@ -168,5 +168,5 @@ class ContextService:
             "context_gaps": context_gaps,
             "section_gaps": section_gaps,
         }
-        (writer or _InlineJsonWriter()).write_json(Path(sections_dir) / "gap-report.json", report)
+        (writer or InlineJsonWriter()).write_json(Path(sections_dir) / "gap-report.json", report)
         return report

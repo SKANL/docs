@@ -14,6 +14,7 @@ from docs.domain.intake_report import render_intake_report
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
 from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
+from docs.application.inline_json_writer import InlineJsonWriter
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
@@ -114,25 +115,6 @@ def _structure_part_for_kind(kind: str, asset_name: str) -> dict[str, str]:
     return {"type": part_type, "asset": asset_name}
 
 
-class _InlineJsonWriter:
-    """Default `IngestArtifactWriter` used when the composition root does
-    not inject one -- preserves `IngestService`'s pre-Front-C constructor
-    ergonomics (dozens of existing unit tests construct it with just a
-    detector + handlers) without `application/ingest.py` importing an
-    `infrastructure/` adapter (dependency-direction rule: cli -> application
-    -> domain; infrastructure implements domain ports, never the reverse).
-    NOT atomic -- the real `FilesystemIngestArtifactWriter` (wired in
-    `cli/_shared.py` `Deps.__init__`, design.md Decision 9) is; this
-    fallback exists only so `IngestService` stays usable standalone."""
-
-    def write_json(self, path: Path, payload: dict[str, Any]) -> None:
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
-        )
-
-
 class IngestService:
     """Detects, routes, and ingests source files from an inbox directory
     (recursively — document-ingest spec: `Recursive Inbox Scan with
@@ -159,7 +141,7 @@ class IngestService:
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
-        self.writer: IngestArtifactWriter = writer or _InlineJsonWriter()
+        self.writer: IngestArtifactWriter = writer or InlineJsonWriter()
         self.image_metadata = image_metadata
         # Item D, PR4: optional, injected exactly like `image_metadata`
         # (design.md ADR-D) -- `None` degrades to folder/filename-only

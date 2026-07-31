@@ -372,6 +372,33 @@ def test_review_cross_consistency_reporte_estadia_tic_contested_stack_terms_snap
     ]
 
 
+def test_review_cross_consistency_reporte_estadia_tic_duration_mismatch_snapshot():
+    # Compat gate: estadia's template declares `cross_consistency.duration_consistency`
+    # (resolved via NormativeSettings) so the check -- and its exact wording --
+    # MUST reproduce the pre-refactor always-on behavior byte-for-byte.
+    raw = _load_raw()
+    template = _load_template()
+    normative = resolve_normative_settings(raw)
+    bodies = {
+        "introduccion": "La estadía duró 160 horas en total.",
+        "resumen": "Se cumplieron 200 horas de trabajo.",
+    }
+    result = review_cross_consistency(
+        template,
+        bodies,
+        strict=False,
+        contested_stack_terms=normative.contested_stack_terms,
+        duration_consistency=normative.duration_consistency_enabled,
+    )
+    assert [issue.to_dict() for issue in result.issues] == [
+        {
+            "severity": "warning",
+            "message": "La duración de la estadía es inconsistente entre secciones: 160 horas, 200 horas.",
+            "code": "coherence.duration_mismatch",
+        }
+    ]
+
+
 def test_review_section_text_reporte_estadia_tic_corpus_snapshot():
     template = _load_template()
     normative = resolve_normative_settings(_load_raw())
