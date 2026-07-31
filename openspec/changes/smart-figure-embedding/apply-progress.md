@@ -23,7 +23,109 @@ touched (`application/ingest.py`, `domain/figure_binding.py`,
 `application/docx_assembly.py`, `application/html_render.py` all
 untouched).
 
+## S0 — Resolved (gated S2 fixtures) — DONE
+
+- [x] 0.1 `assets_dir` at ingest AND assemble time is the SAME accessor:
+  `config["paths"]["assets_dir"]` = `str(doc_root / "assets")`
+  (`cli/_shared.py:_computed_paths:322`), populated once in
+  `Deps.resolve_context` (`cli/_shared.py:201-219`) and reused by every
+  command (`pipeline.py:stage_ingest:309` reads it the same way assemble's
+  `docx_assembly.build`/`html_render.build` will in S4). No
+  `AssetService.workspace.assets_dir` fallback needed. Recorded as a code
+  comment at `ingest.py`'s `_build_figure_catalog` (S2's assets_dir usage
+  site).
+- [x] 0.2 Confirmed: `_build_figure_catalog` only ever handles (a) standalone
+  loose images (`image_candidates` from `declared_assets`/
+  `heuristic_candidates`) and (b) vector-PDF page-renders
+  (`_render_vector_pdf_figures`) — no third arrival mode reaches this method
+  in the current codebase. Embedded-raster-inside-PDF/DOCX stays deferred
+  (design.md "Approved LEAN scope"). Noted as a code comment, no code
+  change.
+
+## S2 — Ingest wiring — DONE
+
+- [x] 2.1 RED: `tests/integration/test_ingest_assets_figures.py` —
+  `test_standalone_guia_role_image_excluded_from_figure_catalog` +
+  `test_standalone_evidence_role_image_kept_with_source_role_recorded` (new)
+- [x] 2.2 RED: same file —
+  `test_standalone_survivor_copied_to_stable_path_atomically_and_origin_rewritten`
+  (new)
+- [x] 2.3 RED: same file —
+  `test_vector_pdf_render_not_re_copied_by_standalone_copy_step` (new)
+- [x] 2.4 RED: same file —
+  `test_parent_pdf_confirmed_role_propagates_to_vector_page_renders` (new)
+- [x] 2.5 RED: `tests/integration/test_ingest_determinism.py` —
+  `test_figure_catalog_and_stable_path_assets_are_byte_identical_across_repeated_runs`
+  (new)
+- [x] 2.6 GREEN: `_build_figure_catalog` (`ingest.py`) — role resolution via
+  new `_effective_role` helper (reuses `_read_prior_confirmed_roles`
+  verbatim) + `should_catalog_figure` filter call, applied per standalone
+  candidate after role/dims are known, before append/copy.
+- [x] 2.7 GREEN: `_copy_asset` extended to temp-then-`os.replace` (atomic);
+  new `_copy_standalone_figure` helper writes surviving standalone entries
+  to `assets_dir/figures/fig-<sha8><ext>` and rewrites
+  `origin_relative_path` via `dataclasses.replace` (frozen `FigureEntry`).
+  `pdf_render` rows (`origin_kind="pdf_render"`) are never touched by this
+  step — `_render_vector_pdf_figures` already wrote them to their own
+  stable path.
+- [x] 2.8 GREEN: `_render_vector_pdf_figures` now takes `confirmed_roles`
+  and resolves role from the PARENT PDF's `entry["relative_path"]` (not the
+  per-page render path) — a confirmed PDF role overrides raw `classify()`
+  on every page-render row. Role-based drops short-circuit BEFORE
+  `render_pages` is even called (never rendered, never copied); size-based
+  drops apply per rendered page once real dims are known.
+- [x] 2.9 Full slice check green:
+  `test_ingest_assets_figures.py` + `test_ingest_determinism.py` +
+  `test_ingest_service.py` = 44 passed. Sibling regression sweep:
+  `tests/unit/application -k ingest` = 29 passed;
+  `tests/integration -k ingest` = 82 passed. Full suite: **1348 passed, 0
+  failed, 7 skipped** (S1 baseline was 1342 passed; +6 net new S2 tests).
+  `ruff check` clean on `ingest.py` + both changed test files.
+
+### Pre-existing test fixture conflicts resolved (not scope creep — a direct,
+mechanical consequence of wiring the already-approved S1 filter)
+
+Wiring `should_catalog_figure` for real exposed two latent conflicts between
+existing fixtures and the new filter, both fixed forward (root-cause, not
+weakening S1):
+
+1. **Size filter vs. 1x1 test PNGs**: every pre-existing figure-catalog test
+   used a 1x1 `_PIXEL_PNG` fixture; `MIN_FIGURE_DIMENSION_PX=100` now drops
+   anything that small. Fixed by adding a `_solid_png(width, height)` test
+   helper (same struct+zlib construction already used by
+   `_malformed_but_pillow_openable_png`, no new dependency) and bumping
+   `_FakeImageMetadata`'s fake dims from `(1, 1)` to `(200, 200)`. Affected:
+   `test_figure_catalog_written_with_hash_and_dimensions`,
+   `test_real_drop_cover_convention_asset_and_catalog_images_all_visible`,
+   `test_image_metadata_crash_is_isolated_warns_and_still_catalogs_other_images`
+   (dims/assertions updated, intent unchanged).
+2. **Role filter vs. an incidental "guia" fixture folder**:
+   `test_unproposable_image_is_cataloged_as_a_figure_not_queued_for_placement`
+   used folder `images/guia/` — its actual purpose (placement-queue
+   behavior) had nothing to do with role filtering, but "guia" folds to
+   `normative` (`source_role.py`) and would now be silently excluded.
+   Renamed the fixture folder to the lexicon-neutral `images/otros/` so the
+   test again isolates the behavior it names.
+3. **Declared-asset origin_relative_path rewrite**: `logo.png`
+   (`inbox/assets/`) is BOTH a declared asset (routed verbatim to
+   `assets_dir/logo.png`, unchanged Front F behavior) AND a standalone
+   figure candidate — the latter now gets the ADR-3 stable-path rewrite,
+   so `test_figure_catalog_includes_declared_asset_images` and the
+   real-drop acceptance test now look the figure up by `sha256[:8]`
+   instead of asserting the old literal `origin_relative_path`.
+
+Commits (branch `feat/usfe-s2-ingest`, off main `0e6ae78` — S1 merged via PR #28):
+- (see `git log feat/usfe-s2-ingest` — ingest wiring + fixture fixes)
+
+Touched only S2 files: `src/docs/application/ingest.py` (modified),
+`tests/integration/test_ingest_assets_figures.py` (modified),
+`tests/integration/test_ingest_determinism.py` (modified). No S3/S4 files
+touched (`domain/figure_binding.py`, `domain/cross_reference.py`,
+`application/section_markdown.py`, `application/docx_assembly.py`,
+`application/html_render.py` all untouched).
+
 ## Next
 
-S2 — ingest wiring (tasks 2.1–2.9) — not started. Depends on S1's
-`FigureEntry` fields + `figure_filter` (both now available).
+S3 — binding model + `number_and_resolve` embedding branch (tasks 3.1–3.7)
+— not started. Depends on S1's `FigureEntry` fields (available); independent
+of S2's ingest wiring but both feed S4.

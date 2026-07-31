@@ -21,7 +21,7 @@ S2 (real catalog+asset rows to bind) and S3 (the embedding branch) together.
 
 ## S0 — Resolve open questions (blocking prerequisite, before S2/S4 code)
 
-- [ ] **0.1** Confirm `assets_dir` source at assemble time. Read
+- [x] **0.1** Confirm `assets_dir` source at assemble time. Read
   `src/docs/cli/_shared.py` around the composition root (`Deps`, `~:322`
   per design) and trace how `docx_assembly.build` / `html_render.build`
   currently receive `config`/`assets_dir`. Confirm
@@ -29,7 +29,7 @@ S2 (real catalog+asset rows to bind) and S3 (the embedding branch) together.
   or identify the actual accessor (e.g. `AssetService.workspace.assets_dir`)
   to use in S3/S4's resolver-builder. Record the resolved answer as a code
   comment at the resolver-builder call site (S3.4/S4.1) — no separate doc.
-- [ ] **0.2** Verify how a "ficha" (figure candidate) arrives in practice:
+- [x] **0.2** Verify how a "ficha" (figure candidate) arrives in practice:
   confirm today's `inbox/` intake only ever presents it as (a) a standalone
   loose image file, or (b) a page inside a vector PDF (the two catalog
   sources `_build_figure_catalog` already handles). If a third arrival mode
@@ -93,28 +93,28 @@ Integration" (MODIFIED), asset-management "Mechanical Role Filter for
 Figure Candidates" (ADDED), asset-management "Stable Asset Path for
 Surviving Figure Candidates" (ADDED).
 
-- [ ] **2.1** RED: extend `tests/integration/test_ingest_assets_figures.py`
+- [x] **2.1** RED: extend `tests/integration/test_ingest_assets_figures.py`
   — a standalone image whose originating source resolves to
   `example`/`normative` (guia) role is EXCLUDED from `figure-catalog.json`
   (no entry) per ADR-1/ADR-2 role-resolution rule; a standalone
   `evidence`-role image IS kept with `source_role="evidence"` recorded.
   Run and confirm failure (filter not wired yet).
-- [ ] **2.2** RED: same file — a surviving standalone candidate is copied to
+- [x] **2.2** RED: same file — a surviving standalone candidate is copied to
   `assets_dir/figures/fig-<sha8><ext>` (sha8 = `sha256[:8]`, ext =
   lower-cased origin suffix) via an ATOMIC write (assert no `.tmp`/partial
   leftover on a simulated interrupt, or at minimum assert the final file
   exists and content matches); its catalog `origin_relative_path` is
   rewritten to `assets/figures/fig-<sha8><ext>` (POSIX). Confirm failure.
-- [ ] **2.3** RED: same file — a vector-PDF-rendered figure
+- [x] **2.3** RED: same file — a vector-PDF-rendered figure
   (`origin_kind="pdf_render"`) is NOT re-copied by the new standalone-copy
   step (its `_render_vector_pdf_figures` output path is untouched, no
   duplicate file). Confirm failure (fields/branch don't exist yet).
-- [ ] **2.4** RED: same file — a parent PDF with a CONFIRMED role in
+- [x] **2.4** RED: same file — a parent PDF with a CONFIRMED role in
   `_classification-queue.json` propagates that confirmed role to every
   vector-page-render row's `source_role`, overriding raw `classify()` on
   the render itself (the ADR-1 divergence case). A standalone image with
   no queue entry falls through to raw `classify(rel)`. Confirm failure.
-- [ ] **2.5** RED: same file (or `test_ingest_determinism.py`) — running
+- [x] **2.5** RED: same file (or `test_ingest_determinism.py`) — running
   ingest twice on the same inbox produces byte-identical
   `figure-catalog.json` AND byte-identical `assets_dir/figures/` contents
   (asset-management "Stable-path copy is deterministic" scenario;
@@ -122,7 +122,7 @@ Surviving Figure Candidates" (ADDED).
   survivors deterministically" scenario). Confirm failure or pre-existing
   pass-by-accident is re-verified as a REAL assertion tied to the new
   fields.
-- [ ] **2.6** GREEN: in `_build_figure_catalog` (`ingest.py:868`), for each
+- [x] **2.6** GREEN: in `_build_figure_catalog` (`ingest.py:868`), for each
   candidate (both catalog sources) compute `effective_role` via the ADR-1
   lookup (`confirmed_roles.get(rel)` if present/valid else
   `classify(rel).role`) — reuse `_read_prior_confirmed_roles` verbatim, no
@@ -130,7 +130,7 @@ Surviving Figure Candidates" (ADDED).
   height_px)` per candidate AFTER role/dims are computed and BEFORE the
   entry is appended / before the stable-path copy. Dropped candidates never
   enter the catalog and are never copied.
-- [ ] **2.7** GREEN: extend `_copy_asset` (`ingest.py:847`) to
+- [x] **2.7** GREEN: extend `_copy_asset` (`ingest.py:847`) to
   temp-then-`os.replace` (matching `atomic_ingest_write.py` /
   `filesystem_ingest_artifact_writer.py` convention). Add the standalone
   survivor copy step: deterministic name `fig-<sha8><ext>`, write into
@@ -138,12 +138,12 @@ Surviving Figure Candidates" (ADDED).
   `assets/figures/fig-<sha8><ext>` (POSIX) — only for `origin_kind ==
   "standalone"`; skip rows already written by `_render_vector_pdf_figures`
   (`origin_kind == "pdf_render"`, `ingest.py:964`, already stable-pathed).
-- [ ] **2.8** GREEN: for the vector-PDF-render source, resolve `rel` as the
+- [x] **2.8** GREEN: for the vector-PDF-render source, resolve `rel` as the
   **parent PDF's** inbox `relative_path` (in scope at
   `_render_vector_pdf_figures`, `ingest.py:948,963`) when doing the ADR-1
   role lookup, so a human-confirmed PDF role wins over raw `classify()` on
   the render row.
-- [ ] **2.9** Full slice check:
+- [x] **2.9** Full slice check:
   `uv run pytest tests/integration/test_ingest_assets_figures.py tests/integration/test_ingest_determinism.py tests/unit/application/test_ingest_service.py -q`
   green; also run
   `uv run pytest tests/unit/application -q tests/integration -k ingest -q`
