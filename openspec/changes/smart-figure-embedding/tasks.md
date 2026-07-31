@@ -162,22 +162,22 @@ Surviving Figure Candidates" (ADDED).
 Image" (ADDED, scenarios "Bound label embeds the image" / "Embedding does
 not alter numbering/cross-reference resolution").
 
-- [ ] **3.1** RED: `tests/unit/domain/test_figure_binding.py` —
+- [x] **3.1** RED: `tests/unit/domain/test_figure_binding.py` —
   `figure_width_attr`: `None` width -> `""`; a width below the
   `MAX_CONTENT_WIDTH_IN` clamp -> `f"{{width={inches}in}}"` at
   `ASSUMED_DPI=96` px/in, rounded to 2 decimals; a width that would exceed
   `MAX_CONTENT_WIDTH_IN=6.0` -> clamped to `6.0in`. Confirm failure (module
   doesn't exist).
-- [ ] **3.2** RED: same file — `figure_image_markdown(number, fig)` emits
+- [x] **3.2** RED: same file — `figure_image_markdown(number, fig)` emits
   `![Figura {N}. {caption}]({path}){width=...}` for a `BoundFigure` with a
   caption; an empty/falsy caption produces the trailing-space-stripped
   `Figura {N}.` alt text (`.rstrip()` behavior per ADR-5). Confirm failure.
-- [ ] **3.3** GREEN: implement `domain/figure_binding.py` — frozen
+- [x] **3.3** GREEN: implement `domain/figure_binding.py` — frozen
   `BoundFigure` dataclass (`label`, `catalog_id`, `path`, `width_px`,
   `height_px`, `caption`), `ASSUMED_DPI = 96`,
   `MAX_CONTENT_WIDTH_IN = 6.0`, `figure_width_attr`,
   `figure_image_markdown` exactly per ADR-5 pseudocode. Pure, no I/O.
-- [ ] **3.4** RED: extend `tests/unit/domain/test_cross_reference.py` —
+- [x] **3.4** RED: extend `tests/unit/domain/test_cross_reference.py` —
   `number_and_resolve(..., bound_figures={"label": bound_figure})`: a
   `[[figure:label]]` where `label` IS in `bound_figures` is replaced by
   `figure_image_markdown(number, fig)` (image markdown, not bare text); a
@@ -185,7 +185,7 @@ not alter numbering/cross-reference resolution").
   still resolves to the unchanged `Figura N.` text; `[[table:...]]` /
   `[[ref:...]]` labels are untouched by `bound_figures` regardless of
   content. Confirm failure (param doesn't exist yet).
-- [ ] **3.5** RED: same file — REGRESSION GUARD: every existing
+- [x] **3.5** RED: same file — REGRESSION GUARD: every existing
   `number_and_resolve` call in the current test file, run with
   `bound_figures` OMITTED (default `None`), produces byte-identical output
   to pre-change behavior (backward-compat default, design.md "Embedding
@@ -193,13 +193,13 @@ not alter numbering/cross-reference resolution").
   guarantee). This must already pass once 3.6 lands with `None` as default
   — treat any diff here as a hard regression, not an update-the-fixture
   situation.
-- [ ] **3.6** GREEN: add `bound_figures: dict[str, BoundFigure] | None =
+- [x] **3.6** GREEN: add `bound_figures: dict[str, BoundFigure] | None =
   None` param to `number_and_resolve` (`cross_reference.py:15`); in
   `_rewrite`, when the label kind is `figure` and
   `bound_figures is not None and label in bound_figures`, emit
   `figure_image_markdown(number, bound_figures[label])` instead of the
   text-only `Figura N.` path. All other label kinds/paths unchanged.
-- [ ] **3.7** Full slice check:
+- [x] **3.7** Full slice check:
   `uv run pytest tests/unit/domain/test_figure_binding.py tests/unit/domain/test_cross_reference.py -q`
   green.
 
