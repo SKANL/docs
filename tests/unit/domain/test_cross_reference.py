@@ -8,6 +8,7 @@ hand-assigning `Figura N`/`Tabla N`."""
 from __future__ import annotations
 
 from docs.domain.cross_reference import number_and_resolve
+from docs.domain.figure_binding import BoundFigure
 
 
 def test_assigns_figures_in_document_order_then_in_text_order():
@@ -99,3 +100,78 @@ def test_deterministic_across_independent_runs():
     second = number_and_resolve(list(sections))
 
     assert first == second
+
+
+def _bound_figure(label: str) -> BoundFigure:
+    return BoundFigure(
+        label=label,
+        catalog_id="fig-abcd1234",
+        path=f"/abs/assets/figures/fig-{label}.png",
+        width_px=192,
+        height_px=100,
+        caption="Organigrama del equipo.",
+    )
+
+
+def test_bound_figure_label_is_replaced_by_image_markdown():
+    sections = [("a", "[[figure:organigrama]]")]
+
+    rewritten, warnings = number_and_resolve(
+        sections, bound_figures={"organigrama": _bound_figure("organigrama")}
+    )
+
+    assert rewritten[0][1] == (
+        "![Figura 1. Organigrama del equipo.]"
+        "(/abs/assets/figures/fig-organigrama.png){width=2.0in}"
+    )
+    assert warnings == []
+
+
+def test_unbound_figure_label_still_resolves_to_text_only_caption():
+    sections = [("a", "[[figure:organigrama]] [[figure:otro]]")]
+
+    rewritten, warnings = number_and_resolve(
+        sections, bound_figures={"organigrama": _bound_figure("organigrama")}
+    )
+
+    assert rewritten[0][1] == (
+        "![Figura 1. Organigrama del equipo.]"
+        "(/abs/assets/figures/fig-organigrama.png){width=2.0in} Figura 2."
+    )
+    assert warnings == []
+
+
+def test_bound_figures_does_not_affect_table_or_ref_markers():
+    sections = [
+        ("a", "[[table:precios]] [[figure:organigrama]]"),
+        ("b", "Consulte [[ref:organigrama]] y [[ref:precios]]."),
+    ]
+
+    rewritten, warnings = number_and_resolve(
+        sections, bound_figures={"organigrama": _bound_figure("organigrama")}
+    )
+
+    body = dict(rewritten)
+    assert body["a"] == (
+        "Tabla 1. ![Figura 1. Organigrama del equipo.]"
+        "(/abs/assets/figures/fig-organigrama.png){width=2.0in}"
+    )
+    assert body["b"] == "Consulte Ver Figura 1 y Ver Tabla 1."
+    assert warnings == []
+
+
+def test_bound_figures_omitted_reproduces_todays_output_byte_for_byte():
+    # Regression guard (task 3.5): every call site that does not pass
+    # bound_figures at all must be untouched by this feature -- default
+    # None must behave exactly like before the param existed.
+    sections = [
+        ("intro", "[[figure:foo]] texto [[figure:bar]] mas"),
+        ("cierre", "[[figure:baz]]"),
+    ]
+
+    rewritten, warnings = number_and_resolve(sections)
+
+    body = dict(rewritten)
+    assert body["intro"] == "Figura 1. texto Figura 2. mas"
+    assert body["cierre"] == "Figura 3."
+    assert warnings == []

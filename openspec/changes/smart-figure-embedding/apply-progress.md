@@ -124,8 +124,70 @@ touched (`domain/figure_binding.py`, `domain/cross_reference.py`,
 `application/section_markdown.py`, `application/docx_assembly.py`,
 `application/html_render.py` all untouched).
 
+## S3 — Binding model + `number_and_resolve` embedding branch — DONE
+
+- [x] 3.1 RED: `tests/unit/domain/test_figure_binding.py` (new) —
+  `figure_width_attr` cases (None -> "", below-clamp -> `{width=<in>in}` at
+  `ASSUMED_DPI=96` rounded to 2 decimals, above-clamp -> `{width=6.0in}`).
+  Confirmed failure: `ModuleNotFoundError: No module named
+  'docs.domain.figure_binding'`.
+- [x] 3.2 RED: same file — `figure_image_markdown` cases (captioned ->
+  `![Figura N. caption](path){width=...}`, empty caption -> rstripped
+  `Figura N.`). Same RED as 3.1 (module didn't exist).
+- [x] 3.3 GREEN: `src/docs/domain/figure_binding.py` (new) — frozen
+  `BoundFigure` (`label`, `catalog_id`, `path`, `width_px`, `height_px`,
+  `caption`), `ASSUMED_DPI=96`, `MAX_CONTENT_WIDTH_IN=6.0`,
+  `figure_width_attr`, `figure_image_markdown` exactly per ADR-5. Pure, no
+  I/O. `tests/unit/domain/test_figure_binding.py` = 5 passed.
+- [x] 3.4 RED: extended `tests/unit/domain/test_cross_reference.py` — 3 new
+  cases: bound `[[figure:label]]` -> image markdown
+  (`test_bound_figure_label_is_replaced_by_image_markdown`); unbound label
+  in the same bound_figures call -> unchanged `Figura N.` text
+  (`test_unbound_figure_label_still_resolves_to_text_only_caption`);
+  `[[table:]]`/`[[ref:]]` untouched by bound_figures
+  (`test_bound_figures_does_not_affect_table_or_ref_markers`). Confirmed
+  failure: `TypeError: number_and_resolve() got an unexpected keyword
+  argument 'bound_figures'` (3 failed, 9 passed — the 9 include the
+  regression-guard test below, which already passed pre-change by
+  definition).
+- [x] 3.5 RED (regression guard):
+  `test_bound_figures_omitted_reproduces_todays_output_byte_for_byte` — every
+  existing `number_and_resolve` call with `bound_figures` omitted stays
+  byte-identical. Verified passing both before AND after 3.6 (no diff at any
+  point — a real regression guard, not a fixture update).
+- [x] 3.6 GREEN: `src/docs/domain/cross_reference.py` — added
+  `bound_figures: dict[str, BoundFigure] | None = None` param to
+  `number_and_resolve`; new `_figure_sub` closure in `_rewrite`: when
+  `bound_figures is not None and label in bound_figures`, emits
+  `figure_image_markdown(number, bound_figures[label])`, else the unchanged
+  `Figura N.` text. `[[table:]]`/`[[ref:]]` paths untouched. Domain->domain
+  import of `BoundFigure`/`figure_image_markdown` from `figure_binding.py`
+  (allowed per hexagonal rules — both pure `domain/`).
+- [x] 3.7 Full slice check green:
+  `tests/unit/domain/test_figure_binding.py` +
+  `tests/unit/domain/test_cross_reference.py` = 17 passed. Full suite:
+  **1358 passed, 0 failed, 7 skipped** (S2 baseline was 1348 passed; +10 net
+  new/changed assertions across 9 new test functions — 5 in
+  `test_figure_binding.py`, 4 in `test_cross_reference.py`). `ruff check`
+  clean on all 4 changed/new files
+  (`src/docs/domain/figure_binding.py`,
+  `src/docs/domain/cross_reference.py`,
+  `tests/unit/domain/test_figure_binding.py`,
+  `tests/unit/domain/test_cross_reference.py`).
+
+Commits (branch `feat/usfe-s3-binding`, off main with S1+S2 merged):
+- (see `git log feat/usfe-s3-binding` — binding model + cross_reference
+  embedding branch)
+
+Touched only S3 files: `src/docs/domain/figure_binding.py` (new),
+`src/docs/domain/cross_reference.py` (modified),
+`tests/unit/domain/test_figure_binding.py` (new),
+`tests/unit/domain/test_cross_reference.py` (modified). No S4 files touched
+(`application/section_markdown.py`, `application/docx_assembly.py`,
+`application/html_render.py` all untouched); no S1/S2 files re-touched.
+
 ## Next
 
-S3 — binding model + `number_and_resolve` embedding branch (tasks 3.1–3.7)
-— not started. Depends on S1's `FigureEntry` fields (available); independent
-of S2's ingest wiring but both feed S4.
+S4 — assembly integration, degradation, determinism/estadia
+characterization (tasks 4.1–4.10) — not started. Depends on S2's real
+ingest-produced catalog/asset rows AND S3's embedding branch together.
