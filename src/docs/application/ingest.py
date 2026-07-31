@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
+import tempfile
+from dataclasses import replace as _dataclass_replace
 from pathlib import Path
 from typing import Any
 
 from docs.domain.figure_catalog import FigureEntry, build as build_figure_catalog
+from docs.domain.figure_filter import should_catalog_figure
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.intake_report import render_intake_report
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
@@ -845,8 +849,19 @@ class IngestService:
         return placements
 
     def _copy_asset(self, src: Path, assets_dir: Path, name: str) -> None:
+        # Temp-then-atomic-rename (ADR-3; matches the established
+        # `atomic_ingest_write.py` convention already used by ingest
+        # adapters) -- a failure mid-copy never leaves a partial file at the
+        # deterministic `name` path a later idempotency check could accept.
         assets_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, assets_dir / name)
+        fd, tmp_name = tempfile.mkstemp(dir=assets_dir, prefix=".asset-tmp-")
+        try:
+            os.close(fd)
+            shutil.copyfile(src, tmp_name)
+            os.replace(tmp_name, assets_dir / name)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
 
     def _read_prior_confirmed_placements(self, inbox_dir: Path) -> dict[str, str]:
         queue_path = inbox_dir / _PLACEMENT_QUEUE_NAME
@@ -864,6 +879,34 @@ class IngestService:
         return confirmed
 
     # --- Front F: figure catalog (design.md Decision 6b) -----------------
+    #
+    # S0.2 (smart-figure-embedding): today's `inbox/` intake only ever
+    # presents a figure candidate as (a) a standalone loose image file
+    # (`image_candidates` below) or (b) a page inside a vector PDF
+    # (`_render_vector_pdf_figures`) -- the two branches this method
+    # handles. Embedded-raster-inside-a-PDF/DOCX extraction is deferred
+    # (design.md "Approved LEAN scope"); no third arrival mode reaches this
+    # method today, so no fixture/branch for it is added here.
+
+    def _effective_role(self, rel: str, confirmed_roles: dict[str, str]) -> str:
+        # ADR-1 role resolution: a validated confirmed role (already
+        # filtered against `_VALID_ROLES` by `_read_prior_confirmed_roles`)
+        # wins over raw `classify()` -- a human/agent confirmation beats
+        # the folder/filename heuristic.
+        role = confirmed_roles.get(rel)
+        if role is not None:
+            return role
+        return classify(rel)[0]
+
+    def _copy_standalone_figure(self, src: Path, entry: FigureEntry, assets_dir: Path) -> FigureEntry:
+        # ADR-3 stable-path copy: deterministic `fig-<sha8><ext>` name so a
+        # later `assemble` stage (inbox gone) can resolve every catalog row
+        # uniformly, regardless of `origin_kind`.
+        sha8 = entry.sha256[:8]
+        ext = Path(entry.origin_relative_path).suffix.lower()
+        name = f"fig-{sha8}{ext}"
+        self._copy_asset(src, assets_dir / "figures", name)
+        return _dataclass_replace(entry, origin_relative_path=f"assets/figures/{name}")
 
     def _build_figure_catalog(
         self,
@@ -874,6 +917,12 @@ class IngestService:
         entries: list[dict[str, Any]] | None = None,
         assets_dir: Path | None = None,
     ) -> None:
+        # S0.1: `assets_dir` here is the SAME value `stage_ingest`
+        # (`application/pipeline.py`) resolves from
+        # `config["paths"]["assets_dir"]` (`cli/_shared.py:_computed_paths`,
+        # `doc_root / "assets"`) -- confirmed at the composition root, no
+        # new accessor needed.
+        confirmed_roles = self._read_prior_confirmed_roles(inbox_dir)
         image_candidates = [
             (path, rel)
             for path, rel in (*declared_assets, *heuristic_candidates)
@@ -884,16 +933,29 @@ class IngestService:
             data = path.read_bytes()
             dimensions = self._read_image_dimensions(path, rel)
             width, height = dimensions if dimensions is not None else (None, None)
-            figures.append(
-                FigureEntry(
-                    sha256=sha256_hex(data),
-                    width_px=width,
-                    height_px=height,
-                    origin_relative_path=rel,
-                )
+            # ADR-1: standalone images are `heuristic_candidates`, excluded
+            # from `sources`, so they are never in the classification queue
+            # today -- the lookup falls through to raw `classify(rel)`.
+            source_role = self._effective_role(rel, confirmed_roles)
+            # ADR-2 mechanical filter: applied AFTER role/dims are computed,
+            # BEFORE the entry is appended / before the stable-path copy --
+            # a dropped candidate never enters the catalog and is never
+            # copied.
+            if not should_catalog_figure(source_role, width, height):
+                continue
+            entry = FigureEntry(
+                sha256=sha256_hex(data),
+                width_px=width,
+                height_px=height,
+                origin_relative_path=rel,
+                source_role=source_role,
+                origin_kind="standalone",
             )
+            if assets_dir is not None:
+                entry = self._copy_standalone_figure(path, entry, assets_dir)
+            figures.append(entry)
         figures.extend(
-            self._render_vector_pdf_figures(inbox_dir, entries or [], assets_dir)
+            self._render_vector_pdf_figures(inbox_dir, entries or [], assets_dir, confirmed_roles)
         )
         catalog_path = sections_dir / "figure-catalog.json"
         self.writer.write_json(catalog_path, build_figure_catalog(figures))
@@ -932,6 +994,7 @@ class IngestService:
         inbox_dir: Path,
         entries: list[dict[str, Any]],
         assets_dir: Path | None,
+        confirmed_roles: dict[str, str],
     ) -> list[FigureEntry]:
         # Item F (design.md ADR-F): a PDF that yielded zero extracted raster
         # media (its paired `_media/` dir absent/empty -- opendataloader-pdf
@@ -950,6 +1013,15 @@ class IngestService:
             media_dir = output.with_name(f"{output.stem}_media")
             if media_dir.is_dir() and any(media_dir.iterdir()):
                 continue  # raster already extracted -- never double-count
+            # ADR-1 divergence case: the PDF itself is a real
+            # classification-queue source (unlike a standalone image), so
+            # its human-CONFIRMED role wins over raw `classify()` -- every
+            # page-render this PDF yields inherits it. Role-based drops
+            # (ADR-2) short-circuit BEFORE rendering even runs -- a
+            # normative/example-role PDF is never rendered, never copied.
+            source_role = self._effective_role(entry["relative_path"], confirmed_roles)
+            if not should_catalog_figure(source_role, None, None):
+                continue
             if self.pdf_render is None:
                 print(
                     f"WARN: {entry['relative_path']} podría contener figuras vectoriales, pero "
@@ -977,12 +1049,26 @@ class IngestService:
                     self.image_metadata.read_dimensions(page_path) if self.image_metadata else None
                 )
                 width, height = dimensions if dimensions is not None else (None, None)
+                # ADR-2 filter, re-applied per page (dims are only known
+                # after rendering; the role-only pre-check above already
+                # skipped rendering entirely for a dropped role).
+                if not should_catalog_figure(source_role, width, height):
+                    # render_pages already wrote this PNG under assets_dir/figures/
+                    # before dims were known -- unlike the standalone branch
+                    # (which filters before copying), so a sub-threshold render
+                    # must be removed here or it becomes an orphan file no
+                    # cleanup pass covers (ADR-2: dropped candidates are never
+                    # copied/kept on disk).
+                    page_path.unlink(missing_ok=True)
+                    continue
                 figures.append(
                     FigureEntry(
                         sha256=sha256_hex(data),
                         width_px=width,
                         height_px=height,
                         origin_relative_path=f"assets/figures/{page_path.name}",
+                        source_role=source_role,
+                        origin_kind="pdf_render",
                     )
                 )
         return figures
