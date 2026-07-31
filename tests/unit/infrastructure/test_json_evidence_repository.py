@@ -103,9 +103,14 @@ def test_write_manifest_skips_write_when_content_unchanged_ignoring_generated_at
 def test_write_manifest_rewrites_with_new_generated_at_when_content_changes(tmp_path: Path, repo):
     path = tmp_path / "manifest.json"
     repo.write_manifest(path, {"schema": 1, "manual_files": []})
-    first_generated_at = json.loads(path.read_text(encoding="utf-8"))["generated_at"]
     repo.write_manifest(path, {"schema": 1, "manual_files": [{"name": "x.md"}]})
     second = json.loads(path.read_text(encoding="utf-8"))
+    # The rewrite is proven by the updated `manual_files` (an early-return
+    # no-rewrite would have left it `[]`). `generated_at` cannot be compared
+    # across the two writes: it is a wall-clock second-granularity stamp
+    # (datetime.now().isoformat(timespec="seconds")), so back-to-back writes
+    # in the same second share the same value -- asserting it changed would be
+    # flaky. We assert only that it is present.
     assert second["manual_files"] == [{"name": "x.md"}]
     assert "generated_at" in second
 

@@ -41,3 +41,9 @@ packages = ["src/docs"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules deliberately co-locate imports with the test section that uses
+# them (often right below an explanatory comment), so E402 (import-not-at-top)
+# is expected and intentional in tests -- not suppressed for src/.
+"tests/**/*.py" = ["E402"]

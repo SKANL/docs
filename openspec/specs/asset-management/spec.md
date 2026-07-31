@@ -100,8 +100,12 @@ MUST NOT receive a default placement.
 
 The system MUST build a deterministic figure catalog for image/figure
 assets, recording content hash, dimensions, origin, and source subfolder for
-each figure. Sections MUST be able to reference captioned figures from this
-catalog.
+each figure. The catalog is a deterministic INVENTORY of ingested figure
+assets. Referencing figures and resolving their captions/numbers at assembly
+is owned by the document-render capability's symbolic-label mechanism (see
+document-render "Figure and Table Auto-Numbering"): the catalog records the
+asset metadata, and the render layer resolves author-facing references by
+symbolic label -- there is no separate catalog-identifier reference syntax.
 
 #### Scenario: Catalog is byte-identical across runs
 
@@ -115,9 +119,11 @@ catalog.
 - WHEN its catalog entry is inspected
 - THEN it records the content hash, dimensions, origin, and source subfolder
 
-#### Scenario: A section resolves a referenced captioned figure
+#### Scenario: Figure references resolve at assembly via the render layer
 
-- GIVEN a section that references a figure present in the catalog by its
-  catalog identifier
+- GIVEN a section that references a figure by a symbolic label (per the
+  document-render capability) and that figure is present in the catalog
 - WHEN the document is assembled
-- THEN the referenced figure and its caption resolve correctly
+- THEN the reference, its caption, and its number resolve correctly through
+  the document-render symbolic-label mechanism, while the catalog remains the
+  deterministic inventory of the underlying asset
