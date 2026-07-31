@@ -11,6 +11,8 @@ class FigureEntry:
     height_px: int | None
     origin_relative_path: str
     caption: str = ""
+    source_role: str = ""
+    origin_kind: str = ""
 
 
 def build(entries: list[FigureEntry]) -> dict:
@@ -26,6 +28,8 @@ def build(entries: list[FigureEntry]) -> dict:
             "height_px": entry.height_px,
             "origin_relative_path": entry.origin_relative_path,
             "caption": entry.caption,
+            "source_role": entry.source_role,
+            "origin_kind": entry.origin_kind,
         }
         for entry in entries
     ]
