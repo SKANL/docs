@@ -186,8 +186,126 @@ Touched only S3 files: `src/docs/domain/figure_binding.py` (new),
 (`application/section_markdown.py`, `application/docx_assembly.py`,
 `application/html_render.py` all untouched); no S1/S2 files re-touched.
 
+## S4 — Assembly integration, degradation, determinism/estadia characterization — DONE
+
+- [x] 4.1 RED: `tests/unit/application/test_figure_resolver.py` (new, 6
+  cases per ADR-4/ADR-6): absent bindings file -> empty resolver; malformed
+  bindings file -> empty resolver; existing file + non-null dims -> included
+  as `BoundFigure` with absolute path; missing file -> excluded + WARN
+  ("imagen no encontrada"); null dims -> excluded + WARN ("sin
+  dimensiones"); unknown catalog id -> excluded + WARN. Confirmed failure:
+  `ModuleNotFoundError: No module named 'docs.application.figure_resolver'`.
+- [x] 4.2 GREEN: `src/docs/application/figure_resolver.py` (new) —
+  `build_bound_figures_resolver(sections_dir, assets_dir)`: fail-open JSON
+  reads of `figure-bindings.json`/`figure-catalog.json` (same pattern as
+  `_read_prior_confirmed_roles`), joins by catalog id, validates per ADR-6
+  (file exists under `assets_dir/figures/` AND non-null `width_px`/
+  `height_px`), resolves the path uniformly as
+  `Path(assets_dir)/"figures"/Path(origin_relative_path).name`. `tests/unit/application/test_figure_resolver.py`
+  = 6 passed.
+- [x] 4.3 RED: `tests/unit/application/test_section_markdown.py` (new — no
+  prior coverage of `strip_frontmatter_to_temp` existed) — 4 cases: omitted
+  `bound_figures` byte-identical to today; explicit `bound_figures=None`
+  same; provided `bound_figures` forwarded to `number_and_resolve` (image
+  markdown in output); unbound label with `bound_figures` given still
+  resolves to text-only caption. Confirmed failure: `TypeError:
+  strip_frontmatter_to_temp() got an unexpected keyword argument
+  'bound_figures'` (1 passed, 3 failed — the 1 pre-existing-shape case
+  already passed by definition).
+- [x] 4.4 GREEN: `src/docs/application/section_markdown.py` —
+  `strip_frontmatter_to_temp(sections, bound_figures=None)` forwards
+  `bound_figures` to `number_and_resolve` unchanged. `tests/unit/application/test_section_markdown.py`
+  = 4 passed.
+- [x] 4.5 RED: `tests/integration/test_docx_assembly_service.py` — a bound
+  `[[figure:label]]` (via `figure-bindings.json` fixture + a real
+  `_solid_png` image under `assets_dir/figures/`) assembled `.docx` zip
+  contains a `word/media/` entry (`test_build_embeds_bound_figure_and_leaves_unbound_label_text_only`);
+  an unbound label in the same document produces no additional media entry
+  and stays `Figura N.` text-only. Confirmed failure: `assert 0 == 1` (no
+  media entry — wiring didn't exist yet).
+- [x] 4.6 RED: same file — missing bound image file -> build completes, no
+  crash, caption-only, WARN naming the label
+  (`test_build_degrades_gracefully_when_bound_image_file_is_missing`);
+  corrupt-but-present bound image -> same degrade+WARN outcome, mapped to
+  the SAME signal the ingest layer already uses for a corrupted image (file
+  present under `assets_dir/figures/`, but its catalog row carries null
+  `width_px`/`height_px` because ingest's dimension read already failed on
+  it — ADR-6 explicitly reuses that catalog signal instead of a new
+  file-reopening port in the renderer, so this is the resolver's existing
+  null-dims guard exercised against a present file, not new validation code)
+  (`test_build_degrades_gracefully_for_corrupt_but_present_bound_image`);
+  one degraded figure among several bound figures still embeds every other
+  figure normally, 2 media entries out of 3 bound labels
+  (`test_build_embeds_healthy_figures_when_one_bound_figure_among_several_is_degraded`).
+  Confirmed failure: `assert 'WARN' in ''` / `assert 0 == 2` (wiring didn't
+  exist yet, 4 failed total across 4.5+4.6).
+- [x] 4.7 GREEN: wired `build_bound_figures_resolver` into
+  `docx_assembly.py` (`DocxRendererAdapter._resolve_bound_figures` +
+  `build`) and `html_render.py` (`HtmlRendererAdapter.build`): both build the
+  `label -> BoundFigure` dict from `config["paths"]["sections_dir"]` +
+  `config["paths"]["assets_dir"]` (fail-open to `{}` when either key is
+  absent, e.g. minimal test-fixture configs with no figures — reproduces
+  current behavior exactly, verified against 3.5's default-`None` guarantee
+  end-to-end). `tests/integration/test_docx_assembly_service.py` +
+  `tests/unit/application/test_html_render.py` = 50 passed (34 pre-existing
+  docx_assembly + 4 new S4 + 12 html_render, all green).
+- [x] 4.8 RED+GREEN together (characterization): extended
+  `tests/integration/test_docx_zip_determinism.py` with
+  `test_build_with_bound_figure_is_byte_identical_across_repeated_runs` —
+  builds twice via the real `DocxRendererAdapter.build()` end-to-end path
+  with a bound figure, asserts byte-identical output files and a real
+  `word/media/` entry. Passed on first run (no separate RED needed per
+  task — already green once 4.7 landed, confirming no new
+  clock/random/path-embedding surface). `tests/integration/test_docx_zip_determinism.py`
+  = 6 passed (5 pre-existing + 1 new).
+- [x] 4.9 Regression gate: `tests/integration/test_technical_report_srs_acceptance.py`
+  = 6 passed (estadia/reporte-estadia-tic characterization untouched). Full
+  suite: **1373 passed, 0 failed, 7 skipped** (S3 baseline was 1358 passed;
+  +15 net new S4 tests: 6 resolver + 4 section_markdown + 4 docx_assembly
+  integration + 1 determinism). No regression.
+- [x] 4.10 Full slice check green:
+  `tests/integration/test_docx_assembly_service.py` +
+  `tests/integration/test_docx_zip_determinism.py` +
+  `tests/unit/application` = 169 passed. `ruff check` clean on all 8
+  changed/new files.
+
+### Deviation note: design ADR-6 residual-risk vs. tasks.md 4.6 "corrupt-but-present"
+
+Design.md ADR-6 explicitly flags a corrupt-on-disk-after-ingest image as a
+"residual (low) risk... noted, not built" for v1 (the resolver only reuses
+the catalog's already-recorded dims as the readability signal, deliberately
+NOT re-opening the file to re-validate it). tasks.md 4.6 asks for a
+"corrupt-but-present" test case with the SAME degrade+WARN+no-crash outcome
+as a missing file. These are reconciled, not in conflict: a corrupt image is
+exactly the case ingest's existing `_read_image_dimensions` graceful
+degradation already handles by recording `width_px=None`/`height_px=None`
+in the catalog while still copying the raw (corrupt) bytes to
+`assets_dir/figures/`. The resolver's existing null-dims guard (task 4.2,
+built strictly per ADR-6, zero new code) therefore already produces exactly
+the required degrade+WARN+no-crash outcome for a corrupt-but-present file —
+confirmed empirically: real pandoc, given a garbage-byte "image" file with a
+valid `width_px`/`height_px` catalog row, does NOT raise (embeds the broken
+bytes as media and python-docx opens the result fine) — so ADR-6's residual
+risk about pandoc's `check=True` crashing does not manifest for this pandoc
+version either, and no additional validation code beyond ADR-6's two checks
+was needed or added.
+
+Commits (branch `feat/usfe-s4-assembly`, off main with S1+S2+S3 merged):
+- (see `git log feat/usfe-s4-assembly` — resolver-builder + assembly wiring
+  + degradation/determinism tests)
+
+Touched only S4 files: `src/docs/application/figure_resolver.py` (new),
+`src/docs/application/section_markdown.py` (modified),
+`src/docs/application/docx_assembly.py` (modified),
+`src/docs/application/html_render.py` (modified),
+`tests/unit/application/test_figure_resolver.py` (new),
+`tests/unit/application/test_section_markdown.py` (new),
+`tests/integration/test_docx_assembly_service.py` (modified),
+`tests/integration/test_docx_zip_determinism.py` (modified). No S1/S2/S3
+files re-touched.
+
 ## Next
 
-S4 — assembly integration, degradation, determinism/estadia
-characterization (tasks 4.1–4.10) — not started. Depends on S2's real
-ingest-produced catalog/asset rows AND S3's embedding branch together.
+Task 5.1 (spec-delta merge into `openspec/specs/`) is deferred to the
+archive phase per the orchestrator's instruction — not done in this apply
+batch. All 4 code slices (S1-S4) are now complete and green.
