@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import re
 
+from docs.domain.figure_binding import BoundFigure, figure_image_markdown
+
 # ponytail: same `[[...]]` marker family as `[[TOC]]` (section_rendering.py:34)
 # and `[[figure:fig-<sha8>]]` (figure_catalog.py:9) -- no new syntax family.
 # Labels are symbolic slugs (author-chosen, not catalog sha8 ids); the
@@ -14,6 +16,7 @@ _REF_RE = re.compile(r"\[\[ref:([\w-]+)\]\]")
 
 def number_and_resolve(
     ordered_sections: list[tuple[str, str]],
+    bound_figures: dict[str, BoundFigure] | None = None,
 ) -> tuple[list[tuple[str, str]], list[str]]:
     """Pure numbering + cross-reference pass (design.md item H, ADR-H).
 
@@ -30,6 +33,15 @@ def number_and_resolve(
     (e.g. a section that already hand-writes `Figura N.`) passes through
     unchanged -- backward compatible with documents authored before this
     feature existed.
+
+    `bound_figures` (design.md ADR-4/ADR-5) is the application-resolved
+    `label -> BoundFigure` map. When a `[[figure:label]]` marker's label is
+    a key in `bound_figures`, it is replaced by pandoc-embeddable image
+    markdown (`figure_image_markdown`) instead of the plain `Figura N.`
+    text -- embedding never changes numbering, only the marker's
+    replacement. Default `None` (or a label absent from the map) reproduces
+    the unchanged text-only path byte-for-byte -- every existing caller
+    that omits this argument is unaffected.
     """
     figure_numbers: dict[str, int] = {}
     table_numbers: dict[str, int] = {}
@@ -41,8 +53,15 @@ def number_and_resolve(
 
     warnings: list[str] = []
 
+    def _figure_sub(match: re.Match[str]) -> str:
+        label = match.group(1)
+        number = figure_numbers[label]
+        if bound_figures is not None and label in bound_figures:
+            return figure_image_markdown(number, bound_figures[label])
+        return f"Figura {number}."
+
     def _rewrite(section_id: str, text: str) -> str:
-        text = _FIGURE_LABEL_RE.sub(lambda m: f"Figura {figure_numbers[m.group(1)]}.", text)
+        text = _FIGURE_LABEL_RE.sub(_figure_sub, text)
         text = _TABLE_LABEL_RE.sub(lambda m: f"Tabla {table_numbers[m.group(1)]}.", text)
 
         def _ref_sub(match: re.Match[str]) -> str:
