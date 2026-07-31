@@ -1,12 +1,7 @@
 # src/docs/domain/figure_catalog.py
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-
-# ponytail: simple `[[figure:fig-XXXXXXXX]]` marker, mirrors the existing
-# `[[TOC]]` convention in section_rendering.py -- no new syntax family.
-_FIGURE_REF_RE = re.compile(r"\[\[figure:(fig-[0-9a-f]{8})\]\]")
 
 
 @dataclass(frozen=True)
@@ -38,10 +33,11 @@ def build(entries: list[FigureEntry]) -> dict:
     return {"figures": figures}
 
 
-def resolve_section_figures(text: str, catalog: dict) -> list[dict | None]:
-    """A section body resolves each `[[figure:fig-<id>]]` reference against
-    `catalog` (spec: "A section resolves a referenced captioned figure").
-    A reference to an id absent from the catalog resolves to `None` --
-    never guessed, never silently dropped from the result list."""
-    by_id = {figure["id"]: figure for figure in catalog.get("figures", [])}
-    return [by_id.get(figure_id) for figure_id in _FIGURE_REF_RE.findall(text)]
+# ponytail: the catalog carries `width_px`/`height_px`/`caption`, but today
+# the only production consumer is `status._count_figures` (which reads just
+# `len(figures)`) -- those fields are written, not yet read, and `caption` is
+# never even populated (both FigureEntry construction sites in ingest.py omit
+# it). The spec mandates the deterministic catalog, so the fields stay; wiring
+# a render-time consumer that resolves `[[figure:fig-<sha8>]]` markers back to
+# these entries is the intended next step (a `resolve_section_figures` helper
+# once existed here for exactly that but had zero callers, so it was removed).

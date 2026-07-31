@@ -6,7 +6,7 @@ dimensions, origin, caption. `id` is a stable hash-derived token
 guessed (determinism preserved)."""
 from __future__ import annotations
 
-from docs.domain.figure_catalog import FigureEntry, build, resolve_section_figures
+from docs.domain.figure_catalog import FigureEntry, build
 
 
 def test_build_produces_fig_id_from_sha256_prefix():
@@ -58,32 +58,3 @@ def test_build_is_byte_identical_across_two_independent_builds():
     first = json.dumps(build(list(entries)), sort_keys=True)
     second = json.dumps(build(list(reversed(entries))), sort_keys=True)
     assert first == second
-
-
-# --- 10.10: section resolves a referenced captioned figure --------------
-
-
-def test_resolve_section_figures_finds_and_resolves_referenced_figure():
-    catalog = build(
-        [FigureEntry(sha256="f" * 64, width_px=100, height_px=50, origin_relative_path="f.png", caption="Diagrama")]
-    )
-    text = "Ver la figura a continuación. [[figure:fig-" + "f" * 8 + "]] Fin de la sección."
-
-    resolved = resolve_section_figures(text, catalog)
-
-    assert len(resolved) == 1
-    assert resolved[0]["id"] == "fig-" + "f" * 8
-    assert resolved[0]["caption"] == "Diagrama"
-
-
-def test_resolve_section_figures_reports_missing_reference_as_none():
-    catalog = build([])
-    text = "[[figure:fig-deadbeef]]"
-
-    resolved = resolve_section_figures(text, catalog)
-
-    assert resolved == [None]
-
-
-def test_resolve_section_figures_empty_when_no_reference():
-    assert resolve_section_figures("Texto sin referencias a figuras.", build([])) == []

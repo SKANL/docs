@@ -26,8 +26,7 @@ def number_and_resolve(
     label marker to its `Figura N.`/`Tabla M.` caption prefix and each
     `[[ref:label]]` to `Ver Figura N`/`Ver Tabla M`. An unresolvable ref
     becomes `Ver Figura ?` plus a warning naming the label -- never a
-    silent guess (mirrors `resolve_section_figures` returning `None` for
-    unknown catalog ids, figure_catalog.py:44-46). Text with no markers
+    silent guess. Text with no markers
     (e.g. a section that already hand-writes `Figura N.`) passes through
     unchanged -- backward compatible with documents authored before this
     feature existed.
