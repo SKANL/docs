@@ -25,6 +25,22 @@ _PIXEL_PNG = base64.b64decode(
 )
 
 
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+
+def _solid_png(width: int, height: int) -> bytes:
+    """A minimal, genuinely-parseable RGB PNG at the given size (no Pillow
+    dependency -- same struct+zlib construction as
+    `_malformed_but_pillow_openable_png` below). Used wherever a figure-size-
+    filter test (`MIN_FIGURE_DIMENSION_PX`) needs real dimensions above the
+    threshold rather than the 1x1 `_PIXEL_PNG`."""
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)  # 8-bit RGB
+    raw = b"".join(b"\x00" + bytes([180, 180, 180] * width) for _ in range(height))
+    idat = zlib.compress(raw)
+    return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+
+
 def _malformed_but_pillow_openable_png() -> bytes:
     """A hand-built 4x4 RGBA PNG whose IDAT chunk declares a length 8 bytes
     longer than its actual compressed data (a "raw"/non-Pillow encoder's
@@ -71,9 +87,40 @@ class _TextEchoHandler:
 
 class _FakeImageMetadata:
     def read_dimensions(self, path: Path) -> tuple[int, int] | None:
+        # 200x200: comfortably above `MIN_FIGURE_DIMENSION_PX` (100) so the
+        # mechanical size filter (ADR-2) never masks the role-based
+        # assertions these fixture-driven tests exist to check.
         if path.suffix.lower() == ".png":
-            return (1, 1)
+            return (200, 200)
         return None
+
+
+class _FakePdfRender:
+    """Fake `PdfRenderPort`: writes N deterministic PNGs (mirrors
+    `tests/unit/application/test_ingest_service.py`'s copy)."""
+
+    def __init__(self, page_count: int = 1) -> None:
+        self.page_count = page_count
+
+    def render_pages(
+        self, pdf_path: Path, out_dir: Path, dpi: int = 150, pages: str | None = None, autotrim: bool = True
+    ) -> list[Path]:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        written = []
+        for index in range(self.page_count):
+            dest = out_dir / f"{Path(pdf_path).stem}-p{index + 1:02d}.png"
+            dest.write_bytes(_PIXEL_PNG)
+            written.append(dest)
+        return written
+
+
+class _FakePdfHandler:
+    def ingest(self, src: Path, out_dir: Path, kind: str) -> Path:
+        sha8 = hashlib.sha256(src.read_bytes()).hexdigest()[:8]
+        target = out_dir / f"{src.stem}-{kind}-{sha8}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("# pdf", encoding="utf-8")
+        return target
 
 
 def _service(kind_by_name: dict[str, str]) -> IngestService:
@@ -144,9 +191,14 @@ def test_unproposable_image_is_cataloged_as_a_figure_not_queued_for_placement(tm
     Queueing it would flood the confirmation queue with unanswerable entries --
     the real drop produced 59 such nulls against 1 real cover. It is still kept
     out of markdown ingest and still reported, just never queued."""
+    # Folder "otros" ("others") deliberately carries NO role-lexicon signal
+    # (unlike "guia") -- this test is about placement-queue behavior, not
+    # role filtering (that is `test_standalone_guia_role_image_excluded_*`
+    # below), so its fixture must not incidentally collide with ADR-2's
+    # mechanical role filter.
     inbox = tmp_path / "inbox"
-    (inbox / "images" / "guia").mkdir(parents=True)
-    (inbox / "images" / "guia" / "page-001-image-001.png").write_bytes(_PIXEL_PNG)
+    (inbox / "images" / "otros").mkdir(parents=True)
+    (inbox / "images" / "otros" / "page-001-image-001.png").write_bytes(_PIXEL_PNG)
     service = _service({})
 
     report = service.ingest_inbox(inbox, tmp_path / "sections")
@@ -155,11 +207,11 @@ def test_unproposable_image_is_cataloged_as_a_figure_not_queued_for_placement(tm
     assert queue["entries"] == {}
     catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
     assert [f["origin_relative_path"] for f in catalog["figures"]] == [
-        "images/guia/page-001-image-001.png"
+        "images/otros/page-001-image-001.png"
     ]
     # Reported (never silently dropped), never flattened to markdown either.
     assert report["ignored"] == [
-        {"relative_path": "images/guia/page-001-image-001.png", "reason": "asset_candidate"}
+        {"relative_path": "images/otros/page-001-image-001.png", "reason": "asset_candidate"}
     ]
 
 
@@ -269,8 +321,10 @@ def test_figure_catalog_written_with_hash_and_dimensions(tmp_path: Path):
     catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     figure = catalog["figures"][0]
     assert figure["sha256"] == hashlib.sha256(_PIXEL_PNG).hexdigest()
-    assert figure["width_px"] == 1
-    assert figure["height_px"] == 1
+    assert figure["width_px"] == 200
+    assert figure["height_px"] == 200
+    # No `assets_dir` passed -> no stable-path copy (ADR-3 is gated on it) --
+    # origin_relative_path stays the raw inbox-relative path.
     assert figure["origin_relative_path"] == "images/page-001.png"
 
 
@@ -283,7 +337,10 @@ def test_figure_catalog_includes_declared_asset_images(tmp_path: Path):
     service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=tmp_path / "assets")
 
     catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
-    assert catalog["figures"][0]["origin_relative_path"] == "assets/logo.png"
+    # `assets_dir` IS passed -> the surviving declared-asset image gets the
+    # ADR-3 stable-path copy + origin_relative_path rewrite.
+    sha8 = hashlib.sha256(_PIXEL_PNG).hexdigest()[:8]
+    assert catalog["figures"][0]["origin_relative_path"] == f"assets/figures/fig-{sha8}.png"
 
 
 def test_figure_catalog_determinism_two_runs_byte_identical(tmp_path: Path):
@@ -317,11 +374,18 @@ def test_real_drop_cover_convention_asset_and_catalog_images_all_visible(tmp_pat
     (inbox / "images" / "guia-referencia-estadia-tic").mkdir(parents=True)
     (inbox / "assets").mkdir(parents=True)
 
+    # `_solid_png` (>=100px, real+parseable) rather than the 1x1 `_PIXEL_PNG`
+    # -- these two must survive ADR-2's size filter to prove the rest of the
+    # acceptance scenario (stable-path copy, dims-in-catalog).
+    logo_bytes = _solid_png(150, 150)
+    parseable_bytes = _solid_png(120, 130)
+    unparseable_bytes = b"not-a-real-image"
+
     (inbox / "cover.docx").write_bytes(b"docx-bytes")
-    (inbox / "assets" / "logo.png").write_bytes(_PIXEL_PNG)
+    (inbox / "assets" / "logo.png").write_bytes(logo_bytes)
     images_dir = inbox / "images" / "guia-referencia-estadia-tic"
-    (images_dir / "page-001-image-001.png").write_bytes(_PIXEL_PNG)
-    (images_dir / "page-002-image-002.png").write_bytes(b"not-a-real-image")
+    (images_dir / "page-001-image-001.png").write_bytes(parseable_bytes)
+    (images_dir / "page-002-image-002.png").write_bytes(unparseable_bytes)
 
     assets_dir = tmp_path / "assets"
     service = IngestService(
@@ -338,22 +402,37 @@ def test_real_drop_cover_convention_asset_and_catalog_images_all_visible(tmp_pat
     queue = json.loads((inbox / "_placement-queue.json").read_text(encoding="utf-8"))
     assert queue["entries"]["cover.docx"]["proposed_kind"] == "cover"
 
-    # inbox/assets/logo.png: routed unconditionally, physically copied.
-    assert (assets_dir / "logo.png").read_bytes() == _PIXEL_PNG
+    # inbox/assets/logo.png: still routed unconditionally to assets_dir root
+    # (Front F declared-asset routing -- unrelated to the figure-catalog
+    # stable-path copy below, a separate copy of the same bytes).
+    assert (assets_dir / "logo.png").read_bytes() == logo_bytes
     assert {"relative_path": "assets/logo.png", "reason": "assets_subtree"} in report["ignored"]
 
-    # figure catalog: real parseable PNGs get real dimensions; the
-    # genuinely unparseable file gets null dimensions -- NEVER guessed.
+    # figure catalog: real parseable PNGs get real dimensions AND the ADR-3
+    # stable `assets/figures/fig-<sha8>.png` origin; the genuinely
+    # unparseable file gets null dimensions -- NEVER guessed -- but is still
+    # copied to its own stable path (null-dims fail-open per ADR-2).
     catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
-    by_origin = {f["origin_relative_path"]: f for f in catalog["figures"]}
-    assert by_origin["assets/logo.png"]["width_px"] == 1
-    assert by_origin["assets/logo.png"]["height_px"] == 1
-    parseable = by_origin["images/guia-referencia-estadia-tic/page-001-image-001.png"]
-    assert parseable["width_px"] == 1
-    assert parseable["height_px"] == 1
-    unparseable = by_origin["images/guia-referencia-estadia-tic/page-002-image-002.png"]
+    by_sha8 = {f["sha256"][:8]: f for f in catalog["figures"]}
+    logo_sha8 = hashlib.sha256(logo_bytes).hexdigest()[:8]
+    parseable_sha8 = hashlib.sha256(parseable_bytes).hexdigest()[:8]
+    unparseable_sha8 = hashlib.sha256(unparseable_bytes).hexdigest()[:8]
+
+    logo_figure = by_sha8[logo_sha8]
+    assert logo_figure["width_px"] == 150
+    assert logo_figure["height_px"] == 150
+    assert logo_figure["origin_relative_path"] == f"assets/figures/fig-{logo_sha8}.png"
+    assert (assets_dir / "figures" / f"fig-{logo_sha8}.png").read_bytes() == logo_bytes
+
+    parseable = by_sha8[parseable_sha8]
+    assert parseable["width_px"] == 120
+    assert parseable["height_px"] == 130
+    assert parseable["origin_relative_path"] == f"assets/figures/fig-{parseable_sha8}.png"
+
+    unparseable = by_sha8[unparseable_sha8]
     assert unparseable["width_px"] is None
     assert unparseable["height_px"] is None
+    assert unparseable["origin_relative_path"] == f"assets/figures/fig-{unparseable_sha8}.png"
 
     # Nothing silent: every dropped file is accounted for somewhere.
     reported_files = {e["relative_path"] for e in report["files"]}
@@ -381,7 +460,10 @@ def test_image_metadata_crash_is_isolated_warns_and_still_catalogs_other_images(
     inbox = tmp_path / "inbox"
     (inbox / "images").mkdir(parents=True)
     (inbox / "images" / "bad.png").write_bytes(_malformed_but_pillow_openable_png())
-    (inbox / "images" / "good.png").write_bytes(_PIXEL_PNG)
+    # >=100px (`_solid_png`, not the 1x1 `_PIXEL_PNG`) so it survives ADR-2's
+    # size filter and this test stays about the CRASH-isolation guarantee,
+    # not an incidental size-filter drop.
+    (inbox / "images" / "good.png").write_bytes(_solid_png(120, 90))
     (inbox / "notes.md").write_text("# hello", encoding="utf-8")
     service = IngestService(
         _FakeDetector({"notes.md": "md"}),
@@ -401,9 +483,125 @@ def test_image_metadata_crash_is_isolated_warns_and_still_catalogs_other_images(
     assert by_origin["images/bad.png"]["width_px"] is None
     assert by_origin["images/bad.png"]["height_px"] is None
     # The OTHER image is unaffected -- real dimensions still read.
-    assert by_origin["images/good.png"]["width_px"] == 1
-    assert by_origin["images/good.png"]["height_px"] == 1
+    assert by_origin["images/good.png"]["width_px"] == 120
+    assert by_origin["images/good.png"]["height_px"] == 90
 
     stderr = capsys.readouterr().err
     assert "images/bad.png" in stderr
     assert "UnexpectedEndOfFileError" in stderr  # non-empty diagnostic, not "ERROR: "
+
+
+# --- S2 (smart-figure-embedding): role resolution, filter, stable-path copy,
+# and confirmed-role propagation wired into `_build_figure_catalog`
+# (design.md ADR-1/ADR-2/ADR-3; tasks.md 2.1-2.4) --------------------------
+
+
+def test_standalone_guia_role_image_excluded_from_figure_catalog(tmp_path: Path):
+    """A standalone image whose folder resolves to `normative` (guia-folded,
+    ADR-1) is excluded from the catalog entirely -- never appended, never
+    copied (ADR-2)."""
+    inbox = tmp_path / "inbox"
+    (inbox / "guia").mkdir(parents=True)
+    (inbox / "guia" / "diagrama.png").write_bytes(_PIXEL_PNG)
+    service = _service({})
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert catalog["figures"] == []
+
+
+def test_standalone_evidence_role_image_kept_with_source_role_recorded(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    (inbox / "evidencia").mkdir(parents=True)
+    (inbox / "evidencia" / "captura.png").write_bytes(_PIXEL_PNG)
+    service = _service({})
+
+    service.ingest_inbox(inbox, tmp_path / "sections")
+
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    figure = catalog["figures"][0]
+    assert figure["origin_relative_path"] == "evidencia/captura.png"
+    assert figure["source_role"] == "evidence"
+    assert figure["origin_kind"] == "standalone"
+
+
+def test_standalone_survivor_copied_to_stable_path_atomically_and_origin_rewritten(tmp_path: Path):
+    inbox = tmp_path / "inbox"
+    (inbox / "evidencia").mkdir(parents=True)
+    (inbox / "evidencia" / "captura.PNG").write_bytes(_PIXEL_PNG)
+    assets_dir = tmp_path / "assets"
+    service = _service({})
+
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+
+    sha8 = hashlib.sha256(_PIXEL_PNG).hexdigest()[:8]
+    stable_name = f"fig-{sha8}.png"  # lower-cased origin suffix (ADR-3)
+    stable_path = assets_dir / "figures" / stable_name
+    assert stable_path.read_bytes() == _PIXEL_PNG
+    # Atomic write (ADR-3): no leftover temp file after a clean run.
+    assert list((assets_dir / "figures").glob(".asset-tmp-*")) == []
+
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    figure = catalog["figures"][0]
+    assert figure["origin_relative_path"] == f"assets/figures/{stable_name}"
+    assert figure["source_role"] == "evidence"
+
+
+def test_vector_pdf_render_not_re_copied_by_standalone_copy_step(tmp_path: Path):
+    """`origin_kind="pdf_render"` rows are already written by
+    `_render_vector_pdf_figures` directly into `assets_dir/figures/` -- the
+    standalone stable-path copy step (ADR-3) must skip them, never
+    double-copy."""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "diagram.pdf").write_bytes(b"vector-pdf-bytes")
+    assets_dir = tmp_path / "assets"
+    service = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler()},
+        image_metadata=_FakeImageMetadata(),
+        pdf_render=_FakePdfRender(page_count=1),
+    )
+
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+
+    rendered = sorted(p.name for p in (assets_dir / "figures").iterdir())
+    assert rendered == ["diagram-p01.png"]  # no duplicate `fig-<sha8>` copy
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    figure = catalog["figures"][0]
+    assert figure["origin_kind"] == "pdf_render"
+    assert figure["origin_relative_path"] == "assets/figures/diagram-p01.png"
+
+
+def test_parent_pdf_confirmed_role_propagates_to_vector_page_renders(tmp_path: Path):
+    """ADR-1 divergence case: a PDF is a real classification-queue source,
+    so its human-CONFIRMED role overrides raw `classify()` on every one of
+    its page-render rows."""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "diagram.pdf").write_bytes(b"vector-pdf-bytes")
+    assets_dir = tmp_path / "assets"
+    service = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler()},
+        image_metadata=_FakeImageMetadata(),
+        pdf_render=_FakePdfRender(page_count=1),
+    )
+
+    # First scan: no confirmed role yet -- raw classify("diagram.pdf") has no
+    # folder/filename lexicon signal -> "unknown", kept (fail-open).
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+    first_catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert first_catalog["figures"][0]["source_role"] == "unknown"
+
+    queue_path = inbox / "_classification-queue.json"
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    queue["entries"]["diagram.pdf"]["confirmed_role"] = "normative"
+    queue_path.write_text(json.dumps(queue), encoding="utf-8")
+
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+
+    # Confirmed "normative" now wins over raw classify() -> dropped (ADR-2).
+    second_catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert second_catalog["figures"] == []

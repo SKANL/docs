@@ -154,6 +154,32 @@ def test_partially_processed_inbox_only_converts_new_files_without_corrupting_pr
     assert already_output.read_bytes() == already_bytes, "prior output must not be touched"
 
 
+# --- S2 (smart-figure-embedding): stable-path figure copy is deterministic
+# (design.md ADR-3; tasks.md 2.5) ------------------------------------------
+
+
+def test_figure_catalog_and_stable_path_assets_are_byte_identical_across_repeated_runs(
+    tmp_path: Path,
+):
+    inbox = tmp_path / "inbox"
+    (inbox / "evidencia").mkdir(parents=True)
+    (inbox / "evidencia" / "captura.png").write_bytes(_PIXEL_PNG)
+    assets_dir = tmp_path / "assets"
+    sections_dir = tmp_path / "sections"
+
+    _real_ingest_service().ingest_inbox(inbox, sections_dir, assets_dir=assets_dir)
+    first_catalog = (sections_dir / "figure-catalog.json").read_bytes()
+    first_figures = {p.name: p.read_bytes() for p in sorted((assets_dir / "figures").iterdir())}
+
+    _real_ingest_service().ingest_inbox(inbox, sections_dir, assets_dir=assets_dir)
+    second_catalog = (sections_dir / "figure-catalog.json").read_bytes()
+    second_figures = {p.name: p.read_bytes() for p in sorted((assets_dir / "figures").iterdir())}
+
+    assert first_catalog == second_catalog
+    assert first_figures == second_figures
+    assert first_figures  # sanity: the survivor was actually copied
+
+
 def test_empty_inbox_completes_without_error_and_reports_zero_processed(tmp_path: Path):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
