@@ -58,3 +58,52 @@ def test_build_is_byte_identical_across_two_independent_builds():
     first = json.dumps(build(list(entries)), sort_keys=True)
     second = json.dumps(build(list(reversed(entries))), sort_keys=True)
     assert first == second
+
+
+def test_figure_entry_source_role_and_origin_kind_default_empty():
+    entry = FigureEntry(sha256="f" * 64, width_px=1, height_px=1, origin_relative_path="f.png")
+    assert entry.source_role == ""
+    assert entry.origin_kind == ""
+
+
+def test_build_round_trips_source_role_and_origin_kind():
+    entries = [
+        FigureEntry(
+            sha256="g" * 64,
+            width_px=640,
+            height_px=480,
+            origin_relative_path="images/evidence/page-001-image-001.png",
+            caption="Figura evidencia",
+            source_role="evidence",
+            origin_kind="standalone",
+        )
+    ]
+    figure = build(entries)["figures"][0]
+    assert figure["source_role"] == "evidence"
+    assert figure["origin_kind"] == "standalone"
+
+
+def test_build_with_new_fields_is_byte_identical_across_two_independent_builds():
+    entries = [
+        FigureEntry(
+            sha256="h" * 64,
+            width_px=10,
+            height_px=20,
+            origin_relative_path="h.png",
+            source_role="evidence",
+            origin_kind="standalone",
+        ),
+        FigureEntry(
+            sha256="i" * 64,
+            width_px=None,
+            height_px=None,
+            origin_relative_path="i.bmp",
+            source_role="unknown",
+            origin_kind="pdf_render",
+        ),
+    ]
+    import json
+
+    first = json.dumps(build(list(entries)), sort_keys=True)
+    second = json.dumps(build(list(reversed(entries))), sort_keys=True)
+    assert first == second
