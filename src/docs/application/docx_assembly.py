@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.asset import AssetService
+from docs.application.figure_resolver import build_bound_figures_resolver
 from docs.application.output_names import resolve_body_docx_name, resolve_draft_docx_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
 from docs.domain.docx_structure import sections_index, structure_parts
+from docs.domain.figure_binding import BoundFigure
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 
@@ -73,6 +75,20 @@ class DocxRendererAdapter:
             embed_back_paths=back,
         )
 
+    def _resolve_bound_figures(self, config: dict[str, Any]) -> dict[str, BoundFigure]:
+        # S4 (design.md ADR-4/ADR-6): join `figure-catalog.json` +
+        # `figure-bindings.json` under the SAME `sections_dir`/`assets_dir`
+        # the assemble config already carries (S0.1:
+        # `config["paths"]["assets_dir"]`, `cli/_shared.py:_computed_paths`).
+        # A config missing either key (e.g. a minimal test fixture with no
+        # figures) reproduces today's behavior -- empty resolver, no wiring.
+        paths = config.get("paths", {})
+        sections_dir = paths.get("sections_dir")
+        assets_dir = paths.get("assets_dir")
+        if not sections_dir or not assets_dir:
+            return {}
+        return build_bound_figures_resolver(Path(sections_dir), Path(assets_dir))
+
     def build(self, doc_id: str, config: dict[str, Any], output: Path | None = None) -> Path:
         pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
         if not pandoc:
@@ -90,18 +106,23 @@ class DocxRendererAdapter:
         # Legacy strips YAML/JSON frontmatter from each section before invoking
         # pandoc. `split_frontmatter` (docs.domain.markdown_text) already matches
         # that behavior byte-for-byte; reused here rather than re-derived.
-        stripped_sections = self._strip_frontmatter_to_temp(existing_sections)
+        bound_figures = self._resolve_bound_figures(config)
+        stripped_sections = self._strip_frontmatter_to_temp(existing_sections, bound_figures)
         self.port.render_pandoc(pandoc, stripped_sections, body_docx)
         self.assemble(doc_id, config, body_docx, output)
         self.port.insert_toc_field(output)
         return output
 
-    def _strip_frontmatter_to_temp(self, sections: list[Path]) -> list[Path]:
+    def _strip_frontmatter_to_temp(
+        self, sections: list[Path], bound_figures: dict[str, BoundFigure] | None = None
+    ) -> list[Path]:
         # Item H (design.md, ADR-H): number `[[figure:]]`/`[[table:]]` labels
         # and resolve `[[ref:]]` cross-references in document order (the
         # order `sections` already arrives in) before pandoc ever sees the
         # text -- a pure, deterministic pass; text with no markers (e.g. a
         # section that already hand-writes `Figura N.`) passes through
         # unchanged. Delegates to the shared `section_markdown` helper (PR2)
-        # so `HtmlRendererAdapter` reuses the exact same pass.
-        return strip_frontmatter_to_temp(sections)
+        # so `HtmlRendererAdapter` reuses the exact same pass. `bound_figures`
+        # (S4, design.md ADR-4/ADR-5) forwards to the numbering pass so a
+        # bound `[[figure:label]]` becomes pandoc-embeddable image markdown.
+        return strip_frontmatter_to_temp(sections, bound_figures)
