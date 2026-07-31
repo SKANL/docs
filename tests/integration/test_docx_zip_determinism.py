@@ -1,16 +1,25 @@
 # tests/integration/test_docx_zip_determinism.py
 from __future__ import annotations
 
+import json
 import shutil
+import struct
+import subprocess
 import time as time_module
 import zipfile
+import zlib
 from pathlib import Path
 
 import pytest
 from docx import Document
 
+from docs.application.asset import AssetService
+from docs.application.docx_assembly import DocxRendererAdapter
+from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.deterministic_zip import SENTINEL_CORE_XML_DATETIME, SENTINEL_DATE_TIME
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 
 
 def _save_body_docx(tmp_path: Path, name: str = "body.docx") -> Path:
@@ -150,3 +159,83 @@ def test_render_pandoc_output_is_byte_identical_across_a_real_wall_clock_gap(tmp
     PythonDocxAssemblyAdapter().render_pandoc(pandoc_path, [markdown], second)
 
     assert first.read_bytes() == second.read_bytes()
+
+
+# --- bound-figure embedding: byte-identical rebuild (S4, ADR-5/ADR-7) ---------
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+
+def _solid_png(width: int, height: int) -> bytes:
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)  # 8-bit RGB
+    raw = b"".join(b"\x00" + bytes([180, 180, 180] * width) for _ in range(height))
+    idat = zlib.compress(raw)
+    return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_with_bound_figure_is_byte_identical_across_repeated_runs(tmp_path):
+    # Characterization, not new behavior (tasks.md S4 4.8): embedding a bound
+    # figure introduces no clock/random data, and the absolute path in the
+    # intermediate markdown is only pandoc's read handle -- it never enters
+    # the output bytes (design.md ADR-5). This must already pass once 4.7's
+    # wiring is correct; a failure here is a real determinism bug.
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    asset_service = AssetService(FilesystemAssetRepository(), workspace)
+    assets_dir = workspace.assets_dir("doc-1")
+    figures_dir = assets_dir / "figures"
+    figures_dir.mkdir(parents=True)
+    (figures_dir / "fig-abc12345.png").write_bytes(_solid_png(150, 100))
+
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text(
+        "# Resumen\n\n[[figure:organigrama]] Organigrama del equipo.\n", encoding="utf-8"
+    )
+    (sections_dir / "figure-catalog.json").write_text(
+        json.dumps(
+            {
+                "figures": [
+                    {
+                        "id": "fig-abc12345",
+                        "sha256": "0" * 64,
+                        "width_px": 150,
+                        "height_px": 100,
+                        "origin_relative_path": "assets/figures/fig-abc12345.png",
+                        "caption": "Organigrama del equipo",
+                        "source_role": "evidence",
+                        "origin_kind": "standalone",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (sections_dir / "figure-bindings.json").write_text(
+        json.dumps({"schema": 1, "bindings": {"organigrama": "fig-abc12345"}}), encoding="utf-8"
+    )
+
+    seed = tmp_path / "_seed_template.md"
+    seed.write_text("Plantilla.\n", encoding="utf-8")
+    template = tmp_path / "template.docx"
+    subprocess.run([shutil.which("pandoc"), str(seed), "-o", str(template)], check=True)
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(tmp_path / "draft"),
+            "template_docx": str(template),
+            "assets_dir": str(assets_dir),
+        },
+    }
+    service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
+
+    first = service.build("doc-1", config, output=tmp_path / "draft" / "first.docx")
+    second = service.build("doc-1", config, output=tmp_path / "draft" / "second.docx")
+
+    assert first.read_bytes() == second.read_bytes()
+    with zipfile.ZipFile(first) as archive:
+        assert any(name.startswith("word/media/") for name in archive.namelist())

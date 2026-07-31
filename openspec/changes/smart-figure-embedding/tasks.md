@@ -223,7 +223,7 @@ Image" (ADDED), document-render "Graceful Degradation on Missing or
 Corrupt Bound Image" (ADDED), document-render "Embedded-Image Build
 Determinism" (ADDED).
 
-- [ ] **4.1** RED: unit test for the application-layer resolver-builder
+- [x] **4.1** RED: unit test for the application-layer resolver-builder
   (label -> `BoundFigure`, joining `figure-catalog.json` +
   `figure-bindings.json`) — per ADR-4/ADR-6:
   - absent/malformed `figure-bindings.json` -> empty resolver (fail-open,
@@ -238,7 +238,7 @@ Determinism" (ADDED).
   - a binding whose catalog row has null `width_px`/`height_px` -> excluded
     + WARN ("sin dimensiones")
   Confirm failure (builder doesn't exist yet).
-- [ ] **4.2** GREEN: implement the resolver-builder in `application/`
+- [x] **4.2** GREEN: implement the resolver-builder in `application/`
   (co-located with or adjacent to `docx_assembly.build`/`html_render.build`
   — do not put this in `domain/`, it does file-existence I/O). Read
   `sections/figure-catalog.json` + `sections/figure-bindings.json` (same
@@ -246,35 +246,35 @@ Determinism" (ADDED).
   file path via `Path(assets_dir) / "figures" / Path(origin_relative_path).name`
   (uniform for both `origin_kind`s per ADR-3), return `dict[str,
   BoundFigure]`. Resolve the `assets_dir` source per task 0.1's finding.
-- [ ] **4.3** RED: `strip_frontmatter_to_temp` (`section_markdown.py:27`) —
+- [x] **4.3** RED: `strip_frontmatter_to_temp` (`section_markdown.py:27`) —
   extend its test coverage (none exists today per codegraph — this is new
   coverage, not just new cases) to assert the `bound_figures` param, when
   provided, is forwarded to `number_and_resolve` unchanged; when omitted,
   output is byte-identical to current behavior. Confirm failure (param
   doesn't exist).
-- [ ] **4.4** GREEN: add `bound_figures: dict[str, BoundFigure] | None =
+- [x] **4.4** GREEN: add `bound_figures: dict[str, BoundFigure] | None =
   None` to `strip_frontmatter_to_temp`, forward to `number_and_resolve`.
-- [ ] **4.5** RED: `tests/integration/test_docx_assembly_service.py` — a
+- [x] **4.5** RED: `tests/integration/test_docx_assembly_service.py` — a
   section with a `[[figure:label]]` bound (via a `figure-bindings.json`
   fixture + a real image fixture under `assets_dir/figures/`) produces an
   assembled `.docx` whose zip contains a `word/media/` entry for that image
   (assert via zip inspection, not just markdown intermediate); an UNbound
   label in the same document produces NO new `word/media/` entry and the
   text-only `Figura N.` caption. Confirm failure (wiring doesn't exist).
-- [ ] **4.6** RED: same file — missing bound image file -> build completes
+- [x] **4.6** RED: same file — missing bound image file -> build completes
   (no crash), caption/number still resolve, no image embedded for that
   figure, output includes a WARN naming the label/file; corrupt-but-present
   image file -> same degrade-and-WARN outcome, build still completes;
   a document with ONE degraded figure among several bound figures embeds
   every other figure normally (asset-management/document-render "One
   degraded figure does not affect other figures"). Confirm failure.
-- [ ] **4.7** GREEN: wire the resolver-builder (4.2) into
+- [x] **4.7** GREEN: wire the resolver-builder (4.2) into
   `docx_assembly.build` (`docx_assembly.py:93`) and `html_render.build`
   (`html_render.py:60`): build the `label -> BoundFigure` dict from
   catalog+bindings+assets_dir, pass to `strip_frontmatter_to_temp`. Passing
   nothing (no bindings file / empty catalog) reproduces current behavior —
   verify against 3.5's default-`None` guarantee end-to-end.
-- [ ] **4.8** RED + GREEN together (characterization, not new behavior):
+- [x] **4.8** RED + GREEN together (characterization, not new behavior):
   extend `tests/integration/test_docx_zip_determinism.py` with a
   bound-figure fixture case — build twice, assert byte-identical output
   files (document-render "Embedded build is byte-identical across runs").
@@ -283,14 +283,14 @@ Determinism" (ADDED).
   markdown" — absolute path is pandoc's read handle only, never enters
   output bytes); treat a failure here as a real determinism bug, not a
   fixture issue.
-- [ ] **4.9** Regression gate (no code change expected): run
+- [x] **4.9** Regression gate (no code change expected): run
   `uv run pytest tests/integration/test_technical_report_srs_acceptance.py -q`
   and the full suite
   (`uv run pytest -q`) to confirm the estadia/reporte-estadia-tic
   characterization fixtures and every pre-existing test stay green with
   `bound_figures` unused (default path). Any regression here blocks the
   slice — fix forward in S4, do not weaken S1-S3 to compensate.
-- [ ] **4.10** Full slice check:
+- [x] **4.10** Full slice check:
   `uv run pytest tests/integration/test_docx_assembly_service.py tests/integration/test_docx_zip_determinism.py tests/unit/application -q`
   green.
 

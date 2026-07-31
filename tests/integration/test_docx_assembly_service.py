@@ -1,8 +1,12 @@
 # tests/integration/test_docx_assembly_service.py
 from __future__ import annotations
 
+import json
 import shutil
+import struct
 import subprocess
+import zipfile
+import zlib
 from pathlib import Path
 
 import pytest
@@ -15,6 +19,41 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+
+def _solid_png(width: int, height: int) -> bytes:
+    """A minimal, genuinely-parseable RGB PNG at the given size (same
+    struct+zlib construction as `test_ingest_assets_figures.py::_solid_png`)
+    -- pandoc must be able to embed a real image for the media-entry
+    assertions below."""
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)  # 8-bit RGB
+    raw = b"".join(b"\x00" + bytes([180, 180, 180] * width) for _ in range(height))
+    idat = zlib.compress(raw)
+    return b"\x89PNG\r\n\x1a\n" + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", idat) + _png_chunk(b"IEND", b"")
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _figure_catalog_row(
+    catalog_id: str, *, width_px: int | None = 150, height_px: int | None = 100, name: str | None = None
+) -> dict:
+    return {
+        "id": catalog_id,
+        "sha256": "0" * 64,
+        "width_px": width_px,
+        "height_px": height_px,
+        "origin_relative_path": f"assets/figures/{name or catalog_id}.png",
+        "caption": "Organigrama del equipo",
+        "source_role": "evidence",
+        "origin_kind": "standalone",
+    }
 
 
 def _pandoc_styled_docx(tmp_path: Path, text: str, name: str) -> Path:
@@ -515,3 +554,208 @@ def test_build_numbers_figures_and_resolves_refs_across_sections(tmp_path, servi
     texts = [p.text for p in document.paragraphs]
     assert any("Figura 1. Organigrama del equipo." in t for t in texts)
     assert any("Consulte Ver Figura 1 para más detalle." in t for t in texts)
+
+
+# --- build: bound-figure embedding, degradation, determinism (S4, ADR-4/5/6) ---
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_embeds_bound_figure_and_leaves_unbound_label_text_only(tmp_path, workspace, service):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    draft_dir = tmp_path / "draft"
+    (sections_dir / "001-resumen.md").write_text(
+        "# Resumen\n\n[[figure:organigrama]] Organigrama del equipo.\n\n"
+        "[[figure:no-vinculada]] Otra figura sin vincular.\n",
+        encoding="utf-8",
+    )
+    assets_dir = workspace.assets_dir("doc-1")
+    figures_dir = assets_dir / "figures"
+    figures_dir.mkdir(parents=True)
+    (figures_dir / "fig-abc12345.png").write_bytes(_solid_png(150, 100))
+    _write_json(sections_dir / "figure-catalog.json", {"figures": [_figure_catalog_row("fig-abc12345")]})
+    _write_json(
+        sections_dir / "figure-bindings.json",
+        {"schema": 1, "bindings": {"organigrama": "fig-abc12345"}},
+    )
+    template = _pandoc_styled_docx(tmp_path, "Plantilla.", "template.docx")
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(draft_dir),
+            "template_docx": str(template),
+            "assets_dir": str(assets_dir),
+        },
+    }
+
+    output = service.build("doc-1", config)
+
+    with zipfile.ZipFile(output) as archive:
+        media_entries = [name for name in archive.namelist() if name.startswith("word/media/")]
+    # Exactly one image embedded -- the BOUND figure only, the unbound label
+    # never reaches pandoc as an image reference.
+    assert len(media_entries) == 1
+
+    document = Document(str(output))
+    texts = [p.text for p in document.paragraphs]
+    assert any("Organigrama del equipo" in t for t in texts)
+    assert any("Figura 2. Otra figura sin vincular." in t for t in texts)
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_degrades_gracefully_when_bound_image_file_is_missing(tmp_path, workspace, service, capsys):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    draft_dir = tmp_path / "draft"
+    (sections_dir / "001-resumen.md").write_text(
+        "# Resumen\n\n[[figure:organigrama]] Organigrama del equipo.\n", encoding="utf-8"
+    )
+    assets_dir = workspace.assets_dir("doc-1")
+    # No file written under assets_dir/figures/ -- the bound image is missing.
+    _write_json(sections_dir / "figure-catalog.json", {"figures": [_figure_catalog_row("fig-abc12345")]})
+    _write_json(
+        sections_dir / "figure-bindings.json",
+        {"schema": 1, "bindings": {"organigrama": "fig-abc12345"}},
+    )
+    template = _pandoc_styled_docx(tmp_path, "Plantilla.", "template.docx")
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(draft_dir),
+            "template_docx": str(template),
+            "assets_dir": str(assets_dir),
+        },
+    }
+
+    output = service.build("doc-1", config)  # must not raise
+
+    with zipfile.ZipFile(output) as archive:
+        media_entries = [name for name in archive.namelist() if name.startswith("word/media/")]
+    assert media_entries == []
+    document = Document(str(output))
+    assert any("Figura 1. Organigrama del equipo." in p.text for p in document.paragraphs)
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err
+    assert "organigrama" in captured.err
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_degrades_gracefully_for_corrupt_but_present_bound_image(tmp_path, workspace, service, capsys):
+    # "Corrupt-but-present" (tasks.md S4 4.6) maps to the SAME signal the
+    # ingest layer already uses for a corrupted image (`_read_image_dimensions`
+    # graceful degradation, ingest.py): the raw file DID get copied to
+    # `assets_dir/figures/` (present), but its catalog row carries null
+    # `width_px`/`height_px` because ingest's dimension read failed on it.
+    # ADR-6 explicitly reuses that catalog signal instead of re-opening the
+    # file in the renderer (no new port dependency here), so this is the
+    # resolver's existing null-dims guard exercised against a present file.
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    draft_dir = tmp_path / "draft"
+    (sections_dir / "001-resumen.md").write_text(
+        "# Resumen\n\n[[figure:organigrama]] Organigrama del equipo.\n", encoding="utf-8"
+    )
+    assets_dir = workspace.assets_dir("doc-1")
+    figures_dir = assets_dir / "figures"
+    figures_dir.mkdir(parents=True)
+    (figures_dir / "fig-abc12345.png").write_bytes(b"not-a-real-image-just-garbage-bytes")
+    _write_json(
+        sections_dir / "figure-catalog.json",
+        {"figures": [_figure_catalog_row("fig-abc12345", width_px=None, height_px=None)]},
+    )
+    _write_json(
+        sections_dir / "figure-bindings.json",
+        {"schema": 1, "bindings": {"organigrama": "fig-abc12345"}},
+    )
+    template = _pandoc_styled_docx(tmp_path, "Plantilla.", "template.docx")
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(draft_dir),
+            "template_docx": str(template),
+            "assets_dir": str(assets_dir),
+        },
+    }
+
+    output = service.build("doc-1", config)  # must not raise
+
+    with zipfile.ZipFile(output) as archive:
+        media_entries = [name for name in archive.namelist() if name.startswith("word/media/")]
+    assert media_entries == []
+    document = Document(str(output))
+    assert any("Figura 1. Organigrama del equipo." in p.text for p in document.paragraphs)
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err
+    assert "sin dimensiones" in captured.err
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+def test_build_embeds_healthy_figures_when_one_bound_figure_among_several_is_degraded(
+    tmp_path, workspace, service, capsys
+):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    draft_dir = tmp_path / "draft"
+    (sections_dir / "001-resumen.md").write_text(
+        "# Resumen\n\n[[figure:sana-uno]] Primera figura sana.\n\n"
+        "[[figure:degradada]] Figura degradada.\n\n"
+        "[[figure:sana-dos]] Segunda figura sana.\n",
+        encoding="utf-8",
+    )
+    assets_dir = workspace.assets_dir("doc-1")
+    figures_dir = assets_dir / "figures"
+    figures_dir.mkdir(parents=True)
+    (figures_dir / "fig-sana0001.png").write_bytes(_solid_png(150, 100))
+    (figures_dir / "fig-sana0002.png").write_bytes(_solid_png(160, 110))
+    # `fig-degradada.png` intentionally never written -- missing bound image.
+    _write_json(
+        sections_dir / "figure-catalog.json",
+        {
+            "figures": [
+                _figure_catalog_row("fig-sana0001"),
+                _figure_catalog_row("fig-degradada"),
+                _figure_catalog_row("fig-sana0002"),
+            ]
+        },
+    )
+    _write_json(
+        sections_dir / "figure-bindings.json",
+        {
+            "schema": 1,
+            "bindings": {
+                "sana-uno": "fig-sana0001",
+                "degradada": "fig-degradada",
+                "sana-dos": "fig-sana0002",
+            },
+        },
+    )
+    template = _pandoc_styled_docx(tmp_path, "Plantilla.", "template.docx")
+
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {
+            "sections_dir": str(sections_dir),
+            "output_draft_dir": str(draft_dir),
+            "template_docx": str(template),
+            "assets_dir": str(assets_dir),
+        },
+    }
+
+    output = service.build("doc-1", config)  # must not raise despite the degraded figure
+
+    with zipfile.ZipFile(output) as archive:
+        media_entries = [name for name in archive.namelist() if name.startswith("word/media/")]
+    # Both healthy figures embed; the degraded one contributes no media entry.
+    assert len(media_entries) == 2
+    document = Document(str(output))
+    texts = [p.text for p in document.paragraphs]
+    assert any("Figura 2. Figura degradada." in t for t in texts)
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err
+    assert "degradada" in captured.err

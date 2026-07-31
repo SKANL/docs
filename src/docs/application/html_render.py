@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from docs.application.figure_resolver import build_bound_figures_resolver
 from docs.application.output_names import resolve_html_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
@@ -57,7 +58,18 @@ class HtmlRendererAdapter:
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output or output_dir / self._html_name(doc_id, config)
 
-        stripped_sections = strip_frontmatter_to_temp(existing_sections)
+        # S4 (design.md ADR-4/ADR-6): same resolver as DocxRendererAdapter --
+        # a config missing `sections_dir`/`assets_dir` reproduces today's
+        # behavior (empty resolver, no wiring).
+        paths = config.get("paths", {})
+        sections_dir = paths.get("sections_dir")
+        assets_dir = paths.get("assets_dir")
+        bound_figures = (
+            build_bound_figures_resolver(Path(sections_dir), Path(assets_dir))
+            if sections_dir and assets_dir
+            else {}
+        )
+        stripped_sections = strip_frontmatter_to_temp(existing_sections, bound_figures)
         # `--standalone` produces a full HTML document (not a fragment);
         # `--embed-resources` inlines any referenced assets so the artifact
         # stays a single self-contained file (design.md Open Question:
