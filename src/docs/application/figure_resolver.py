@@ -16,9 +16,14 @@ def _read_json_fail_open(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return {}
+    # Fail open on shape too, not just syntax: a syntactically-valid but
+    # non-object top level (e.g. a JSON array) must never reach `.get()` and
+    # crash the build -- these files are hand-authored with no schema-enforcing
+    # CLI (ADR-4/ADR-6: a bound label NEVER crashes the build).
+    return data if isinstance(data, dict) else {}
 
 
 def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[str, BoundFigure]:
@@ -40,11 +45,23 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     assets_dir = Path(assets_dir)
 
     bindings = _read_json_fail_open(sections_dir / _BINDINGS_NAME).get("bindings", {})
+    if not isinstance(bindings, dict):
+        print(
+            f"WARN: 'bindings' en {_BINDINGS_NAME} no es un objeto label->id del catálogo; "
+            "se omiten todas las figuras enlazadas.",
+            file=sys.stderr,
+        )
+        return {}
     if not bindings:
         return {}
 
+    # Only well-shaped rows (a dict with a string `id`) enter the lookup; a
+    # non-list `figures` value or non-dict rows fail open (never crash).
+    figures = _read_json_fail_open(sections_dir / _CATALOG_NAME).get("figures", [])
     catalog_by_id = {
-        row["id"]: row for row in _read_json_fail_open(sections_dir / _CATALOG_NAME).get("figures", [])
+        row["id"]: row
+        for row in (figures if isinstance(figures, list) else [])
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
     }
 
     resolved: dict[str, BoundFigure] = {}
@@ -66,7 +83,15 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
                 file=sys.stderr,
             )
             continue
-        path = assets_dir / "figures" / Path(row["origin_relative_path"]).name
+        origin = row.get("origin_relative_path")
+        if not isinstance(origin, str) or not origin:
+            print(
+                f"WARN: [[figure:{label}]] ({catalog_id}) sin ruta de origen en el catálogo; "
+                "se omite la imagen.",
+                file=sys.stderr,
+            )
+            continue
+        path = assets_dir / "figures" / Path(origin).name
         if not path.exists():
             print(
                 f"WARN: [[figure:{label}]] ({catalog_id}) imagen no encontrada en {path}; "

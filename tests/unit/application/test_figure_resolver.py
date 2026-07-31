@@ -59,6 +59,60 @@ def test_malformed_bindings_file_yields_empty_resolver(tmp_path):
     assert build_bound_figures_resolver(sections_dir, assets_dir) == {}
 
 
+def test_schema_valid_but_wrong_shaped_bindings_never_crashes_the_build(tmp_path):
+    """ADR-6: a bound label NEVER crashes the build. `figure-bindings.json` is
+    hand-authored with no schema-enforcing CLI, so a syntactically-valid but
+    wrong-shaped file (a list where a dict is expected, or a top-level array)
+    must fail open to an empty resolver -- NOT raise AttributeError up through
+    the whole build-docx command."""
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    assets_dir = tmp_path / "assets"
+
+    # `bindings` is a list, not a label->id map (plausible hand-edit mistake).
+    (sections_dir / "figure-bindings.json").write_text(
+        json.dumps({"schema": 1, "bindings": ["fig-abc12345"]}), encoding="utf-8"
+    )
+    assert build_bound_figures_resolver(sections_dir, assets_dir) == {}
+
+    # The whole file is a top-level JSON array.
+    (sections_dir / "figure-bindings.json").write_text(json.dumps(["fig-abc12345"]), encoding="utf-8")
+    assert build_bound_figures_resolver(sections_dir, assets_dir) == {}
+
+
+def test_wrong_shaped_catalog_never_crashes_and_still_resolves_valid_rows(tmp_path):
+    """A malformed `figure-catalog.json` (non-list `figures`, or non-dict /
+    missing-field rows) must not crash the resolver; well-formed rows alongside
+    junk still resolve."""
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    sections_dir.mkdir(parents=True)
+    figures_dir = assets_dir / "figures"
+    figures_dir.mkdir(parents=True)
+    (figures_dir / "fig-abc12345.png").write_bytes(b"fake-png-bytes")
+    _write_bindings(sections_dir, {"organigrama": "fig-abc12345", "roto": "fig-junkrow0"})
+
+    # `figures` mixes a valid row, a non-dict row, and a dict row missing keys.
+    (sections_dir / "figure-catalog.json").write_text(
+        json.dumps({"figures": [_catalog_row("fig-abc12345"), "not-a-row", {"id": "fig-junkrow0"}]}),
+        encoding="utf-8",
+    )
+
+    resolver = build_bound_figures_resolver(sections_dir, assets_dir)
+
+    assert set(resolver) == {"organigrama"}  # valid row resolved; junk rows skipped, no crash
+
+
+def test_top_level_array_catalog_never_crashes(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    sections_dir.mkdir(parents=True)
+    _write_bindings(sections_dir, {"organigrama": "fig-abc12345"})
+    (sections_dir / "figure-catalog.json").write_text(json.dumps(["fig-abc12345"]), encoding="utf-8")
+
+    assert build_bound_figures_resolver(sections_dir, assets_dir) == {}
+
+
 # --- binding whose file exists + non-null dims -> included ---------------------
 
 
