@@ -1053,6 +1053,13 @@ class IngestService:
                 # after rendering; the role-only pre-check above already
                 # skipped rendering entirely for a dropped role).
                 if not should_catalog_figure(source_role, width, height):
+                    # render_pages already wrote this PNG under assets_dir/figures/
+                    # before dims were known -- unlike the standalone branch
+                    # (which filters before copying), so a sub-threshold render
+                    # must be removed here or it becomes an orphan file no
+                    # cleanup pass covers (ADR-2: dropped candidates are never
+                    # copied/kept on disk).
+                    page_path.unlink(missing_ok=True)
                     continue
                 figures.append(
                     FigureEntry(

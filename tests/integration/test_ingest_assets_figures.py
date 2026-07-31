@@ -95,6 +95,13 @@ class _FakeImageMetadata:
         return None
 
 
+class _FakeSubThresholdImageMetadata:
+    def read_dimensions(self, path: Path) -> tuple[int, int] | None:
+        # 50x50: below `MIN_FIGURE_DIMENSION_PX` (100) so the size filter
+        # (ADR-2) drops the rendered page after render_pages already wrote it.
+        return (50, 50) if path.suffix.lower() == ".png" else None
+
+
 class _FakePdfRender:
     """Fake `PdfRenderPort`: writes N deterministic PNGs (mirrors
     `tests/unit/application/test_ingest_service.py`'s copy)."""
@@ -572,6 +579,33 @@ def test_vector_pdf_render_not_re_copied_by_standalone_copy_step(tmp_path: Path)
     figure = catalog["figures"][0]
     assert figure["origin_kind"] == "pdf_render"
     assert figure["origin_relative_path"] == "assets/figures/diagram-p01.png"
+
+
+def test_sub_threshold_pdf_render_is_dropped_and_orphan_file_cleaned(tmp_path: Path):
+    """A vector page render whose dimensions come back below
+    MIN_FIGURE_DIMENSION_PX is dropped by the ADR-2 filter -- but the PNG was
+    already written by render_pages before dims were known. It MUST be cleaned
+    up, not left as an orphan under assets_dir/figures/ (ADR-2 invariant:
+    dropped candidates are never copied/kept on disk; the standalone branch
+    filters before copying, the pdf-render branch can only filter after)."""
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "diagram.pdf").write_bytes(b"vector-pdf-bytes")
+    assets_dir = tmp_path / "assets"
+    service = IngestService(
+        _FakeDetector({"diagram.pdf": "pdf"}),
+        {"pdf": _FakePdfHandler()},
+        image_metadata=_FakeSubThresholdImageMetadata(),
+        pdf_render=_FakePdfRender(page_count=1),
+    )
+
+    service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=assets_dir)
+
+    catalog = json.loads((tmp_path / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    assert catalog["figures"] == []  # sub-threshold render excluded from catalog
+    figures_dir = assets_dir / "figures"
+    leftover = sorted(p.name for p in figures_dir.iterdir()) if figures_dir.exists() else []
+    assert leftover == []  # no orphan render file left behind
 
 
 def test_parent_pdf_confirmed_role_propagates_to_vector_page_renders(tmp_path: Path):
