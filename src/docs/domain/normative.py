@@ -49,6 +49,7 @@ class NormativeSettings:
     scope_focus: str = ""
     contested_stack_terms: list[str] = field(default_factory=list)
     citation_style: str = "apa7"
+    duration_consistency_enabled: bool = False
 
 
 def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
@@ -74,4 +75,5 @@ def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
         scope_focus=normative.get("scope_focus", ""),
         contested_stack_terms=list(config.get("cross_consistency", {}).get("contested_stack_terms", [])),
         citation_style=citation_style,
+        duration_consistency_enabled=bool(config.get("cross_consistency", {}).get("duration_consistency", False)),
     )

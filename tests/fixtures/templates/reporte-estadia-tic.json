@@ -187,7 +187,8 @@
   },
   "cross_consistency": {
     "enabled": true,
-    "contested_stack_terms": ["Laravel", "Supabase", "bun.js", "MySQL", "GCP", "Firebase"]
+    "contested_stack_terms": ["Laravel", "Supabase", "bun.js", "MySQL", "GCP", "Firebase"],
+    "duration_consistency": true
   },
   "documents_tools": {
     "enabled": true,
