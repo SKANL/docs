@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_pandoc_executable
 
