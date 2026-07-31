@@ -574,6 +574,7 @@ def review_cross_consistency(
     section_bodies: dict[str, str],
     strict: bool = False,
     contested_stack_terms: list[str] | None = None,
+    duration_consistency: bool = False,
 ) -> ReviewResult:
     issues: list[Issue] = []
     severity = "error" if strict else "warning"
@@ -615,19 +616,25 @@ def review_cross_consistency(
                     )
                 )
 
-    hour_mentions: set[int] = set()
-    for body in section_bodies.values():
-        for match in _DURATION_RE.finditer(body):
-            hour_mentions.add(int(match.group(1)))
-    if len(hour_mentions) > 1:
-        values = ", ".join(f"{value} horas" for value in sorted(hour_mentions))
-        issues.append(
-            Issue(
-                severity,
-                f"La duración de la estadía es inconsistente entre secciones: {values}.",
-                code="coherence.duration_mismatch",
+    # Doc-type-specific coherence check (estadia's "duración de la estadía"
+    # wording) -- template-config-driven like `contested_stack_terms` above:
+    # only reporte-estadia-tic declares `cross_consistency.duration_consistency`,
+    # so a generic document mentioning two unrelated hour figures is never
+    # flagged with estadia's phrasing.
+    if duration_consistency:
+        hour_mentions: set[int] = set()
+        for body in section_bodies.values():
+            for match in _DURATION_RE.finditer(body):
+                hour_mentions.add(int(match.group(1)))
+        if len(hour_mentions) > 1:
+            values = ", ".join(f"{value} horas" for value in sorted(hour_mentions))
+            issues.append(
+                Issue(
+                    severity,
+                    f"La duración de la estadía es inconsistente entre secciones: {values}.",
+                    code="coherence.duration_mismatch",
+                )
             )
-        )
 
     for section_id, body in section_bodies.items():
         lowered = body.lower()

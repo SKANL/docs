@@ -211,3 +211,30 @@ def test_technical_report_srs_review_document_reflects_its_own_rules_not_estadia
     codes = {issue.code for issue in result.issues}
     assert "coherence.contested_stack_unqualified" in codes
     assert not any(code.startswith("apa.") for code in codes)
+
+
+def test_technical_report_srs_review_document_no_duration_mismatch_for_generic_hours(tmp_path: Path):
+    """Doc-type-coupling leak fix: this template does NOT declare
+    `cross_consistency.duration_consistency` (only estadia's does), so a
+    document legitimately mentioning two different hour figures across
+    sections must NOT trigger estadia's "duración de la estadía" coherence
+    check (spec: template-provisioning "No hardcoded document-type literal
+    in domain code")."""
+    config = _resolved_config(tmp_path)
+    template = Template.model_validate(config)
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    section_repo = JsonSectionRepository(workspace)
+    review_service = ReviewService(section_repo)
+
+    for section in template.sections:
+        body = f"# {section.title}\n\nThis section documents {section.id} for the project.\n"
+        if section.id == "implementation":
+            body = "# IMPLEMENTATION\n\nThe setup phase took 40 horas and testing took 80 horas.\n"
+        section_repo.write_section("doc1", section.order, section.id, body)
+
+    normative = resolve_normative_settings(config)
+    result = review_service.review_document(
+        "doc1", template, strict=False, manifest_exists=True, manifest_size=42, normative=normative,
+    )
+
+    assert not any(issue.code == "coherence.duration_mismatch" for issue in result.issues)

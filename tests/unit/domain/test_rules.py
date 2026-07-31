@@ -1054,11 +1054,13 @@ def test_review_cross_consistency_reciprocity_not_skipped_when_strict_even_if_pe
 
 
 def test_review_cross_consistency_duration_mismatch():
+    # duration_consistency is a template-declared knob (like contested_stack_terms)
+    # -- callers that want this estadia-specific check must opt in explicitly.
     bodies = {
         "introduccion": "La estadía duró 160 horas en total.",
         "resumen": "Se cumplieron 200 horas de trabajo.",
     }
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, duration_consistency=True)
     issue = next(i for i in result.issues if i.code == "coherence.duration_mismatch")
     assert "160 horas" in issue.message and "200 horas" in issue.message
     assert issue.severity == "warning"
@@ -1069,7 +1071,7 @@ def test_review_cross_consistency_duration_consistent_no_issue():
         "introduccion": "La estadía duró 160 horas en total.",
         "resumen": "Se cumplieron 160 horas de trabajo.",
     }
-    result = review_cross_consistency(_template(), bodies, strict=False)
+    result = review_cross_consistency(_template(), bodies, strict=False, duration_consistency=True)
     assert not any(i.code == "coherence.duration_mismatch" for i in result.issues)
 
 
@@ -1078,9 +1080,23 @@ def test_review_cross_consistency_duration_mismatch_severity_tracks_strict():
         "introduccion": "La estadía duró 160 horas en total.",
         "resumen": "Se cumplieron 200 horas de trabajo.",
     }
-    result = review_cross_consistency(_template(), bodies, strict=True)
+    result = review_cross_consistency(_template(), bodies, strict=True, duration_consistency=True)
     issue = next(i for i in result.issues if i.code == "coherence.duration_mismatch")
     assert issue.severity == "error"
+
+
+def test_review_cross_consistency_duration_mismatch_skipped_when_not_declared():
+    # Doc-type-coupling leak fix: a non-estadia document type (e.g.
+    # documento-generico, technical-report-srs) legitimately mentioning two
+    # different hour figures ("40 horas" ... "8 horas") must NOT be flagged
+    # with estadia's "duración de la estadía" wording. The check only runs
+    # when the template opts in via `duration_consistency=True`.
+    bodies = {
+        "introduccion": "El levantamiento tomó 40 horas en total.",
+        "resumen": "El análisis tomó 80 horas de trabajo.",
+    }
+    result = review_cross_consistency(_template(), bodies, strict=False)
+    assert not any(i.code == "coherence.duration_mismatch" for i in result.issues)
 
 
 def test_review_cross_consistency_no_default_terms_when_none_provided():
