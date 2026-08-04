@@ -23,9 +23,11 @@ from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.source_type_detector_port import SourceTypeDetectorPort
+from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
 from docs.domain.source_conflict import Conflict, detect_conflicts
 from docs.domain.source_role import ROLES as _VALID_ROLES
 from docs.domain.source_role import classify
+from docs.domain.svg_normalize import normalize_svg
 
 _DETECTION_REPORT_NAME = "_detection.json"
 _SOURCE_MANIFEST_NAME = "_source-manifest.json"
@@ -56,6 +58,13 @@ _HARNESS_ARTIFACT_NAMES = frozenset(
 # queue. ponytail: substring match on the lowercased relative path, no
 # content probing -- same grain as source_role.py's folder lexicon.
 _IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".tiff", ".bmp"})
+# A standalone `.svg` is a distinct routing case from `_IMAGE_EXTENSIONS`
+# (also used for raster-dimension reads, which python-docx/Pillow cannot do
+# for SVG) -- kept as its own set so the intent at each call site stays
+# legible: "heuristic candidate" checks BOTH, `_build_figure_catalog`
+# dispatches each set through a different cataloging path (raster copy vs.
+# normalize+rasterize).
+_VECTOR_EXTENSIONS = frozenset({".svg"})
 _COVER_KEYWORDS = ("portada", "cover")
 _BACK_KEYWORDS = ("anexo-visual", "anexo_visual")
 
@@ -109,7 +118,7 @@ def _guess_asset_kind(relative_posix: str) -> str | None:
 
 def _is_heuristic_asset_candidate(relative_posix: str) -> bool:
     suffix = Path(relative_posix).suffix.lower()
-    if suffix in _IMAGE_EXTENSIONS:
+    if suffix in _IMAGE_EXTENSIONS or suffix in _VECTOR_EXTENSIONS:
         return True
     return suffix == ".docx" and _guess_asset_kind(relative_posix) is not None
 
@@ -142,6 +151,7 @@ class IngestService:
         image_metadata: ImageMetadataPort | None = None,
         content_probe: ContentProbePort | None = None,
         pdf_render: PdfRenderPort | None = None,
+        svg_rasterizer: SvgRasterizerPort | None = None,
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
@@ -155,6 +165,11 @@ class IngestService:
         # (design.md ADR-F) -- `None` (toolchain unavailable) degrades to
         # "no rendered figures, WARN", never a hard dependency.
         self.pdf_render = pdf_render
+        # HIGH silent-failure fix: optional, injected exactly like
+        # `pdf_render` -- `None` (resvg absent) degrades a standalone
+        # ingested `.svg` to WARN+skip (never cataloged), never a hard
+        # dependency for the rest of ingest.
+        self.svg_rasterizer = svg_rasterizer
 
     def ingest_inbox(
         self,
@@ -954,6 +969,26 @@ class IngestService:
             if assets_dir is not None:
                 entry = self._copy_standalone_figure(path, entry, assets_dir)
             figures.append(entry)
+
+        # HIGH silent-failure fix: a standalone `.svg` has no intrinsic pixel
+        # size python-docx/Pillow can read, so (unlike the raster loop above)
+        # it is normalized + rasterized to a sibling PNG first -- same
+        # `<stem>.svg`/`<stem>.png` pair `generate_visuals._render_one`
+        # already produces, which `html_render._prefer_sibling_svg` and
+        # `docx_assembly` already know how to consume.
+        vector_candidates = [
+            (path, rel)
+            for path, rel in (*declared_assets, *heuristic_candidates)
+            if Path(rel).suffix.lower() in _VECTOR_EXTENSIONS
+        ]
+        for path, rel in sorted(vector_candidates, key=lambda item: item[1]):
+            source_role = self._effective_role(rel, confirmed_roles)
+            if not should_catalog_figure(source_role, None, None):
+                continue  # role-dropped (ADR-2) -- never even rasterized
+            entry = self._ingest_svg_figure(path, rel, source_role, assets_dir)
+            if entry is not None:
+                figures.append(entry)
+
         figures.extend(
             self._render_vector_pdf_figures(inbox_dir, entries or [], assets_dir, confirmed_roles)
         )
@@ -988,6 +1023,74 @@ class IngestService:
                 file=sys.stderr,
             )
             return None
+
+    def _write_atomic_text(self, path: Path, text: str) -> None:
+        # Temp-then-atomic-rename, same convention as `_copy_asset` above --
+        # a failing/interrupted write never leaves a partial `.svg` at `path`.
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".asset-tmp-")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(text)
+            os.replace(tmp_name, path)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
+
+    def _ingest_svg_figure(
+        self, path: Path, relative_path: str, source_role: str, assets_dir: Path | None
+    ) -> FigureEntry | None:
+        # No `assets_dir` -> nowhere to write the rasterized sibling pair --
+        # silent skip, mirrors `_render_vector_pdf_figures`'s own
+        # `if assets_dir is None: continue` (not an error condition, some
+        # callers legitimately omit `assets_dir`).
+        if assets_dir is None:
+            return None
+        if self.svg_rasterizer is None:
+            print(
+                f"WARN: {relative_path} es un SVG independiente, pero el rasterizador SVG "
+                "(resvg) no está disponible; se omite su incorporación al catálogo de figuras.",
+                file=sys.stderr,
+            )
+            return None
+
+        raw = path.read_bytes()
+        sha256 = sha256_hex(raw)
+        stem = f"fig-{sha256[:8]}"  # ADR-3 naming (`_copy_standalone_figure`), shared by both siblings
+        svg_path = assets_dir / "figures" / f"{stem}.svg"
+        png_path = assets_dir / "figures" / f"{stem}.png"
+        try:
+            normalized = normalize_svg(raw.decode("utf-8", errors="replace"))
+            self._write_atomic_text(svg_path, normalized)
+            self.svg_rasterizer.rasterize(svg_path, png_path)
+        except Exception as exc:
+            print(
+                f"WARN: no se pudo rasterizar el SVG independiente {relative_path} a PNG "
+                f"({exc}); se omite su incorporación al catálogo de figuras.",
+                file=sys.stderr,
+            )
+            svg_path.unlink(missing_ok=True)
+            png_path.unlink(missing_ok=True)
+            return None
+
+        dimensions = self._read_image_dimensions(png_path, relative_path)
+        width, height = dimensions if dimensions is not None else (None, None)
+        if not should_catalog_figure(source_role, width, height):
+            # ADR-2 invariant: a dropped candidate is never copied/kept on
+            # disk -- the pair was already written before dims were known
+            # (same as `_render_vector_pdf_figures`'s post-render filter).
+            svg_path.unlink(missing_ok=True)
+            png_path.unlink(missing_ok=True)
+            return None
+
+        return FigureEntry(
+            sha256=sha256,
+            width_px=width,
+            height_px=height,
+            origin_relative_path=f"assets/figures/{stem}.png",
+            source_role=source_role,
+            origin_kind="standalone",
+        )
 
     def _render_vector_pdf_figures(
         self,

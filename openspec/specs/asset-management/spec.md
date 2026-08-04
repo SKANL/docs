@@ -141,6 +141,18 @@ there is no separate catalog-identifier reference syntax.
 - WHEN its catalog entry is inspected
 - THEN `origin_kind` is `"generated"`
 
+#### Scenario: Standalone ingested SVG is rasterized into the catalog
+
+- GIVEN a standalone `.svg` file dropped anywhere in the inbox (not a
+  generated visual) and the SVG rasterizer toolchain (`resvg`) available
+- WHEN ingest processes that file
+- THEN it is normalized and rasterized to a deterministic sibling PNG under
+  `assets/figures/`, and a catalog entry pointing to that PNG (with real
+  dimensions and `origin_kind: "standalone"`) is added to
+  `figure-catalog.json`, making it `[[figure:label]]`-bindable
+- AND when the SVG rasterizer is unavailable, ingest completes without
+  failing and the SVG is skipped, never cataloged
+
 ### Requirement: Deterministic Figure-Catalog Merge
 
 The system MUST provide a pure `merge()` helper in
