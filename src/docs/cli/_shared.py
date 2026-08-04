@@ -171,6 +171,20 @@ class Deps:
             pdf_render=pdf_render_adapter,
         )
 
+        # matplotlib is a hard declared dependency (pyproject.toml), but the
+        # import is still guarded (mirrors the pypdfium2 guard above): if it
+        # ever fails to import, the "chart" renderer is simply absent from
+        # the registry rather than crashing `Deps()` construction (design.md
+        # Migration/Rollout: additive/opt-in, never a hard `Deps()` failure).
+        self.visual_renderers: dict[str, Any] = {}
+        try:
+            from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
+
+            chart_renderer = ChartSvgRenderer()
+            self.visual_renderers[chart_renderer.type] = chart_renderer
+        except Exception:
+            pass
+
         self.assets = asset_service
         self.evidence = evidence_service
         self.review = review_service
