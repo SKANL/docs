@@ -185,6 +185,22 @@ class Deps:
         except Exception:
             pass
 
+        # `mmdc` is an OPTIONAL, PATH-resolved external toolchain (never a
+        # pip/npm dependency of this project) -- unlike the chart renderer,
+        # construction never touches `mmdc` itself (resolution happens lazily
+        # inside `render()`), so this is always registered; a missing `mmdc`
+        # degrades per-visual at render time (WARN+skip, Slice 5), never at
+        # `Deps()` construction (mirrors the pypdfium2/matplotlib guard
+        # shape above for defense-in-depth against an unexpected import
+        # failure).
+        try:
+            from docs.infrastructure.visuals.mermaid_svg_renderer import MermaidSvgRenderer
+
+            mermaid_renderer = MermaidSvgRenderer(tool_resolver)
+            self.visual_renderers[mermaid_renderer.type] = mermaid_renderer
+        except Exception:
+            pass
+
         self.assets = asset_service
         self.evidence = evidence_service
         self.review = review_service

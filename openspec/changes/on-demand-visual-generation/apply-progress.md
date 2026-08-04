@@ -129,8 +129,93 @@ Touched only Slice-2 files: `pyproject.toml` (modified), `uv.lock` (modified),
 `openspec/changes/on-demand-visual-generation/tasks.md` (2.1-2.4 ticked),
 `openspec/changes/on-demand-visual-generation/apply-progress.md` (this file).
 
-Not started: Slices 3-7 (`MermaidSvgRenderer`, `SvgRasterizerPort` resvg
-adapter, `GenerateVisualsService` + stage wiring, `html_render` sibling-SVG
-swap + E2E, doctor checks + AGENTS.md). Slice 5.10's composition-wiring test
-will extend `test_deps_visual_renderers_wiring.py` with a `"mermaid"`
-assertion once Slice 3 lands.
+## Slice 3 — `MermaidSvgRenderer` (mmdc) + `resolve_mmdc` — DONE
+
+- [x] 3.1 RED `tests/unit/infrastructure/test_tool_resolver_mmdc.py` (new,
+  4 cases, mirrors `test_resolve_pandoc_executable.py`'s shape). Confirmed
+  RED via `ModuleNotFoundError` before implementation. GREEN
+  `src/docs/infrastructure/tools/mmdc_resolution.py` (new):
+  `resolve_mmdc_executable(paths)` — PATH-then-`mmdc_bin`-then-
+  `mmdc_fallbacks` resolution, same shape as `resolve_pandoc_executable`/
+  `resolve_java_executable`. Wired `resolve_mmdc` onto
+  `domain/ports/tool_resolver_port.py:ToolResolverPort` and
+  `infrastructure/docx/tool_resolver_adapter.py:SystemToolResolverAdapter`.
+- [x] 3.2 RED (THREAT MATRIX) `tests/unit/infrastructure/
+  test_mermaid_svg_renderer.py::test_source_with_shell_metacharacters_never_reaches_a_shell`
+  — mermaid source containing shell metacharacters (`` $(rm -rf /) `echo
+  pwned` "; rm -rf / #" ``) is written to a temp `.mmd` file and asserted to
+  never appear in any `subprocess.run` argv element; `subprocess.run` is
+  asserted called with a list and `shell` never `True`. Confirmed RED via
+  `ModuleNotFoundError` before implementation. GREEN
+  `src/docs/infrastructure/visuals/mermaid_svg_renderer.py` (new):
+  `MermaidSvgRenderer(tool_resolver, paths=None, scratch_root=None)`
+  (`type = "mermaid"`); `render(spec)` resolves `mmdc` first, writes
+  `spec.source` to `scratch_dir(self.scratch_root)/diagram.mmd` (reuses
+  `infrastructure/ingest/atomic_ingest_write.py:scratch_dir` — same
+  temp-file-not-shell-arg precedent as `pandoc_ingest_adapter.py`), invokes
+  `subprocess.run([mmdc, "-i", str(tmp_mmd), "-o", str(tmp_svg),
+  "--outputFormat", "svg"], check=True)` (fixed arg list, no `shell=True`),
+  reads back `tmp_svg` text. `scratch_root` defaults to
+  `tempfile.gettempdir()` (this port layer has no document-root context —
+  `render(spec)` takes only the spec).
+- [x] 3.3 RED/GREEN same file:
+  `test_render_missing_mmdc_raises_runtime_error_with_guidance` — absent
+  `mmdc` (`resolve_mmdc` → `None`) raises `RuntimeError` naming `mmdc` with
+  install guidance (`npm install -g @mermaid-js/mermaid-cli`), covered by
+  3.2's guard clause.
+- [x] 3.4 RED/GREEN
+  `tests/integration/test_mermaid_svg_renderer_integration.py::
+  test_render_produces_svg_via_real_mmdc` — `@pytest.mark.skipif(shutil.which
+  ("mmdc") is None, ...)` (mirrors the `pandoc`/`java`/`libreoffice` skipif
+  precedent). `mmdc` absent in this dev environment → confirmed SKIPPED
+  cleanly, not failed.
+- [x] 3.5 RED/GREEN same integration file:
+  `test_render_invalid_mermaid_syntax_raises_with_cause` — same skipif;
+  `subprocess.run(..., check=True)`'s `CalledProcessError` propagates
+  uncaught from `render()`. Also SKIPPED cleanly (mmdc absent).
+
+Also added: `test_render_returns_svg_text_from_mmdc_output` and
+`test_render_plus_normalize_svg_is_byte_identical_across_two_runs` (unit,
+mocked mmdc writing a fixed/known SVG — proves `render` returns exactly what
+`mmdc` wrote, and that render+`normalize_svg` is byte-stable across two
+calls, same shape as Slice 2's chart determinism test).
+
+- [x] Composition wiring RED/GREEN, extended
+  `tests/integration/test_deps_visual_renderers_wiring.py`:
+  `test_deps_wires_a_mermaid_renderer_regardless_of_mmdc_availability` —
+  `Deps().visual_renderers["mermaid"]` is a real `MermaidSvgRenderer`
+  regardless of `mmdc` PATH availability (resolution is deferred to
+  `render()`, never checked at construction). GREEN in
+  `cli/_shared.py:Deps.__init__`: `MermaidSvgRenderer(tool_resolver)`
+  construction guarded by `try/except Exception` (mirrors the chart-renderer
+  guard immediately above it) for defense-in-depth, though this renderer
+  never touches `mmdc` at construction time — only `render()` does.
+
+Slice check green: 11 new tests (4 tool-resolver + 4 mermaid-renderer unit +
+1 wiring + 2 integration, both SKIPPED cleanly since `mmdc` is absent in this
+dev environment) passed/skipped as expected. Full suite: 1412 passed, 0
+failed, 9 skipped (vs. Slice 2's 1403 passed/7 skipped — net +9 passed, +2
+skipped, zero regression). `ruff check` clean on all changed/new files.
+
+Commits (branch `feat/odvg-s3-mermaid`, off main `8b7202f`):
+- `feat(infrastructure): add resolve_mmdc tool resolution`
+- `feat(visuals): add MermaidSvgRenderer (mmdc subprocess, scratch-file source)`
+- `feat(cli): wire MermaidSvgRenderer into Deps.visual_renderers registry`
+- `docs(sdd): tick S3 tasks and record apply-progress for on-demand-visual-generation`
+
+Touched only Slice-3 files: `src/docs/infrastructure/tools/mmdc_resolution.py`
+(new), `src/docs/domain/ports/tool_resolver_port.py` (modified, additive),
+`src/docs/infrastructure/docx/tool_resolver_adapter.py` (modified,
+additive), `src/docs/infrastructure/visuals/mermaid_svg_renderer.py` (new),
+`src/docs/cli/_shared.py` (modified, additive `mermaid` registry block),
+`tests/unit/infrastructure/test_tool_resolver_mmdc.py` (new),
+`tests/unit/infrastructure/test_mermaid_svg_renderer.py` (new),
+`tests/integration/test_mermaid_svg_renderer_integration.py` (new),
+`tests/integration/test_deps_visual_renderers_wiring.py` (modified,
+extended), `openspec/changes/on-demand-visual-generation/tasks.md`
+(3.1-3.5 ticked), `openspec/changes/on-demand-visual-generation/
+apply-progress.md` (this file).
+
+Not started: Slices 4-7 (`SvgRasterizerPort` resvg adapter,
+`GenerateVisualsService` + stage wiring, `html_render` sibling-SVG swap +
+E2E, doctor checks + AGENTS.md).

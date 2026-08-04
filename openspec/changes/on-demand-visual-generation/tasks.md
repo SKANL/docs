@@ -129,7 +129,7 @@ mirrored here), `atomic_ingest_write.py:13` (`scratch_dir` — mermaid source
 written to a temp file, not a shell arg). Threat Matrix row "Subprocess arg
 composition".
 
-- [ ] 3.1 **Test first** — `tests/unit/infrastructure/test_tool_resolver_mmdc.py`:
+- [x] 3.1 **Test first** — `tests/unit/infrastructure/test_tool_resolver_mmdc.py`:
       `SystemToolResolverAdapter.resolve_mmdc(paths)` resolves `mmdc` from
       PATH (mirrors `resolve_pandoc_executable`'s shape/fallback contract).
       **Implement** — add `resolve_mmdc(self, paths: dict[str, Any]) -> str |
@@ -140,7 +140,7 @@ composition".
       `java_resolution.py`'s separation).
       Run: `uv run pytest tests/unit/infrastructure/test_tool_resolver_mmdc.py`.
 
-- [ ] 3.2 **Test first (THREAT MATRIX RED)** —
+- [x] 3.2 **Test first (THREAT MATRIX RED)** —
       `tests/unit/infrastructure/test_mermaid_svg_renderer.py::
       test_source_with_shell_metacharacters_never_reaches_a_shell`: a spec
       `source` containing shell metacharacters (e.g. `"; rm -rf / #"`) as
@@ -159,13 +159,13 @@ composition".
       "--outputFormat", "svg"], check=True)` (fixed arg list, no `shell=True`).
       Run: `uv run pytest tests/unit/infrastructure/test_mermaid_svg_renderer.py`.
 
-- [ ] 3.3 **Test first** — same file:
+- [x] 3.3 **Test first** — same file:
       `test_render_missing_mmdc_raises_runtime_error_with_guidance`.
       **Implement** — covered by 3.2's guard clause; assert the exact
       message names `mmdc` and install guidance.
       Run: `uv run pytest tests/unit/infrastructure/test_mermaid_svg_renderer.py`.
 
-- [ ] 3.4 **Test first** —
+- [x] 3.4 **Test first** —
       `tests/integration/test_mermaid_svg_renderer_integration.py::
       test_render_produces_svg_via_real_mmdc` — `@pytest.mark.skipif` when
       `mmdc` is absent from PATH; a well-formed mermaid `source` renders SVG
@@ -174,7 +174,7 @@ composition".
       check of the same code path).
       Run: `uv run pytest tests/integration/test_mermaid_svg_renderer_integration.py`.
 
-- [ ] 3.5 **Test first** — same integration file:
+- [x] 3.5 **Test first** — same integration file:
       `test_render_invalid_mermaid_syntax_raises_with_cause` — malformed
       mermaid source causes `mmdc` to exit non-zero; renderer re-raises with
       the subprocess failure detail (Slice 5 catches, WARNs, skips).
