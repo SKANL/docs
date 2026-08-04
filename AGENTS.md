@@ -283,6 +283,39 @@ Rules:
 - Reordering sections renumbers automatically and deterministically; no
   manual renumbering pass is ever required.
 
+### Generating visuals on demand: `sections/visual-specs.json`
+
+Instead of hand-drawing a diagram or chart, an agent can describe it
+declaratively and let the harness generate it. Drop a JSON **array** at
+`sections/visual-specs.json`, one entry per visual:
+
+```json
+[
+  { "label": "arch-diagram", "type": "mermaid", "source": "graph TD; A-->B;", "caption": "System architecture" },
+  { "label": "cost-chart", "type": "chart", "source": "{\"kind\": \"bar\", \"labels\": [\"Q1\", \"Q2\"], \"series\": [{\"name\": \"Cost\", \"values\": [10, 20]}]}", "caption": "Quarterly cost" }
+]
+```
+
+Each entry: `label` (str), `type` (`"mermaid"` or `"chart"`), `source` (str),
+`caption` (str, optional). `source` is always **data**, never executed code:
+for `"mermaid"` it is raw Mermaid diagram text; for `"chart"` it is a
+declarative JSON string (`{"kind", "labels", "series"}`) that the harness
+parses, it is never `eval`'d/`exec`'d/shelled-out as agent-authored code.
+
+A `generate-visuals` stage runs automatically as part of
+`docs pipeline assemble`/`all` (after ingest, before the render stages) and
+renders each entry into a figure and **auto-binds** it —
+it writes the `label -> fig-<sha8>` binding into `figure-bindings.json`
+itself, so the agent only needs to reference it with the existing
+`[[figure:label]]` marker (§3) like any other figure; do NOT hand-bind a
+generated visual. A pre-existing manual binding for the same label is never
+clobbered. Generation degrades gracefully: a missing `mmdc`/`resvg`
+toolchain (`docs doctor` reports both, `required=False`), an unregistered
+`type`, or a malformed entry WARNs (naming the cause) and that one visual is
+skipped — the build continues and every other entry still processes.
+Absent `visual-specs.json` entirely is a no-op — nothing about the build
+changes.
+
 ## 4. The review loop: `review-section --json` iterate-to-green
 
 **Never run `build-section` on a section you are about to review or have

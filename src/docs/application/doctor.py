@@ -247,4 +247,32 @@ class DoctorService:
                 required=False,
             )
         )
+
+        # Slice 7 (on-demand-visual-generation): mmdc/resvg are OPTIONAL PATH
+        # toolchains for `generate-visuals` (mermaid + SVG->PNG rasterization
+        # respectively) -- absent tools degrade that stage to WARN+skip per
+        # visual, never fail the build, same required=False shape as
+        # pandoc/libreoffice above.
+        mmdc = self.tool_resolver.resolve_mmdc(config.get("paths", {}))
+        checks.append(
+            Check(
+                "mmdc",
+                bool(mmdc),
+                mmdc
+                or "No encontrado en PATH. Instalar con `npm install -g @mermaid-js/mermaid-cli` "
+                "para generar diagramas mermaid en generate-visuals (opcional).",
+                required=False,
+            )
+        )
+        resvg = self.tool_resolver.resolve_resvg(config.get("paths", {}))
+        checks.append(
+            Check(
+                "resvg",
+                bool(resvg),
+                resvg
+                or "No encontrado en PATH. Instalar resvg (https://github.com/linebender/resvg) "
+                "para rasterizar visuales SVG a PNG en generate-visuals (opcional).",
+                required=False,
+            )
+        )
         return checks

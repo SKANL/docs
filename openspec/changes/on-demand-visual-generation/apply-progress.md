@@ -582,3 +582,84 @@ Commits (branch `feat/odvg-s6-html`, off main `95f3919`):
 Not started: Slice 7 (doctor capability checks + `pyproject.toml` +
 AGENTS.md authoring docs) — explicitly out of scope for this apply pass
 (running in parallel on another branch).
+Not started: Slice 5b (`domain/pipeline.py` stage insertion +
+`application/pipeline.py` stage callable + `cli/_shared.py` composition-root
+wiring of `GenerateVisualsService` into `Deps`/`PipelineService`), Slice 6
+(`html_render` sibling-SVG swap + E2E byte-identity), Slice 7 (doctor
+checks + pyproject + AGENTS.md authoring docs).
+
+## Slice 7 — doctor capability checks + `pyproject.toml` + AGENTS.md authoring docs — DONE
+
+Independent of Slices 5b/6 (no `domain/pipeline.py`, `application/pipeline.py`,
+`cli/_shared.py`, or `html_render.py` touched here) — applied in an isolated
+worktree off main (slices 1-5a merged, `79a0c98`).
+
+- [x] 7.1 RED extended `tests/integration/test_doctor_service.py` (+2 cases:
+  `test_run_doctor_resvg_and_mmdc_capability_checks_required_false_when_absent`,
+  `test_run_doctor_resvg_and_mmdc_capability_checks_ok_when_present`); also
+  added `resolve_mmdc`/`resolve_resvg` stubs to the file's existing fake
+  `ToolResolverPort` doubles (`_FakeToolResolver`, `_NoToolsResolver`,
+  `_NoJavaResolver`) so they keep satisfying the (duck-typed) port after
+  `run_doctor` starts calling the two new resolver methods unconditionally.
+  Confirmed RED via `StopIteration` (checks not yet emitted) before
+  implementation. GREEN `src/docs/application/doctor.py:_capability_checks`
+  — added `Check("mmdc", ..., required=False)` and
+  `Check("resvg", ..., required=False)`, each via
+  `self.tool_resolver.resolve_mmdc`/`resolve_resvg` (Slices 3/4), install
+  guidance in `detail` when absent (mirrors the `npm install -g
+  @mermaid-js/mermaid-cli` / resvg GitHub guidance text already used in
+  `mermaid_svg_renderer.py`/`resvg_rasterizer_adapter.py`'s `RuntimeError`
+  messages) — same `required=False` shape as `pdf_page_render`/
+  `pdf_raster_extract`/`java`/`libreoffice`.
+- [x] 7.2 `matplotlib` was already a dependency (added in Slice 2 — not
+  re-added). Added a documentation comment directly above
+  `pyproject.toml`'s `dependencies` array noting `mmdc`/`resvg` are OPTIONAL,
+  PATH-resolved external toolchains (never a pip/npm dependency of this
+  project), pointing at AGENTS.md's new section and `docs doctor`'s
+  `required=False` checks.
+- [x] 7.3 RED extended `tests/unit/test_agents_md_content.py` (+1 case:
+  `test_documents_visual_specs_authoring_format`, asserting
+  `visual-specs.json`, `sections/visual-specs.json`, the entry-shape field
+  names, both `"mermaid"`/`"chart"` type literals, and the auto-bind/WARN
+  contract). Confirmed RED via `assert 'visual-specs.json' in AGENTS_MD`
+  failing before implementation. GREEN `AGENTS.md` — added a "Generating
+  visuals on demand: `sections/visual-specs.json`" subsection under §3
+  (figure/table convention, the natural authoring-convention home): file
+  location, JSON-array entry shape (`label`/`type`/`source`/`caption`),
+  `source` is DATA never executed code (mermaid raw text vs. chart
+  declarative `{"kind","labels","series"}` JSON), the `generate-visuals`
+  stage runs inside `docs pipeline assemble`/`all` (after ingest), auto-binds
+  `label -> fig-<sha8>` without ever clobbering a manual binding, degrades
+  each malformed/unsupported/toolchain-missing entry to WARN+skip (build
+  continues), and absent `visual-specs.json` is a true no-op.
+
+Slice check green: 3 new tests passed (2 doctor + 1 AGENTS.md content).
+Full suite: 1436 passed, 0 failed, 11 skipped (zero regression vs. the
+pre-slice-7 worktree baseline). `ruff check` clean on all 5 changed files.
+
+Work Unit Evidence:
+| Evidence | Value |
+|---|---|
+| Focused test command/result | `uv run pytest tests/integration/test_doctor_service.py tests/unit/test_agents_md_content.py tests/unit/test_agents_md_packaging.py -q` → 35 passed |
+| Runtime harness command/result | `uv run pytest -q` (full suite) → 1436 passed, 0 failed, 11 skipped |
+| Rollback boundary | Revert 5 files (`AGENTS.md`, `pyproject.toml`, `src/docs/application/doctor.py`, `tests/integration/test_doctor_service.py`, `tests/unit/test_agents_md_content.py`) — no other slice's files touched; `mmdc`/`resvg` checks and the AGENTS.md section are additive and inert without the caller opting in (doctor already had `required=False` checks in this exact shape) |
+
+Commits: on branch `worktree-agent-a01ec0bbb76e3be07`, off main `79a0c98`
+(slices 1-5a merged), not pushed, no PR opened per instructions.
+
+Touched ONLY: `src/docs/application/doctor.py` (modified, additive — two new
+`Check`s in `_capability_checks`), `pyproject.toml` (modified, additive
+comment only — no dependency added/removed), `AGENTS.md` (modified,
+additive new subsection under §3), `tests/integration/test_doctor_service.py`
+(modified, extended — 2 new tests + 3 fake-resolver stub additions),
+`tests/unit/test_agents_md_content.py` (modified, extended — 1 new test),
+`openspec/changes/on-demand-visual-generation/tasks.md` (7.1-7.3 ticked),
+`openspec/changes/on-demand-visual-generation/apply-progress.md` (this
+section appended). NO `domain/pipeline.py`, `application/pipeline.py`,
+`cli/_shared.py`, or `html_render.py` touched — those remain Slice 5b/6
+scope, unstarted.
+
+Slices 1, 2, 3, 4, 5a, and 7 are fully ticked `[x]` in `tasks.md`. Slice 5b
+(5.8-5.10, pipeline/composition-root wiring) and Slice 6 (6.1-6.4,
+`html_render` swap + E2E byte-identity) remain `[ ]` — the only
+unimplemented work left for the full feature.
