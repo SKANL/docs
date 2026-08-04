@@ -47,6 +47,12 @@ def test_run_doctor_uses_injected_tool_resolver_not_shutil_which(tmp_path, monke
         def resolve_java(self, paths):
             return None
 
+        def resolve_mmdc(self, paths):
+            return None
+
+        def resolve_resvg(self, paths):
+            return None
+
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     service = DoctorService(JsonEvidenceRepository(), asset_service, _FakeToolResolver())
@@ -353,6 +359,12 @@ def test_run_doctor_pandoc_missing_fails_as_required(tmp_path):
         def resolve_java(self, paths):
             return None
 
+        def resolve_mmdc(self, paths):
+            return None
+
+        def resolve_resvg(self, paths):
+            return None
+
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     service = DoctorService(JsonEvidenceRepository(), asset_service, _NoToolsResolver())
@@ -413,6 +425,12 @@ def test_run_doctor_java_capability_check_is_optional(tmp_path):
         def resolve_java(self, paths):
             return None
 
+        def resolve_mmdc(self, paths):
+            return None
+
+        def resolve_resvg(self, paths):
+            return None
+
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     service = DoctorService(JsonEvidenceRepository(), asset_service, _NoJavaResolver())
@@ -424,3 +442,75 @@ def test_run_doctor_java_capability_check_is_optional(tmp_path):
     assert java_check.ok is False
     assert java_check.required is False
     assert result.passed is True
+
+
+# --- Slice 7: resvg/mmdc optional capability checks -------------------------
+
+
+def test_run_doctor_resvg_and_mmdc_capability_checks_required_false_when_absent(tmp_path):
+    class _NoVisualToolsResolver:
+        def resolve_pandoc(self, paths):
+            return "/fake/pandoc"
+
+        def resolve_libreoffice(self, paths):
+            return None
+
+        def resolve_java(self, paths):
+            return None
+
+        def resolve_mmdc(self, paths):
+            return None
+
+        def resolve_resvg(self, paths):
+            return None
+
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    asset_service = AssetService(FilesystemAssetRepository(), workspace)
+    service = DoctorService(JsonEvidenceRepository(), asset_service, _NoVisualToolsResolver())
+    config = _rules_config_passing_config(tmp_path)
+
+    result = service.run_doctor("doc1", config)
+
+    mmdc_check = next(c for c in result.checks if c.name == "mmdc")
+    resvg_check = next(c for c in result.checks if c.name == "resvg")
+    assert mmdc_check.ok is False
+    assert mmdc_check.required is False
+    assert "mermaid" in mmdc_check.detail.lower()
+    assert resvg_check.ok is False
+    assert resvg_check.required is False
+    assert "resvg" in resvg_check.detail.lower()
+    assert result.passed is True
+
+
+def test_run_doctor_resvg_and_mmdc_capability_checks_ok_when_present(tmp_path):
+    class _AllVisualToolsResolver:
+        def resolve_pandoc(self, paths):
+            return "/fake/pandoc"
+
+        def resolve_libreoffice(self, paths):
+            return None
+
+        def resolve_java(self, paths):
+            return None
+
+        def resolve_mmdc(self, paths):
+            return "/fake/mmdc"
+
+        def resolve_resvg(self, paths):
+            return "/fake/resvg"
+
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    asset_service = AssetService(FilesystemAssetRepository(), workspace)
+    service = DoctorService(JsonEvidenceRepository(), asset_service, _AllVisualToolsResolver())
+    config = _rules_config_passing_config(tmp_path)
+
+    result = service.run_doctor("doc1", config)
+
+    mmdc_check = next(c for c in result.checks if c.name == "mmdc")
+    resvg_check = next(c for c in result.checks if c.name == "resvg")
+    assert mmdc_check.ok is True
+    assert mmdc_check.detail == "/fake/mmdc"
+    assert mmdc_check.required is False
+    assert resvg_check.ok is True
+    assert resvg_check.detail == "/fake/resvg"
+    assert resvg_check.required is False
