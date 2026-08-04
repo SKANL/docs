@@ -296,5 +296,84 @@ test_deps_visual_renderers_wiring.py` (modified, extended),
 `openspec/changes/on-demand-visual-generation/apply-progress.md` (this
 file).
 
-Not started: Slices 5-7 (`GenerateVisualsService` + stage wiring, `html_render`
-sibling-SVG swap + E2E, doctor checks + AGENTS.md).
+## Slice 5a — `GenerateVisualsService` (pure service logic, no pipeline/composition wiring) — DONE
+
+Slice 5 was split (delivery_strategy: ask-on-risk resolution) into **5a**
+(5.1–5.7, service logic alone) and **5b** (5.8–5.10, `domain/pipeline.py` +
+`application/pipeline.py` + `cli/_shared.py` wiring — not started here).
+
+- [x] 5.1-5.7 RED `tests/unit/application/test_generate_visuals_service.py`
+  (new, 11 cases, hermetic FAKE ports — no real mmdc/resvg/matplotlib).
+  Confirmed RED via `ModuleNotFoundError: No module named
+  'docs.application.generate_visuals'` before implementation. GREEN
+  `src/docs/application/generate_visuals.py` (new):
+  `GenerateVisualsService(visual_renderers: dict[str, VisualRendererPort],
+  svg_rasterizer: SvgRasterizerPort, image_metadata: ImageMetadataPort,
+  writer: IngestArtifactWriter | None = None)` (defaults to `InlineJsonWriter`,
+  same convention as `IngestService`).
+  - `generate(sections_dir, assets_dir) -> GenerateVisualsResult(generated,
+    skipped)`: reads `sections_dir/visual-specs.json` fail-open (absent or
+    malformed/wrong-shaped → `[]`, same shape as
+    `figure_resolver._read_json_fail_open` but for a top-level JSON array
+    per document-visuals spec — `_read_specs_fail_open`); per-entry shape
+    validation (`_parse_spec`) requiring `label`/`type`/`source` (WARN naming
+    the missing field, skip); deterministic order (sorted by `label`);
+    dispatch via `visual_renderers[spec.type]` (unregistered type → WARN
+    naming it, skip); `renderer.render(spec)` → raw SVG → `normalize_svg`
+    (Slice 1, pure) → `stem = f"visual-{sha8_of_normalized_svg}"` → atomic
+    temp-then-rename write of `<stem>.svg` (mirrors
+    `filesystem_ingest_artifact_writer.py`/`atomic_ingest_write.py`'s
+    convention) → `svg_rasterizer.rasterize(svg_path, png_path)` (raises →
+    WARN+skip) → `image_metadata.read_dimensions(png_path)` (`None` → WARN+
+    skip, an un-dimensioned PNG can't embed) → `FigureEntry(sha256=sha256(png
+    bytes), width_px, height_px,
+    origin_relative_path="assets/figures/<stem>.png", caption=spec.caption,
+    source_role="", origin_kind="generated")`. Catalog id = `fig-<png_sha8>`.
+  - After the loop: `figure_catalog.merge(existing, figure_catalog.build
+    (entries))` written to `figure-catalog.json` (existing read fail-open,
+    only written when `entries` non-empty); per successfully generated
+    entry, `label -> fig-<sha8>` added to a `bindings_additions` dict, then
+    `figure_binding.merge_bindings(existing_bindings, bindings_additions)`
+    written to `figure-bindings.json` (existing `bindings` sub-object read
+    fail-open, other top-level keys in the doc preserved, only written when
+    at least one binding was generated); a pre-existing manual binding for a
+    generated label is left unchanged and WARNed naming the label collision
+    (never silently overwritten).
+  - EVERY per-visual failure (unregistered type, malformed entry, renderer
+    exception, rasterizer exception, null dims) is caught at the entry-loop
+    level and WARNed to stderr naming the cause — never raises out of
+    `generate()` (mirrors `ingest.py`'s per-item catch). Absent
+    `visual-specs.json` (or an empty entries list) is a true no-op: catalog
+    and bindings files are not even re-written (byte-identical before/after,
+    proven via `capsys`-free direct-bytes comparison in the no-op test).
+  - Determinism proven directly: same specs + same fake renderers/rasterizer
+    run twice independently → byte-identical `figure-catalog.json`,
+    `figure-bindings.json`, and generated `.svg` stems.
+
+Slice check green: 11 new tests passed (registry dispatch, unregistered-type
+WARN+skip, no-op on absent specs, malformed-entry WARN+skip, sibling
+svg/png shared-stem write, catalog merge, auto-bind no-clobber+WARN,
+renderer-exception WARN+skip, rasterizer-exception WARN+skip, null-dims
+WARN+skip, twice-run byte-identity). Full suite: 1431 passed, 0 failed, 11
+skipped (vs. Slice 4's 1420 passed/11 skipped — net +11 passed, zero new
+skips, zero regression). `ruff check` clean on both changed files.
+
+Commits (branch `feat/odvg-s5a-service`, off main `47ba4f6`, not pushed, no
+PR opened per instructions):
+- `feat(application): add GenerateVisualsService (render/normalize/rasterize/catalog/auto-bind)`
+- `docs(sdd): tick S5a tasks and record apply-progress for on-demand-visual-generation`
+
+Touched ONLY: `src/docs/application/generate_visuals.py` (new),
+`tests/unit/application/test_generate_visuals_service.py` (new),
+`openspec/changes/on-demand-visual-generation/tasks.md` (5.1-5.7 ticked +
+5a/5b split resolution noted), `openspec/changes/on-demand-visual-generation/
+apply-progress.md` (this file). NO `domain/pipeline.py`,
+`application/pipeline.py`, `cli/_shared.py`, or `html_render.py` touched —
+those are Slice 5b (pipeline/composition-root wiring) and Slice 6
+(`html_render` swap), both untouched here.
+
+Not started: Slice 5b (`domain/pipeline.py` stage insertion +
+`application/pipeline.py` stage callable + `cli/_shared.py` composition-root
+wiring of `GenerateVisualsService` into `Deps`/`PipelineService`), Slice 6
+(`html_render` sibling-SVG swap + E2E byte-identity), Slice 7 (doctor
+checks + pyproject + AGENTS.md authoring docs).

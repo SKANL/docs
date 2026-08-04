@@ -232,12 +232,16 @@ Review Workload Forecast). `delivery_strategy: ask-on-risk` — confirm with
 the orchestrator whether to further split 5.1–5.7 (service, PR 5a) from
 5.8–5.10 (stage/composition-root wiring, PR 5b) before `sdd-apply` begins.**
 
+**Resolved: split into 5a/5b (option 2).** 5.1–5.7 (`GenerateVisualsService`
+alone) landed on branch `feat/odvg-s5a-service`; 5.8–5.10 (pipeline stage +
+composition-root wiring) are a separate PR (5b), not started here.
+
 Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
 `application/pipeline.py:306` (`stage_ingest`'s errors-list-not-crash shape),
 `figure_resolver.py:15` (`_read_json_fail_open` — same fail-open read for
 `visual-specs.json`), `domain/pipeline.py:33` (`pipeline_stage_plan`).
 
-- [ ] 5.1 **Test first** —
+- [x] 5.1 **Test first** —
       `tests/unit/application/test_generate_visuals_service.py::
       test_registry_dispatch_by_type` — two fake `VisualRendererPort`s
       registered by `type`; `GenerateVisualsService.generate(...)` routes
@@ -251,7 +255,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       writer)`.
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.2 **Test first** — same file:
+- [x] 5.2 **Test first** — same file:
       `test_missing_visual_specs_file_is_noop` — no
       `sections/visual-specs.json` → service returns a no-op result; catalog
       and bindings files are untouched (not even re-written).
@@ -259,7 +263,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       `figure_resolver._read_json_fail_open`): absent/malformed file → `[]`.
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.3 **Test first** — same file:
+- [x] 5.3 **Test first** — same file:
       `test_malformed_entry_warns_naming_missing_field_others_still_process`
       — one entry missing `source`, one well-formed entry in the same list;
       the malformed one is WARNed naming the field, the well-formed one is
@@ -268,7 +272,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       `label`, `type`, `source`).
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.4 **Test first** — same file:
+- [x] 5.4 **Test first** — same file:
       `test_well_formed_entry_writes_sibling_svg_and_png_with_shared_stem`
       — asserts `stem = f"visual-{sha8_of_normalized_svg}"`,
       `assets_dir/figures/<stem>.svg` and `<stem>.png` both exist,
@@ -280,7 +284,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       read PNG bytes + dims → build `FigureEntry`.
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.5 **Test first** — same file:
+- [x] 5.5 **Test first** — same file:
       `test_generated_entries_merged_into_existing_catalog_and_written` —
       given a fixture `figure-catalog.json` from ingest, service output
       merges via Slice 1's `merge()` and writes the result (via the
@@ -290,7 +294,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       write via injected writer.
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.6 **Test first** — same file:
+- [x] 5.6 **Test first** — same file:
       `test_auto_binds_label_to_generated_id_no_clobber_warns_on_collision`
       — a generated entry with `label: "arch-diagram"` writes
       `"arch-diagram" -> "fig-<sha8>"` into `figure-bindings.json` via
@@ -302,7 +306,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       same writer.
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.7 **Test first** — same file:
+- [x] 5.7 **Test first** — same file:
       `test_renderer_exception_and_missing_toolchain_warn_skip_others_continue`
       — a `RuntimeError` from `render()` (missing toolchain, per Slices 3/4)
       or `rasterize()` is caught per-entry, WARNed naming the cause, and does
