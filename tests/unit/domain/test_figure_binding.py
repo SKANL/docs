@@ -10,6 +10,7 @@ from docs.domain.figure_binding import (
     BoundFigure,
     figure_image_markdown,
     figure_width_attr,
+    merge_bindings,
 )
 
 
@@ -55,3 +56,36 @@ def test_image_markdown_empty_caption_rstrips_trailing_space():
     markdown = figure_image_markdown(2, fig)
 
     assert markdown == "![Figura 2.](/abs/assets/figures/fig-abcd1234.png){width=2.0in}"
+
+
+# --- merge_bindings() -- on-demand-visual-generation, design.md "pure merge +
+# pure merge_bindings, no-clobber": add `label -> id` only when the label is
+# absent from `existing` -- a generated auto-bind NEVER overwrites a manual
+# binding, sorted-key output.
+
+
+def test_merge_bindings_adds_only_absent_labels():
+    existing = {"organigrama": "fig-abcd1234"}
+    additions = {"arch-diagram": "fig-eeee5555"}
+
+    merged = merge_bindings(existing, additions)
+
+    assert merged == {"arch-diagram": "fig-eeee5555", "organigrama": "fig-abcd1234"}
+
+
+def test_merge_bindings_never_clobbers_existing_label():
+    existing = {"arch-diagram": "fig-manual00"}
+    additions = {"arch-diagram": "fig-generated1"}
+
+    merged = merge_bindings(existing, additions)
+
+    assert merged["arch-diagram"] == "fig-manual00"
+
+
+def test_merge_bindings_output_is_sorted_and_deterministic():
+    existing = {"zeta": "fig-1"}
+    additions = {"alpha": "fig-2", "mid": "fig-3"}
+
+    merged = merge_bindings(existing, additions)
+
+    assert list(merged.keys()) == sorted(merged.keys())
