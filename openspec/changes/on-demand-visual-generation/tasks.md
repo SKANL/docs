@@ -79,7 +79,7 @@ executed code"; Threat Matrix row "Documentation-like / execution boundary".
 Spec: document-visuals "Chart entry produces sibling SVG and PNG without a
 Node/Chrome toolchain".
 
-- [ ] 2.1 **Test first (THREAT MATRIX RED)** —
+- [x] 2.1 **Test first (THREAT MATRIX RED)** —
       `tests/unit/infrastructure/test_chart_svg_renderer.py::
       test_python_looking_source_text_renders_as_inert_data`: a spec whose
       `source` JSON contains a string value that looks like Python code
@@ -96,7 +96,7 @@ Node/Chrome toolchain".
       Slice-5 service can WARN+skip it.
       Run: `uv run pytest tests/unit/infrastructure/test_chart_svg_renderer.py`.
 
-- [ ] 2.2 **Test first** — same file:
+- [x] 2.2 **Test first** — same file:
       `test_render_bar_chart_produces_svg_text` — a well-formed declarative
       spec (`{"kind": "bar", "labels": [...], "series": [...]}`) renders a
       string containing `<svg`.
@@ -105,7 +105,7 @@ Node/Chrome toolchain".
       to an in-memory buffer, returning `.getvalue().decode()`).
       Run: `uv run pytest tests/unit/infrastructure/test_chart_svg_renderer.py`.
 
-- [ ] 2.3 **Test first** —
+- [x] 2.3 **Test first** —
       `test_render_plus_normalize_svg_is_byte_identical_across_two_runs`
       (exercises Slice 1's `normalize_svg` on this renderer's raw output):
       render the same spec twice, normalize both, assert `sha256` equal.
@@ -115,7 +115,7 @@ Node/Chrome toolchain".
       never in `normalize_svg` (design.md: "Renderer-side determinism knobs").
       Run: `uv run pytest tests/unit/infrastructure/test_chart_svg_renderer.py`.
 
-- [ ] 2.4 **Test first** — `test_unknown_chart_kind_raises_documented_error`,
+- [x] 2.4 **Test first** — `test_unknown_chart_kind_raises_documented_error`,
       `test_missing_required_field_raises_documented_error` (e.g. no
       `labels`).
       **Implement** — input validation raising `ValueError` with a message
