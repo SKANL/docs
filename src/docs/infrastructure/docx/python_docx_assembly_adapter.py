@@ -16,6 +16,11 @@ from docs.domain.markdown_text import normalize_heading
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
 
+# A figure/table caption line ("Figura 12. ...", "Tabla 5. ...", "Gráfico 3. ...").
+# Centered at assembly like the image it labels (academic layout), never
+# first-line-indented as body text. Matches the leading token only.
+_CAPTION_RE = re.compile(r"^(Figura|Tabla|Gr[aá]fico|Gr[aá]fica)\s+\d+\.", re.IGNORECASE)
+
 
 def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
     resolved = shutil.which("pandoc")
@@ -508,7 +513,7 @@ class PythonDocxAssemblyAdapter:
 
     def _transfer_one_paragraph(self, cover: Any, body: Any, paragraph: Any, ctx: dict[str, Any], config: dict[str, Any]) -> None:
         from docx.enum.section import WD_SECTION_START
-        from docx.enum.text import WD_BREAK
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
         from docx.shared import Pt, RGBColor
 
         if paragraph.text.strip() == "[[pagebreak]]":
@@ -555,6 +560,20 @@ class PythonDocxAssemblyAdapter:
         ctx["just_broke"] = False
         new_paragraph = cover.add_paragraph(style=style_name)
         apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, is_list=is_list)
+        # Academic figure layout: an image paragraph and its caption are centered
+        # (never left-aligned or first-line-indented), and the image keeps with
+        # the next paragraph so its "Figura N." caption never orphans onto the
+        # following page. Normal body paragraphs are untouched.
+        if any(_run_has_drawing(run) for run in paragraph.runs):
+            new_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            new_paragraph.paragraph_format.first_line_indent = None
+            new_paragraph.paragraph_format.keep_with_next = True
+            # An image hugs its caption: a small gap (not the 18pt body spacing)
+            # keeps "Figura N." directly under the figure it labels.
+            new_paragraph.paragraph_format.space_after = Pt(6)
+        elif _CAPTION_RE.match(paragraph_text):
+            new_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            new_paragraph.paragraph_format.first_line_indent = None
         if is_heading_1:
             ctx["body_heading_seen"] = True
         for run in paragraph.runs:
