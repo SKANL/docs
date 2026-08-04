@@ -160,7 +160,14 @@ class GenerateVisualsService:
                 skipped += 1
                 continue
             entries.append(entry)
-            bindings_additions[spec.label] = f"fig-{entry.sha256[:8]}"
+            catalog_id = f"fig-{entry.sha256[:8]}"
+            if bindings_additions.get(spec.label, catalog_id) != catalog_id:
+                print(
+                    f"WARN: dos visuales declaran el mismo label '{spec.label}' con contenido "
+                    f"distinto; se vincula el último ('{catalog_id}') y se descarta el anterior.",
+                    file=sys.stderr,
+                )
+            bindings_additions[spec.label] = catalog_id
 
         if entries:
             existing_catalog = _read_json_fail_open(sections_dir / _CATALOG_NAME)
@@ -221,6 +228,7 @@ class GenerateVisualsService:
                 f"WARN: no se pudo rasterizar el visual '{spec.label}' a PNG: {exc}; se omite.",
                 file=sys.stderr,
             )
+            svg_path.unlink(missing_ok=True)  # no dejar un .svg huérfano sin PNG ni entrada de catálogo
             return None
 
         dims = self.image_metadata.read_dimensions(png_path)
@@ -230,6 +238,8 @@ class GenerateVisualsService:
                 f"'{spec.label}'; se omite.",
                 file=sys.stderr,
             )
+            svg_path.unlink(missing_ok=True)
+            png_path.unlink(missing_ok=True)
             return None
         width_px, height_px = dims
 
