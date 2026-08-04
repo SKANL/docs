@@ -365,6 +365,55 @@ def test_null_dims_warns_and_skips(tmp_path, capsys):
     assert not (sections_dir / "figure-catalog.json").exists()
 
 
+def test_orphaned_svg_cleaned_up_on_rasterize_failure(tmp_path):
+    # The .svg is written before rasterize; when rasterize fails (WARN+skip)
+    # the orphaned .svg (no PNG, no catalog entry) must be cleaned up, not left
+    # as litter under assets/figures/ (audit nit #5).
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(sections_dir, [{"label": "x", "type": "chart", "source": "s"}])
+    service = _service(
+        {"chart": FakeRenderer(type="chart", svg="<svg><rect/></svg>")},
+        FakeRasterizer(exc=RuntimeError("resvg no encontrado")),
+    )
+
+    service.generate(sections_dir, assets_dir)
+
+    figures_dir = assets_dir / "figures"
+    leftover = sorted(p.name for p in figures_dir.iterdir()) if figures_dir.exists() else []
+    assert leftover == []
+
+
+def test_duplicate_label_different_content_warns_and_last_wins(tmp_path, capsys):
+    # Two visual-specs entries with the same label but different content each
+    # render + catalog (distinct ids), but only one binding survives; warn so
+    # the silent last-wins isn't a surprise (audit nit #5).
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(
+        sections_dir,
+        [
+            {"label": "dup", "type": "chart", "source": "first"},
+            {"label": "dup", "type": "chart", "source": "second"},
+        ],
+    )
+
+    class PerSourceRenderer(FakeRenderer):
+        def render(self, spec: VisualSpec) -> str:
+            self.calls.append(spec)
+            return f"<svg data-src='{spec.source}'><rect/></svg>"
+
+    service = _service({"chart": PerSourceRenderer(type="chart", svg="")}, FakeRasterizer())
+
+    result = service.generate(sections_dir, assets_dir)
+
+    assert result.generated == 2
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err and "dup" in captured.err
+    bindings = json.loads((sections_dir / "figure-bindings.json").read_text(encoding="utf-8"))["bindings"]
+    assert list(bindings.keys()) == ["dup"]
+
+
 # --- determinism: same specs+fakes twice -> byte-identical outputs --------
 
 

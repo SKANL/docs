@@ -65,11 +65,10 @@ def merge(existing_catalog: dict, generated: dict) -> dict:
     return {"figures": figures}
 
 
-# ponytail: the catalog carries `width_px`/`height_px`/`caption`, but today
-# the only production consumer is `status._count_figures` (which reads just
-# `len(figures)`) -- those fields are written, not yet read, and `caption` is
-# never even populated (both FigureEntry construction sites in ingest.py omit
-# it). The spec mandates the deterministic catalog, so the fields stay; wiring
-# a render-time consumer that resolves `[[figure:fig-<sha8>]]` markers back to
-# these entries is the intended next step (a `resolve_section_figures` helper
-# once existed here for exactly that but had zero callers, so it was removed).
+# The catalog's `width_px`/`height_px`/`caption` are load-bearing: at assembly
+# `application/figure_resolver.build_bound_figures_resolver` reads them from the
+# catalog row (dims gate whether a binding is admitted; caption feeds the
+# rendered "Figura N. <caption>" via `figure_binding.figure_image_markdown`).
+# `caption` is populated by the generated-visuals path
+# (`application/generate_visuals.py`, `caption=spec.caption`). `origin_kind`
+# distinguishes `standalone` / `pdf_render` / `generated` sources.
