@@ -371,7 +371,7 @@ Grounded in: `application/html_render.py:66-72` (`build_bound_figures_resolver`
 call site — swap happens right after it, before `strip_frontmatter_to_temp`).
 Spec: document-render "HTML Prefers Sibling SVG for a Bound Figure".
 
-- [ ] 6.1 **Test first** —
+- [x] 6.1 **Test first** —
       `tests/unit/application/test_html_render_svg_swap.py`:
       `test_bound_figure_with_sibling_svg_swaps_to_svg_path` — a
       `BoundFigure` whose `.path` ends in `.png` and has a same-stem, same-dir
@@ -385,7 +385,7 @@ Spec: document-render "HTML Prefers Sibling SVG for a Bound Figure".
       `Path(path).with_suffix(".svg").exists()`.
       Run: `uv run pytest tests/unit/application/test_html_render_svg_swap.py`.
 
-- [ ] 6.2 **Test first (characterization)** —
+- [x] 6.2 **Test first (characterization)** —
       `tests/unit/application/test_docx_assembly_ignores_sibling_svg.py`:
       `test_docx_always_embeds_png_even_with_sibling_svg` — the SAME bound
       figure (PNG + sibling SVG both present) still embeds the PNG when
@@ -395,7 +395,7 @@ Spec: document-render "HTML Prefers Sibling SVG for a Bound Figure".
       Slice 6; if it fails, Slice 6 leaked into the docx path).
       Run: `uv run pytest tests/unit/application/test_docx_assembly_ignores_sibling_svg.py`.
 
-- [ ] 6.3 **Test first (E2E)** —
+- [x] 6.3 **Test first (E2E)** —
       `tests/integration/test_generate_visuals_e2e.py`:
       `test_chart_only_pipeline_e2e_docx_png_html_svg` (no `@skipif` — chart
       needs only matplotlib) — full pipeline `ingest` → `generate-visuals` →
@@ -412,7 +412,7 @@ Spec: document-render "HTML Prefers Sibling SVG for a Bound Figure".
       proof of the whole feature.
       Run: `uv run pytest tests/integration/test_generate_visuals_e2e.py`.
 
-- [ ] 6.4 **Regression gate (no new test)** — run the full existing suite
+- [x] 6.4 **Regression gate (no new test)** — run the full existing suite
       unmodified and confirm zero regressions, in particular
       `tests/integration/test_technical_report_srs_acceptance.py` and
       `tests/integration/test_documento_generico_acceptance.py` (no

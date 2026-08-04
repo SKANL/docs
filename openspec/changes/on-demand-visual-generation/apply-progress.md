@@ -504,3 +504,80 @@ pass in the full-suite run.
 
 Not started: Slice 6 (`html_render` sibling-SVG swap + E2E byte-identity),
 Slice 7 (doctor checks + pyproject + AGENTS.md authoring docs).
+
+## Slice 6 — `html_render` sibling `.png -> .svg` swap + E2E byte-identity — DONE
+
+Branch `feat/odvg-s6-html`, off main `95f3919` (slices 1-5b already merged).
+
+- [x] 6.1 RED `tests/unit/application/test_html_render_svg_swap.py` (new, 3
+  cases: sibling-present swaps to `.svg` with every other `BoundFigure`
+  field unchanged; sibling-absent is unaffected; a non-`.png` path is
+  unaffected) — confirmed RED via `ImportError: cannot import name
+  '_prefer_sibling_svg'`. GREEN `src/docs/application/html_render.py` —
+  added `_prefer_sibling_svg(bound_figures: dict[str, BoundFigure]) ->
+  dict[str, BoundFigure]` (module-level, `dataclasses.replace` on a frozen
+  `BoundFigure`), called in `build()` right after
+  `build_bound_figures_resolver(...)` and before `strip_frontmatter_to_temp`.
+  `docx_assembly.py` untouched (not imported, not modified).
+- [x] 6.2 RED-as-characterization `tests/unit/application/
+  test_docx_assembly_ignores_sibling_svg.py` (new, 1 case) —
+  `test_docx_always_embeds_png_even_with_sibling_svg`: the same bound figure
+  (PNG + sibling SVG both present under `assets_dir/figures/`) still embeds
+  ONLY the PNG (`word/media/` entry bytes == the PNG bytes, not the SVG) when
+  built via `DocxRendererAdapter.build()`. Passed on first run (implement:
+  none, per tasks.md) — proves the Slice-6 swap never leaked into the docx
+  path.
+- [x] 6.3 E2E `tests/integration/test_generate_visuals_e2e.py` (new):
+  - `test_chart_only_pipeline_e2e_docx_png_html_svg` — NO skipif (chart
+    rendering needs only matplotlib, already a hard pyproject dependency
+    since Slice 2). Ran hermetically: real `ChartSvgRenderer` +
+    `_FakeSvgRasterizer` (test double writing a real, tiny, deterministic
+    PNG via Pillow — resvg is absent on this host) + real
+    `PythonDocxImageMetadataAdapter` for dims. Full path: `GenerateVisualsService.
+    generate()` -> real `DocxRendererAdapter.build()` (real pandoc 3.10) ->
+    real `HtmlRendererAdapter.build()`. Asserted: generated PNG bytes appear
+    in the docx's `word/media/` entries; the HTML output contains
+    `data:image/svg` (pandoc `--embed-resources` inlining the sibling SVG
+    Slice 6's swap pointed it at). PASSED.
+  - `test_mermaid_and_chart_pipeline_e2e_byte_identical` —
+    `@pytest.mark.skipif(not (_HAS_MMDC and _HAS_RESVG), ...)`. Neither
+    `mmdc` nor `resvg` is on PATH on this host (confirmed via `shutil.which`
+    before writing the test) — SKIPPED CLEANLY, as directed, rather than
+    forcing a fake-toolchain substitute for a test whose whole point is
+    proving REAL-toolchain rebuild identity. Full pipeline (mermaid + chart
+    spec, real `MermaidSvgRenderer`/`ResvgRasterizerAdapter`) run twice
+    independently in this test would assert `figure-catalog.json`,
+    `figure-bindings.json`, every generated `.svg`/`.png`, and both
+    docx/html outputs are byte-identical (`==` on raw bytes) across runs —
+    written and ready to run wherever both tools are installed (e.g. CI).
+- [x] 6.4 Regression gate: full suite `uv run pytest -q` — **1445 passed, 0
+  failed, 12 skipped** (baseline before Slice 6 was ~1436 passed/11 skipped
+  across slices 1-5b; the delta is exactly this slice's 4 new unit/
+  characterization cases + 1 new E2E pass + 1 new E2E skip, zero
+  regressions). `tests/integration/test_technical_report_srs_acceptance.py`
+  and `tests/integration/test_documento_generico_acceptance.py` (no
+  `visual-specs.json` in either fixture doc) both still green — backward-
+  compat no-op holds.
+
+`ruff check` clean on all changed files (one `F401` unused `Path` import in
+the new swap test caught and fixed before commit).
+
+Touched ONLY: `src/docs/application/html_render.py` (modified: added
+`_prefer_sibling_svg` + one call-site wrap in `build()`),
+`tests/unit/application/test_html_render_svg_swap.py` (new),
+`tests/unit/application/test_docx_assembly_ignores_sibling_svg.py` (new),
+`tests/integration/test_generate_visuals_e2e.py` (new),
+`openspec/changes/on-demand-visual-generation/tasks.md` (6.1-6.4 ticked,
+append-only), `openspec/changes/on-demand-visual-generation/
+apply-progress.md` (this section). `docx_assembly.py`, `doctor.py`,
+`pyproject.toml`, `AGENTS.md` NOT touched (Slice 7 scope, running in
+parallel).
+
+Commits (branch `feat/odvg-s6-html`, off main `95f3919`):
+- `<pending>` feat(html): swap bound figure to sibling SVG when present for HTML output
+- `<pending>` test(docx): lock docx-always-embeds-png-even-with-sibling-svg characterization
+- `<pending>` test(e2e): add chart-only hermetic E2E + skipif'd mermaid+chart byte-identity rebuild
+
+Not started: Slice 7 (doctor capability checks + `pyproject.toml` +
+AGENTS.md authoring docs) — explicitly out of scope for this apply pass
+(running in parallel on another branch).
