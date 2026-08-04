@@ -398,6 +398,36 @@ def test_assemble_centers_figures_and_captions_and_keeps_them_together(tmp_path,
     assert body_para.alignment == WD_ALIGN_PARAGRAPH.LEFT
 
 
+def test_assemble_tables_repeat_header_keep_rows_and_bind_caption(tmp_path, service):
+    # Table layout: the "Tabla N." caption keeps with its table (never orphans
+    # at a page bottom), the header row repeats on every page a table spans, and
+    # no row splits across a page boundary.
+    from docx.oxml.ns import qn
+
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("Tabla 1. Una tabla de prueba.")
+    table = doc.add_table(rows=3, cols=2)
+    for r in range(3):
+        for c in range(2):
+            table.cell(r, c).text = f"c{r}{c}"
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    cap = next(p for p in result.paragraphs if (p.text or "").strip().startswith("Tabla 1."))
+    assert cap.paragraph_format.keep_with_next is True
+    out_table = result.tables[0]
+    rows = out_table.rows
+    # header (row 0) repeats on page breaks
+    assert rows[0]._tr.find(qn("w:trPr")).find(qn("w:tblHeader")) is not None
+    # every row is kept intact across page boundaries
+    for row in rows:
+        assert row._tr.find(qn("w:trPr")).find(qn("w:cantSplit")) is not None
+
+
 # --- _strip_frontmatter_to_temp -------------------------------------------------
 
 

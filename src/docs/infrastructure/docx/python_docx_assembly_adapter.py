@@ -571,9 +571,14 @@ class PythonDocxAssemblyAdapter:
             # An image hugs its caption: a small gap (not the 18pt body spacing)
             # keeps "Figura N." directly under the figure it labels.
             new_paragraph.paragraph_format.space_after = Pt(6)
-        elif _CAPTION_RE.match(paragraph_text):
+        elif caption_match := _CAPTION_RE.match(paragraph_text):
             new_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             new_paragraph.paragraph_format.first_line_indent = None
+            # A "Tabla N." caption sits ABOVE its table -- keep it with the table
+            # so it never orphans at a page bottom. (A "Figura N." caption sits
+            # below its image, which already keeps_with_next onto the caption.)
+            if caption_match.group(1).lower().startswith("tabla"):
+                new_paragraph.paragraph_format.keep_with_next = True
         if is_heading_1:
             ctx["body_heading_seen"] = True
         for run in paragraph.runs:
@@ -593,6 +598,9 @@ class PythonDocxAssemblyAdapter:
             self._transfer_one_table(cover, table)
 
     def _transfer_one_table(self, cover: Any, table: Any) -> None:
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+
         new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
         self._apply_horizontal_only_borders(new_table)
         for row_idx, row in enumerate(table.rows):
@@ -604,6 +612,15 @@ class PythonDocxAssemblyAdapter:
                         run.font.name = "Times New Roman"
                         if row_idx == 0:
                             run.bold = True
+        # Multi-page table hygiene: keep each row intact across page boundaries
+        # (`cantSplit`) and repeat the header row on every page the table spans
+        # (`tblHeader`), so a table that breaks never strands a header or splits
+        # a row mid-cell.
+        for row_idx, new_row in enumerate(new_table.rows):
+            tr_pr = new_row._tr.get_or_add_trPr()
+            tr_pr.append(OxmlElement("w:cantSplit"))
+            if row_idx == 0:
+                tr_pr.append(OxmlElement("w:tblHeader"))
 
     def _apply_horizontal_only_borders(self, table: Any) -> None:
         # Institutional guide: horizontal lines only, no vertical lines, no
