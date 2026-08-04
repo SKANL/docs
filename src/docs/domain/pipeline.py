@@ -29,16 +29,22 @@ _INGEST_STAGES: list[tuple[str, bool]] = [
     ("build-context-index", True),
 ]
 
+# Format-agnostic like `_PREP_STAGES`/`_INGEST_STAGES` (design.md Decision
+# "generate-visuals is a format-agnostic stage before assemble"):
+# `fail_fast=False` -- a failing/absent visual never blocks the build, it is
+# a WARN detail surfaced by the stage callable, not a stage failure.
+_GENERATE_VISUALS: list[tuple[str, bool]] = [("generate-visuals", False)]
+
 
 def pipeline_stage_plan(
     stage_set: str, assemble: list[tuple[str, bool]] | None = None
 ) -> list[tuple[str, bool]]:
     """Devuelve (nombre, fail_fast) en orden de dependencias para el stage_set dado.
 
-    `prep` and `ingest` stages are format-agnostic and stay defined here.
-    `assemble` stages are supplied by the caller (the composition root
-    resolves the active `DocumentRendererPort` and passes its
-    `stage_plan()`) — this module holds zero format-specific or
+    `prep`, `ingest`, and `generate-visuals` stages are format-agnostic and
+    stay defined here. `assemble` stages are supplied by the caller (the
+    composition root resolves the active `DocumentRendererPort` and passes
+    its `stage_plan()`) — this module holds zero format-specific or
     renderer-specific identifiers.
     """
     if stage_set == "prep":
@@ -52,6 +58,11 @@ def pipeline_stage_plan(
                 f"para stage_set='{stage_set}'."
             )
         if stage_set == "assemble":
-            return list(assemble)
-        return list(_PREP_STAGES) + [("review-document", True)] + list(assemble)
+            return list(_GENERATE_VISUALS) + list(assemble)
+        return (
+            list(_PREP_STAGES)
+            + [("review-document", True)]
+            + list(_GENERATE_VISUALS)
+            + list(assemble)
+        )
     raise ValueError(f"Conjunto de etapas desconocido: {stage_set}. Usa prep, assemble, all o ingest.")

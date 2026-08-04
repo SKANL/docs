@@ -42,7 +42,9 @@ from docs.application.asset import AssetService
 _HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
 
 
-def _service(tmp_path, image_metadata=None) -> tuple[PipelineService, Workspace]:
+def _service(
+    tmp_path, image_metadata=None, generate_visuals_service=None
+) -> tuple[PipelineService, Workspace]:
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     evidence_repo = JsonEvidenceRepository()
     section_repo = JsonSectionRepository(workspace)
@@ -79,6 +81,7 @@ def _service(tmp_path, image_metadata=None) -> tuple[PipelineService, Workspace]
         review_service, context_pack_service, context_repo, docx_assembly_service,
         format_audit_service, qa_service, workspace, ingest_service,
         context_service=context_service,
+        generate_visuals_service=generate_visuals_service,
     )
     return service, workspace
 
@@ -959,3 +962,62 @@ def test_verify_all_completes_qa_without_qa_failed_when_libreoffice_available(tm
     Document().save(docx_path)
     result = service.verify_all("doc1", _template(), config, strict=False)
     assert not any(issue.code == "qa.failed" for issue in result.issues)
+
+
+# --- Slice 5b (on-demand-visual-generation): generate-visuals stage wiring
+
+
+class _FakeGenerateVisualsService:
+    """Test double capturing the `(sections_dir, assets_dir)` args the stage
+    resolves from `config["paths"]`, mirrors the real
+    `GenerateVisualsService.generate` return shape without touching real
+    renderers/rasterizer/matplotlib."""
+
+    def __init__(self, generated: int = 0, skipped: int = 0) -> None:
+        self.calls: list[tuple[Path, Path]] = []
+        self._generated = generated
+        self._skipped = skipped
+
+    def generate(self, sections_dir: Path, assets_dir: Path):
+        self.calls.append((Path(sections_dir), Path(assets_dir)))
+        from docs.application.generate_visuals import GenerateVisualsResult
+
+        return GenerateVisualsResult(generated=self._generated, skipped=self._skipped)
+
+
+def test_stage_generate_visuals_is_wired_and_never_fail_fast(tmp_path):
+    fake_service = _FakeGenerateVisualsService(generated=0, skipped=2)
+    service, _ = _service(tmp_path, generate_visuals_service=fake_service)
+    config = _pipeline_config(tmp_path)
+    config["paths"]["assets_dir"] = str(tmp_path / "assets")
+
+    callables = service._stage_callables(
+        "doc1", _template(), config, tmp_path, strict=False, renderer=_FakeRenderer()
+    )
+    ok, detail = callables["generate-visuals"]()
+
+    assert ok is True
+    assert fake_service.calls == [
+        (Path(config["paths"]["sections_dir"]), Path(config["paths"]["assets_dir"]))
+    ]
+    # A WARN-visible degrade (some/all visuals skipped) is never a stage
+    # failure -- fail_fast=False (domain/pipeline.py:_GENERATE_VISUALS).
+    assert "2" in detail
+
+
+def test_generate_visuals_stage_is_a_noop_when_service_not_wired(tmp_path):
+    # Backward-compat: every pre-Slice-5b `_service()` call in this file
+    # constructs `PipelineService` without a `generate_visuals_service` --
+    # the stage must degrade like build-html/collect-issues ("omitido:"
+    # detail, ok=True), never a KeyError on a missing
+    # config["paths"]["assets_dir"].
+    service, _ = _service(tmp_path)  # generate_visuals_service defaults to None
+    config = _pipeline_config(tmp_path)  # no "assets_dir" key at all
+
+    callables = service._stage_callables(
+        "doc1", _template(), config, tmp_path, strict=False, renderer=_FakeRenderer()
+    )
+    ok, detail = callables["generate-visuals"]()
+
+    assert ok is True
+    assert "omitido" in detail

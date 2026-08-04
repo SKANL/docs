@@ -13,6 +13,7 @@ from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
+from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.ingest import IngestService
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
@@ -47,6 +48,7 @@ class PipelineService:
         workspace: Workspace,
         ingest_service: IngestService,
         context_service: ContextService,
+        generate_visuals_service: GenerateVisualsService | None = None,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -62,6 +64,7 @@ class PipelineService:
         self.workspace = workspace
         self.ingest_service = ingest_service
         self.context_service = context_service
+        self.generate_visuals_service = generate_visuals_service
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -325,6 +328,21 @@ class PipelineService:
                 detail += f"; media: {len(removed)} eliminado(s), {len(refused)} rechazado(s)"
             return not errors, detail
 
+        def stage_generate_visuals() -> tuple[bool, str]:
+            # Format-agnostic, fail_fast=False (domain/pipeline.py:
+            # _GENERATE_VISUALS) -- `GenerateVisualsService.generate` never
+            # raises (per-visual WARN+skip), so this stage always reports
+            # ok=True; a missing/absent `GenerateVisualsService` (e.g. a
+            # caller building `PipelineService` without one) degrades the
+            # same "omitido:" way as stage_collect_issues/stage_build_html,
+            # never a KeyError on `config["paths"]["assets_dir"]`.
+            if self.generate_visuals_service is None:
+                return True, "omitido: GenerateVisualsService no configurado"
+            sections_dir = Path(config["paths"]["sections_dir"])
+            assets_dir = Path(config["paths"]["assets_dir"])
+            result = self.generate_visuals_service.generate(sections_dir, assets_dir)
+            return True, f"{result.generated} generado(s), {result.skipped} omitido(s)"
+
         def stage_build_context_files() -> tuple[bool, str]:
             context_dir = Path(config["paths"]["context_dir"])
             ingested_dir = Path(config["paths"]["sections_dir"]) / "ingested"
@@ -376,6 +394,7 @@ class PipelineService:
             "build-pdf": stage_build_pdf,
             "format-audit-docx": stage_format_audit,
             "ingest": stage_ingest,
+            "generate-visuals": stage_generate_visuals,
             "build-context-files": stage_build_context_files,
             "build-context-index": stage_build_context_index,
             "qa-docx": stage_qa_docx,

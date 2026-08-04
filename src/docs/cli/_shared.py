@@ -20,6 +20,7 @@ from docs.application.documents import DocumentService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
+from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import _SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
@@ -215,6 +216,25 @@ class Deps:
         except Exception:
             self.svg_rasterizer = None
 
+        # Slice 5b (on-demand-visual-generation): composition-root wiring of
+        # the `generate-visuals` pipeline stage. Reuses the SAME
+        # `visual_renderers` registry and `svg_rasterizer` built above (no
+        # second registry) and the EXISTING `PythonDocxImageMetadataAdapter`
+        # (no new dims port, mirrors `ingest.py`'s reuse). Guarded like the
+        # renderer/rasterizer blocks above for defense-in-depth -- a missing
+        # renderer/rasterizer degrades to per-visual WARN+skip inside the
+        # service itself, never a `Deps()` construction failure.
+        self.generate_visuals_service: Any = None
+        try:
+            self.generate_visuals_service = GenerateVisualsService(
+                visual_renderers=self.visual_renderers,
+                svg_rasterizer=self.svg_rasterizer,
+                image_metadata=PythonDocxImageMetadataAdapter(),
+                writer=FilesystemIngestArtifactWriter(),
+            )
+        except Exception:
+            self.generate_visuals_service = None
+
         self.assets = asset_service
         self.evidence = evidence_service
         self.review = review_service
@@ -234,6 +254,7 @@ class Deps:
             review_service, context_pack_service, context_repo, docx_assembly_service,
             format_audit_service, qa_service, self.workspace, self.ingest,
             context_service=self.context,
+            generate_visuals_service=self.generate_visuals_service,
         )
 
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
