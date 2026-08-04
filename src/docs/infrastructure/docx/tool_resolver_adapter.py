@@ -6,6 +6,7 @@ from typing import Any
 from docs.infrastructure.docx.libreoffice_qa_adapter import resolve_libreoffice_executable
 from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_pandoc_executable
 from docs.infrastructure.tools.java_resolution import resolve_java_executable
+from docs.infrastructure.tools.mmdc_resolution import resolve_mmdc_executable
 
 
 class SystemToolResolverAdapter:
@@ -27,3 +28,6 @@ class SystemToolResolverAdapter:
 
     def resolve_java(self, paths: dict[str, Any]) -> str | None:
         return resolve_java_executable(paths)
+
+    def resolve_mmdc(self, paths: dict[str, Any]) -> str | None:
+        return resolve_mmdc_executable(paths)
