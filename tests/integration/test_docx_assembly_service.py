@@ -266,6 +266,107 @@ def test_assemble_resolves_and_passes_embed_paths_to_port(tmp_path, workspace, s
     Document(str(output))  # must open without raising
 
 
+# --- assemble: [[pagebreak]] marker (forced Word page break) -------------------
+
+
+def test_assemble_renders_sole_pagebreak_marker_as_word_page_break(tmp_path, service):
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("A")
+    doc.add_paragraph("[[pagebreak]]")
+    doc.add_paragraph("B")
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    assert not any(p.text.strip() == "[[pagebreak]]" for p in result.paragraphs)
+    assert any('w:type="page"' in p._p.xml for p in result.paragraphs)
+
+
+def test_assemble_leaves_inline_pagebreak_marker_as_literal_text(tmp_path, service):
+    # Only a paragraph whose ENTIRE trimmed content is `[[pagebreak]]` triggers
+    # a break -- a marker mixed with other text is left untouched, same rule
+    # as every other `[[...]]` marker family (e.g. `[[TOC]]`).
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("Antes [[pagebreak]] despues")
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    assert any("Antes [[pagebreak]] despues" in p.text for p in result.paragraphs)
+
+
+def test_assemble_pagebreak_before_auto_breaking_heading_emits_single_break(tmp_path, service):
+    # Regression (Codex-sub review): a `[[pagebreak]]` marker placed directly
+    # before a Heading 1 that ALREADY triggers the per-heading auto-break must
+    # yield exactly ONE page break, not two stacked breaks (a blank page). This
+    # is the intended usage of the marker (forcing a heading onto a fresh page).
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_heading("Capitulo I", level=1)  # first H1: no auto-break, marks seen
+    doc.add_paragraph("texto")
+    doc.add_paragraph("[[pagebreak]]")
+    doc.add_heading("Capitulo II", level=1)  # H1 after seen -> auto-break fires
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    breaks = sum(p._p.xml.count('w:type="page"') for p in result.paragraphs)
+    assert breaks == 1
+
+
+def test_assemble_with_pagebreak_marker_is_byte_identical_across_rebuilds(tmp_path, service):
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("A")
+    doc.add_paragraph("[[pagebreak]]")
+    doc.add_paragraph("B")
+    doc.save(body)
+
+    output_1 = tmp_path / "out1.docx"
+    output_2 = tmp_path / "out2.docx"
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output_1)
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output_2)
+
+    assert output_1.read_bytes() == output_2.read_bytes()
+
+
+def test_assemble_strips_filesystem_path_from_picture_description(tmp_path, service):
+    # Pandoc leaks the image's absolute source path into the picture's
+    # non-visual description (`pic:cNvPr@descr`). Left as-is it makes the
+    # assembled docx depend on the build machine's paths (breaking byte
+    # identity across machines/workspaces) and leaks local directories into
+    # the shipped document. The assembly must reduce that description to its
+    # bare basename, which is workspace-independent and stable.
+    from docx.oxml.ns import qn
+    from PIL import Image
+
+    png = tmp_path / "visual-abcd1234.png"
+    Image.new("RGB", (12, 12), color=(1, 2, 3)).save(png)
+    body = tmp_path / "body.docx"
+    doc = Document()
+    run = doc.add_paragraph().add_run()
+    run.add_picture(str(png))
+    cnvpr = next(doc.element.body.iter(qn("pic:cNvPr")))
+    cnvpr.set("descr", r"C:\Users\someone\AppData\Local\Temp\r1\assets\figures\visual-abcd1234.png")
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    descrs = [el.get("descr") for el in result.element.body.iter(qn("pic:cNvPr"))]
+    assert descrs == ["visual-abcd1234.png"]
+    assert not any("\\" in (d or "") or "/" in (d or "") for d in descrs)
+
+
 # --- _strip_frontmatter_to_temp -------------------------------------------------
 
 
