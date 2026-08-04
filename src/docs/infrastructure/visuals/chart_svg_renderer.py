@@ -4,6 +4,11 @@ from __future__ import annotations
 import io
 import json
 
+# First-party import kept above the matplotlib block so it is not flagged
+# E402 by the eager-backend-setup code below (which must run before any
+# pyplot use); VisualSpec has no matplotlib dependency.
+from docs.domain.ports.visual_renderer_port import VisualSpec
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -23,8 +28,6 @@ plt.switch_backend("Agg")
 _warmup_fig = plt.figure()
 _warmup_fig.savefig(io.BytesIO(), format="svg")
 plt.close(_warmup_fig)
-
-from docs.domain.ports.visual_renderer_port import VisualSpec
 
 # Renderer-side determinism knobs (design.md "Renderer-side determinism
 # knobs"): fixed literal salt for internal clip-path/gradient ids +
