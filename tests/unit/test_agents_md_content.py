@@ -34,3 +34,14 @@ def test_documents_lifecycle_and_build_version():
 
 def test_documents_second_builtin_template():
     assert "technical-report-srs" in AGENTS_MD
+
+
+def test_documents_visual_specs_authoring_format():
+    assert "visual-specs.json" in AGENTS_MD
+    assert "sections/visual-specs.json" in AGENTS_MD
+    for field in ("label", "type", "source", "caption"):
+        assert field in AGENTS_MD
+    assert '"mermaid"' in AGENTS_MD
+    assert '"chart"' in AGENTS_MD
+    assert "auto-bind" in AGENTS_MD.lower() or "auto-binds" in AGENTS_MD.lower()
+    assert "WARN" in AGENTS_MD

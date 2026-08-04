@@ -4,6 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
+# `matplotlib` (chart rendering) is the only hard new pip dependency added
+# for on-demand-visual-generation. `mmdc` (mermaid-cli, Node) and `resvg`
+# (SVG->PNG rasterizer) are OPTIONAL, PATH-resolved EXTERNAL toolchains for
+# that same feature -- never a pip/npm dependency of this project. Absence
+# degrades `generate-visuals` to WARN+skip per visual (`docs doctor` reports
+# both as `required=False`); see AGENTS.md "Generating visuals on demand".
 dependencies = [
     "defusedxml>=0.7.1",
     "docxcompose>=2.2.0",
