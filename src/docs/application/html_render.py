@@ -3,13 +3,35 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from docs.application.figure_resolver import build_bound_figures_resolver
 from docs.application.output_names import resolve_html_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
+from docs.domain.figure_binding import BoundFigure
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
+
+
+def _prefer_sibling_svg(bound_figures: dict[str, BoundFigure]) -> dict[str, BoundFigure]:
+    """HTML-only sibling `.png -> .svg` swap (design.md "HTML sibling-SVG
+    swap" decision, tasks.md Slice 6, on-demand-visual-generation): a
+    generate-visuals entry writes `<stem>.svg` and `<stem>.png` under the
+    SAME `assets_dir/figures/` stem (application/generate_visuals.py). When
+    a bound figure's resolved `.path` is such a `.png` and its same-stem
+    `.svg` sibling exists on disk, HTML embeds the crisp vector instead --
+    every other field (dims, caption, label) stays unchanged so the emitted
+    `{width=Xin}` pandoc attribute is identical. A plain ingested photo (no
+    sibling `.svg`) or a non-`.png` path passes through unchanged.
+    `docx_assembly.py` never calls this -- docx always embeds the PNG
+    (pandoc#9195 blocker on SVG-in-docx)."""
+    swapped: dict[str, BoundFigure] = {}
+    for label, fig in bound_figures.items():
+        path = Path(fig.path)
+        sibling = path.with_suffix(".svg")
+        swapped[label] = replace(fig, path=str(sibling)) if path.suffix == ".png" and sibling.exists() else fig
+    return swapped
 
 
 class HtmlRendererAdapter:
@@ -65,7 +87,7 @@ class HtmlRendererAdapter:
         sections_dir = paths.get("sections_dir")
         assets_dir = paths.get("assets_dir")
         bound_figures = (
-            build_bound_figures_resolver(Path(sections_dir), Path(assets_dir))
+            _prefer_sibling_svg(build_bound_figures_resolver(Path(sections_dir), Path(assets_dir)))
             if sections_dir and assets_dir
             else {}
         )
