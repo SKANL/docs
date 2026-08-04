@@ -7,6 +7,7 @@ from docs.infrastructure.docx.libreoffice_qa_adapter import resolve_libreoffice_
 from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_pandoc_executable
 from docs.infrastructure.tools.java_resolution import resolve_java_executable
 from docs.infrastructure.tools.mmdc_resolution import resolve_mmdc_executable
+from docs.infrastructure.tools.resvg_resolution import resolve_resvg_executable
 
 
 class SystemToolResolverAdapter:
@@ -31,3 +32,6 @@ class SystemToolResolverAdapter:
 
     def resolve_mmdc(self, paths: dict[str, Any]) -> str | None:
         return resolve_mmdc_executable(paths)
+
+    def resolve_resvg(self, paths: dict[str, Any]) -> str | None:
+        return resolve_resvg_executable(paths)
