@@ -372,8 +372,135 @@ apply-progress.md` (this file). NO `domain/pipeline.py`,
 those are Slice 5b (pipeline/composition-root wiring) and Slice 6
 (`html_render` swap), both untouched here.
 
-Not started: Slice 5b (`domain/pipeline.py` stage insertion +
-`application/pipeline.py` stage callable + `cli/_shared.py` composition-root
-wiring of `GenerateVisualsService` into `Deps`/`PipelineService`), Slice 6
-(`html_render` sibling-SVG swap + E2E byte-identity), Slice 7 (doctor
-checks + pyproject + AGENTS.md authoring docs).
+## Slice 5b — pipeline stage + composition-root wiring for `generate-visuals` — DONE
+
+Branch `feat/odvg-s5b-wiring`, off main `79a0c98` (main after Slice 5a's PR
+#37 merge). ONLY pipeline registration + composition wiring touched — no
+renderer/service internals (Slices 2-5a) or `html_render.py` (Slice 6).
+
+- [x] 5.8 RED extended `tests/unit/domain/test_pipeline.py`: renamed
+  `test_pipeline_stage_plan_assemble_returns_caller_supplied_stages` ->
+  `..._prepends_generate_visuals_then_caller_supplied_stages` (asserts
+  `[("generate-visuals", False)] + _ASSEMBLE_DOCX_STAGES`); updated
+  `..._carries_arbitrary_format_stages_unmodified`,
+  `..._all_is_prep_plus_review_document_plus_assemble` (renamed `..._plus_
+  generate_visuals_plus_assemble`), and `..._deterministic_across_repeated_
+  calls` to the new contract; added
+  `test_generate_visuals_runs_after_ingest_before_assemble_in_all`,
+  `test_generate_visuals_prepended_before_assemble_stages_in_assemble`,
+  `test_generate_visuals_is_fail_fast_false` (8 new/changed assertions
+  total). Also updated `tests/unit/application/test_renderer_registry.py::
+  test_fake_txt_renderer_stage_plan_flows_through_pipeline_stage_plan_
+  unmodified` (same prepend contract, proves the extensibility-fake format
+  is unaffected). Confirmed RED (8 failures: `AssertionError`/`KeyError`/
+  `ValueError`) via a temporary revert-then-rerun of `domain/pipeline.py`
+  before applying the implementation. GREEN `src/docs/domain/pipeline.py`:
+  added `_GENERATE_VISUALS: list[tuple[str, bool]] = [("generate-visuals",
+  False)]`; `pipeline_stage_plan("assemble", assemble)` now returns
+  `list(_GENERATE_VISUALS) + list(assemble)`; `pipeline_stage_plan("all",
+  assemble)` now returns `_PREP_STAGES + [("review-document", True)] +
+  _GENERATE_VISUALS + assemble` (design.md: "prepended to the assemble
+  stages for both `assemble` and `all`"). `ingest`/`build-context-*` stay
+  excluded from `"all"` (unchanged, pre-existing "all excludes ingest by
+  design").
+- [x] 5.9 RED extended `tests/integration/test_pipeline_service.py`:
+  `_service()` helper gained an optional `generate_visuals_service=None`
+  passthrough kwarg (every pre-Slice-5b call site in this file is
+  unaffected -- still defaults to `None`); added `_FakeGenerateVisualsService`
+  (captures `(sections_dir, assets_dir)` call args, returns a real
+  `GenerateVisualsResult`); `test_stage_generate_visuals_is_wired_and_never_
+  fail_fast` (the stage calls `service.generate(sections_dir, assets_dir)`
+  with paths resolved from `config["paths"]`, returns `ok=True` even with a
+  non-zero `skipped` count in the detail) and
+  `test_generate_visuals_stage_is_a_noop_when_service_not_wired` (absent
+  `generate_visuals_service` -- the common case for every OTHER test in this
+  file -- degrades to `(True, "omitido: ...")`, never a `KeyError` on a
+  missing `config["paths"]["assets_dir"]`). Confirmed RED via `TypeError:
+  PipelineService.__init__() got an unexpected keyword argument
+  'generate_visuals_service'`. GREEN `src/docs/application/pipeline.py`:
+  `PipelineService.__init__` gained `generate_visuals_service:
+  GenerateVisualsService | None = None` (defaulted, NOT required --
+  deliberate deviation from the task's literal wording, see Learned below);
+  `self.generate_visuals_service = generate_visuals_service`;
+  `stage_generate_visuals()` added to `_stage_callables` under
+  `"generate-visuals"`: `None` -> `(True, "omitido: GenerateVisualsService
+  no configurado")`; otherwise reads `sections_dir`/`assets_dir` from
+  `config["paths"]`, calls `self.generate_visuals_service.generate(...)`,
+  returns `(True, f"{generated} generado(s), {skipped} omitido(s)")` --
+  ALWAYS `ok=True` (matches `fail_fast=False` from 5.8; the service itself
+  never raises, per-visual failures are WARN details, not stage failures).
+- [x] 5.10 RED extended `tests/integration/test_deps_visual_renderers_
+  wiring.py`: `test_deps_wires_a_generate_visuals_service_with_the_chart_
+  and_mermaid_registry` (`Deps().pipeline.generate_visuals_service` is a
+  real `GenerateVisualsService` reusing the SAME `visual_renderers`/
+  `svg_rasterizer` instances already wired above it -- not a second
+  registry -- and the EXISTING `PythonDocxImageMetadataAdapter`, no new dims
+  port) and `test_deps_pipeline_service_has_the_same_generate_visuals_
+  service_instance` (`deps.pipeline.generate_visuals_service is deps.
+  generate_visuals_service` -- one instance, not two). Confirmed RED via
+  `assert False` on `isinstance(service, GenerateVisualsService)` (service
+  was `None`, `Deps` had no `generate_visuals_service` attribute yet). GREEN
+  `src/docs/cli/_shared.py:Deps.__init__`: `self.generate_visuals_service =
+  GenerateVisualsService(visual_renderers=self.visual_renderers,
+  svg_rasterizer=self.svg_rasterizer, image_metadata=
+  PythonDocxImageMetadataAdapter(), writer=FilesystemIngestArtifactWriter())`
+  constructed inside a `try/except Exception -> None` guard (mirrors the
+  chart/mermaid/resvg guards immediately above it, defense-in-depth only --
+  this construction has no import that can plausibly fail); passed into
+  `PipelineService(..., generate_visuals_service=self.generate_visuals_
+  service)`.
+
+Slice check green: 12 new/changed tests passed (8 stage-plan + 1 renderer-
+registry + 2 pipeline-service + 2 deps-wiring, with a net +9 vs the prior
+1431 baseline after accounting for renamed-not-added assertions). Full
+suite: 1440 passed, 0 failed, 11 skipped (vs. Slice 5a's 1431 passed/11
+skipped -- net +9 passed, zero new skips, zero regression). `ruff check`
+clean on all 7 changed/new files. `docs pipeline --help` still lists
+`stage_set: prep | ingest | assemble | all` unchanged.
+
+Commits (branch `feat/odvg-s5b-wiring`, off main `79a0c98`, not pushed, no
+PR opened per instructions):
+- `feat(pipeline): insert generate-visuals stage before assemble (prep+all/assemble)`
+- `feat(pipeline): wire GenerateVisualsService into PipelineService as a stage`
+- `feat(cli): construct GenerateVisualsService in Deps and wire into PipelineService`
+- `docs(sdd): tick S5b tasks and record apply-progress for on-demand-visual-generation`
+
+Touched ONLY: `src/docs/domain/pipeline.py` (modified, additive
+`_GENERATE_VISUALS`), `src/docs/application/pipeline.py` (modified,
+additive `stage_generate_visuals` + constructor param),
+`src/docs/cli/_shared.py` (modified, additive `generate_visuals_service`
+construction + wiring), `tests/unit/domain/test_pipeline.py` (modified,
+extended/updated), `tests/unit/application/test_renderer_registry.py`
+(modified, one assertion updated to the new prepend contract),
+`tests/integration/test_pipeline_service.py` (modified, extended),
+`tests/integration/test_deps_visual_renderers_wiring.py` (modified,
+extended), `openspec/changes/on-demand-visual-generation/tasks.md` (5.8-5.10
+ticked), `openspec/changes/on-demand-visual-generation/apply-progress.md`
+(this file). NO `html_render.py`, renderer, or service-internal file
+touched (Slice 6/7 untouched).
+
+**Learned (deliberate deviation from the literal apply-instruction
+wording):** the instruction text said "Inject the `GenerateVisualsService`
+into `PipelineService` (constructor param)" without specifying required-vs-
+optional. `PipelineService`'s existing constructor convention has zero
+defaults (every other param, including `context_service`, is required) --
+but 5 pre-existing call sites across 4 OTHER test files
+(`tests/integration/test_pipeline_strict_gap.py`,
+`tests/unit/application/test_pipeline_service.py`,
+`tests/integration/test_technical_report_srs_acceptance.py`,
+`tests/integration/test_documento_generico_acceptance.py`, plus this file's
+own pre-Slice-5b tests) construct `PipelineService` directly and have
+nothing to do with visual generation. Making the param required would force
+a purely mechanical edit to all 5 files for zero behavior change. Chose
+`generate_visuals_service: GenerateVisualsService | None = None` instead,
+with the stage callable degrading to the SAME "omitido:"-detail,
+`ok=True` best-effort shape `stage_collect_issues`/`stage_build_html`
+already use for an unavailable optional dependency -- zero collateral test
+edits, zero behavior change for any caller that does not care about
+visuals, and the real composition root (`cli/_shared.py:Deps`) always wires
+a real instance. Verified this causes no regression: the 4 other
+`PipelineService(...)`-constructing test files (not touched here) still
+pass in the full-suite run.
+
+Not started: Slice 6 (`html_render` sibling-SVG swap + E2E byte-identity),
+Slice 7 (doctor checks + pyproject + AGENTS.md authoring docs).

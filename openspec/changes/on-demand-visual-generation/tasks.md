@@ -316,7 +316,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       `ingest.py`'s per-item catch), never a bare `except: pass`.
       Run: `uv run pytest tests/unit/application/test_generate_visuals_service.py`.
 
-- [ ] 5.8 **Test first** —
+- [x] 5.8 **Test first** —
       `tests/unit/domain/test_pipeline.py::
       test_generate_visuals_runs_after_ingest_before_assemble_in_all` and
       `test_generate_visuals_prepended_before_assemble_stages_in_assemble` —
@@ -332,7 +332,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       of `pipeline_stage_plan`.
       Run: `uv run pytest tests/unit/domain/test_pipeline.py`.
 
-- [ ] 5.9 **Test first** —
+- [x] 5.9 **Test first** —
       `tests/integration/test_pipeline_service.py` (extend or add adjacent
       file): `test_stage_generate_visuals_is_wired_and_never_fail_fast` —
       `PipelineService._stage_callables(...)["generate-visuals"]` invokes
@@ -348,7 +348,7 @@ Grounded in: `ingest.py` per-item try/except WARN+skip pattern,
       best-effort shape).
       Run: `uv run pytest tests/integration/test_pipeline_service.py`.
 
-- [ ] 5.10 **Test first** —
+- [x] 5.10 **Test first** —
       `tests/integration/test_deps_visual_renderers_wiring.py`:
       `Deps().pipeline` has a `generate_visuals_service` wired with a
       `visual_renderers` registry containing `"chart"` and `"mermaid"` keyed
