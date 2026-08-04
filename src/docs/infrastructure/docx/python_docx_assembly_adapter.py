@@ -499,6 +499,17 @@ class PythonDocxAssemblyAdapter:
         from docx.enum.text import WD_BREAK
         from docx.shared import Pt, RGBColor
 
+        if paragraph.text.strip() == "[[pagebreak]]":
+            # Same `[[...]]` marker family as `[[TOC]]`/`[[figure:]]`/`[[table:]]`.
+            # A paragraph whose ENTIRE trimmed text is the marker becomes a
+            # forced Word page break -- same emission the cover/TOC leading
+            # parts already use (`_render_leading_parts`), so no stray empty
+            # paragraph is left to shift pagination. A marker mixed with other
+            # text is left as literal text (falls through below), matching
+            # every other marker family's sole-content rule.
+            cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+            return
+
         restart_heading = ctx["restart_heading"]
         body_pag = ctx["body_pag"]
         style_name = safe_style_name(cover, paragraph.style.name if paragraph.style else None)

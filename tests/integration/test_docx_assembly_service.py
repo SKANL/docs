@@ -266,6 +266,57 @@ def test_assemble_resolves_and_passes_embed_paths_to_port(tmp_path, workspace, s
     Document(str(output))  # must open without raising
 
 
+# --- assemble: [[pagebreak]] marker (forced Word page break) -------------------
+
+
+def test_assemble_renders_sole_pagebreak_marker_as_word_page_break(tmp_path, service):
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("A")
+    doc.add_paragraph("[[pagebreak]]")
+    doc.add_paragraph("B")
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    assert not any(p.text.strip() == "[[pagebreak]]" for p in result.paragraphs)
+    assert any('w:type="page"' in p._p.xml for p in result.paragraphs)
+
+
+def test_assemble_leaves_inline_pagebreak_marker_as_literal_text(tmp_path, service):
+    # Only a paragraph whose ENTIRE trimmed content is `[[pagebreak]]` triggers
+    # a break -- a marker mixed with other text is left untouched, same rule
+    # as every other `[[...]]` marker family (e.g. `[[TOC]]`).
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("Antes [[pagebreak]] despues")
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    assert any("Antes [[pagebreak]] despues" in p.text for p in result.paragraphs)
+
+
+def test_assemble_with_pagebreak_marker_is_byte_identical_across_rebuilds(tmp_path, service):
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph("A")
+    doc.add_paragraph("[[pagebreak]]")
+    doc.add_paragraph("B")
+    doc.save(body)
+
+    output_1 = tmp_path / "out1.docx"
+    output_2 = tmp_path / "out2.docx"
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output_1)
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output_2)
+
+    assert output_1.read_bytes() == output_2.read_bytes()
+
+
 # --- _strip_frontmatter_to_temp -------------------------------------------------
 
 
