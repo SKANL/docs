@@ -42,12 +42,24 @@ def merge(existing_catalog: dict, generated: dict) -> dict:
     "pure merge + pure merge_bindings, no-clobber"; on-demand-visual-
     generation). EXISTING wins on `id` collision -- a generated (rendered)
     entry never overwrites an ingest-produced one. Re-sorted by `id`, same
-    determinism as `build()`. I/O stays out of this function."""
+    determinism as `build()`. I/O stays out of this function.
+
+    Fails open on shape: a `figures` value that is not a list, or a row that
+    is not a dict with an `id`, is skipped rather than raising -- the existing
+    catalog comes from a hand-editable on-disk file, and a malformed one must
+    never crash the caller (generate-visuals' WARN+skip guarantee)."""
     by_id: dict[str, dict] = {}
-    for figure in generated.get("figures", []):
-        by_id[str(figure["id"])] = figure
-    for figure in existing_catalog.get("figures", []):
-        by_id[str(figure["id"])] = figure  # existing overwrites -- existing wins
+
+    def _add(catalog: dict) -> None:
+        figures = catalog.get("figures", [])
+        if not isinstance(figures, list):
+            return
+        for figure in figures:
+            if isinstance(figure, dict) and "id" in figure:
+                by_id[str(figure["id"])] = figure
+
+    _add(generated)
+    _add(existing_catalog)  # existing added last -> existing wins on collision
 
     figures = sorted(by_id.values(), key=lambda f: str(f["id"]))
     return {"figures": figures}

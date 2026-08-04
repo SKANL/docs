@@ -173,6 +173,24 @@ def test_merge_is_resorted_and_deterministic():
     assert ids == sorted(ids)
 
 
+def test_merge_fails_open_on_malformed_existing_catalog():
+    # The existing catalog comes from a hand-editable on-disk file; a malformed
+    # one (figures not a list, or non-dict / id-less rows) must be skipped, not
+    # raise -- upholding generate-visuals' WARN+skip guarantee (review WARNING).
+    generated = build(
+        [FigureEntry(sha256="a" * 64, width_px=1, height_px=1, origin_relative_path="a.png", origin_kind="generated")]
+    )
+    gen_id = "fig-" + "a" * 8
+
+    # figures value is not a list
+    merged = merge({"figures": None}, generated)
+    assert [f["id"] for f in merged["figures"]] == [gen_id]
+
+    # junk rows (non-dict, id-less) are skipped; the valid generated row survives
+    merged = merge({"figures": ["not-a-row", {"no": "id"}, 42]}, generated)
+    assert [f["id"] for f in merged["figures"]] == [gen_id]
+
+
 def test_merge_safe_to_rerun():
     existing = build(
         [FigureEntry(sha256="a" * 64, width_px=1, height_px=1, origin_relative_path="a.png")]

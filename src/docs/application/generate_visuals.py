@@ -144,7 +144,18 @@ class GenerateVisualsService:
         entries: list[FigureEntry] = []
         bindings_additions: dict[str, str] = {}
         for spec in sorted(specs, key=lambda s: s.label):
-            entry = self._render_one(spec, figures_dir)
+            try:
+                entry = self._render_one(spec, figures_dir)
+            except Exception as exc:
+                # Per-visual isolation (mirrors ingest's per-item WARN+skip):
+                # any unhandled failure -- e.g. an OSError writing the .svg/.png
+                # to a full/read-only assets_dir -- must skip THIS visual, never
+                # abort the whole multi-visual run. generate() never raises.
+                print(
+                    f"WARN: fallo inesperado generando el visual '{spec.label}': {exc}; se omite.",
+                    file=sys.stderr,
+                )
+                entry = None
             if entry is None:
                 skipped += 1
                 continue

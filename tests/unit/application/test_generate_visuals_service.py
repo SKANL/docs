@@ -368,6 +368,29 @@ def test_null_dims_warns_and_skips(tmp_path, capsys):
 # --- determinism: same specs+fakes twice -> byte-identical outputs --------
 
 
+def test_write_failure_warns_and_skips_never_raises(tmp_path, capsys, monkeypatch):
+    # A disk-write OSError (full/read-only assets_dir) on the .svg/.png must
+    # WARN+skip THAT visual, never abort the whole run -- generate() never
+    # raises (review WARNING: the atomic write was outside the per-visual
+    # try/except).
+    import docs.application.generate_visuals as gv
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(gv, "_atomic_write_bytes", _boom)
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(sections_dir, [{"label": "a", "type": "chart", "source": "s", "caption": "A"}])
+    service = _service({"chart": FakeRenderer(type="chart", svg='<svg id="x"><rect/></svg>')}, FakeRasterizer())
+
+    result = service.generate(sections_dir, assets_dir)  # must not raise
+
+    assert result.generated == 0
+    assert result.skipped == 1
+    assert "WARN" in capsys.readouterr().err
+
+
 def test_determinism_same_specs_twice_is_byte_identical(tmp_path):
     def _run(root: Path) -> tuple[bytes, bytes, str]:
         sections_dir = root / "sections"
