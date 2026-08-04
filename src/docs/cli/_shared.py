@@ -163,6 +163,24 @@ class Deps:
             pdf_render_adapter = Pdfium2PdfRenderAdapter()
         except Exception:
             pdf_render_adapter = None
+
+        # `resvg` is an OPTIONAL, PATH-resolved external toolchain (never a
+        # pip/npm dependency of this project) -- construction never touches
+        # `resvg` itself (resolution happens lazily inside `rasterize()`), so
+        # this is always wired; a missing `resvg` degrades per-visual at
+        # render time (WARN+skip, Slice 5), never at `Deps()` construction
+        # (mirrors the mermaid-renderer guard shape above for
+        # defense-in-depth against an unexpected import failure). Built here
+        # (rather than alongside the other visual-generation adapters below)
+        # so `self.ingest` can reuse the SAME instance for standalone-SVG
+        # figure cataloging -- no second rasterizer/adapter instance.
+        try:
+            from docs.infrastructure.visuals.resvg_rasterizer_adapter import ResvgRasterizerAdapter
+
+            self.svg_rasterizer: Any = ResvgRasterizerAdapter(tool_resolver)
+        except Exception:
+            self.svg_rasterizer = None
+
         self.ingest = IngestService(
             FiletypeDetectorAdapter(),
             ingest_handlers,
@@ -170,6 +188,7 @@ class Deps:
             image_metadata=PythonDocxImageMetadataAdapter(),
             content_probe=content_probe_adapter,
             pdf_render=pdf_render_adapter,
+            svg_rasterizer=self.svg_rasterizer,
         )
 
         # matplotlib is a hard declared dependency (pyproject.toml), but the
@@ -201,20 +220,6 @@ class Deps:
             self.visual_renderers[mermaid_renderer.type] = mermaid_renderer
         except Exception:
             pass
-
-        # `resvg` is an OPTIONAL, PATH-resolved external toolchain (never a
-        # pip/npm dependency of this project) -- construction never touches
-        # `resvg` itself (resolution happens lazily inside `rasterize()`), so
-        # this is always wired; a missing `resvg` degrades per-visual at
-        # render time (WARN+skip, Slice 5), never at `Deps()` construction
-        # (mirrors the mermaid-renderer guard shape above for
-        # defense-in-depth against an unexpected import failure).
-        try:
-            from docs.infrastructure.visuals.resvg_rasterizer_adapter import ResvgRasterizerAdapter
-
-            self.svg_rasterizer: Any = ResvgRasterizerAdapter(tool_resolver)
-        except Exception:
-            self.svg_rasterizer = None
 
         # Slice 5b (on-demand-visual-generation): composition-root wiring of
         # the `generate-visuals` pipeline stage. Reuses the SAME
