@@ -259,6 +259,17 @@ def _transfer_drawing_run(run: Any, new_paragraph: Any, source_part: Any, dest_p
     from docx.oxml.ns import qn
 
     new_r = copy.deepcopy(run._r)
+    # Pandoc leaks the image's absolute source path into the picture's
+    # non-visual description (`pic:cNvPr@descr`). Reduce it to its basename so
+    # the assembled docx never depends on the build machine's paths (which
+    # breaks byte identity across machines/workspaces) or ships local
+    # directories inside the document -- same determinism guarantee as
+    # normalize_docx_zip_timestamps, one layer up at the XML. The basename is
+    # content-derived (`visual-<sha8>.png` / `fig-<name>.png`) and stable.
+    for cnvpr in new_r.iter(qn("pic:cNvPr")):
+        descr = cnvpr.get("descr")
+        if descr and ("/" in descr or "\\" in descr):
+            cnvpr.set("descr", descr.replace("\\", "/").rsplit("/", 1)[-1])
     for embed_attr in (qn("r:embed"), qn("r:link")):
         for blip in new_r.iter(qn("a:blip")):
             rid = blip.get(embed_attr)
@@ -461,6 +472,7 @@ class PythonDocxAssemblyAdapter:
             "body_pag": sections_part.get("body_pagination", {"format": "decimal", "start": 1}),
             "body_heading_seen": False,
             "restart_started": False,
+            "just_broke": False,
         }
 
     def _iter_body_blocks(self, body: Any):
@@ -507,7 +519,19 @@ class PythonDocxAssemblyAdapter:
             # paragraph is left to shift pagination. A marker mixed with other
             # text is left as literal text (falls through below), matching
             # every other marker family's sole-content rule.
-            cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+            #
+            # `just_broke` dedupes adjacent breaks: a marker right after another
+            # break (another marker, or a heading auto-break) is swallowed, and
+            # a marker right BEFORE an auto-breaking Heading 1 lets that
+            # heading's own break stand alone (the `not ctx["just_broke"]` guard
+            # below) -- either way one blank between them, never a fully blank
+            # page. ponytail: covers the marker<->heading/marker cases; a marker
+            # immediately before the pagination-restart heading still double-
+            # breaks (that heading's section-start forces its own page), an
+            # exotic combo no real document hits.
+            if not ctx["just_broke"]:
+                cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+                ctx["just_broke"] = True
             return
 
         restart_heading = ctx["restart_heading"]
@@ -526,8 +550,9 @@ class PythonDocxAssemblyAdapter:
                 numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
             )
             ctx["restart_started"] = True
-        elif is_heading_1 and ctx["body_heading_seen"]:
+        elif is_heading_1 and ctx["body_heading_seen"] and not ctx["just_broke"]:
             cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+        ctx["just_broke"] = False
         new_paragraph = cover.add_paragraph(style=style_name)
         apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, is_list=is_list)
         if is_heading_1:
