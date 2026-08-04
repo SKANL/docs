@@ -574,9 +574,10 @@ apply-progress.md` (this section). `docx_assembly.py`, `doctor.py`,
 parallel).
 
 Commits (branch `feat/odvg-s6-html`, off main `95f3919`):
-- `<pending>` feat(html): swap bound figure to sibling SVG when present for HTML output
-- `<pending>` test(docx): lock docx-always-embeds-png-even-with-sibling-svg characterization
-- `<pending>` test(e2e): add chart-only hermetic E2E + skipif'd mermaid+chart byte-identity rebuild
+- `094f4e4` feat(html): swap bound figure to sibling SVG when present for HTML output
+- `e26260f` test(html,docx): cover sibling-SVG swap and lock docx-always-embeds-png characterization
+- `7fb37fe` test(e2e): add chart-only hermetic E2E and skipif'd mermaid+chart byte-identity rebuild
+- `9361144` docs(sdd): tick S6 tasks and record apply-progress for on-demand-visual-generation
 
 Not started: Slice 7 (doctor capability checks + `pyproject.toml` +
 AGENTS.md authoring docs) — explicitly out of scope for this apply pass
