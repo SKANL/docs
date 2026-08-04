@@ -8,6 +8,7 @@ dependencies = [
     "defusedxml>=0.7.1",
     "docxcompose>=2.2.0",
     "filetype>=1.2.0",
+    "matplotlib>=3.11.1",
     "opendataloader-pdf>=2.4.7",
     "pillow>=11.0.0",
     "pydantic>=2.13.4",
