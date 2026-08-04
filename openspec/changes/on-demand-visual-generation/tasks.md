@@ -426,7 +426,7 @@ Grounded in: `doctor.py:203` (`_capability_checks`, `Check(required=False)`
 pattern for `pdf_page_render`/`pdf_raster_extract`), `tests/unit/
 test_agents_md_content.py` (existing AGENTS.md content-assertion convention).
 
-- [ ] 7.1 **Test first** —
+- [x] 7.1 **Test first** —
       `tests/integration/test_doctor_service.py` (extend existing file):
       `test_resvg_and_mmdc_capability_checks_required_false` — `run_doctor()`
       includes `Check("resvg", ..., required=False)` and
@@ -440,7 +440,7 @@ test_agents_md_content.py` (existing AGENTS.md content-assertion convention).
       `required=False` shape as `libreoffice`).
       Run: `uv run pytest tests/integration/test_doctor_service.py`.
 
-- [ ] 7.2 **Mechanical (no test — trivial dependency declaration)** — add
+- [x] 7.2 **Mechanical (no test — trivial dependency declaration)** — add
       `matplotlib` to `pyproject.toml`'s `dependencies` (hard new pip dep,
       per design's Migration/Rollout: "matplotlib is the only hard new pip
       dep"). Add a comment documenting `resvg` and `mmdc` as optional,
@@ -450,7 +450,7 @@ test_agents_md_content.py` (existing AGENTS.md content-assertion convention).
       Run: `uv sync` (or `uv run pytest` to confirm nothing broke by the dep
       addition).
 
-- [ ] 7.3 **Test first** — `tests/unit/test_agents_md_content.py` (extend
+- [x] 7.3 **Test first** — `tests/unit/test_agents_md_content.py` (extend
       existing file, same convention as `test_documents_format_selection_
       and_pdf_non_determinism_caveat`):
       `test_documents_visual_specs_authoring_format` — asserts `AGENTS.md`
