@@ -367,6 +367,37 @@ def test_assemble_strips_filesystem_path_from_picture_description(tmp_path, serv
     assert not any("\\" in (d or "") or "/" in (d or "") for d in descrs)
 
 
+def test_assemble_centers_figures_and_captions_and_keeps_them_together(tmp_path, service):
+    # Academic layout: an image and its "Figura N."/"Tabla N." caption must be
+    # centered (not left-aligned) and the image paragraph must keep_with_next so
+    # the caption never orphans onto the next page. Normal body text is left
+    # untouched.
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from PIL import Image
+
+    png = tmp_path / "f.png"
+    Image.new("RGB", (24, 24), color=(4, 5, 6)).save(png)
+    body = tmp_path / "body.docx"
+    doc = Document()
+    doc.add_paragraph().add_run().add_picture(str(png))
+    doc.add_paragraph("Figura 1. Una figura de prueba.")
+    doc.add_paragraph("Un parrafo normal de cuerpo que no debe centrarse.")
+    doc.save(body)
+    output = tmp_path / "out.docx"
+
+    service.assemble("doc-1", {"structure": [{"type": "sections"}]}, body, output)
+
+    result = Document(str(output))
+    img_para = next(p for p in result.paragraphs if p._p.find(".//" + qn("w:drawing")) is not None)
+    cap_para = next(p for p in result.paragraphs if (p.text or "").strip().startswith("Figura 1."))
+    body_para = next(p for p in result.paragraphs if "parrafo normal" in (p.text or ""))
+    assert img_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert img_para.paragraph_format.keep_with_next is True
+    assert cap_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert body_para.alignment == WD_ALIGN_PARAGRAPH.LEFT
+
+
 # --- _strip_frontmatter_to_temp -------------------------------------------------
 
 
