@@ -36,10 +36,11 @@ def test_fake_txt_renderer_resolves_via_the_same_registry_resolution_function():
 
 def test_fake_txt_renderer_stage_plan_flows_through_pipeline_stage_plan_unmodified():
     # No changes to domain/pipeline.py were required to support this format:
-    # the resolved renderer's stage_plan() is passed straight through.
+    # the resolved renderer's stage_plan() is passed straight through (only
+    # the format-agnostic "generate-visuals" stage is prepended ahead of it).
     renderer = resolve_renderer(_registry(), "txt")
     stages = pipeline_stage_plan("assemble", renderer.stage_plan())
-    assert stages == [("build-txt", True)]
+    assert stages == [("generate-visuals", False), ("build-txt", True)]
 
 
 def test_fake_txt_renderer_stage_plan_is_distinct_from_docx_stage_plan():
