@@ -201,6 +201,20 @@ class Deps:
         except Exception:
             pass
 
+        # `resvg` is an OPTIONAL, PATH-resolved external toolchain (never a
+        # pip/npm dependency of this project) -- construction never touches
+        # `resvg` itself (resolution happens lazily inside `rasterize()`), so
+        # this is always wired; a missing `resvg` degrades per-visual at
+        # render time (WARN+skip, Slice 5), never at `Deps()` construction
+        # (mirrors the mermaid-renderer guard shape above for
+        # defense-in-depth against an unexpected import failure).
+        try:
+            from docs.infrastructure.visuals.resvg_rasterizer_adapter import ResvgRasterizerAdapter
+
+            self.svg_rasterizer: Any = ResvgRasterizerAdapter(tool_resolver)
+        except Exception:
+            self.svg_rasterizer = None
+
         self.assets = asset_service
         self.evidence = evidence_service
         self.review = review_service
