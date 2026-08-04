@@ -18,7 +18,8 @@ def normalize_svg(text: str) -> str:
     2. strip `<metadata>...</metadata>` (matplotlib RDF `dc:date`).
     3. collect every `id="X"` in first-appearance order, map to `n0, n1, ...`
        and rewrite each definition and reference (`#X`, `url(#X)`,
-       `href="X"`/`href="#X"`, `xlink:href="#X"`, `aria-labelledby="X"`),
+       `href="X"`/`href="#X"`, `xlink:href="#X"`, `aria-labelledby="X"`,
+       `aria-describedby="X"`),
        replacing LONGEST-id-first: a longer id containing a shorter id as a
        substring (e.g. "abc" containing "a") is fully replaced away before
        the shorter id's own replacement runs, so a bare `#X` reference (the
@@ -46,6 +47,13 @@ def normalize_svg(text: str) -> str:
         text = text.replace(f'id="{old_id}"', f'id="{new_id}"')
         text = text.replace(f'href="{old_id}"', f'href="{new_id}"')
         text = text.replace(f'aria-labelledby="{old_id}"', f'aria-labelledby="{new_id}"')
+        # `aria-describedby` (mermaid's accDescr helper) is a bare-id reference
+        # with no leading `#`, so it needs its own rule -- without it the raw
+        # run-varying id leaks and breaks determinism.
+        # ponytail: single-id match, matching real mermaid/matplotlib output;
+        # if a renderer ever emits a space-separated multi-id aria-*by list,
+        # tokenize per-id here.
+        text = text.replace(f'aria-describedby="{old_id}"', f'aria-describedby="{new_id}"')
         # Covers every remaining reference form sharing the `#X` substring:
         # `url(#X)`, `href="#X"`, `xlink:href="#X"`, and bare `#X` (e.g. a
         # mermaid CSS id selector `#X{...}`).

@@ -55,6 +55,18 @@ def test_rewrites_all_reference_forms():
     assert normalized.count("n0") == 6
 
 
+def test_rewrites_aria_describedby_mermaid_accdescr():
+    # mermaid's accDescr accessibility helper emits aria-describedby="<run-
+    # varying id>" plus a matching <desc id="..."> -- the reference has no
+    # leading '#', so without an explicit rule the <desc> definition gets
+    # renamed while the aria-describedby reference keeps the raw run-varying
+    # token, leaking it and breaking byte-determinism (review CRITICAL).
+    text = '<svg aria-describedby="chart-desc-9f3"><desc id="chart-desc-9f3">d</desc></svg>'
+    normalized = normalize_svg(text)
+    assert "chart-desc-9f3" not in normalized  # both def and ref rewritten, no leak
+    assert normalized.count("n0") == 2  # 1 definition + 1 aria-describedby reference
+
+
 def test_longest_id_first_avoids_substring_collision():
     # id "a" must not corrupt a reference to "abc" (design.md: replace
     # longest-id-first).
