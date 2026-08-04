@@ -41,3 +41,15 @@ def figure_image_markdown(number: int, fig: BoundFigure) -> str:
     numbering, only the marker's replacement."""
     caption = f"Figura {number}. {fig.caption}".rstrip()
     return f"![{caption}]({fig.path}){figure_width_attr(fig.width_px)}"
+
+
+def merge_bindings(existing: dict, additions: dict) -> dict:
+    """Adds `label -> id` only when `label` is ABSENT from `existing`
+    (design.md Decision "pure merge + pure merge_bindings, no-clobber";
+    on-demand-visual-generation) -- a generated auto-bind never overwrites a
+    manual binding. Sorted-key output, deterministic. I/O stays out of this
+    function."""
+    merged = dict(existing)
+    for label, catalog_id in additions.items():
+        merged.setdefault(label, catalog_id)
+    return dict(sorted(merged.items()))

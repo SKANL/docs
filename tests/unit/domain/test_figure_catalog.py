@@ -6,7 +6,7 @@ dimensions, origin, caption. `id` is a stable hash-derived token
 guessed (determinism preserved)."""
 from __future__ import annotations
 
-from docs.domain.figure_catalog import FigureEntry, build
+from docs.domain.figure_catalog import FigureEntry, build, merge
 
 
 def test_build_produces_fig_id_from_sha256_prefix():
@@ -107,3 +107,91 @@ def test_build_with_new_fields_is_byte_identical_across_two_independent_builds()
     first = json.dumps(build(list(entries)), sort_keys=True)
     second = json.dumps(build(list(reversed(entries))), sort_keys=True)
     assert first == second
+
+
+# --- merge() -- on-demand-visual-generation, design.md "pure merge + pure
+# merge_bindings, no-clobber": union by `id`, EXISTING wins on collision
+# (generated never overwrites an ingest-produced entry), re-sorted by `id`.
+
+
+def test_merge_preserves_all_entries_no_clobber():
+    existing = build(
+        [
+            FigureEntry(
+                sha256="a" * 64,
+                width_px=1,
+                height_px=1,
+                origin_relative_path="a.png",
+                origin_kind="standalone",
+            )
+        ]
+    )
+    generated = build(
+        [
+            FigureEntry(
+                sha256="a" * 64,
+                width_px=999,
+                height_px=999,
+                origin_relative_path="generated-a.png",
+                origin_kind="generated",
+            ),
+            FigureEntry(
+                sha256="b" * 64,
+                width_px=2,
+                height_px=2,
+                origin_relative_path="b.png",
+                origin_kind="generated",
+            ),
+        ]
+    )
+
+    merged = merge(existing, generated)
+
+    fig_a = next(f for f in merged["figures"] if f["id"] == "fig-" + "a" * 8)
+    assert fig_a["origin_relative_path"] == "a.png"
+    assert fig_a["origin_kind"] == "standalone"
+    fig_b = next(f for f in merged["figures"] if f["id"] == "fig-" + "b" * 8)
+    assert fig_b["origin_kind"] == "generated"
+    assert len(merged["figures"]) == 2
+
+
+def test_merge_is_resorted_and_deterministic():
+    existing = build(
+        [FigureEntry(sha256="m" * 64, width_px=1, height_px=1, origin_relative_path="m.png")]
+    )
+    gen_entries = [
+        FigureEntry(sha256="z" * 64, width_px=1, height_px=1, origin_relative_path="z.png"),
+        FigureEntry(sha256="a" * 64, width_px=1, height_px=1, origin_relative_path="a.png"),
+    ]
+    import json as _json
+
+    first = _json.dumps(merge(existing, build(gen_entries)), sort_keys=True)
+    second = _json.dumps(merge(existing, build(list(reversed(gen_entries)))), sort_keys=True)
+    assert first == second
+
+    ids = [f["id"] for f in merge(existing, build(gen_entries))["figures"]]
+    assert ids == sorted(ids)
+
+
+def test_merge_safe_to_rerun():
+    existing = build(
+        [FigureEntry(sha256="a" * 64, width_px=1, height_px=1, origin_relative_path="a.png")]
+    )
+    generated = build(
+        [
+            FigureEntry(
+                sha256="b" * 64,
+                width_px=2,
+                height_px=2,
+                origin_relative_path="b.png",
+                origin_kind="generated",
+            )
+        ]
+    )
+
+    once = merge(existing, generated)
+    twice = merge(once, generated)
+
+    assert once == twice
+    ids = [f["id"] for f in twice["figures"]]
+    assert len(ids) == len(set(ids))

@@ -37,6 +37,22 @@ def build(entries: list[FigureEntry]) -> dict:
     return {"figures": figures}
 
 
+def merge(existing_catalog: dict, generated: dict) -> dict:
+    """Union of two `build()`-shaped catalogs by `id` (design.md Decision
+    "pure merge + pure merge_bindings, no-clobber"; on-demand-visual-
+    generation). EXISTING wins on `id` collision -- a generated (rendered)
+    entry never overwrites an ingest-produced one. Re-sorted by `id`, same
+    determinism as `build()`. I/O stays out of this function."""
+    by_id: dict[str, dict] = {}
+    for figure in generated.get("figures", []):
+        by_id[str(figure["id"])] = figure
+    for figure in existing_catalog.get("figures", []):
+        by_id[str(figure["id"])] = figure  # existing overwrites -- existing wins
+
+    figures = sorted(by_id.values(), key=lambda f: str(f["id"]))
+    return {"figures": figures}
+
+
 # ponytail: the catalog carries `width_px`/`height_px`/`caption`, but today
 # the only production consumer is `status._count_figures` (which reads just
 # `len(figures)`) -- those fields are written, not yet read, and `caption` is
