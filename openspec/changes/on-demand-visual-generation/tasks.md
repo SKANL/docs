@@ -188,7 +188,7 @@ composition".
 Grounded in: `ingest.py:1049` (`ImageMetadataPort.read_dimensions` reused
 exactly — no new dims port). Threat Matrix row "Subprocess arg composition".
 
-- [ ] 4.1 **Test first** —
+- [x] 4.1 **Test first** —
       `tests/unit/infrastructure/test_tool_resolver_resvg.py`: same shape as
       3.1 for `resolve_resvg`.
       **Implement** — add `resolve_resvg` to `ToolResolverPort` and
@@ -196,7 +196,7 @@ exactly — no new dims port). Threat Matrix row "Subprocess arg composition".
       `infrastructure/tools/resvg_resolution.py`).
       Run: `uv run pytest tests/unit/infrastructure/test_tool_resolver_resvg.py`.
 
-- [ ] 4.2 **Test first (THREAT MATRIX RED)** —
+- [x] 4.2 **Test first (THREAT MATRIX RED)** —
       `tests/unit/infrastructure/test_resvg_rasterizer_adapter.py::
       test_rasterize_never_uses_shell`: patch `subprocess.run`, assert a
       fixed arg list (`[resvg, str(svg_path), str(png_path), "--use-fonts-dir",
@@ -208,13 +208,13 @@ exactly — no new dims port). Threat Matrix row "Subprocess arg composition".
       `SvgRasterizerPort.rasterize`.
       Run: `uv run pytest tests/unit/infrastructure/test_resvg_rasterizer_adapter.py`.
 
-- [ ] 4.3 **Test first** — same file:
+- [x] 4.3 **Test first** — same file:
       `test_missing_resvg_raises_runtime_error_with_guidance` (mirrors 3.3).
       **Implement** — guard clause raising `RuntimeError` when
       `resolve_resvg` returns `None`.
       Run: `uv run pytest tests/unit/infrastructure/test_resvg_rasterizer_adapter.py`.
 
-- [ ] 4.4 **Test first** —
+- [x] 4.4 **Test first** —
       `tests/integration/test_resvg_rasterizer_adapter_integration.py::
       test_rasterize_svg_to_png_with_dims` — `@pytest.mark.skipif` when
       `resvg` is absent; rasterize a real SVG fixture, then assert
