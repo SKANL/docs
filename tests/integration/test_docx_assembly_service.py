@@ -428,6 +428,30 @@ def test_assemble_tables_repeat_header_keep_rows_and_bind_caption(tmp_path, serv
         assert row._tr.find(qn("w:trPr")).find(qn("w:cantSplit")) is not None
 
 
+def test_render_image_page_part_inserts_centered_full_page_image(tmp_path, service):
+    # An `image_page` leading part inserts its image as a centered, page-sized
+    # picture AT ITS POSITION in the preliminaries (e.g. a signed release letter
+    # replacing a blank guard page), followed by a page break.
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from PIL import Image
+
+    carta = tmp_path / "carta.png"
+    Image.new("RGB", (850, 1100), color=(255, 255, 255)).save(carta)
+    body = tmp_path / "body.docx"
+    Document().save(body)
+    output = tmp_path / "out.docx"
+    config = {"structure": [{"type": "image_page", "image": str(carta)}, {"type": "sections"}]}
+
+    service.assemble("doc-1", config, body, output)
+
+    result = Document(str(output))
+    drawings = result.element.body.findall(".//" + qn("w:drawing"))
+    assert len(drawings) == 1  # the carta is embedded once, as a full page
+    img_para = next(p for p in result.paragraphs if p._p.find(".//" + qn("w:drawing")) is not None)
+    assert img_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
+
+
 # --- _strip_frontmatter_to_temp -------------------------------------------------
 
 
