@@ -298,6 +298,30 @@ def add_fixed_text_page(document: Any, text: str) -> None:
     run.font.size = Pt(12)
 
 
+def add_image_page(document: Any, image_path: Path) -> None:
+    """Insert a scanned/rendered image (e.g. a signed release letter) as a
+    centered, page-sized picture -- used by the `image_page` leading part to
+    replace a blank guard page with an actual full-page document. Sized to fit
+    the text area (width first; height-capped for very tall scans), so it never
+    overflows the page."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Cm
+    from PIL import Image
+
+    max_w_cm, max_h_cm = 15.5, 21.5
+    with Image.open(str(image_path)) as im:
+        width_px, height_px = im.size
+
+    paragraph = document.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    paragraph.paragraph_format.first_line_indent = None
+    run = paragraph.add_run()
+    if width_px and (max_w_cm * (height_px / width_px)) <= max_h_cm:
+        run.add_picture(str(image_path), width=Cm(max_w_cm))
+    else:
+        run.add_picture(str(image_path), height=Cm(max_h_cm))
+
+
 def apply_normative_paragraph_format(paragraph: Any, style_name: str | None, text: str, is_list: bool = False) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm, Pt
@@ -450,6 +474,16 @@ class PythonDocxAssemblyAdapter:
         else:
             configure_unnumbered_section(prelim_section, config)
 
+    def _resolve_leading_image_path(self, config: dict[str, Any], part: dict[str, Any]) -> Path:
+        """An `image_page` part's `image` is either an absolute path or one
+        relative to the document's `assets_dir` (portable, the same dir the
+        section figures resolve against)."""
+        raw = Path(str(part.get("image", "")))
+        if raw.is_absolute():
+            return raw
+        assets_dir = config.get("paths", {}).get("assets_dir", "")
+        return Path(assets_dir) / raw if assets_dir else raw
+
     def _render_leading_parts(self, cover: Any, config: dict[str, Any], leading: list[dict[str, Any]]) -> None:
         from docx.enum.text import WD_BREAK
 
@@ -458,6 +492,9 @@ class PythonDocxAssemblyAdapter:
             if kind in {"cover_from_template", "cover_from_asset", "embed_docx", "sections"}:
                 continue
             if kind == "blank_page":
+                cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+            elif kind == "image_page":
+                add_image_page(cover, self._resolve_leading_image_path(config, part))
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
             elif kind in {"fixed_text_page", "toc"}:
                 if kind == "toc":
