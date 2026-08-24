@@ -29,6 +29,9 @@ contract now lives in `openspec/specs/`.
   domain ports. Never import infrastructure from domain/application.
 - Adapters are wired only in the composition root (`cli/_shared.py`).
 - CLI user-facing strings are Spanish; code, comments, and docs are English.
+- A `# ponytail:` comment marks a deliberate simplification and names its
+  ceiling plus the upgrade path, so a shortcut reads as intent rather than
+  oversight. Used across `src/`, `tests/` and `tools/`.
 - Determinism: same inputs must produce identical outputs; no timestamps or
   randomness in generated artifacts.
 
@@ -69,10 +72,65 @@ contract now lives in `openspec/specs/`.
   (OpenSpec > Gentle AI/SDD > superpowers > engram/codegraph/context7/rtk).
 - `.atl/skill-registry.md` — skill index for sub-agent launches.
 
-## CodeGraph
+## Knowledge graphs — three indexes, one routing rule
 
-This repo has its own index at `docs/.codegraph` — always query from inside
-the repo so the nearest index wins. Use `codegraph_explore` before editing.
+Three graphs index this repo. They overlap on disk (that is free) but must
+not overlap on questions (that is the token tax). Route, do not poll all
+three.
+
+| Need | Tool | Entry point |
+|---|---|---|
+| Source to read or edit; what a change touches | CodeGraph | `codegraph_explore` |
+| Data/control flow, taint, "what breaks if" | GitNexus | `pdg_query`, `impact`, `trace`, `cypher` |
+| Which symbols a diff touches | GitNexus | `gitnexus detect-changes` |
+| Why something exists; spec ↔ code rationale | graphify | `graphify query`, `explain` |
+| Architectural hubs, subsystem map | graphify | `graphify god-nodes` |
+
+Tiebreaker: **needs code bytes → CodeGraph. Follows a value → GitNexus.
+Answers a "why" → graphify.**
+
+- CodeGraph — `.codegraph/`, live watcher, ~1s lag. Query from inside the
+  repo so the nearest index wins.
+- GitNexus — `.gitnexus/` (self-ignoring). Rebuild:
+  `gitnexus analyze --index-only --pdg`. `--pdg` is the whole point; without
+  it this is a slower CodeGraph. `--index-only` keeps it from rewriting
+  `CLAUDE.md`/`AGENTS.md`. Carries ~24k CFG/CDG/REACHING_DEF edges the other
+  two do not have.
+- graphify — `graphify-out/` (gitignored). Code layer: `graphify update .`
+  (AST only, no LLM). Doc/spec layer needs the agent pass: `/graphify --update`.
+
+### Spec-to-code bridge
+
+All three graphs leave markdown as islands (`document <-> code` edges: 0
+everywhere). `tools/spec_code_bridge.py` closes that: a symbol written in
+backticks inside a spec becomes an EXTRACTED `references` edge, so
+`graphify explain <symbol>` returns the ADRs and design decisions behind a
+function, not just its callers. No LLM, no inferred edges.
+
+    graphify update . && uv run python tools/spec_code_bridge.py
+
+The rebuild drops the bridge, so always chain the two. Re-running the bridge
+alone is a no-op. Do NOT use `graphify merge-graphs` for this -- it is a
+cross-repo tool and namespaces ids (`repo-2::...`), forking every endpoint
+into a ghost duplicate.
+
+### Feedback loop
+
+After a graph-answered question, record whether it helped:
+
+    graphify save-result --question Q --answer A --outcome useful|dead_end|corrected
+
+`graphify reflect` distils those into `graphify-out/reflections/LESSONS.md`.
+Feed it results from all three graphs -- it is the only memory layer of the
+three, and it is what keeps routing honest over time.
+
+`tests/architecture/test_graph_invariants.py` enforces the layering rule
+above against the GitNexus graph, and skips when no index is present -- set
+`ARCHITECTURE_REQUIRE_GRAPH` to any enabling value (`1`, `true`, `yes`, `on`)
+to make a missing index fail instead, so CI can demand the check rather than
+accept a silent skip. Nothing sets it yet -- this repo has no CI config.
+`tests/architecture/test_spec_code_bridge.py` covers the bridge from its own
+fixtures and needs no graph, so it always runs.
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands

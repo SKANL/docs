@@ -46,7 +46,11 @@ packages = ["src/docs"]
 "AGENTS.md" = "docs/data/AGENTS.md"
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# `tools` joins `src` so the architecture tests can import the repo-local
+# scripts they cover (currently only `spec_code_bridge`). Keep that directory
+# free of names that could shadow a real dependency: everything in it is
+# importable from every test in the suite.
+pythonpath = ["src", "tools"]
 testpaths = ["tests"]
 
 [tool.ruff.lint.per-file-ignores]
