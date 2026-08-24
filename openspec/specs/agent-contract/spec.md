@@ -80,3 +80,42 @@ The contract MUST document the `review-section --json` iterate-to-green loop and
 - GIVEN the agent contract
 - WHEN an agent looks up which content it must author versus what the harness generates
 - THEN the boundary is stated unambiguously, matching the mechanical-core/guided-layer split
+
+### Requirement: Queryable Issue-Code Catalog
+
+Every `code` the review loop emits MUST have a catalog entry stating what it
+means and what resolves it, and the system MUST expose that catalog through a
+`docs explain` command that works with no workspace and no active document.
+The catalog MUST be the single source for that knowledge — `AGENTS.md` points
+at the command rather than restating the table — and it MUST be kept in step
+with the codes the harness actually emits, in both directions.
+
+#### Scenario: An agent resolves an unfamiliar code
+
+- GIVEN `review-section --json` reports an issue with code `apa.quote_without_locator`
+- WHEN the agent runs `docs explain apa.quote_without_locator`
+- THEN it prints what the code means AND the concrete action that clears it
+
+#### Scenario: The whole catalog is browsable
+
+- GIVEN no argument is passed
+- WHEN `docs explain` runs
+- THEN it prints every code, grouped by family, with each family described
+
+#### Scenario: A mistyped code suggests the real one
+
+- GIVEN a code that does not exist but resembles one that does
+- WHEN `docs explain` runs with it
+- THEN it exits non-zero and names the closest real codes
+
+#### Scenario: A new code cannot ship undocumented
+
+- GIVEN a new `Issue` code is added anywhere under `src/docs`
+- WHEN the test suite runs
+- THEN it fails until that code has a catalog entry
+
+#### Scenario: The catalog cannot document a code nobody emits
+
+- GIVEN a catalog entry whose code no longer appears in the source
+- WHEN the test suite runs
+- THEN it fails, so the catalog can never drift into fiction

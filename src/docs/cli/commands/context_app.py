@@ -17,6 +17,7 @@ context_app = typer.Typer(help="Elicita y gestiona el contexto atómico del docu
 
 @context_app.command("status")
 def context_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")) -> None:
+    """Muestra qué temas de contexto están completos y cuáles tienen campos faltantes."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     statuses = deps.context.status(resolved.doc_id, resolved.template)
@@ -44,6 +45,10 @@ def context_elicit(
     topic: str = typer.Option("", "--topic"),
     requests: bool = typer.Option(False, "--requests", help="(compat) el cuestionario es el único modo disponible."),
 ) -> None:
+    """Escribe el cuestionario `_requests.md` con los campos de contexto que faltan.
+
+    No es interactivo: genera el archivo para que se responda y luego se
+    cargue con `context ingest`."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     path = deps.context.write_requests_file(resolved.doc_id, resolved.template, only_topic=topic)
@@ -53,6 +58,7 @@ def context_elicit(
 
 @context_app.command("ingest")
 def context_ingest(ctx: typer.Context) -> None:
+    """Lee las respuestas de `_requests.md` y las guarda como temas de contexto."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     written = deps.context.ingest(resolved.doc_id, resolved.template)
@@ -61,6 +67,7 @@ def context_ingest(ctx: typer.Context) -> None:
 
 @context_app.command("show")
 def context_show(ctx: typer.Context, topic: str = typer.Argument(...)) -> None:
+    """Imprime el contenido guardado de un tema de contexto."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.context.show(resolved.doc_id, topic))
@@ -73,6 +80,9 @@ def context_set(
     field: str = typer.Argument(..., help="Clave del campo (ignorada en temas de prosa)."),
     value: str = typer.Argument(...),
 ) -> None:
+    """Fija el valor de un campo de un tema de contexto.
+
+    Ver la convención de claves `<topic> <field> <value>` en `docs guide`, §2."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.context.set(resolved.doc_id, resolved.template, topic, value, field=field))
@@ -80,6 +90,7 @@ def context_set(
 
 @context_app.command("rm")
 def context_rm(ctx: typer.Context, topic: str = typer.Argument(...)) -> None:
+    """Elimina un tema de contexto del documento activo."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     deps.context.remove(resolved.doc_id, resolved.template, topic)

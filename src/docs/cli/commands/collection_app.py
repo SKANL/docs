@@ -19,6 +19,7 @@ collection_app = typer.Typer()
 
 @collection_app.command("collect-sources")
 def collect_sources(ctx: typer.Context) -> None:
+    """Inventaria las fuentes declaradas del documento y escribe el manifiesto de fuentes."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.collection.collect_sources(resolved.config))
@@ -26,6 +27,7 @@ def collect_sources(ctx: typer.Context) -> None:
 
 @collection_app.command("build-rules")
 def build_rules(ctx: typer.Context) -> None:
+    """Construye el manifiesto de reglas normativas a partir de la configuración vigente."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.evidence.build_rules(resolved.config))
@@ -33,6 +35,9 @@ def build_rules(ctx: typer.Context) -> None:
 
 @collection_app.command("review-rules")
 def review_rules(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), as_json: bool = typer.Option(False, "--json")) -> None:
+    """Verifica que el manifiesto de reglas exista y sea consistente con el template.
+
+    Sale con código 1 si falta o no cumple. `--strict` endurece el criterio."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
@@ -43,6 +48,10 @@ def review_rules(ctx: typer.Context, strict: bool = typer.Option(False, "--stric
 
 @collection_app.command("collect-issues")
 def collect_issues(ctx: typer.Context, repo_root: Path = typer.Option(Path.cwd, "--repo-root")) -> None:
+    """Recolecta issues de GitHub del repositorio indicado como evidencia trazable.
+
+    Requiere `gh` en PATH. `--repo-root` indica el repo a consultar (por
+    defecto, el directorio actual)."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.collection.collect_issues(resolved.config, repo_root))
@@ -50,6 +59,7 @@ def collect_issues(ctx: typer.Context, repo_root: Path = typer.Option(Path.cwd, 
 
 @collection_app.command("collect-code-evidence")
 def collect_code_evidence(ctx: typer.Context, repo_root: Path = typer.Option(Path.cwd, "--repo-root")) -> None:
+    """Recolecta evidencia de código (historial git de los archivos declarados) para el ledger."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.collection.collect_code_evidence(resolved.config, repo_root))
@@ -57,6 +67,7 @@ def collect_code_evidence(ctx: typer.Context, repo_root: Path = typer.Option(Pat
 
 @collection_app.command("build-ledger")
 def build_ledger(ctx: typer.Context) -> None:
+    """Escribe el ledger de hechos: contexto confirmado más la evidencia ya recolectada."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     path = Path(resolved.config["paths"]["fact_ledger"])

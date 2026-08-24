@@ -14,6 +14,7 @@ from pathlib import Path
 import typer
 
 from docs.cli._shared import _ctx, emit_result, resolve_renderer
+from docs.domain.issue_codes import ISSUE_CODES, explain_code
 
 core_app = typer.Typer()
 
@@ -46,7 +47,28 @@ def guide() -> None:
 
 
 @core_app.command()
+def explain(
+    code: str = typer.Argument("", help="Código de hallazgo, ej. `apa.required`. Vacío lista todo."),
+) -> None:
+    """Explica un código de hallazgo del ciclo de revisión: qué significa y cómo se resuelve.
+
+    Sin argumento imprime el catálogo completo, agrupado por familia. No
+    necesita workspace ni documento activo: es consultable desde cualquier
+    lado. Sale con código 2 si el código no existe (y sugiere los parecidos).
+    """
+    print(explain_code(code or None))
+    if code and code not in ISSUE_CODES:
+        raise typer.Exit(code=2)
+
+
+@core_app.command()
 def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), as_json: bool = typer.Option(False, "--json")) -> None:
+    """Verifica que el entorno y el workspace estén listos para construir.
+
+    Revisa toolchains externos (pandoc, LibreOffice, Java, mmdc, resvg),
+    rutas de configuración y assets. `--strict` convierte en error los
+    chequeos que en modo normal son advertencia. Sale con código 2 si
+    algún chequeo requerido falla."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     result = deps.doctor.run_doctor(resolved.doc_id, resolved.config, strict=strict)
@@ -68,6 +90,14 @@ def pipeline(
         "Sin esta opción usa output.format de la config (docx por defecto).",
     ),
 ) -> None:
+    """Ejecuta un conjunto de etapas de principio a fin.
+
+    `prep` deja el documento listo para redactar (doctor, reglas,
+    evidencia, secciones scaffold, gap-report, pack-context). `ingest`
+    convierte lo que haya en `inbox/` y regenera los archivos de
+    contexto. `assemble` genera visuales y arma la salida. `all` = prep +
+    review-document + assemble, y NO incluye ingest: corré `ingest` antes
+    si hay fuentes nuevas. `--strict` bloquea ante huecos y hallazgos."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     # No --format: preserve today's config-driven resolution exactly (a
@@ -114,6 +144,11 @@ def verify(
     as_json: bool = typer.Option(False, "--json"),
     repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
 ) -> None:
+    """Revalida el documento y su .docx sin reconstruirlo.
+
+    Corre las mismas verificaciones que la etapa final del pipeline sobre
+    un .docx ya existente (por defecto, el draft) y registra la corrida en
+    `runs/`. Sale con código 1 si alguna verificación falla."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     docx_path = Path(docx) if docx else None
@@ -128,6 +163,7 @@ def verify(
 
 @core_app.command()
 def history(ctx: typer.Context, limit: int = typer.Option(20, "--limit"), as_json: bool = typer.Option(False, "--json")) -> None:
+    """Lista las corridas registradas en `runs/`, de la más reciente a la más vieja."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     records = deps.pipeline.list_runs(resolved.doc_id, resolved.config, limit=limit)
@@ -147,4 +183,5 @@ def history(ctx: typer.Context, limit: int = typer.Option(20, "--limit"), as_jso
 
 @core_app.command()
 def stamp() -> None:
+    """Imprime la marca de tiempo local ISO-8601 que usan los sellos de sección."""
     print(datetime.now().isoformat(timespec="seconds"))
