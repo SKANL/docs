@@ -1,0 +1,38 @@
+# What the knowledge graph should read, and what it should not.
+#
+# Measured before writing this: 2,643 KB of markdown, of which 74% is the
+# playbook of a finished migration and 20% is tooling documentation. An
+# extraction pass over the unscoped corpus spends ~94% of its budget on
+# material that answers nothing about the harness as it exists today.
+#
+# The scoping mirrors the provenance tiers `tools/spec_code_bridge.py`
+# already applies, so the two layers of the graph agree on what counts as an
+# answer to "why does this exist":
+#
+#   openspec/specs/ + AGENTS.md + CLAUDE.md   -> contract   (kept)
+#   openspec/changes/archive/                 -> rationale  (kept)
+#   plans/, specs/                            -> superseded (excluded here)
+#
+# `openspec/changes/archive/` stays deliberately: those are the ADRs behind
+# decisions still in force. `plans/` does not: `plans/roadmap.md` declares
+# that migration finished, and two later SDD changes refactored past the code
+# shape those slices describe. Keeping it made `plans/` outvote the standing
+# contract 63:1 in the spec->code bridge before that tier existed.
+
+# --- superseded planning (see plans/roadmap.md, "Status of this directory")
+plans/
+
+# --- tooling documentation, not project content
+.superpowers/
+.atl/
+.claude/
+
+# --- generated / caches
+graphify-out/
+.gitnexus/
+.codegraph/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+htmlcov/
