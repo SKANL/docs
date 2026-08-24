@@ -69,10 +69,60 @@ contract now lives in `openspec/specs/`.
   (OpenSpec > Gentle AI/SDD > superpowers > engram/codegraph/context7/rtk).
 - `.atl/skill-registry.md` — skill index for sub-agent launches.
 
-## CodeGraph
+## Knowledge graphs — three indexes, one routing rule
 
-This repo has its own index at `docs/.codegraph` — always query from inside
-the repo so the nearest index wins. Use `codegraph_explore` before editing.
+Three graphs index this repo. They overlap on disk (that is free) but must
+not overlap on questions (that is the token tax). Route, do not poll all
+three.
+
+| Need | Tool | Entry point |
+|---|---|---|
+| Source to read or edit; what a change touches | CodeGraph | `codegraph_explore` |
+| Data/control flow, taint, "what breaks if" | GitNexus | `pdg_query`, `impact`, `trace`, `cypher` |
+| Which symbols a diff touches | GitNexus | `gitnexus detect-changes` |
+| Why something exists; spec ↔ code rationale | graphify | `graphify query`, `explain` |
+| Architectural hubs, subsystem map | graphify | `graphify god-nodes` |
+
+Tiebreaker: **needs code bytes → CodeGraph. Follows a value → GitNexus.
+Answers a "why" → graphify.**
+
+- CodeGraph — `.codegraph/`, live watcher, ~1s lag. Query from inside the
+  repo so the nearest index wins.
+- GitNexus — `.gitnexus/` (self-ignoring). Rebuild:
+  `gitnexus analyze --index-only --pdg`. `--pdg` is the whole point; without
+  it this is a slower CodeGraph. `--index-only` keeps it from rewriting
+  `CLAUDE.md`/`AGENTS.md`. Carries ~24k CFG/CDG/REACHING_DEF edges the other
+  two do not have.
+- graphify — `graphify-out/` (gitignored). Code layer: `graphify update .`
+  (AST only, no LLM). Doc/spec layer needs the agent pass: `/graphify --update`.
+
+### Spec-to-code bridge
+
+All three graphs leave markdown as islands (`document <-> code` edges: 0
+everywhere). `tools/spec_code_bridge.py` closes that: a symbol written in
+backticks inside a spec becomes an EXTRACTED `references` edge, so
+`graphify explain <symbol>` returns the ADRs and design decisions behind a
+function, not just its callers. No LLM, no inferred edges.
+
+    graphify update . && uv run python tools/spec_code_bridge.py
+
+The rebuild drops the bridge, so always chain the two. Re-running the bridge
+alone is a no-op. Do NOT use `graphify merge-graphs` for this -- it is a
+cross-repo tool and namespaces ids (`repo-2::...`), forking every endpoint
+into a ghost duplicate.
+
+### Feedback loop
+
+After a graph-answered question, record whether it helped:
+
+    graphify save-result --question Q --answer A --outcome useful|dead_end|corrected
+
+`graphify reflect` distils those into `graphify-out/reflections/LESSONS.md`.
+Feed it results from all three graphs -- it is the only memory layer of the
+three, and it is what keeps routing honest over time.
+
+`tests/architecture/` enforces the layering rule above against the GitNexus
+graph and covers the bridge; both skip when no index is present.
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
