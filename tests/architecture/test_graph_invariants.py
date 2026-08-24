@@ -15,8 +15,10 @@ Without an index every test skips, so a fresh clone stays green. That makes a
 vacuous pass the real hazard, guarded two ways: `test_probe_finds_known_import_edges`
 proves the query still returns rows, and setting `ARCHITECTURE_REQUIRE_GRAPH`
 to any enabling value turns a missing index from a skip into a failure, so CI
-can demand enforcement rather than silently accepting nothing. No pipeline in
-this repo sets it yet -- there is no CI configuration to wire it into.
+can demand enforcement rather than silently accepting nothing. The `architecture`
+job in `.github/workflows/ci.yml` sets it, after installing GitNexus and
+indexing the checkout (~45s), so the layering rule is a real gate there and a
+skip only locally.
 """
 
 import json
@@ -119,14 +121,66 @@ def parse_cypher_output(completed: subprocess.CompletedProcess) -> list[dict[str
     return _parse_markdown_table(payload["markdown"])
 
 
+def parse_repo_labels(listing: str) -> list[tuple[str, str]]:
+    """(label, path) for every repository in `gitnexus list` output.
+
+    A list, not a dict: two repositories can share a label (a clone of this
+    tree registers as `docs` too), so the label is not a key.
+    """
+    pairs: list[tuple[str, str]] = []
+    label: str | None = None
+    for raw in listing.splitlines():
+        line = raw.strip()
+        if line.startswith("Path:"):
+            if label is not None:
+                pairs.append((label, line.split(":", 1)[1].strip()))
+                label = None
+        elif line and not line.startswith(("Indexed", "Commit", "Branch", "Stats", "Clusters", "Processes")):
+            label = line.split("  ")[0].strip()
+    return pairs
+
+
+def resolve_repo_label(pairs: list[tuple[str, str]], root: Path) -> str | None:
+    """The label GitNexus registered for the repository AT `root`."""
+    # normcase+abspath, not `Path.resolve()`: the registry stores Windows
+    # paths with backslashes while a caller may hold the same location with
+    # forward slashes, and `resolve()` also touches the filesystem, which a
+    # registry entry for a deleted checkout would not survive.
+    def key(value: str | Path) -> str:
+        return os.path.normcase(os.path.abspath(str(value)))
+
+    target = key(root)
+    for label, path in pairs:
+        if key(path) == target:
+            return label
+    return None
+
+
+def registered_repo_label() -> str | None:
+    """Ask GitNexus which label it filed THIS checkout under."""
+    if GITNEXUS is None:
+        return None
+    listing = subprocess.run(
+        [GITNEXUS, "list"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    if listing.returncode != 0:
+        return None
+    return resolve_repo_label(parse_repo_labels(listing.stdout), REPO_ROOT)
+
+
 def cypher_argv(query: str, limit: int) -> list[str]:
     """Build the exact `gitnexus cypher` argv, naming the repo explicitly.
 
     GitNexus keeps a machine-global registry, so `cypher` refuses to guess once
     a second repository is indexed anywhere on the box ("Multiple repositories
     indexed. Specify which one with the repo parameter"). Being inside the repo
-    is not enough. `REPO_ROOT.name` is the label `gitnexus analyze` registers by
-    default; a repo indexed under `--name <alias>` needs that alias instead.
+    is not enough.
+
+    The label is ASKED FOR, never guessed from the directory name: `gitnexus
+    analyze` registers a repo under its PROJECT name, so a checkout into any
+    other directory (a CI workspace, a worktree, a clone) is filed under a
+    label the path does not spell. Two entries can even share one label, so
+    only the registered path identifies a repository.
     """
     return [
         GITNEXUS,
@@ -135,7 +189,7 @@ def cypher_argv(query: str, limit: int) -> list[str]:
         "-l",
         str(limit),
         "--repo",
-        REPO_ROOT.name,
+        registered_repo_label() or REPO_ROOT.name,
     ]
 
 
@@ -279,6 +333,70 @@ def test_cypher_argv_names_the_repository():
     argv = cypher_argv("MATCH (f:File) RETURN f", 5)
 
     assert "--repo" in argv
-    assert argv[argv.index("--repo") + 1] == REPO_ROOT.name
     assert argv[1] == "cypher"
     assert argv[argv.index("-l") + 1] == "5"
+    # The label is whatever GitNexus filed THIS checkout under, which is not
+    # necessarily the directory name -- see
+    # `test_the_repo_is_resolved_by_path_not_by_directory_name`. With no
+    # registry reachable it falls back to the directory name, which is the
+    # best guess available and no worse than the old unconditional one.
+    expected = registered_repo_label() or REPO_ROOT.name
+    assert argv[argv.index("--repo") + 1] == expected
+
+
+# --- resolving WHICH indexed repository these queries mean --------------------
+def test_repo_labels_are_parsed_with_their_paths():
+    listing = """
+  Indexed Repositories (3)
+
+  docs  (C:/code/harness-projects/docs)
+    Path:    C:/code/harness-projects/docs
+    Indexed: 8/24/2026, 12:32:32 PM
+
+  boop-agent
+    Path:    C:/code/agent-boop-learning/boop-agent
+    Indexed: 8/20/2026, 9:00:00 AM
+
+  docs  (C:/tmp/clone)
+    Path:    C:/tmp/clone
+    Indexed: 8/24/2026, 1:00:00 PM
+"""
+    assert parse_repo_labels(listing) == [
+        ("docs", "C:/code/harness-projects/docs"),
+        ("boop-agent", "C:/code/agent-boop-learning/boop-agent"),
+        ("docs", "C:/tmp/clone"),
+    ]
+
+
+def test_the_repo_is_resolved_by_path_not_by_directory_name():
+    # The bug this replaces: `cypher_argv` used `REPO_ROOT.name`, on the
+    # documented-but-wrong belief that `gitnexus analyze` registers a repo
+    # under its directory name. It registers under the PROJECT name -- a
+    # clone of this repo into `gnclone/` still registers as `docs` -- so a
+    # CI checkout under any other directory name resolved to nothing:
+    #   Error: Repository "gnclone" not found. Available: docs, boop-agent, docs
+    # Two entries also share the label `docs`, so the label alone cannot
+    # identify one. The path can.
+    listing = [
+        ("docs", "C:/code/harness-projects/docs"),
+        ("boop-agent", "C:/other/boop-agent"),
+        ("docs", "C:/tmp/gnclone"),
+    ]
+
+    assert resolve_repo_label(listing, Path("C:/tmp/gnclone")) == "docs"
+    assert resolve_repo_label(listing, Path("C:/code/harness-projects/docs")) == "docs"
+    assert resolve_repo_label(listing, Path("C:/nowhere")) is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="el escenario solo existe en Windows")
+def test_a_windows_registry_path_matches_a_forward_slash_root():
+    # The registry writes native separators; a caller may hold the same
+    # location the other way, and normcase+abspath is what makes them equal.
+    #
+    # Windows-only BY NATURE, not by convenience: on POSIX `\` is a valid
+    # filename character rather than a separator, so there is no "other way"
+    # to spell the path and nothing for normcase to fold. Running it there
+    # asserted a normalisation the platform does not perform -- which is how
+    # it passed locally and failed on the first CI run.
+    native = "C:" + chr(92) + "tmp" + chr(92) + "gnclone"
+    assert resolve_repo_label([("docs", native)], Path("C:/tmp/gnclone")) == "docs"

@@ -44,10 +44,36 @@ jobs:
       - name: Tests
         run: uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=93
 
-  # The hexagonal layering rule is enforced by tests/architecture against a
-  # GitNexus index, which is not installable here — those tests SKIP in CI.
-  # `ARCHITECTURE_REQUIRE_GRAPH` is deliberately left unset: setting it would
-  # turn every CI run red for a missing index rather than enforcing anything.
-  # The always-runnable half of that guarantee lives in
-  # tests/architecture/test_docx_writer_invariant.py and
-  # tests/architecture/test_spec_symbol_references.py, which need no index.
+  # The hexagonal layering rule needs a GitNexus index, so it gets its own
+  # job: installing and indexing costs ~75s, and running it in parallel keeps
+  # it off the critical path. `ARCHITECTURE_REQUIRE_GRAPH` turns a missing
+  # index from a skip into a failure — without it this job could pass by
+  # enforcing nothing, which is the exact failure mode the flag exists for.
+  architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install GitNexus
+        run: npm install -g gitnexus
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      # --pdg is what carries the control/data-dependence layers; --index-only
+      # keeps it from rewriting CLAUDE.md/AGENTS.md in the checkout.
+      - name: Index the repository
+        run: gitnexus analyze --index-only --pdg
+
+      - name: Architecture invariants
+        env:
+          ARCHITECTURE_REQUIRE_GRAPH: "1"
+        run: uv run pytest tests/architecture -q
