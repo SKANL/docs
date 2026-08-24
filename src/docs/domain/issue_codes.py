@@ -169,6 +169,10 @@ ISSUE_CODES: dict[str, IssueCode] = {
         meaning="Un campo del template no respeta el tipo o la forma que el esquema exige.",
         fix="Corregí el campo según el mensaje de validación que acompaña al hallazgo.",
     ),
+    "template.unknown_key": IssueCode(
+        meaning="Una clave del template no existe y se parece mucho a un campo real: casi seguro es un error de tipeo.",
+        fix="Corregí la clave al nombre que el hallazgo sugiere. Mientras esté mal escrita el arnés la ignora, así que la regla que escribiste no se aplica.",
+    ),
     "template.missing_blocks": IssueCode(
         meaning="Al template le faltan bloques de primer nivel obligatorios.",
         fix="Agregá los bloques que el hallazgo enumera; `docs template init` genera un esqueleto con todos.",

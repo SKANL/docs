@@ -4,6 +4,8 @@
 
 Give any code agent (Claude Code, Codex, OpenCode, or other) a single, authoritative, queryable description of how to drive the harness end-to-end over CLI + files, without reading source or tests.
 
+Implemented by `core_app`'s `guide` command (which reads the single authored `AGENTS.md` through `_read_agents_guide`) and its `explain` command, which renders the review-loop diagnostic catalog from `issue_codes` via `explain_code`. Each catalog entry is one `IssueCode`.
+
 ## Requirements
 
 ### Requirement: Single-Source Contract Content

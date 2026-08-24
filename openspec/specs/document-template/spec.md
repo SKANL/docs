@@ -10,6 +10,8 @@ validates that declared data is internally consistent and complete before
 use; it never compares declared values against hardcoded expected literals,
 and it never trusts AI-authored template content blindly.
 
+Implemented by `template_skeleton`'s `build_template_skeleton` (`template init`) and `template_validation`'s `validate_template` (`template validate`), reading through the `TemplateRepository` port. Because the template models stay permissive so `$comment` siblings and untyped passthrough survive, `_check_near_miss_keys` is what stops a mistyped key from silently disabling the rule it was meant to declare.
+
 ## Requirements
 
 ### Requirement: Template Skeleton Generation
@@ -101,3 +103,33 @@ run at all — not a default pass, not a failure.
 - GIVEN a template with no `paths.extracted_dir` configured
 - WHEN `review-rules` runs
 - THEN the extracted-dir policy check does not execute
+
+### Requirement: Near-Miss Key Detection
+
+Template models accept unknown keys by design (`$comment` self-documentation
+siblings, and untyped `SectionContract` passthrough that reaches the rendered
+context pack). `template validate` MUST therefore report an unknown key that
+closely resembles a real field, naming the field it likely meant, so a typo
+cannot silently disable the rule the author intended to declare. The report
+MUST be a warning, never a rejection: an unknown key that resembles nothing
+is a deliberate extension and MUST pass unremarked.
+
+#### Scenario: A mistyped contract key is named
+
+- GIVEN a section contract declaring `required_contents` instead of `required_content`
+- WHEN `template validate` runs
+- THEN it reports `template.unknown_key` naming both the typo and the real field
+- AND the severity is warning, not error
+
+#### Scenario: A deliberate passthrough key is left alone
+
+- GIVEN a section contract carrying an untyped key resembling no real field
+- WHEN `template validate` runs
+- THEN no `template.unknown_key` issue is reported
+- AND the key still survives into the rendered context pack
+
+#### Scenario: Documentation siblings are never flagged
+
+- GIVEN a template using `$comment` or `_`-prefixed keys at any nesting level
+- WHEN `template validate` runs
+- THEN none of them is reported as a near miss

@@ -25,13 +25,14 @@ from spec_code_bridge import (
     bridge_edges,
     load_graph,
     normalize_symbol,
+    provenance_tier,
     read_sections,
     resolve_within,
     write_graph,
 )
 
 
-def _document_node(node_id="doc", source_file="s.md", line=1):
+def _document_node(node_id="doc", source_file="openspec/specs/x/spec.md", line=1):
     return {
         "id": node_id,
         "file_type": "document",
@@ -356,7 +357,9 @@ def test_main_distinguishes_already_applied_from_nothing_matched(
 def test_main_writes_the_edges_it_reports(tmp_path, monkeypatch, capsys):
     import spec_code_bridge
 
-    (tmp_path / "s.md").write_text("# Heading\nCalls `widget`.\n", encoding="utf-8")
+    spec_dir = tmp_path / "openspec" / "specs" / "x"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "spec.md").write_text("# Heading\nCalls `widget`.\n", encoding="utf-8")
     path = _write_graph_file(
         tmp_path, {"nodes": [_document_node(), _code_node()], "links": []}
     )
@@ -378,7 +381,9 @@ def test_main_recognises_its_own_edges(tmp_path, monkeypatch, capsys):
     """
     import spec_code_bridge
 
-    (tmp_path / "s.md").write_text("# Heading\nCalls `widget`.\n", encoding="utf-8")
+    spec_dir = tmp_path / "openspec" / "specs" / "x"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "spec.md").write_text("# Heading\nCalls `widget`.\n", encoding="utf-8")
     path = _write_graph_file(
         tmp_path, {"nodes": [_document_node(), _code_node()], "links": []}
     )
@@ -398,14 +403,14 @@ def test_edge_order_is_deterministic():
     """This repo demands byte-identical outputs; edge order is part of that."""
     graph = {
         "nodes": [
-            _document_node("spec_a", "a.md"),
+            _document_node("spec_a", "openspec/specs/a/spec.md"),
             _code_node("alpha_id", "alpha_thing()", "a.py"),
             _code_node("beta_id", "beta_thing()", "b.py"),
             _code_node("gamma_id", "gamma_thing()", "c.py"),
         ],
         "links": [],
     }
-    sections = {("a.md", 1): "Calls `gamma_thing`, `alpha_thing` and `beta_thing`."}
+    sections = {("openspec/specs/a/spec.md", 1): "Calls `gamma_thing`, `alpha_thing` and `beta_thing`."}
 
     first = [e["target"] for e in bridge_edges(graph, sections)]
     second = [e["target"] for e in bridge_edges(graph, sections)]
@@ -428,3 +433,50 @@ def test_main_reports_files_the_graph_names_but_the_tree_lacks(
 
     assert spec_code_bridge.main() == 0
     assert "1 file(s) named by the graph were unreadable" in capsys.readouterr().out
+
+
+# --- provenance: the standing contract vs. the archaeology --------------------
+
+
+def test_plans_are_excluded_because_the_migration_they_describe_is_finished():
+    # Measured before this rule existed: 1577 of 2405 bridge edges (66%) came
+    # from `plans/`, 746 from archived changes, and 25 from the STANDING
+    # contract. So `graphify explain <symbol>` answered "why does this exist"
+    # with a 2026-06 slice plan for a monolith migration that
+    # `plans/roadmap.md` itself declares complete -- and which two later SDD
+    # changes have since refactored past.
+    assert provenance_tier("plans/2026-06-19-slice-1-foundations.md") is None
+    assert provenance_tier("plans/roadmap.md") is None
+
+
+def test_the_standing_contract_is_tier_contract():
+    assert provenance_tier("openspec/specs/document-pipeline/spec.md") == "contract"
+    assert provenance_tier("AGENTS.md") == "contract"
+    assert provenance_tier("CLAUDE.md") == "contract"
+
+
+def test_archived_changes_and_design_docs_are_tier_rationale():
+    # Archived SDD changes are the ADR record CLAUDE.md calls a "full audit
+    # trail" -- superseded as a PLAN, still true as a REASON.
+    assert provenance_tier("openspec/changes/archive/2026-07-06-x/design.md") == "rationale"
+    assert provenance_tier("specs/2026-06-19-harness-migration-hexagonal-design.md") == "rationale"
+
+
+def test_every_emitted_edge_carries_its_provenance_tier():
+    graph = {
+        "nodes": [
+            _document_node("h-spec", "openspec/specs/document-render/spec.md", 1),
+            _document_node("h-plan", "plans/2026-06-19-slice-1-foundations.md", 1),
+            _code_node("c1", "HtmlRendererAdapter", "src/docs/application/html_render.py"),
+        ],
+        "links": [],
+    }
+    sections = {
+        ("openspec/specs/document-render/spec.md", 1): "Uses `HtmlRendererAdapter`.",
+        ("plans/2026-06-19-slice-1-foundations.md", 1): "Also names `HtmlRendererAdapter`.",
+    }
+
+    edges = bridge_edges(graph, sections)
+
+    assert [e["provenance"] for e in edges] == ["contract"]
+    assert all(e["source_file"].startswith("openspec/specs/") for e in edges)
