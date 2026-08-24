@@ -499,7 +499,7 @@ def test_image_metadata_crash_is_isolated_warns_and_still_catalogs_other_images(
 
 
 # --- S2 (smart-figure-embedding): role resolution, filter, stable-path copy,
-# and confirmed-role propagation wired into `_build_figure_catalog`
+# and confirmed-role propagation wired into `build_figure_catalog_for`
 # (design.md ADR-1/ADR-2/ADR-3; tasks.md 2.1-2.4) --------------------------
 
 
