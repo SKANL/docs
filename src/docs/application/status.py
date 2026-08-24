@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.context import ContextService
-from docs.application.ingest import _CLASSIFICATION_QUEUE_NAME, _DETECTION_REPORT_NAME
+from docs.application.ingest_names import CLASSIFICATION_QUEUE_NAME, DETECTION_REPORT_NAME
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.review import ReviewService
 from docs.domain.document_status import DocumentStatus
@@ -101,7 +101,7 @@ class StatusService:
             sections_missing=sections_missing,
             sections_scaffold=sections_scaffold,
             sections_needs_review=sections_needs_review,
-            ingest_ran=(inbox_dir / _DETECTION_REPORT_NAME).exists(),
+            ingest_ran=(inbox_dir / DETECTION_REPORT_NAME).exists(),
             classification_pending=self._count_pending_classifications(inbox_dir),
             figures_count=self._count_figures(sections_dir),
             output_draft_exists=(output_draft_dir / resolve_draft_docx_name(doc_id, config)).exists(),
@@ -133,7 +133,7 @@ class StatusService:
         return latest
 
     def _count_pending_classifications(self, inbox_dir: Path) -> int:
-        queue_path = inbox_dir / _CLASSIFICATION_QUEUE_NAME
+        queue_path = inbox_dir / CLASSIFICATION_QUEUE_NAME
         if not queue_path.exists():
             return 0
         try:

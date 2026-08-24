@@ -13,7 +13,14 @@ contract now lives in `openspec/specs/`.
 - Pipeline stage sets: `pipeline <prep|ingest|assemble|all>` — `ingest` must
   run before `assemble`/`all` when sources exist in `inbox/` (`all` does NOT
   include ingest stages, by design).
-- Lint/typecheck: `ruff check .` / `mypy src` (ambient tools, not yet declared)
+- Lint/typecheck: `uv run ruff check .` / `uv run mypy` — both DECLARED in
+  `[dependency-groups] dev`, with their rulesets declared in
+  `pyproject.toml`. Keep the `uv run` prefix: an undeclared tool falls
+  through to whatever is on PATH under a different interpreter that cannot
+  see the project's dependencies, which is how `mypy` once reported ~19
+  phantom `import-not-found` errors and `coverage` failed collection
+  outright. Both are green; CI keeps them that way.
+- Coverage: `uv run pytest --cov=src` (96%; CI floor is 93%).
 
 ## Layout
 
@@ -22,6 +29,15 @@ contract now lives in `openspec/specs/`.
 - `src/docs/infrastructure/` — adapters (filesystem, python-docx, pandoc)
 - `src/docs/cli/` — Typer CLI; composition root in `cli/_shared.py` (Deps)
 - `tests/unit/`, `tests/integration/` — mirror the src layers
+- `tests/architecture/` — repo-wide invariants (see "Mechanised invariants")
+
+Ingest is three modules, not one: `application/ingest.py` (`IngestService`:
+detection, conversion, reporting), `ingest_classification.py`
+(`SourceClassifier`: role gating, near-duplicates, conflicts),
+`ingest_figures.py` (`FigureIngestPipeline`: asset routing, figure catalog,
+rasterization — it owns `ImageMetadataPort`/`PdfRenderPort`/
+`SvgRasterizerPort` exclusively). `ingest_names.py` holds the vocabulary all
+three share; never re-declare an artifact filename or extension set locally.
 
 ## Conventions
 
@@ -40,7 +56,15 @@ contract now lives in `openspec/specs/`.
 - Any new `.docx`/zip writer MUST end in
   `infrastructure/docx/deterministic_zip.py:normalize_docx_zip_timestamps` —
   stdlib zip stamps wall-clock entry times at 2s DOS granularity, so a
-  "flaky" byte-identity test is a product bug, not test noise.
+  "flaky" byte-identity test is a product bug, not test noise. This is now
+  MECHANICAL: `tests/architecture/test_docx_writer_invariant.py` fails on any
+  module that writes a zip or saves a python-docx document without routing
+  through the normalizer. It needs no graph index, so it never skips.
+- Never truthiness-test an `ElementTree.Element`. `Element.__bool__` means
+  "has children" (deprecated in 3.12, an error later), so `if not
+  root.find(x)` reads a present-but-childless element as absent — that
+  shipped a duplicate `<w:num>` definition into `numbering.xml`. Always
+  `find(...) is None`.
 - Any new reader or writer of `context/` MUST use
   `domain/context_index_files.py:is_context_content_filename` — never
   re-declare index/`_`-prefix skip rules locally (a writer-side rename once
@@ -112,6 +136,15 @@ backticks inside a spec becomes an EXTRACTED `references` edge, so
 `graphify explain <symbol>` returns the ADRs and design decisions behind a
 function, not just its callers. No LLM, no inferred edges.
 
+Every edge carries a `provenance` tier: `contract` (`openspec/specs/`,
+`AGENTS.md`, `CLAUDE.md`) or `rationale` (`openspec/changes/archive/`,
+`specs/`). `plans/` emits nothing — measured before that rule existed, it
+supplied 1577 of 2405 edges against 25 from the standing contract, so the
+"why" layer was 97% archaeology and answered from a superseded slice plan 63
+times out of 64. `tests/architecture/test_spec_symbol_references.py` keeps
+the contract side honest by requiring every capability spec to name at least
+three real symbols.
+
     graphify update . && uv run python tools/spec_code_bridge.py
 
 The rebuild drops the bridge, so always chain the two. Re-running the bridge
@@ -128,17 +161,6 @@ After a graph-answered question, record whether it helped:
 `graphify reflect` distils those into `graphify-out/reflections/LESSONS.md`.
 Feed it results from all three graphs -- it is the only memory layer of the
 three, and it is what keeps routing honest over time.
-
-`tests/architecture/test_graph_invariants.py` enforces the layering rule
-above against the GitNexus graph, and skips when no index is present -- set
-`ARCHITECTURE_REQUIRE_GRAPH` to any enabling value (`1`, `true`, `yes`, `on`)
-to make a missing index fail instead, so CI can demand the check rather than
-accept a silent skip. Nothing sets it yet -- this repo has no CI config.
-`tests/architecture/test_spec_code_bridge.py` covers the bridge from its own
-fixtures and needs no graph, so it always runs.
-
-<!-- rtk-instructions v2 -->
-# RTK (Rust Token Killer) - Token-Optimized Commands
 
 ## Mechanised invariants (what fails the build, and where)
 
