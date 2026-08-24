@@ -61,3 +61,44 @@ def test_insert_toc_field_honors_custom_levels_argument(tmp_path):
     reopened = Document(str(path))
     xml = "".join(p._p.xml for p in reopened.paragraphs)
     assert 'TOC \\o "1-2"' in xml
+
+
+# --- a placeholder must never survive assembly --------------------------------
+
+
+def test_a_second_toc_placeholder_is_removed_and_warned_about(tmp_path, capsys):
+    # Found by running a real document end to end. `documento-generico`
+    # declares BOTH a `{"type": "toc"}` structure part AND an `indice`
+    # section whose contract sets `toc: true`, so two `[[TOC]]` paragraphs
+    # reach the assembled file. `insert_toc_field` replaced the first and
+    # `break`-ed, and the delivered .docx carried a literal `[[TOC]]` under
+    # its ÍNDICE heading.
+    #
+    # The other two builtin templates declare one or the other, never both --
+    # so this is a template mistake, but the harness must not emit its own
+    # marker as visible text no matter what a template declares.
+    document = Document()
+    document.add_paragraph("[[TOC]]")
+    document.add_heading("ÍNDICE", level=1)
+    document.add_paragraph("[[TOC]]")
+    path = tmp_path / "dos-toc.docx"
+    document.save(path)
+
+    assert insert_toc_field(path) is True
+
+    result = Document(str(path))
+    bodies = [p.text.strip() for p in result.paragraphs]
+    assert "[[TOC]]" not in bodies, bodies
+    assert result.element.body.xml.count("TOC \o") == 1, "un solo campo TOC, no dos"
+    assert "WARN" in capsys.readouterr().err
+
+
+def test_a_single_placeholder_still_becomes_the_field_without_warning(tmp_path, capsys):
+    document = Document()
+    document.add_paragraph("[[TOC]]")
+    path = tmp_path / "un-toc.docx"
+    document.save(path)
+
+    assert insert_toc_field(path) is True
+
+    assert "WARN" not in capsys.readouterr().err
