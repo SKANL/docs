@@ -127,6 +127,13 @@ Answers a "why" → graphify.**
   two do not have.
 - graphify — `graphify-out/` (gitignored). Code layer: `graphify update .`
   (AST only, no LLM). Doc/spec layer needs the agent pass: `/graphify --update`.
+  `.graphifyignore` scopes what the doc layer reads, mirroring the bridge's
+  provenance tiers: `openspec/specs` + `AGENTS.md`/`CLAUDE.md` (contract) and
+  `openspec/changes/archive` (rationale) are IN; `plans/`, `specs/` and the
+  tooling docs under `.superpowers/`/`.atl/` are OUT. Unscoped, 74% of the
+  2.6 MB markdown corpus is a finished migration's playbook and 20% is
+  tooling documentation — an extraction pass would spend ~94% of its budget
+  on material that says nothing about the harness as it is today.
 
 ### Spec-to-code bridge
 
