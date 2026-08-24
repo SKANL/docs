@@ -173,8 +173,11 @@ three, and it is what keeps routing honest over time.
 | Every emitted `Issue.code` is in the catalog, and vice versa | `tests/unit/domain/test_issue_codes.py` | no |
 | `AGENTS.md` never documents a command that does not exist | `tests/unit/test_agents_md_content.py` | no |
 
-Only the first one skips without an index; the rest always run, so a fresh
-clone gets real enforcement rather than a green vacuum. Each carries its own
+The first one needs an index, so CI gives it one: a separate `architecture`
+job installs GitNexus, indexes the checkout (~45s) and sets
+`ARCHITECTURE_REQUIRE_GRAPH=1`, turning a missing index from a skip into a
+failure. It still skips locally. The rest always run, so a fresh clone gets
+real enforcement rather than a green vacuum. Each carries its own
 probe test against a vacuous pass — an AST walk that stops matching would
 otherwise report "0 violations" forever.
 
