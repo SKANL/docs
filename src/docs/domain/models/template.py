@@ -2,9 +2,28 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
+# A template is HAND-WRITTEN JSON: the primary trust boundary of this
+# harness. Every model here stays permissive ON PURPOSE, for two documented
+# reasons that a blanket `extra="forbid"` would break:
+#
+#   1. `$comment` siblings. Templates document themselves inline, at the top
+#      level and inside `sections[]` entries alike
+#      (`test_comment_sibling_keys_are_never_treated_as_incomplete`).
+#   2. Untyped passthrough on `SectionContract`. Legacy contract keys survive
+#      `model_dump()` into the rendered context pack, so the agent still sees
+#      them (`test_pack_context_section_contract_model_dump_surfaces_extra_keys`).
+#
+# The real hazard permissiveness creates -- a TYPO like `required_contents`
+# being accepted and silently ignored, so the author's rule never runs while
+# the template still validates -- is caught where it belongs instead:
+# `template_validation._check_near_miss_keys` reports an unknown key that is
+# one edit away from a real field, and says which field it meant. Precise
+# enough to stay quiet for deliberate passthrough, loud enough for a typo.
+_PERMISSIVE = ConfigDict(extra="allow")
+
 
 class Field(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     key: str
     label: str
     required: bool = False
@@ -12,7 +31,7 @@ class Field(BaseModel):
 
 
 class Topic(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     id: str
     title: str
     required: bool = False
@@ -23,12 +42,12 @@ class Topic(BaseModel):
 
 
 class ContextSchema(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     topics: list[Topic] = []
 
 
 class Section(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     id: str
     title: str
     order: int = 0
@@ -37,7 +56,7 @@ class Section(BaseModel):
 
 
 class LengthSpec(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     min_words: int | None = None
     max_words: int | None = None
     min_pages: int | None = None
@@ -46,7 +65,7 @@ class LengthSpec(BaseModel):
 
 
 class SectionContract(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     title: str = ""
     required_content: list[str] = []
     evidence_required: bool = False
@@ -62,9 +81,15 @@ class SectionContract(BaseModel):
 
 
 class Apa7Config(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     enabled: bool = True
     style: str = "APA 7"
+    # spec: template-provisioning — "`citation_style` MUST accept `apa7` or
+    # `none`, with only `apa7` implemented (a seam for future styles)".
+    # It reached `resolve_normative_settings` only via `extra="allow"`, so a
+    # spec-declared contract field was surviving as an unmodelled leftover
+    # (and `citation_stile` would have been accepted just as happily).
+    citation_style: str = "apa7"
     in_text_citation: str = ""
     requires_reference_for_each_citation: bool = True
     requires_citation_for_each_reference: bool = True
@@ -75,7 +100,7 @@ class Apa7Config(BaseModel):
 
 
 class StrictPolicyBlock(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     allow_pending: bool = True
     length_violations: str = "warning"
     missing_evidence: str = "warning"
@@ -83,7 +108,7 @@ class StrictPolicyBlock(BaseModel):
 
 
 class StrictPolicy(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     draft: StrictPolicyBlock = StrictPolicyBlock()
     strict: StrictPolicyBlock = StrictPolicyBlock(
         allow_pending=False,
@@ -94,7 +119,7 @@ class StrictPolicy(BaseModel):
 
 
 class Template(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = _PERMISSIVE
     type: str
     title: str
     project_defaults: dict = {}

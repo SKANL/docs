@@ -4,6 +4,8 @@
 
 Let any code agent point the harness at a workspace without per-call env vars or hardcoded paths, by persisting workspace roots to a config file and bootstrapping it with one command.
 
+Implemented by the `Workspace` value object and the `workspace_config` resolution rules, bootstrapped into a real directory tree by the `doc_init` command.
+
 ## Requirements
 
 ### Requirement: Persisted Workspace Configuration

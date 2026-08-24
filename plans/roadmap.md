@@ -29,9 +29,24 @@ Slices 1-6.
 | 14 | Pipeline & Run Logging | 3152-3354 | medium | `domain/pipeline.py` (`pipeline_stage_plan`), `domain/normative.py` (`resolve_normative_settings` — new config-extraction bridge closing a gap Slices 3/5/8/9 each deferred), `SourceRepository` grown with `run_git_rev_parse_head` (port + adapter), `PipelineService` (new — composes nearly every prior service: `DoctorService`, `EvidenceService`, `EvidenceRepository`, `CollectionService`, `SourceRepository`, `ReviewService`, `ContextPackService`, `ContextRepository`, `DocxAssemblyService`, `FormatAuditService`, `QaService`, `Workspace`). `log_run`/`list_runs` (no new port, direct filesystem I/O per Slice 13 precedent), `run_pipeline` (13-stage composer; `build-sections` stage raises `NotImplementedError` since `ReviewService.build_section` needs `source_hash`/`prompt_hash` this migration has never modeled, caught by the stage loop's own exception handling since it's non-fail_fast), `verify_all` (reuses `run_pipeline`'s helpers, no `repo_root` param). One real bug found and fixed during implementation (not a legacy-parity issue): `timespec="seconds"` on run-log timestamps/filenames caused deterministic collisions when `log_run` runs more than once per second — fixed to `timespec="microseconds"`. 696 tests (7 skipped), all 6 tasks fresh-context-reviewed or self-reviewed, zero Critical/Important findings surviving review. |
 | 15 | CLI Surface | 3355-3951 | large | New `src/docs/cli/` package: `_shared.py` (`Deps` composition root wiring all 13 application services/adapters + the never-before-migrated `resolve_context`/`resolve_config`/`load_document`/`_deep_merge`/`_expand_tokens`/`_computed_paths` config-assembly pipeline) and `main.py` (Typer `app`, global `--doc`, all 37 legacy `command_*` functions ported as 20 flat commands + 4 nested sub-apps: `template`/`doc`/`asset`/`context`). New dependency: `typer`, plus a `docs` console-script entrypoint. Two judgment calls deliberately surface known gaps rather than fake them: `build-section` exits 1 with an explanatory message (unmodeled `source_hash`/`prompt_hash`, inherited from Slice 6/8/14) and `context elicit` drops the interactive-TTY branch entirely, always writing the `_requests.md` questionnaire (new `ContextService.write_requests_file`, the slice's only new application-layer logic). Legacy `--config report.yaml` compatibility mode intentionally dropped (document-first model has no equivalent). Exit codes preserved byte-for-byte per command. 743 tests (7 skipped), whole-branch final review "Merge as-is" — zero Critical/Important/Minor findings. **Slice 15 COMPLETE — migration finished.** |
 
+| 17 | Build Sections | — | small | `plans/2026-07-04-slice-17-build-sections.md` + `specs/2026-07-04-slice-17-build-sections-design.md`. Closed the `build-section` gap Slice 15 shipped as an exit-1 message (unmodelled `source_hash`/`prompt_hash`). Recorded here late: the slice landed after this table was declared final. |
+
 ## Remaining
 
-None. All 15 slices complete — the `tesina_harness.py` → hexagonal architecture migration is finished.
+None. The `tesina_harness.py` → hexagonal architecture migration is finished.
+
+## Status of this directory (added 2026-08-24)
+
+**`plans/` is HISTORICAL. It is not a planning source.** It is the verbatim
+playbook for a migration that is complete, describing a code shape two later
+SDD changes (`universal-doc-harness`, `harness-generality-and-revision`) have
+since refactored past. The standing contract is `openspec/specs/`; the
+rationale record is `openspec/changes/archive/`.
+
+`tools/spec_code_bridge.py` excludes this directory for that reason. When it
+did not, `plans/` supplied 1577 of 2405 spec→code edges against 25 from the
+standing contract — so `graphify explain <symbol>` answered "why does this
+exist" with a superseded slice plan, 63 times out of 64.
 
 ## Open scope notes carried from Slice 6
 

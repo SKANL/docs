@@ -7,6 +7,8 @@ re-validation to affected sections, and records provenance for every content
 edit an agent makes after initial authoring — while the agent supplies the
 actual prose change.
 
+Implemented by `RevisionService` over the pure `revision` primitives `unified_diff` and `summarize_change`.
+
 ## Requirements
 
 ### Requirement: Revise Diff Output

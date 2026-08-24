@@ -4,6 +4,8 @@
 
 Provide a `DocumentRendererPort` abstraction resolved by target output format, with DOCX as the primary adapter, and prove the port is genuinely extensible to other formats without modifying domain/pipeline code.
 
+Implemented by the `DocumentRendererPort` registry resolved in the composition root by `resolve_renderer`, with `DocxRendererAdapter`, `HtmlRendererAdapter` and `PdfRendererAdapter` as its members.
+
 ## Requirements
 
 ### Requirement: Renderer Port Abstraction

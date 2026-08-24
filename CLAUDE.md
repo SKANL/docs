@@ -68,6 +68,11 @@ contract now lives in `openspec/specs/`.
 - `openspec/changes/archive/2026-07-06-universal-doc-harness/` — full audit
   trail of the founding refactor (proposal/design/tasks/state +
   archive-report.md with the PR ledger).
+- `plans/` (19 md, ~1 MB) and `specs/` (2 design docs at the repo root) are
+  **HISTORICAL, not planning sources**: the playbook and design docs of a
+  finished migration whose code shape two later SDD changes refactored past.
+  See the status note at the end of `plans/roadmap.md`. The spec→code bridge
+  excludes `plans/` for this reason.
 - `RESUME.md` — session-resume prompt and tool authority hierarchy
   (OpenSpec > Gentle AI/SDD > superpowers > engram/codegraph/context7/rtk).
 - `.atl/skill-registry.md` — skill index for sub-agent launches.
@@ -123,6 +128,33 @@ After a graph-answered question, record whether it helped:
 `graphify reflect` distils those into `graphify-out/reflections/LESSONS.md`.
 Feed it results from all three graphs -- it is the only memory layer of the
 three, and it is what keeps routing honest over time.
+
+`tests/architecture/test_graph_invariants.py` enforces the layering rule
+above against the GitNexus graph, and skips when no index is present -- set
+`ARCHITECTURE_REQUIRE_GRAPH` to any enabling value (`1`, `true`, `yes`, `on`)
+to make a missing index fail instead, so CI can demand the check rather than
+accept a silent skip. Nothing sets it yet -- this repo has no CI config.
+`tests/architecture/test_spec_code_bridge.py` covers the bridge from its own
+fixtures and needs no graph, so it always runs.
+
+<!-- rtk-instructions v2 -->
+# RTK (Rust Token Killer) - Token-Optimized Commands
+
+## Mechanised invariants (what fails the build, and where)
+
+| Rule | Test | Needs an index? |
+|---|---|---|
+| `cli → application → domain`, infra implements ports | `test_graph_invariants.py` | yes (GitNexus) |
+| Every `.docx`/zip writer ends in `normalize_docx_zip_timestamps` | `test_docx_writer_invariant.py` | no |
+| Every capability spec names ≥3 real symbols, and no dead ones | `test_spec_symbol_references.py` | no |
+| Every CLI command has help text | `tests/unit/cli/test_command_help_coverage.py` | no |
+| Every emitted `Issue.code` is in the catalog, and vice versa | `tests/unit/domain/test_issue_codes.py` | no |
+| `AGENTS.md` never documents a command that does not exist | `tests/unit/test_agents_md_content.py` | no |
+
+Only the first one skips without an index; the rest always run, so a fresh
+clone gets real enforcement rather than a green vacuum. Each carries its own
+probe test against a vacuous pass — an AST walk that stops matching would
+otherwise report "0 violations" forever.
 
 `tests/architecture/test_graph_invariants.py` enforces the layering rule
 above against the GitNexus graph, and skips when no index is present -- set

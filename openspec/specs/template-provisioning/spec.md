@@ -4,6 +4,8 @@
 
 Ship usable document templates with the harness itself, so a document can be started without a project-specific fixture already living in the consuming repo.
 
+Implemented by `resolve_normative_settings` in `normative`, which extracts every review-rule input from template data, plus the `Apa7Config` and `StrictPolicy` models that type those blocks. `template_use` provisions a builtin template into a workspace.
+
 ## Requirements
 
 ### Requirement: Built-In Templates as Package Data

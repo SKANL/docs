@@ -2,11 +2,15 @@ from pathlib import Path
 
 from docs.domain.models.template import (
     Apa7Config,
+    ContextSchema,
+    Field,
     LengthSpec,
+    Section,
     SectionContract,
     StrictPolicy,
     StrictPolicyBlock,
     Template,
+    Topic,
 )
 
 FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "templates"
@@ -135,3 +139,35 @@ def test_template_from_json_parses_toc_and_references_list_typed_fields():
     assert template.section_contracts["indice"].references_list is False
     assert template.section_contracts["referencias"].references_list is True
     assert template.section_contracts["referencias"].toc is False
+
+# --- the trust boundary: permissive on purpose, with a typo net --------------
+
+
+def test_apa7_config_accepts_citation_style_as_a_declared_field():
+    # spec: template-provisioning — "`citation_style` MUST accept `apa7` or
+    # `none`". It reached `resolve_normative_settings` only through
+    # `extra="allow"`, so a spec-declared contract field was surviving as an
+    # unmodelled leftover.
+    assert Apa7Config().citation_style == "apa7"
+    assert Apa7Config(citation_style="none").citation_style == "none"
+
+
+def test_every_model_stays_permissive_so_comment_siblings_and_passthrough_survive():
+    # Pinned as a DECISION, not an accident. Forbidding extras here would
+    # break the `$comment` self-documentation convention and the untyped
+    # `SectionContract` passthrough the context pack renders for the agent.
+    # The typo hazard permissiveness creates is caught by
+    # `template_validation` instead — see test_template_validation.py.
+    for model in (Template, Section, SectionContract, Topic, Field, ContextSchema,
+                  LengthSpec, Apa7Config, StrictPolicy, StrictPolicyBlock):
+        assert model.model_config.get("extra") == "allow", model.__name__
+
+
+def test_every_builtin_template_still_loads():
+    from importlib.resources import files
+
+    builtin = files("docs.templates.builtin")
+    names = [r.name for r in builtin.iterdir() if r.name.endswith(".json")]
+    assert names, "no se encontraron plantillas integradas"
+    for name in names:
+        Template.from_json(builtin.joinpath(name).read_text(encoding="utf-8"))
