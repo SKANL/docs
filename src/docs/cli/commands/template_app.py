@@ -41,6 +41,7 @@ def template_list(
     ctx: typer.Context,
     available: bool = typer.Option(False, "--available", help="Lista las plantillas integradas (package data), no las de templates_dir."),
 ) -> None:
+    """Lista las plantillas del workspace, o las integradas con `--available`."""
     if available:
         for name in _list_builtin_names():
             print(f"- {name}")
@@ -79,6 +80,7 @@ def template_use(
 
 @template_app.command("show")
 def template_show(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
+    """Imprime el JSON completo de una plantilla, con los valores por defecto ya resueltos."""
     deps, _ = _ctx(ctx)
     template = deps.document_repository.load_template(name)
     print(json.dumps(template.model_dump(), ensure_ascii=False, indent=2))

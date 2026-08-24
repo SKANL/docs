@@ -23,7 +23,7 @@ from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
-from docs.application.ingest import _SOURCE_MANIFEST_NAME, IngestService
+from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
@@ -315,11 +315,11 @@ def _apply_confirmed_placements(parts: list[dict[str, Any]], inbox_dir: Path) ->
     """CRITICAL-1 fix (PR5 verify): the WRITE half of design.md Decision 6a's
     "confirmation lands TWICE" -- reads confirmed placements' precomputed
     `structure_part` from `inbox/_source-manifest.json` (IngestService's own
-    output, `_route_and_queue_assets`) and splices them into the resolved
+    output, `route_and_queue_assets`) and splices them into the resolved
     document structure, so the EXISTING `structure_parts()` consumer
     (docx_assembly.py/doctor.py) can actually see them. No new consumer.
     """
-    manifest_path = inbox_dir / _SOURCE_MANIFEST_NAME
+    manifest_path = inbox_dir / SOURCE_MANIFEST_NAME
     if not manifest_path.exists():
         return parts
     try:

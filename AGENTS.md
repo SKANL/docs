@@ -213,6 +213,20 @@ ingest step, or classification action ever copies ingested content into
 "section content done" is the most common way to end up with an empty or
 scaffold-only section that later fails `review-section`.
 
+### A document freezes its structure at creation
+
+`docs doc new` copies the template's `structure` list into the document's own
+`document.json`. From then on THAT copy wins: editing the template's
+`structure` changes documents created afterwards, and leaves existing ones
+exactly as they were.
+
+This is deliberate — a document's page layout should not shift under an
+author mid-project — but it is easy to be surprised by. If you fixed a
+template and an existing document did not change, edit that document's
+`structure` in its `document.json`, or create a fresh document from the
+corrected template. Everything else (section contracts, context schema,
+normative rules, margins) IS read live from the template on every command.
+
 ## 2. Config resolution
 
 Workspace roots (`documents_dir`, `templates_dir`) resolve with this
@@ -329,10 +343,14 @@ it only reads and reports, it never writes.
 section's authored prose. Loop:
 
 1. Run `docs review-section <id> --json`.
-2. If `"passed": false`, read `"issues"` — each issue names the failing
-   check and a human-readable detail (missing required content, an
-   unsubstantiated subjective/contested term, an inconsistency against the
-   template's normative rules, etc.).
+2. If `"passed": false`, read `"issues"` — each issue carries a `code`
+   (e.g. `apa.quote_without_locator`) plus a human-readable detail.
+   **`docs explain <code>` tells you what that code means and what clears
+   it**; `docs explain` with no argument lists the whole catalog grouped by
+   family. It needs no workspace, so it answers from anywhere. That catalog
+   is generated from the codes the harness actually emits — it can never
+   drift into documenting a code that no longer exists, or miss one that
+   does.
 3. Edit the section's `.md` body to address the issue (add the missing
    content, add quantified evidence or a citation next to a flagged claim,
    resolve the inconsistency).

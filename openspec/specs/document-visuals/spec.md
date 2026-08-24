@@ -11,6 +11,8 @@ extensible: adding a third visual type (e.g. PlantUML, graphviz) requires
 only a new adapter registered against `VisualRendererPort`, no stage or
 resolver change.
 
+Implemented by `GenerateVisualsService` over the `VisualRendererPort` registry (`ChartSvgRenderer`, `MermaidSvgRenderer`) and the `SvgRasterizerPort`. Each agent-authored spec is a `VisualSpec`; `normalize_svg` is what makes the rendered SVG byte-deterministic.
+
 ## Requirements
 
 ### Requirement: Extensible Visual-Renderer Registry

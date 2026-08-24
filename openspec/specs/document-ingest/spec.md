@@ -4,6 +4,8 @@
 
 Convert arbitrary source documents (PDF, DOCX, ODT, Markdown, TXT) into deterministic Markdown source files via type detection and routing, so any document type can enter the harness pipeline without hardcoded assumptions.
 
+Implemented by `IngestService` over the `SourceIngestPort`, `SourceTypeDetectorPort` and `ContentProbePort` ports, with output identity owned by `ingest_naming` and writes made atomic by `atomic_ingest_write`.
+
 ## Requirements
 
 ### Requirement: File-Type Detection

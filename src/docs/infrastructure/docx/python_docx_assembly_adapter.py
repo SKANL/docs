@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
@@ -236,7 +237,10 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
             numbering_root = ET.Element(f"{{{namespace}}}numbering")
             numbering_tree = ET.ElementTree(numbering_root)
 
-        if not numbering_root.find(f".//{{{namespace}}}num[@{{{namespace}}}numId='{num_id}']"):
+        # `is None`, never truthiness: `Element.__bool__` means "has
+        # children" (deprecated in 3.12, an error later), so a present-but-
+        # childless `<w:num>` read as absent and got a duplicate definition.
+        if numbering_root.find(f".//{{{namespace}}}num[@{{{namespace}}}numId='{num_id}']") is None:
             abstract = ET.SubElement(numbering_root, f"{{{namespace}}}abstractNum", {f"{{{namespace}}}abstractNumId": str(num_id)})
             ET.SubElement(abstract, f"{{{namespace}}}multiLevelType", {f"{{{namespace}}}val": "hybridMultilevel"})
             lvl = ET.SubElement(abstract, f"{{{namespace}}}lvl", {f"{{{namespace}}}ilvl": "0"})
@@ -331,12 +335,19 @@ def add_fixed_text_page(document: Any, text: str) -> None:
     run.font.size = Pt(12)
 
 
-def add_image_page(document: Any, image_path: Path) -> None:
+def add_image_page(document: Any, image_path: Path, caption: str = "") -> None:
     """Insert a scanned/rendered image (e.g. a signed release letter) as a
     centered, page-sized picture -- used by the `image_page` leading part to
     replace a blank guard page with an actual full-page document. Sized to fit
     the text area (width first; height-capped for very tall scans), so it never
-    overflows the page."""
+    overflows the page.
+
+    `caption` becomes the picture's alternative text. A whole page that IS an
+    image is the worst place to omit it: a screen reader reaches it and
+    announces nothing. Section figures already carry alt text because they go
+    through pandoc, which writes `descr` from the markdown alt text; this path
+    uses python-docx directly and has to set it itself.
+    """
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm
     from PIL import Image
@@ -350,9 +361,24 @@ def add_image_page(document: Any, image_path: Path) -> None:
     paragraph.paragraph_format.first_line_indent = None
     run = paragraph.add_run()
     if width_px and (max_w_cm * (height_px / width_px)) <= max_h_cm:
-        run.add_picture(str(image_path), width=Cm(max_w_cm))
+        picture = run.add_picture(str(image_path), width=Cm(max_w_cm))
     else:
-        run.add_picture(str(image_path), height=Cm(max_h_cm))
+        picture = run.add_picture(str(image_path), height=Cm(max_h_cm))
+    set_picture_alt_text(picture, caption or image_path.stem)
+
+
+def set_picture_alt_text(picture: Any, description: str) -> None:
+    """Write `<wp:docPr descr="...">` on an inline picture.
+
+    python-docx exposes no API for this (it emits `docPr` with only `id` and
+    `name`), so the attribute is set on the underlying element. Deterministic:
+    an attribute value derived from declared config, never from the clock.
+    """
+    from docx.oxml.ns import qn
+
+    doc_pr = picture._inline.find(qn("wp:docPr"))
+    if doc_pr is not None:
+        doc_pr.set("descr", description)
 
 
 def apply_normative_paragraph_format(paragraph: Any, style_name: str | None, text: str, is_list: bool = False) -> None:
@@ -381,13 +407,27 @@ def insert_toc_field(docx_path: Path, placeholder: str = "[[TOC]]", levels: str 
     from docx.oxml.ns import qn
 
     document = Document(str(docx_path))
-    target = None
-    for paragraph in document.paragraphs:
-        if (paragraph.text or "").strip() == placeholder:
-            target = paragraph
-            break
-    if target is None:
+    matches = [p for p in document.paragraphs if (p.text or "").strip() == placeholder]
+    if not matches:
         return False
+    target, *leftovers = matches
+
+    # A template that declares the index twice -- a `{"type": "toc"}` structure
+    # part AND a section whose contract sets `toc: true` -- puts two
+    # placeholders in the file. Only one may become a field, but the other
+    # must NOT ship as visible text: `[[TOC]]` is harness syntax, never
+    # authored prose. Removing it silently would hide the redundancy, so it
+    # WARNs, the same degrade-and-say-why idiom the rest of the pipeline uses.
+    for extra in leftovers:
+        extra._p.getparent().remove(extra._p)
+    if leftovers:
+        print(
+            f"WARN: se encontraron {len(matches)} marcadores {placeholder}; "
+            f"solo el primero se convierte en índice y el resto se descarta. "
+            f"Revisá el template: declarar una parte `toc` en `structure` Y una "
+            f"sección con `toc: true` en su contrato son dos índices, no uno.",
+            file=sys.stderr,
+        )
 
     for run in list(target.runs)[::-1]:
         target._p.remove(run._r)
@@ -526,7 +566,11 @@ class PythonDocxAssemblyAdapter:
             if kind == "blank_page":
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
             elif kind == "image_page":
-                add_image_page(cover, self._resolve_leading_image_path(config, part))
+                add_image_page(
+                    cover,
+                    self._resolve_leading_image_path(config, part),
+                    caption=str(part.get("caption", "")),
+                )
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
             elif kind in {"fixed_text_page", "toc"}:
                 if kind == "toc":

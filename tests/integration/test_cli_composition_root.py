@@ -25,6 +25,10 @@ _EXPECTED_FLAT_COMMANDS = {
     # `guide` added PR10 of agent-agnostic-real-world-usability (item B,
     # agent contract) -- deliberate surface growth, not drift.
     "guide",
+    # `explain` surfaces the issue-code catalog the review loop emits: 31
+    # codes reached the agent through `review-section --json` while exactly
+    # one of them was documented anywhere. Deliberate growth, not drift.
+    "explain",
     "collect-sources", "build-rules", "review-rules", "collect-issues",
     "collect-code-evidence", "build-ledger", "build-section", "pack-context",
     "review-section", "review-document", "build-docx", "qa-docx",
@@ -69,7 +73,7 @@ def test_commands_package_splits_by_concern():
     def _names(sub_app: typer.Typer) -> set[str]:
         return set(typer.main.get_command(sub_app).commands.keys())
 
-    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp", "guide"}
+    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp", "guide", "explain"}
     assert _names(collection_app) == {
         "collect-sources", "build-rules", "review-rules",
         "collect-issues", "collect-code-evidence", "build-ledger",

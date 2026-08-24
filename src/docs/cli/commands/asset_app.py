@@ -15,6 +15,9 @@ asset_app = typer.Typer(help="Adjunta archivos .docx al documento (portada, anex
 
 @asset_app.command("add")
 def asset_add(ctx: typer.Context, path: str = typer.Argument(...), name: str = typer.Option("", "--name")) -> None:
+    """Copia un .docx al documento como asset reutilizable (portada, anexo).
+
+    Con `--name` fija el nombre del asset; si no, usa el del archivo."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     target = deps.assets.add_asset(resolved.doc_id, path, name=name)
@@ -24,6 +27,7 @@ def asset_add(ctx: typer.Context, path: str = typer.Argument(...), name: str = t
 
 @asset_app.command("list")
 def asset_list(ctx: typer.Context) -> None:
+    """Lista los assets .docx adjuntos al documento activo."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     names = deps.assets.list_assets(resolved.doc_id)
@@ -36,6 +40,7 @@ def asset_list(ctx: typer.Context) -> None:
 
 @asset_app.command("rm")
 def asset_rm(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
+    """Elimina un asset del documento activo por su nombre."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     deps.assets.remove_asset(resolved.doc_id, name)
