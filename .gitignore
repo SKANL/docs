@@ -20,3 +20,8 @@ graphify-out/
 .coverage
 .coverage.*
 htmlcov/
+
+# Per-machine workspace pointer written by `docs doc init`. It holds absolute
+# paths to someone's documents dir — committing it leaks a local path and
+# breaks every other checkout.
+docs.config.json

@@ -171,3 +171,29 @@ def test_every_builtin_template_still_loads():
     assert names, "no se encontraron plantillas integradas"
     for name in names:
         Template.from_json(builtin.joinpath(name).read_text(encoding="utf-8"))
+
+
+def test_no_builtin_template_declares_its_index_twice():
+    # A `{"type": "toc"}` structure part and a section contract with
+    # `toc: true` each claim to BE the table of contents. Declaring both puts
+    # two `[[TOC]]` markers in the assembled file, only one of which can
+    # become a field. `reporte-estadia-tic` uses the section, and
+    # `technical-report-srs` uses the structure part -- `documento-generico`
+    # used both, and shipped a literal `[[TOC]]` in its output.
+    import json
+    from importlib.resources import files
+
+    builtin = files("docs.templates.builtin")
+    for resource in builtin.iterdir():
+        if not resource.name.endswith(".json"):
+            continue
+        raw = json.loads(resource.read_text(encoding="utf-8"))
+        has_toc_part = any(part.get("type") == "toc" for part in raw.get("structure", []))
+        toc_sections = [
+            key for key, contract in (raw.get("section_contracts") or {}).items()
+            if contract.get("toc")
+        ]
+        assert not (has_toc_part and toc_sections), (
+            f"{resource.name} declara el índice dos veces: una parte `toc` en "
+            f"`structure` y las secciones {toc_sections} con `toc: true`."
+        )

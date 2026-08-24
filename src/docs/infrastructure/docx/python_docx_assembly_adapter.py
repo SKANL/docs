@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
@@ -406,13 +407,27 @@ def insert_toc_field(docx_path: Path, placeholder: str = "[[TOC]]", levels: str 
     from docx.oxml.ns import qn
 
     document = Document(str(docx_path))
-    target = None
-    for paragraph in document.paragraphs:
-        if (paragraph.text or "").strip() == placeholder:
-            target = paragraph
-            break
-    if target is None:
+    matches = [p for p in document.paragraphs if (p.text or "").strip() == placeholder]
+    if not matches:
         return False
+    target, *leftovers = matches
+
+    # A template that declares the index twice -- a `{"type": "toc"}` structure
+    # part AND a section whose contract sets `toc: true` -- puts two
+    # placeholders in the file. Only one may become a field, but the other
+    # must NOT ship as visible text: `[[TOC]]` is harness syntax, never
+    # authored prose. Removing it silently would hide the redundancy, so it
+    # WARNs, the same degrade-and-say-why idiom the rest of the pipeline uses.
+    for extra in leftovers:
+        extra._p.getparent().remove(extra._p)
+    if leftovers:
+        print(
+            f"WARN: se encontraron {len(matches)} marcadores {placeholder}; "
+            f"solo el primero se convierte en índice y el resto se descarta. "
+            f"Revisá el template: declarar una parte `toc` en `structure` Y una "
+            f"sección con `toc: true` en su contrato son dos índices, no uno.",
+            file=sys.stderr,
+        )
 
     for run in list(target.runs)[::-1]:
         target._p.remove(run._r)

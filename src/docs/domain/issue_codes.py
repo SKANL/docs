@@ -109,7 +109,7 @@ ISSUE_CODES: dict[str, IssueCode] = {
     ),
     "contract.missing_required": IssueCode(
         meaning="Falta contenido obligatorio que el contrato de la sección declara en `required_content`.",
-        fix="Cubrí los temas que el hallazgo enumera; el arnés los detecta por los patrones de `detect`.",
+        fix="Escribí sobre cada tema que el hallazgo enumera usando esa misma palabra en el cuerpo: sin un bloque `detect`, el arnés lematiza el término y lo busca como palabra suelta. Si tu sección lo cubre con otro vocabulario, declará los sinónimos en `detect` dentro del contrato de la sección.",
     ),
     # --- evidence -----------------------------------------------------------
     "evidence.required": IssueCode(
