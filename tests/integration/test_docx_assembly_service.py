@@ -452,6 +452,62 @@ def test_render_image_page_part_inserts_centered_full_page_image(tmp_path, servi
     assert img_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
 
 
+def test_image_page_carries_alt_text_from_its_declared_caption(tmp_path, service):
+    # A full page that IS an image is the worst possible place to have no
+    # alternative text: a screen reader reaches it and announces nothing at
+    # all. Section figures already carry it -- they go through pandoc, which
+    # writes `<wp:docPr descr="Figura N. ...">` from the markdown alt text --
+    # but `add_image_page` uses python-docx's `add_picture` directly, which
+    # emits `<wp:docPr id name/>` and no `descr`.
+    import zipfile
+
+    from PIL import Image
+
+    carta = tmp_path / "carta.png"
+    Image.new("RGB", (850, 1100), color=(255, 255, 255)).save(carta)
+    body = tmp_path / "body.docx"
+    Document().save(body)
+    output = tmp_path / "out.docx"
+    config = {
+        "structure": [
+            {
+                "type": "image_page",
+                "image": str(carta),
+                "caption": "Carta de liberación firmada por la empresa.",
+            },
+            {"type": "sections"},
+        ]
+    }
+
+    service.assemble("doc-1", config, body, output)
+
+    with zipfile.ZipFile(output) as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+    assert 'descr="Carta de liberación firmada por la empresa."' in document_xml
+
+
+def test_image_page_without_a_caption_falls_back_to_the_image_filename(tmp_path, service):
+    # No caption declared is still better served by the filename than by
+    # silence: "carta-liberacion" tells a screen-reader user what the page
+    # is, and it nudges the author to write a real caption.
+    import zipfile
+
+    from PIL import Image
+
+    carta = tmp_path / "carta-liberacion.png"
+    Image.new("RGB", (850, 1100), color=(255, 255, 255)).save(carta)
+    body = tmp_path / "body.docx"
+    Document().save(body)
+    output = tmp_path / "out.docx"
+    config = {"structure": [{"type": "image_page", "image": str(carta)}, {"type": "sections"}]}
+
+    service.assemble("doc-1", config, body, output)
+
+    with zipfile.ZipFile(output) as archive:
+        document_xml = archive.read("word/document.xml").decode("utf-8")
+    assert "carta-liberacion" in document_xml
+
+
 # --- _strip_frontmatter_to_temp -------------------------------------------------
 
 

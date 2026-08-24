@@ -119,3 +119,29 @@ def test_ensure_bullet_numbering_part_rejects_malicious_entity_expansion_in_exis
 
     with pytest.raises(DefusedXmlException):
         ensure_bullet_numbering_part(path)
+
+
+def test_ensure_bullet_numbering_part_does_not_duplicate_a_childless_existing_num(tmp_path):
+    # Root cause: the existence check read `if not root.find(...)`, and
+    # `ElementTree.Element` defines truthiness as "has children" (deprecated
+    # since 3.12, an error in a future release). A `<w:num>` that already
+    # declares this numId but carries no child element is therefore FALSY,
+    # so the check reported "absent" for a part that is present and appended
+    # a second definition of the same numId -- a malformed numbering part
+    # Word resolves unpredictably. `find(...) is None` is the identity test
+    # the code always meant.
+    path = _docx_with_bulleted_paragraph(tmp_path)
+    childless_num = (
+        f'<w:numbering xmlns:w="{_W_NS}">'
+        f'<w:num w:numId="42"/>'
+        f"</w:numbering>"
+    )
+    _replace_zip_member(path, "word/numbering.xml", childless_num)
+
+    ensure_bullet_numbering_part(path)
+
+    with zipfile.ZipFile(path) as archive:
+        numbering_xml = archive.read("word/numbering.xml").decode("utf-8")
+    root = ET.fromstring(numbering_xml)
+    nums = root.findall(f".//{{{_W_NS}}}num[@{{{_W_NS}}}numId='42']")
+    assert len(nums) == 1, f"numId 42 defined {len(nums)} times: {numbering_xml}"

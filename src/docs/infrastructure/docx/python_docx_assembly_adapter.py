@@ -236,7 +236,10 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
             numbering_root = ET.Element(f"{{{namespace}}}numbering")
             numbering_tree = ET.ElementTree(numbering_root)
 
-        if not numbering_root.find(f".//{{{namespace}}}num[@{{{namespace}}}numId='{num_id}']"):
+        # `is None`, never truthiness: `Element.__bool__` means "has
+        # children" (deprecated in 3.12, an error later), so a present-but-
+        # childless `<w:num>` read as absent and got a duplicate definition.
+        if numbering_root.find(f".//{{{namespace}}}num[@{{{namespace}}}numId='{num_id}']") is None:
             abstract = ET.SubElement(numbering_root, f"{{{namespace}}}abstractNum", {f"{{{namespace}}}abstractNumId": str(num_id)})
             ET.SubElement(abstract, f"{{{namespace}}}multiLevelType", {f"{{{namespace}}}val": "hybridMultilevel"})
             lvl = ET.SubElement(abstract, f"{{{namespace}}}lvl", {f"{{{namespace}}}ilvl": "0"})
@@ -331,12 +334,19 @@ def add_fixed_text_page(document: Any, text: str) -> None:
     run.font.size = Pt(12)
 
 
-def add_image_page(document: Any, image_path: Path) -> None:
+def add_image_page(document: Any, image_path: Path, caption: str = "") -> None:
     """Insert a scanned/rendered image (e.g. a signed release letter) as a
     centered, page-sized picture -- used by the `image_page` leading part to
     replace a blank guard page with an actual full-page document. Sized to fit
     the text area (width first; height-capped for very tall scans), so it never
-    overflows the page."""
+    overflows the page.
+
+    `caption` becomes the picture's alternative text. A whole page that IS an
+    image is the worst place to omit it: a screen reader reaches it and
+    announces nothing. Section figures already carry alt text because they go
+    through pandoc, which writes `descr` from the markdown alt text; this path
+    uses python-docx directly and has to set it itself.
+    """
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm
     from PIL import Image
@@ -350,9 +360,24 @@ def add_image_page(document: Any, image_path: Path) -> None:
     paragraph.paragraph_format.first_line_indent = None
     run = paragraph.add_run()
     if width_px and (max_w_cm * (height_px / width_px)) <= max_h_cm:
-        run.add_picture(str(image_path), width=Cm(max_w_cm))
+        picture = run.add_picture(str(image_path), width=Cm(max_w_cm))
     else:
-        run.add_picture(str(image_path), height=Cm(max_h_cm))
+        picture = run.add_picture(str(image_path), height=Cm(max_h_cm))
+    set_picture_alt_text(picture, caption or image_path.stem)
+
+
+def set_picture_alt_text(picture: Any, description: str) -> None:
+    """Write `<wp:docPr descr="...">` on an inline picture.
+
+    python-docx exposes no API for this (it emits `docPr` with only `id` and
+    `name`), so the attribute is set on the underlying element. Deterministic:
+    an attribute value derived from declared config, never from the clock.
+    """
+    from docx.oxml.ns import qn
+
+    doc_pr = picture._inline.find(qn("wp:docPr"))
+    if doc_pr is not None:
+        doc_pr.set("descr", description)
 
 
 def apply_normative_paragraph_format(paragraph: Any, style_name: str | None, text: str, is_list: bool = False) -> None:
@@ -526,7 +551,11 @@ class PythonDocxAssemblyAdapter:
             if kind == "blank_page":
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
             elif kind == "image_page":
-                add_image_page(cover, self._resolve_leading_image_path(config, part))
+                add_image_page(
+                    cover,
+                    self._resolve_leading_image_path(config, part),
+                    caption=str(part.get("caption", "")),
+                )
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
             elif kind in {"fixed_text_page", "toc"}:
                 if kind == "toc":
