@@ -1,0 +1,22 @@
+# sections
+  [0] page-numbering start=None format=None
+  [1] page-numbering start=None format=None
+# outline
+  Heading 1: Introducción
+  Heading 2: Alcance
+  Heading 1: Resultados
+# paragraph styles in use
+  Body Text: 1
+  Heading 1: 2
+  Heading 2: 1
+  List Bullet: 2
+  No Spacing: 3
+  Normal: 4
+# tables
+  [0] rows=3 cols=2
+# resolved markers
+  unresolved '[[' markers: 0
+  figure captions: ['Figura']
+# fields
+  TOC field present: True
+  PAGE field present: False
