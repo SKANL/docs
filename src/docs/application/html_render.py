@@ -79,6 +79,12 @@ class HtmlRendererAdapter:
         output_dir = Path(config["paths"]["output_draft_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output or output_dir / self._html_name(doc_id, config)
+        # A caller-supplied `output` may point anywhere, and its parent is
+        # ours to create -- not pandoc's. pandoc 3.10 tolerates a missing
+        # parent and 3.1.3 exits 1, so leaving it to the toolchain passed on a
+        # developer machine and failed in CI. `PdfRendererAdapter.build`
+        # already does this; HTML was the inconsistent one.
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
 
         # S4 (design.md ADR-4/ADR-6): same resolver as DocxRendererAdapter --
         # a config missing `sections_dir`/`assets_dir` reproduces today's

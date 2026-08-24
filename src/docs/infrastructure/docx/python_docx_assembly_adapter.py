@@ -52,9 +52,30 @@ def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
     return None
 
 
+def _style_is_usable(document: Any, name: str | None) -> bool:
+    """Whether `add_paragraph(style=name)` will actually work on `document`.
+
+    Listing and addressing are different questions. Iterating
+    `document.styles` can yield a name that `document.styles[name]` cannot
+    resolve, and which pandoc version produced the base document decides
+    whether that happens: 12 assembly tests passed on pandoc 3.10 and died on
+    3.1.3 with `KeyError: "no style with name 'Heading 1'"` -- raised from
+    inside `add_paragraph`, after this function had approved the name.
+
+    Asking the document to hand the style over is the only probe that answers
+    the question the caller is really asking.
+    """
+    if not name:
+        return False
+    try:
+        document.styles[name]
+    except (KeyError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
-    available = {style.name for style in document.styles}
-    if preferred_style in available:
+    if _style_is_usable(document, preferred_style):
         return preferred_style
 
     pandoc_style_map = {
@@ -63,12 +84,11 @@ def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
         "Compact": "No Spacing",
     }
     mapped = pandoc_style_map.get(preferred_style or "")
-    if mapped in available:
+    if _style_is_usable(document, mapped):
         return mapped
-    if "Normal" in available:
-        return "Normal"
-    if "No Spacing" in available:
-        return "No Spacing"
+    for fallback in ("Normal", "No Spacing"):
+        if _style_is_usable(document, fallback):
+            return fallback
     return None
 
 
