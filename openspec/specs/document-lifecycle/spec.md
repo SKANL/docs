@@ -6,6 +6,8 @@ Track a document's lifecycle state (draft/final) and build version across
 assemble runs, surfaced through `doc status`, so agents and humans can tell
 how far along and how many times a document has been built.
 
+Implemented by the `DocumentStatus` model in `document_status`, aggregated on read by `StatusService` and surfaced through the `doc_status` and `doc_mark_final` commands.
+
 ## Requirements
 
 ### Requirement: Lifecycle State Recorded on Assemble

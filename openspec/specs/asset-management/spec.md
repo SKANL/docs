@@ -243,3 +243,24 @@ them without depending on the ephemeral `inbox/` contents.
 - WHEN ingest runs twice independently
 - THEN the resulting `assets_dir/figures/` contents are byte-identical
   across both runs
+
+### Requirement: Alternative Text on Embedded Images
+
+Every image the harness embeds MUST carry alternative text in the rendered
+`.docx`. Section figures satisfy this through their markdown alt text, which
+pandoc writes to `<wp:docPr descr>`. A full-page `image_page` part MUST also
+carry it, taking the part's declared `caption` and falling back to the image
+filename — a page that IS an image is the worst place for a screen reader to
+find nothing to announce.
+
+#### Scenario: A declared caption becomes the alt text
+
+- GIVEN an `image_page` part declaring a `caption`
+- WHEN the document is assembled
+- THEN the embedded picture carries that caption as its `descr` attribute
+
+#### Scenario: No caption still beats silence
+
+- GIVEN an `image_page` part with no declared `caption`
+- WHEN the document is assembled
+- THEN the embedded picture carries the image filename as its `descr`

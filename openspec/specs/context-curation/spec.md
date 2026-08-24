@@ -4,6 +4,8 @@
 
 Generate small, single-purpose context files (keywords, tone, structure, writing style, formatting rules) as structured, deterministic slots with instructions, plus one progressive-disclosure index. The harness performs all mechanical generation; the agent fills cognitive fields afterward, in a separate auditable step.
 
+Implemented by `context_files` (`build_context_files` for the per-concern skeletons, `build_context_index` for the single curated index), orchestrated by `ContextService` over the `ContextRepository` port. `is_context_content_filename` is the one place that decides which files in `context/` are content rather than index, so readers and writers can never disagree.
+
 ## Requirements
 
 ### Requirement: Structured Slot Generation

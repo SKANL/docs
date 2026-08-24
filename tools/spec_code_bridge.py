@@ -84,6 +84,38 @@ def backticked_symbols(text: str) -> set[str]:
     return found
 
 
+# Which markdown counts as an answer to "why does this code exist", and how
+# authoritative that answer is.
+#
+#   contract  -- the STANDING agreement. `graphify explain` should lead here.
+#   rationale -- superseded as a plan, still true as a REASON: archived SDD
+#                changes (the "full audit trail" CLAUDE.md points at) and the
+#                founding design docs.
+#   (skipped) -- `plans/` is the 15-slice playbook for migrating a 3951-line
+#                monolith. `plans/roadmap.md` declares that migration
+#                finished, and two later SDD changes refactored past the code
+#                shape those slices describe. It measured 1577 of 2405 bridge
+#                edges (66%) against 25 from the standing contract, so it was
+#                not adding history to the graph -- it was outvoting the
+#                contract 63:1 on every question.
+_CONTRACT_PREFIXES = ("openspec/specs/",)
+_CONTRACT_FILES = ("AGENTS.md", "CLAUDE.md")
+_RATIONALE_PREFIXES = ("openspec/changes/", "specs/")
+_SKIPPED_PREFIXES = ("plans/",)
+
+
+def provenance_tier(source_file: str) -> str | None:
+    """Classify one markdown file, or return None to emit no edges from it."""
+    normalized = str(source_file).replace("\\", "/").lstrip("./")
+    if normalized.startswith(_SKIPPED_PREFIXES):
+        return None
+    if normalized in _CONTRACT_FILES or normalized.startswith(_CONTRACT_PREFIXES):
+        return "contract"
+    if normalized.startswith(_RATIONALE_PREFIXES):
+        return "rationale"
+    return None
+
+
 def resolve_within(root: Path, relative: str) -> Path | None:
     """Resolve `relative` under `root`, or return None when it escapes.
 
@@ -148,6 +180,9 @@ def bridge_edges(graph: dict, sections: dict[tuple[str, int], str]) -> list[dict
         location = str(node.get("source_location") or "").lstrip("L")
         if not source_file or not location.isdigit():
             continue
+        tier = provenance_tier(source_file)
+        if tier is None:
+            continue
         text = sections.get((source_file, int(location)))
         if not text:
             continue
@@ -166,6 +201,7 @@ def bridge_edges(graph: dict, sections: dict[tuple[str, int], str]) -> list[dict
                     "context": "spec_reference",
                     "source_file": source_file,
                     "source_location": f"L{location}",
+                    "provenance": tier,
                     "weight": 1.0,
                     "_origin": BRIDGE_ORIGIN,
                 }

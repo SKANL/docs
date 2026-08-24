@@ -66,6 +66,10 @@ def doc_init(
 
 @doc_app.command("new")
 def doc_new(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"), template: str = typer.Option("", "--template"), title: str = typer.Option("", "--title")) -> None:
+    """Crea un documento nuevo con su workspace aislado.
+
+    Sin `--template` usa la primera plantilla disponible; `--title` fija
+    el título (por defecto, el id)."""
     deps, _ = _ctx(ctx)
     template_name = template or (deps.document_repository.list_templates()[:1] or [""])[0]
     if not template_name:
@@ -79,6 +83,7 @@ def doc_new(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"),
 
 @doc_app.command("list")
 def doc_list(ctx: typer.Context) -> None:
+    """Lista los documentos registrados en el workspace."""
     deps, _ = _ctx(ctx)
     summaries = deps.documents.list()
     if not summaries:
@@ -92,12 +97,14 @@ def doc_list(ctx: typer.Context) -> None:
 
 @doc_app.command("current")
 def doc_current(ctx: typer.Context) -> None:
+    """Imprime el id del documento activo."""
     deps, _ = _ctx(ctx)
     print(deps.documents.current() or "(ninguno)")
 
 
 @doc_app.command("show")
 def doc_show(ctx: typer.Context, doc_id: str = typer.Argument("", metavar="id")) -> None:
+    """Imprime el `document.json` de un documento (por defecto, el activo)."""
     deps, _ = _ctx(ctx)
     target = doc_id or deps.documents.current()
     if not target:
@@ -108,6 +115,7 @@ def doc_show(ctx: typer.Context, doc_id: str = typer.Argument("", metavar="id"))
 
 @doc_app.command("use")
 def doc_use(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id")) -> None:
+    """Marca un documento como activo para los comandos siguientes."""
     deps, _ = _ctx(ctx)
     deps.documents.use(doc_id)
     print(f"Documento activo: {doc_id}")
@@ -115,6 +123,7 @@ def doc_use(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"))
 
 @doc_app.command("rename")
 def doc_rename(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"), new_id: str = typer.Argument(...)) -> None:
+    """Cambia el id de un documento y actualiza el registro."""
     deps, _ = _ctx(ctx)
     deps.documents.rename(doc_id, new_id)
     print(f"Renombrado: {doc_id} → {new_id}")
@@ -122,6 +131,7 @@ def doc_rename(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id
 
 @doc_app.command("delete")
 def doc_delete(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"), yes: bool = typer.Option(False, "--yes")) -> None:
+    """Elimina un documento y su workspace. Pide confirmación salvo que se pase `--yes`."""
     deps, _ = _ctx(ctx)
     if not yes:
         raise RuntimeError(f"Confirma el borrado de `{doc_id}` con --yes.")

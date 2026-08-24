@@ -117,3 +117,32 @@ def test_pipeline_unregistered_output_format_errors_cleanly_no_silent_docx(works
     assert result.exit_code == 1
     assert "Formato de salida no registrado" in combined
     assert "epub" in combined
+
+
+# --- `docs explain`: the review loop's vocabulary, on the tool surface --------
+
+
+def test_explain_without_argument_prints_the_whole_issue_code_catalog():
+    # `docs explain` must work with NO workspace: an agent hitting an unknown
+    # code needs the answer wherever it is standing.
+    result = runner.invoke(app, ["explain"])
+
+    assert result.exit_code == 0
+    assert "content.pending_not_allowed" in result.stdout
+    assert "coherence.duration_mismatch" in result.stdout
+
+
+def test_explain_a_known_code_prints_meaning_and_fix():
+    result = runner.invoke(app, ["explain", "apa.quote_without_locator"])
+
+    assert result.exit_code == 0
+    assert "Qué significa" in result.stdout
+    assert "Cómo se resuelve" in result.stdout
+    assert "localizador" in result.stdout
+
+
+def test_explain_an_unknown_code_suggests_near_matches_and_exits_nonzero():
+    result = runner.invoke(app, ["explain", "content.pending"])
+
+    assert result.exit_code == 2
+    assert "content.pending_not_allowed" in result.stdout

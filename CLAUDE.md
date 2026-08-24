@@ -13,7 +13,14 @@ contract now lives in `openspec/specs/`.
 - Pipeline stage sets: `pipeline <prep|ingest|assemble|all>` — `ingest` must
   run before `assemble`/`all` when sources exist in `inbox/` (`all` does NOT
   include ingest stages, by design).
-- Lint/typecheck: `ruff check .` / `mypy src` (ambient tools, not yet declared)
+- Lint/typecheck: `uv run ruff check .` / `uv run mypy` — both DECLARED in
+  `[dependency-groups] dev`, with their rulesets declared in
+  `pyproject.toml`. Keep the `uv run` prefix: an undeclared tool falls
+  through to whatever is on PATH under a different interpreter that cannot
+  see the project's dependencies, which is how `mypy` once reported ~19
+  phantom `import-not-found` errors and `coverage` failed collection
+  outright. Both are green; CI keeps them that way.
+- Coverage: `uv run pytest --cov=src` (96%; CI floor is 93%).
 
 ## Layout
 
@@ -22,6 +29,15 @@ contract now lives in `openspec/specs/`.
 - `src/docs/infrastructure/` — adapters (filesystem, python-docx, pandoc)
 - `src/docs/cli/` — Typer CLI; composition root in `cli/_shared.py` (Deps)
 - `tests/unit/`, `tests/integration/` — mirror the src layers
+- `tests/architecture/` — repo-wide invariants (see "Mechanised invariants")
+
+Ingest is three modules, not one: `application/ingest.py` (`IngestService`:
+detection, conversion, reporting), `ingest_classification.py`
+(`SourceClassifier`: role gating, near-duplicates, conflicts),
+`ingest_figures.py` (`FigureIngestPipeline`: asset routing, figure catalog,
+rasterization — it owns `ImageMetadataPort`/`PdfRenderPort`/
+`SvgRasterizerPort` exclusively). `ingest_names.py` holds the vocabulary all
+three share; never re-declare an artifact filename or extension set locally.
 
 ## Conventions
 
@@ -40,7 +56,15 @@ contract now lives in `openspec/specs/`.
 - Any new `.docx`/zip writer MUST end in
   `infrastructure/docx/deterministic_zip.py:normalize_docx_zip_timestamps` —
   stdlib zip stamps wall-clock entry times at 2s DOS granularity, so a
-  "flaky" byte-identity test is a product bug, not test noise.
+  "flaky" byte-identity test is a product bug, not test noise. This is now
+  MECHANICAL: `tests/architecture/test_docx_writer_invariant.py` fails on any
+  module that writes a zip or saves a python-docx document without routing
+  through the normalizer. It needs no graph index, so it never skips.
+- Never truthiness-test an `ElementTree.Element`. `Element.__bool__` means
+  "has children" (deprecated in 3.12, an error later), so `if not
+  root.find(x)` reads a present-but-childless element as absent — that
+  shipped a duplicate `<w:num>` definition into `numbering.xml`. Always
+  `find(...) is None`.
 - Any new reader or writer of `context/` MUST use
   `domain/context_index_files.py:is_context_content_filename` — never
   re-declare index/`_`-prefix skip rules locally (a writer-side rename once
@@ -68,6 +92,11 @@ contract now lives in `openspec/specs/`.
 - `openspec/changes/archive/2026-07-06-universal-doc-harness/` — full audit
   trail of the founding refactor (proposal/design/tasks/state +
   archive-report.md with the PR ledger).
+- `plans/` (19 md, ~1 MB) and `specs/` (2 design docs at the repo root) are
+  **HISTORICAL, not planning sources**: the playbook and design docs of a
+  finished migration whose code shape two later SDD changes refactored past.
+  See the status note at the end of `plans/roadmap.md`. The spec→code bridge
+  excludes `plans/` for this reason.
 - `RESUME.md` — session-resume prompt and tool authority hierarchy
   (OpenSpec > Gentle AI/SDD > superpowers > engram/codegraph/context7/rtk).
 - `.atl/skill-registry.md` — skill index for sub-agent launches.
@@ -98,6 +127,13 @@ Answers a "why" → graphify.**
   two do not have.
 - graphify — `graphify-out/` (gitignored). Code layer: `graphify update .`
   (AST only, no LLM). Doc/spec layer needs the agent pass: `/graphify --update`.
+  `.graphifyignore` scopes what the doc layer reads, mirroring the bridge's
+  provenance tiers: `openspec/specs` + `AGENTS.md`/`CLAUDE.md` (contract) and
+  `openspec/changes/archive` (rationale) are IN; `plans/`, `specs/` and the
+  tooling docs under `.superpowers/`/`.atl/` are OUT. Unscoped, 74% of the
+  2.6 MB markdown corpus is a finished migration's playbook and 20% is
+  tooling documentation — an extraction pass would spend ~94% of its budget
+  on material that says nothing about the harness as it is today.
 
 ### Spec-to-code bridge
 
@@ -106,6 +142,15 @@ everywhere). `tools/spec_code_bridge.py` closes that: a symbol written in
 backticks inside a spec becomes an EXTRACTED `references` edge, so
 `graphify explain <symbol>` returns the ADRs and design decisions behind a
 function, not just its callers. No LLM, no inferred edges.
+
+Every edge carries a `provenance` tier: `contract` (`openspec/specs/`,
+`AGENTS.md`, `CLAUDE.md`) or `rationale` (`openspec/changes/archive/`,
+`specs/`). `plans/` emits nothing — measured before that rule existed, it
+supplied 1577 of 2405 edges against 25 from the standing contract, so the
+"why" layer was 97% archaeology and answered from a superseded slice plan 63
+times out of 64. `tests/architecture/test_spec_symbol_references.py` keeps
+the contract side honest by requiring every capability spec to name at least
+three real symbols.
 
     graphify update . && uv run python tools/spec_code_bridge.py
 
@@ -123,6 +168,25 @@ After a graph-answered question, record whether it helped:
 `graphify reflect` distils those into `graphify-out/reflections/LESSONS.md`.
 Feed it results from all three graphs -- it is the only memory layer of the
 three, and it is what keeps routing honest over time.
+
+## Mechanised invariants (what fails the build, and where)
+
+| Rule | Test | Needs an index? |
+|---|---|---|
+| `cli → application → domain`, infra implements ports | `test_graph_invariants.py` | yes (GitNexus) |
+| Every `.docx`/zip writer ends in `normalize_docx_zip_timestamps` | `test_docx_writer_invariant.py` | no |
+| Every capability spec names ≥3 real symbols, and no dead ones | `test_spec_symbol_references.py` | no |
+| Every CLI command has help text | `tests/unit/cli/test_command_help_coverage.py` | no |
+| Every emitted `Issue.code` is in the catalog, and vice versa | `tests/unit/domain/test_issue_codes.py` | no |
+| `AGENTS.md` never documents a command that does not exist | `tests/unit/test_agents_md_content.py` | no |
+
+The first one needs an index, so CI gives it one: a separate `architecture`
+job installs GitNexus, indexes the checkout (~45s) and sets
+`ARCHITECTURE_REQUIRE_GRAPH=1`, turning a missing index from a skip into a
+failure. It still skips locally. The rest always run, so a fresh clone gets
+real enforcement rather than a green vacuum. Each carries its own
+probe test against a vacuous pass — an AST walk that stops matching would
+otherwise report "0 violations" forever.
 
 `tests/architecture/test_graph_invariants.py` enforces the layering rule
 above against the GitNexus graph, and skips when no index is present -- set
