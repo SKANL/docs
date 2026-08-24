@@ -101,7 +101,7 @@ class AssetService:
         if len(unique_matches) == 1:
             return unique_matches[0]
         if not unique_matches:
-            example_ext = sorted(self._allowed_extensions())[0] if self._allowed_extensions() else ".docx"
+            example_ext = min(self._allowed_extensions()) if self._allowed_extensions() else ".docx"
             raise ValueError(
                 f"No se encontró el asset `{name}` en ningún tipo configurado. "
                 f"Especifique la extensión (por ejemplo, `{name}{example_ext}`)."

@@ -19,11 +19,11 @@ from docs.application.review import ReviewService
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.rules import review_rules
+from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
-from docs.domain.workspace import Workspace
 
 _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "templates" / "technical-report-srs.json"
 

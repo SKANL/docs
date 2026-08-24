@@ -1,4 +1,4 @@
-from docs.domain.models.result import Severity, Issue, ReviewResult
+from docs.domain.models.result import Issue, ReviewResult, Severity
 
 
 def test_review_passes_when_no_errors():

@@ -57,8 +57,8 @@ def _minimal_pdf(text: str) -> bytes:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
-        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        (b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> "
+        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>"),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         b"<< /Length " + str(len(stream_body)).encode() + b" >>\nstream\n" + stream_body + b"\nendstream",
     ]
@@ -97,8 +97,8 @@ def _minimal_pdf_with_raster_image(text: str, jpeg_bytes: bytes, w: int = 40, h:
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 6 0 R >> >> "
-        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>",
+        (b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 6 0 R >> >> "
+        b"/MediaBox [0 0 612 792] /Contents 5 0 R >>"),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         b"<< /Length " + str(len(stream_body)).encode() + b" >>\nstream\n" + stream_body + b"\nendstream",
         (
@@ -164,7 +164,7 @@ def test_missing_java_reports_clear_error_and_leaves_no_partial_output(tmp_path:
     out_dir.mkdir()
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(None))
 
-    with pytest.raises(RuntimeError, match="[Jj]ava"):
+    with pytest.raises(RuntimeError, match=r"[Jj]ava"):
         adapter.ingest(src, out_dir, "pdf")
 
     assert list(out_dir.iterdir()) == []
@@ -252,7 +252,7 @@ def test_one_corrupt_pdf_in_a_batch_does_not_abort_its_siblings(tmp_path: Path):
     assert good_output.exists()
     assert "Good Doc" in good_output.read_text(encoding="utf-8")
 
-    with pytest.raises(RuntimeError, match="bad.pdf"):
+    with pytest.raises(RuntimeError, match=r"bad\.pdf"):
         adapter.ingest(bad, out_dir, "pdf")
 
     # the failed file must leave no partial output anywhere under out_dir

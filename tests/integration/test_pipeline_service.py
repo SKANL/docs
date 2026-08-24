@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from docx import Document
 
+from docs.application.asset import AssetService
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
 from docs.application.context_pack import ContextPackService
@@ -37,7 +38,6 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
-from docs.application.asset import AssetService
 
 _HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
 
@@ -89,7 +89,7 @@ def _service(
 def test_build_section_renders_scaffold_gathers_six_hashes_and_writes_section_file(tmp_path: Path):
     from docs.domain.models.template import ContextSchema, Field, Section, SectionContract, Topic
 
-    service, workspace = _service(tmp_path)
+    service, _workspace = _service(tmp_path)
     topic = Topic(id="alumno", title="Alumno", consumed_by=["introduccion"], fields=[Field(key="nombre", label="Nombre")])
     template = Template(
         type="tesina",
@@ -136,7 +136,7 @@ def test_build_section_renders_scaffold_gathers_six_hashes_and_writes_section_fi
 def test_build_section_only_includes_context_topics_consumed_by_the_target_section(tmp_path: Path):
     from docs.domain.models.template import ContextSchema, Section, SectionContract, Topic
 
-    service, workspace = _service(tmp_path)
+    service, _workspace = _service(tmp_path)
     other_topic = Topic(id="otro", title="Otro", consumed_by=["otra-seccion"], multiline=True)
     template = Template(
         type="tesina",
@@ -187,7 +187,7 @@ def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(t
     # only way that is possible is that it called through
     # self.evidence_repository.file_exists/file_size rather than touching the
     # filesystem itself.
-    service, workspace = _service(tmp_path)
+    service, _workspace = _service(tmp_path)
     rules_path = tmp_path / "manual-rules.json"
     assert not rules_path.exists()
     monkeypatch.setattr(service.evidence_repository, "file_exists", lambda path: True)
@@ -201,7 +201,7 @@ def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(t
 
 
 def test_rules_manifest_state_reports_absent_manifest(tmp_path):
-    service, workspace = _service(tmp_path)
+    service, _workspace = _service(tmp_path)
     config = {"paths": {"rules_manifest": str(tmp_path / "missing.json")}}
 
     exists, size = service.rules_manifest_state(config)
@@ -264,7 +264,7 @@ def test_list_runs_skips_malformed_json_files(tmp_path):
 def test_context_confirmed_lines_skips_sensitive_fields_and_includes_regular_ones(tmp_path):
     from docs.domain.models.template import Field, Template, Topic
 
-    service, workspace = _service(tmp_path)
+    service, _workspace = _service(tmp_path)
     template = Template(
         type="tesina",
         title="Tesina",
@@ -445,7 +445,7 @@ def test_run_pipeline_stops_at_first_fail_fast_failure(tmp_path):
 
 def test_run_pipeline_writes_a_run_log_entry(tmp_path, monkeypatch):
     Path(tmp_path / "context").mkdir()
-    service, workspace = _service(tmp_path)
+    service, _workspace = _service(tmp_path)
     _patch_doctor_tools(monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
     service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
@@ -1021,3 +1021,30 @@ def test_generate_visuals_stage_is_a_noop_when_service_not_wired(tmp_path):
 
     assert ok is True
     assert "omitido" in detail
+
+
+def test_run_pipeline_build_docx_stage_fails_loudly_when_the_renderer_skips(tmp_path):
+    # DOCX is the PRIMARY format, not an opt-in secondary like html/pdf: a
+    # renderer that returns None there produced no artifact, and every later
+    # stage (format-audit-docx, qa-docx) reads that missing file. The stage
+    # must fail so `--strict` stops, never report ok=True with the literal
+    # string "None" as its detail.
+    class _FakeSkippingDocxRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True)]
+
+        def build(self, doc_id, config, output=None):
+            return None
+
+    service, _ = _service(tmp_path)
+    config = _pipeline_config(tmp_path)
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingDocxRenderer()
+    )
+
+    docx_stage = next(s for s in summary["stages"] if s["stage"] == "build-docx")
+    assert docx_stage["ok"] is False
+    assert docx_stage["detail"] != "None"

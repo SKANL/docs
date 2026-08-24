@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # pandoc is an OPTIONAL toolchain at runtime, but 11 integration tests
+      # skipif it away. Installing it here turns those skips into real
+      # coverage of the ingest/render paths — the whole point of having CI
+      # rather than trusting a developer laptop's tool set.
+      - name: Install pandoc
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      # Lint and typecheck run BEFORE the 5-minute suite: they fail in
+      # seconds, so a formatting or typing regression never costs a full
+      # test run to discover.
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Typecheck (mypy)
+        run: uv run mypy
+
+      # --cov-fail-under is a RATCHET, not a target. It sits just under the
+      # measured 96% so an accidental drop fails loudly, while a deliberate
+      # one is a visible edit to this line.
+      - name: Tests
+        run: uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=93
+
+  # The hexagonal layering rule is enforced by tests/architecture against a
+  # GitNexus index, which is not installable here — those tests SKIP in CI.
+  # `ARCHITECTURE_REQUIRE_GRAPH` is deliberately left unset: setting it would
+  # turn every CI run red for a missing index rather than enforcing anything.
+  # The always-runnable half of that guarantee lives in
+  # tests/architecture/test_docx_writer_invariant.py and
+  # tests/architecture/test_spec_symbol_references.py, which need no index.

@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
+from docs.application.documents import DocumentService
 from docs.domain.models.document import DocumentSummary
 from docs.domain.models.template import Template
-from docs.domain.workspace import Workspace
-from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentNotFoundError
 from docs.domain.slug import InvalidSlugError
-from docs.application.documents import DocumentService
+from docs.domain.workspace import Workspace
+from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 
 LEGACY_TEMPLATES = Path(__file__).resolve().parents[1] / "fixtures" / "templates"
 

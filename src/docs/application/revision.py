@@ -185,10 +185,11 @@ class RevisionService:
         before_hash: str, after_hash: str, ripple: list[str], ts: str,
     ) -> None:
         log_path = self._revisions_dir(config) / "revision-log.json"
-        if log_path.exists():
-            state = json.loads(log_path.read_text(encoding="utf-8"))
-        else:
-            state = {"schema": 1, "entries": []}
+        state: dict[str, Any] = (
+            json.loads(log_path.read_text(encoding="utf-8"))
+            if log_path.exists()
+            else {"schema": 1, "entries": []}
+        )
         state.setdefault("entries", []).append(
             {
                 "request": request,

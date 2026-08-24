@@ -64,7 +64,7 @@ def non_cover_margin_emu(config: dict[str, Any]) -> dict[str, int]:
     for key in _MARGIN_KEYS:
         value = margins.get(key)
         if isinstance(value, (int, float)):
-            expected[key] = int(round(float(value) * EMU_PER_CM))
+            expected[key] = round(float(value) * EMU_PER_CM)
     return expected
 
 

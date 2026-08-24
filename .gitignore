@@ -11,3 +11,12 @@ wheels/
 
 # Knowledge-graph indexes (generated; rebuilt by their own watchers/hooks)
 graphify-out/
+
+# Harness-managed scratch state (agent git worktrees live under here and
+# hold a full second copy of the tree — ruff/pytest must not walk them).
+.claude/
+
+# Coverage artefacts
+.coverage
+.coverage.*
+htmlcov/

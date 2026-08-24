@@ -1,8 +1,8 @@
 # tests/integration/test_python_docx_audit_adapter.py
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from docx import Document
 from docx.oxml import OxmlElement

@@ -12,7 +12,6 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import (
     set_section_page_number_start,
 )
 
-
 # --- apply_non_cover_section_layout -----------------------------------------
 
 

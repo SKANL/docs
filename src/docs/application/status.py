@@ -57,7 +57,7 @@ class StatusService:
                 sections_missing.append(section.id)
                 continue
             sections_authored += 1
-            metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
+            _metadata, body = self.section_repository.read_section(doc_id, section.order, section.id)
             # Content-based, not `authored_by`-based: authored_by only
             # changes via the optional, explicit stamp-section command, so a
             # section can be fully authored (no leftover PENDIENTE) yet still

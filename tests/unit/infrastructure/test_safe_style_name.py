@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import ClassVar
+
 from docx import Document
 
 from docs.infrastructure.docx.python_docx_assembly_adapter import safe_style_name
@@ -32,7 +34,7 @@ def test_safe_style_name_returns_none_when_neither_fallback_exists():
             self.name = name
 
     class _FakeDocument:
-        styles = [_FakeStyle("Custom Only")]
+        styles: ClassVar[list] = [_FakeStyle("Custom Only")]
 
     assert safe_style_name(_FakeDocument(), "First Paragraph") is None
 
@@ -43,6 +45,6 @@ def test_safe_style_name_returns_none_for_none_preferred_style_without_fallback(
             self.name = name
 
     class _FakeDocument:
-        styles = [_FakeStyle("Custom Only")]
+        styles: ClassVar[list] = [_FakeStyle("Custom Only")]
 
     assert safe_style_name(_FakeDocument(), None) is None

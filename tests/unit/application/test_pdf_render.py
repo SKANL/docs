@@ -107,3 +107,30 @@ def test_build_returns_none_and_warns_when_libreoffice_unavailable(tmp_path, cap
     captured = capsys.readouterr()
     assert "WARN" in captured.err
     assert "PDF" in captured.err
+
+
+def test_build_returns_none_and_warns_when_the_docx_renderer_itself_skips(tmp_path, capsys):
+    # `DocumentRendererPort.build` may legitimately return `None` (degraded,
+    # already WARNed). PdfRendererAdapter composes ANY docx-producing
+    # renderer through that port, so it must not hand a `None` to
+    # `render_docx_to_pdf` -- which would surface as an opaque adapter-level
+    # TypeError instead of the WARN+skip this class documents.
+    class _SkippingDocxRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True)]
+
+        def build(self, doc_id, config, output=None):
+            return None
+
+    qa_render = _FakeQaRender(pdf_path=tmp_path / "never.pdf")
+    service = PdfRendererAdapter(_SkippingDocxRenderer(), qa_render)
+
+    result = service.build("doc-1", {"paths": {"output_draft_dir": str(tmp_path)}})
+
+    assert result is None
+    assert qa_render.calls == [], "no debe intentar convertir un .docx inexistente"
+    captured = capsys.readouterr()
+    assert "WARN" in captured.err
+    assert "PDF" in captured.err

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from docs.application.review import ReviewService
 from docs.domain.models.template import Section, Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.workspace import Workspace
-from docs.application.review import ReviewService
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
 
@@ -23,15 +23,15 @@ def service(workspace: Workspace) -> ReviewService:
 
 
 def _template(**overrides) -> Template:
-    defaults = dict(
-        type="tesina",
-        title="Tesina",
-        sections=[
+    defaults = {
+        "type": "tesina",
+        "title": "Tesina",
+        "sections": [
             Section(id="introduccion", title="Introducción", order=1, required=True),
             Section(id="referencias", title="Referencias", order=2, required=False),
         ],
-        section_contracts={},
-    )
+        "section_contracts": {},
+    }
     defaults.update(overrides)
     return Template(**defaults)
 
@@ -231,7 +231,7 @@ def test_stamp_section_sets_authored_by_and_body_hash(workspace, service):
     metadata = json.loads(metadata_json)
     assert metadata["authored_by"] == "agent-x"
     assert metadata["stamped_at"] == "2026-06-21T00:00:00"
-    assert metadata["body_hash"] == hashlib.sha256("# Introducción\n\nTexto.\n".encode("utf-8")).hexdigest()
+    assert metadata["body_hash"] == hashlib.sha256("# Introducción\n\nTexto.\n".encode()).hexdigest()
 
 
 def test_stamp_section_sets_model_when_provided(workspace, service):

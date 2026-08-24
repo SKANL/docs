@@ -337,11 +337,11 @@ def test_realistic_multi_source_drop_produces_decisive_provenance_for_every_item
 
     kind_by_name = {
         "ejemplo.pdf": "pdf",
-        **{name: "md" for name in manual_names},
+        **dict.fromkeys(manual_names, "md"),
         "notes.md": "md",
         "data.json": "json",
         "cover.docx": "docx",
-        **{name: "png" for name in png_names},
+        **dict.fromkeys(png_names, "png"),
     }
     # "json" and "png" kinds are intentionally UNROUTED (no handler
     # registered) -- exactly like the real drop, where extraction sidecar

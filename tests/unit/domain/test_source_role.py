@@ -12,7 +12,6 @@ from __future__ import annotations
 from docs.domain.ports.content_probe_port import ContentSignals
 from docs.domain.source_role import classify
 
-
 # --- 8.1: folder-lexicon signal (primary) --------------------------------
 
 
@@ -24,13 +23,13 @@ def test_folder_lexicon_normative_family_classifies_unambiguously():
 
 
 def test_folder_lexicon_example_family_classifies_unambiguously():
-    role, confidence, signals = classify("ejemplos/muestra-final.pdf")
+    role, confidence, _signals = classify("ejemplos/muestra-final.pdf")
     assert role == "example"
     assert confidence == "high"
 
 
 def test_folder_lexicon_evidence_family_classifies_unambiguously():
-    role, confidence, signals = classify("evidencia/captura-01.png")
+    role, confidence, _signals = classify("evidencia/captura-01.png")
     assert role == "evidence"
     assert confidence == "high"
 

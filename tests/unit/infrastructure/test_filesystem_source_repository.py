@@ -75,8 +75,11 @@ def test_run_gh_issue_list_invokes_expected_subprocess_args(repo, monkeypatch):
         "/usr/bin/gh", "issue", "list", "--repo", "owner/repo", "--state", "all",
         "--limit", "200", "--json", "number,title,state,createdAt,closedAt,labels,url",
     ]
+    # `_run_captured` names `cwd` explicitly (None here: gh needs no cwd) so
+    # the four call sites share one typed invocation instead of splatting an
+    # untyped kwargs dict.
     assert captured["kwargs"] == {
-        "check": True, "capture_output": True, "text": True, "encoding": "utf-8",
+        "cwd": None, "check": True, "capture_output": True, "text": True, "encoding": "utf-8",
     }
 
 

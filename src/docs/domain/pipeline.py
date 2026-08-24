@@ -60,9 +60,6 @@ def pipeline_stage_plan(
         if stage_set == "assemble":
             return list(_GENERATE_VISUALS) + list(assemble)
         return (
-            list(_PREP_STAGES)
-            + [("review-document", True)]
-            + list(_GENERATE_VISUALS)
-            + list(assemble)
+            [*list(_PREP_STAGES), ("review-document", True), *list(_GENERATE_VISUALS), *list(assemble)]
         )
     raise ValueError(f"Conjunto de etapas desconocido: {stage_set}. Usa prep, assemble, all o ingest.")

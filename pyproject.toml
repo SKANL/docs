@@ -1,7 +1,7 @@
 [project]
 name = "docs"
 version = "0.1.0"
-description = "Add your description here"
+description = "Deterministic, format-agnostic document-creation harness: the harness does every mechanical step, the agent fills one cognitive slot."
 readme = "README.md"
 requires-python = ">=3.11"
 # `matplotlib` (chart rendering) is the only hard new pip dependency added
@@ -26,9 +26,21 @@ dependencies = [
 [project.scripts]
 docs = "docs.cli.main:main"
 
+# Every quality tool the project is checked with is declared HERE, not left
+# ambient. `uv run <tool>` only reaches the project venv for tools it can
+# resolve inside it -- an undeclared tool silently falls through to whatever
+# is on PATH, under a different interpreter that cannot see these
+# dependencies. That produced ~19 phantom `import-not-found` errors and a
+# 25-error pytest collection failure under `coverage`, which made both
+# signals look broken and got them ignored. Declared here, `uv run mypy src`
+# and `uv run pytest --cov` measure the real thing.
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-cov>=7.0.0",
+    "mypy>=1.19.1",
+    "ruff>=0.15.6",
+    "types-defusedxml>=0.7.0",
 ]
 
 [build-system]
@@ -52,6 +64,81 @@ packages = ["src/docs"]
 # importable from every test in the suite.
 pythonpath = ["src", "tools"]
 testpaths = ["tests"]
+
+[tool.mypy]
+files = ["src", "tools"]
+python_version = "3.11"
+# The domain layer is Pydantic-first (`Template`, `Document`, `Registry`).
+# Without this plugin mypy reads `Field(1, alias="schema")` as a REQUIRED
+# `schema` argument and reports a false `call-arg` on every `Registry()`.
+plugins = ["pydantic.mypy"]
+
+# Third-party packages that ship no type information. Listed one by one on
+# purpose: a blanket `ignore_missing_imports = true` would also silence a
+# genuinely mistyped first-party import.
+[[tool.mypy.overrides]]
+module = [
+    "docxcompose.*",
+    "filetype",
+    "matplotlib.*",
+    "opendataloader_pdf",
+    "pypdfium2",
+]
+ignore_missing_imports = true
+
+# An UNDECLARED ruleset is a machine-dependent ruleset: `ruff check` without
+# this block lints whatever the installed version happens to default to, so
+# the same code passes here and fails there. Declared once, the linter checks
+# the same thing everywhere -- the same lesson as the `[dependency-groups]`
+# note above.
+[tool.ruff]
+line-length = 120
+# Harness-managed scratch space, including agent git worktrees that hold a
+# full second copy of this tree. Linting them double-counts every finding.
+extend-exclude = [".claude", "graphify-out"]
+
+[tool.ruff.lint]
+select = [
+    "E4", "E7", "E9",  # pycodestyle: real errors, not layout opinions
+    "F",               # pyflakes
+    "I",               # import sorting
+    "UP",              # pyupgrade
+    "B",               # bugbear
+    "C4",              # comprehension clarity
+    "SIM",             # simplifiable constructs
+    "RUF",             # ruff-native checks
+    "FLY", "FURB",     # modern-idiom nudges
+    "ISC",             # implicit string concatenation (silent-comma bugs)
+    "PLW",             # pylint warnings (incl. subprocess-run-without-check)
+    "S110",            # silent `except: pass` -- the dangerous subset of BLE
+]
+ignore = [
+    # Typer's API REQUIRES `typer.Option(...)`/`typer.Argument(...)` calls in
+    # parameter defaults; this rule is simply wrong for a Typer CLI.
+    "B008",
+    # "Ambiguous unicode character": CLI strings and rendered document text
+    # are Spanish, where `–` (en dash), `«»` and accented letters are correct
+    # typography, not homoglyph smuggling. This rule fires on the project's
+    # own language.
+    "RUF001", "RUF002", "RUF003",
+    # `class Severity(str, Enum)` -> `StrEnum` is NOT behaviour-preserving:
+    # `str(Severity.ERROR)` returns "Severity.ERROR" under the mixin and
+    # "error" under StrEnum. Values reach rendered reports, so this is a
+    # format migration, not a modernization.
+    "UP042",
+]
+
+# BLE001 (blind `except Exception`) is deliberately NOT selected. This
+# harness degrades on purpose around every optional/external step (pandoc,
+# soffice, git, mmdc, resvg), and each of those 21 sites documents WHY it
+# swallows. A rule suppressed 21 times teaches nothing; S110 above keeps the
+# genuinely dangerous subset -- swallowing with no handling at all.
+#
+# DTZ005 (naive `datetime.now()`) is also NOT selected. Its 9 sites all
+# stamp run-log/registry METADATA, which `AGENTS.md` §7 puts explicitly
+# outside the byte-determinism boundary. Moving them to aware UTC changes an
+# on-disk string format users already have in `runs/`, so it is a migration,
+# not a lint fix. See the `ponytail:` marker on `PipelineService.log_run`.
 
 [tool.ruff.lint.per-file-ignores]
 # Test modules deliberately co-locate imports with the test section that uses

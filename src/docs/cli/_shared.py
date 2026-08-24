@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -29,8 +30,8 @@ from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
 from docs.application.status import StatusService
-from docs.domain.models.template import Template
 from docs.domain.docx_structure import structure_parts
+from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
@@ -96,6 +97,9 @@ def build_workspace() -> Workspace:
         _load_workspace_config(), os.environ, (Path("documents"), Path("templates"))
     )
     return Workspace(documents_dir=documents_dir, templates_dir=templates_dir)
+
+
+logger = logging.getLogger(__name__)
 
 
 class Deps:
@@ -202,8 +206,12 @@ class Deps:
 
             chart_renderer = ChartSvgRenderer()
             self.visual_renderers[chart_renderer.type] = chart_renderer
-        except Exception:
-            pass
+        except Exception as exc:
+            # Degrading is correct (the renderer is optional), swallowing
+            # silently is not: without a trace, a genuinely broken renderer
+            # is indistinguishable from an uninstalled one. `docs doctor`
+            # reports availability; this records WHY.
+            logger.debug("visual renderer no registrado: %s", exc)
 
         # `mmdc` is an OPTIONAL, PATH-resolved external toolchain (never a
         # pip/npm dependency of this project) -- unlike the chart renderer,
@@ -218,8 +226,8 @@ class Deps:
 
             mermaid_renderer = MermaidSvgRenderer(tool_resolver)
             self.visual_renderers[mermaid_renderer.type] = mermaid_renderer
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("visual renderer no registrado: %s", exc)
 
         # Slice 5b (on-demand-visual-generation): composition-root wiring of
         # the `generate-visuals` pipeline stage. Reuses the SAME

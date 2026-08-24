@@ -11,14 +11,15 @@ from dataclasses import replace as _dataclass_replace
 from pathlib import Path
 from typing import Any
 
-from docs.domain.figure_catalog import FigureEntry, build as build_figure_catalog
+from docs.application.inline_json_writer import InlineJsonWriter
+from docs.domain.figure_catalog import FigureEntry
+from docs.domain.figure_catalog import build as build_figure_catalog
 from docs.domain.figure_filter import should_catalog_figure
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.intake_report import render_intake_report
 from docs.domain.near_duplicate import DuplicateDecision, SourceDoc, find_duplicates
 from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
-from docs.application.inline_json_writer import InlineJsonWriter
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.pdf_render_port import PdfRenderPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
@@ -985,9 +986,12 @@ class IngestService:
             source_role = self._effective_role(rel, confirmed_roles)
             if not should_catalog_figure(source_role, None, None):
                 continue  # role-dropped (ADR-2) -- never even rasterized
-            entry = self._ingest_svg_figure(path, rel, source_role, assets_dir)
-            if entry is not None:
-                figures.append(entry)
+            # Distinct name from the raster loop's non-optional `entry`
+            # above: `_ingest_svg_figure` returns `FigureEntry | None`
+            # (a vector it could not read is skipped, not catalogued).
+            svg_entry = self._ingest_svg_figure(path, rel, source_role, assets_dir)
+            if svg_entry is not None:
+                figures.append(svg_entry)
 
         figures.extend(
             self._render_vector_pdf_figures(inbox_dir, entries or [], assets_dir, confirmed_roles)
@@ -1016,7 +1020,7 @@ class IngestService:
             return None
         try:
             return self.image_metadata.read_dimensions(path)
-        except Exception as exc:  # noqa: BLE001 -- any image-parsing failure must degrade, never abort the batch
+        except Exception as exc:
             print(
                 f"WARN: no se pudieron leer las dimensiones de la imagen {relative_path} "
                 f"({type(exc).__name__}: {exc}); se cataloga sin dimensiones.",

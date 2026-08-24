@@ -10,6 +10,8 @@ MIN_FIGURE_DIMENSION_PX = 100  # ponytail: constant now; promote to workspace co
 def should_catalog_figure(source_role: str, width_px: int | None, height_px: int | None) -> bool:
     if source_role in {"normative", "example"}:  # guia/reference-role -> drop
         return False
-    if width_px is not None and height_px is not None and max(width_px, height_px) < MIN_FIGURE_DIMENSION_PX:
+    # SIM103 suppressed below: collapsing these two guards into one negated boolean
+    # would delete the per-branch reason each one carries.
+    if width_px is not None and height_px is not None and max(width_px, height_px) < MIN_FIGURE_DIMENSION_PX:  # noqa: SIM103
         return False  # sub-threshold junk (icons, bullets, rules)
     return True  # evidence + unknown (user-dropped), keep

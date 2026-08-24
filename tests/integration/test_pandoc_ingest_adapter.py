@@ -100,7 +100,7 @@ def test_missing_pandoc_reports_clear_error_and_leaves_no_partial_output(tmp_pat
     out_dir.mkdir()
     adapter = PandocIngestAdapter(_FakeToolResolver(None))
 
-    with pytest.raises(RuntimeError, match="[Pp]andoc"):
+    with pytest.raises(RuntimeError, match=r"[Pp]andoc"):
         adapter.ingest(src, out_dir, "docx")
 
     assert list(out_dir.iterdir()) == []
