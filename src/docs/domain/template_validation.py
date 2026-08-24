@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
+from docs.domain.config_vocabulary import known_keys_at
 from docs.domain.models.template import (
     Apa7Config,
     ContextSchema,
@@ -97,7 +98,7 @@ def _check_incomplete_sentinels(raw: Any, path: str = "") -> list[Issue]:
 
 
 # Top-level blocks every real template ships that no model declares: the
-# config envelope `resolve_config` consumes raw. Never near-miss candidates.
+# config envelope `resolve_context` merges and consumes raw. Never near-miss candidates.
 _CONFIG_ENVELOPE_BLOCKS = frozenset(
     {
         "advisor_overrides",
@@ -161,6 +162,57 @@ def _near_miss_keys(raw: Any, model: type[BaseModel], path: str) -> list[Issue]:
     return issues
 
 
+def _near_miss_against(known: set[str], raw: Any, path: str) -> list[Issue]:
+    """`_near_miss_keys`, but against an explicit key set instead of a model.
+
+    The config envelope has no model to read `model_fields` off -- that is
+    the whole reason a typo there was invisible -- so its known keys come
+    from `config_vocabulary`. Everything else about the judgement is
+    identical, deliberately: same cutoff, same `$`/`_` exemption, same code.
+    Two mechanisms for one concept would be two things to keep in step.
+    """
+    if not isinstance(raw, dict) or not known:
+        return []
+    issues: list[Issue] = []
+    for key in raw:
+        if not isinstance(key, str) or key in known or key.startswith(("$", "_")):
+            continue
+        close = difflib.get_close_matches(key, sorted(known), n=1, cutoff=_NEAR_MISS_CUTOFF)
+        if not close:
+            continue
+        where = f"{path}.{key}" if path else key
+        issues.append(
+            Issue(
+                "warning",
+                f"Clave de configuración desconocida `{where}`, muy parecida a "
+                f"`{close[0]}`. El arnés no lee esta clave, así que el valor que "
+                f"declaraste no se está aplicando. Si es un error de tipeo, "
+                f"corregilo; si la clave quedó de una versión anterior, "
+                f"prefijala con `_` para conservarla como nota.",
+                code="template.unknown_key",
+            )
+        )
+    return issues
+
+
+def _check_config_envelope(raw: dict[str, Any], path: tuple[str, ...] = ()) -> list[Issue]:
+    """Walk the unmodelled config blocks, reporting keys that look like typos.
+
+    Descends only where the vocabulary knows the level, so a block this
+    harness version does not read is passed over rather than second-guessed:
+    the envelope is open by contract (`resolve_context` merges three sources via `_deep_merge`),
+    and a forward-declared block is not a mistake.
+    """
+    known = known_keys_at(path)
+    if not known:
+        return []
+    issues = _near_miss_against(known, raw, ".".join(path))
+    for key, value in raw.items():
+        if isinstance(key, str) and key in known and isinstance(value, dict):
+            issues.extend(_check_config_envelope(value, (*path, key)))
+    return issues
+
+
 def _check_near_miss_keys(raw: dict[str, Any]) -> list[Issue]:
     """Apply the near-miss walk across every level a template nests."""
     issues = _near_miss_keys(raw, Template, "")
@@ -204,6 +256,7 @@ def validate_template(raw: dict[str, Any]) -> list[Issue]:
     issues = _check_required_blocks(raw)
     issues.extend(_check_incomplete_sentinels(raw))
     issues.extend(_check_near_miss_keys(raw))
+    issues.extend(_check_config_envelope(raw))
 
     try:
         template = Template.model_validate(raw)

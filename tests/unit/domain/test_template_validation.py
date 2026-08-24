@@ -178,3 +178,51 @@ def test_the_config_envelope_blocks_are_never_reported_as_near_misses():
     raw.update({"format": {}, "paths": {}, "normative": {}, "privacy": {}, "output": {}})
 
     assert [i for i in validate_template(raw) if i.code == "template.unknown_key"] == []
+
+
+# --- the config envelope: the unmodelled half of a template -------------------
+
+
+def test_a_mistyped_config_key_is_reported_with_the_key_it_meant():
+    # `apply_non_cover_section_layout` reads
+    # `config["format"]["page_margins_cm"]["non_cover"][key]` through `.get()`
+    # chains, so `to` instead of `top` returns None, the margin is never
+    # applied, and the printed page is silently wrong. The template validates.
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["format"] = {"page_margins_cm": {"non_cover": {"to": 2.5, "left": 3.0}}}
+
+    issues = [i for i in validate_template(raw) if i.code == "template.unknown_key"]
+
+    assert len(issues) == 1, issues
+    assert "to" in issues[0].message
+    assert "top" in issues[0].message
+    assert issues[0].severity == "warning"
+
+
+def test_an_unrecognised_top_level_block_is_not_a_typo():
+    # The envelope is open by contract: `resolve_config` merges template,
+    # document and computed values, and a workspace may carry a block this
+    # harness version does not read. Rejecting it would break real workspaces.
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["telemetry"] = {"enabled": True}
+
+    assert [i for i in validate_template(raw) if i.code == "template.unknown_key"] == []
+
+
+def test_comment_siblings_are_ignored_inside_the_config_envelope_too():
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["format"] = {"$comment": "geometría de página", "_note": "ver ADR-3", "page_size": "letter"}
+
+    assert [i for i in validate_template(raw) if i.code == "template.unknown_key"] == []
+
+
+def test_every_builtin_template_validates_with_no_near_misses():
+    from importlib.resources import files
+
+    builtin = files("docs.templates.builtin")
+    names = [r.name for r in builtin.iterdir() if r.name.endswith(".json")]
+    assert names
+    for name in names:
+        raw = json.loads(builtin.joinpath(name).read_text(encoding="utf-8"))
+        near = [i for i in validate_template(raw) if i.code == "template.unknown_key"]
+        assert near == [], f"{name}: {[i.message for i in near]}"
