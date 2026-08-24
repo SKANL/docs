@@ -1,6 +1,7 @@
 # src/docs/infrastructure/docx/tool_resolver_adapter.py
 from __future__ import annotations
 
+import subprocess
 from typing import Any
 
 from docs.infrastructure.docx.libreoffice_qa_adapter import resolve_libreoffice_executable
@@ -35,3 +36,26 @@ class SystemToolResolverAdapter:
 
     def resolve_resvg(self, paths: dict[str, Any]) -> str | None:
         return resolve_resvg_executable(paths)
+
+    def tool_version(self, executable: str) -> str | None:
+        """Ask a resolved executable for its version, or give up quietly.
+
+        Every failure mode here means "unknown", never "too old": a tool that
+        does not answer `--version` the expected way may be perfectly fine,
+        and reporting it as outdated would send someone to reinstall
+        something that works. Java writes its version to stderr, so both
+        streams are read.
+        """
+        try:
+            result = subprocess.run(
+                [executable, "--version"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return (result.stdout or "") + (result.stderr or "") or None

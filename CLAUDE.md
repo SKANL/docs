@@ -184,7 +184,37 @@ The first one needs an index, so CI gives it one: a separate `architecture`
 job installs GitNexus, indexes the checkout (~45s) and sets
 `ARCHITECTURE_REQUIRE_GRAPH=1`, turning a missing index from a skip into a
 failure. It still skips locally. The rest always run, so a fresh clone gets
-real enforcement rather than a green vacuum. Each carries its own
+real enforcement rather than a green vacuum.
+
+### CI jobs, and why there are three
+
+| Job | Guards | Cost |
+|---|---|---|
+| `check` | ruff, mypy, the suite, a 93% coverage floor | ~1 min |
+| `architecture` | the hexagonal layering rule, against a real GitNexus index | ~1.5 min |
+| `toolchains` | every optional-toolchain path, with LibreOffice/Java/mmdc/resvg installed | ~4 min |
+
+Three jobs rather than one because they fail at different speeds: lint and
+types fail in seconds and must not queue behind a LibreOffice install.
+
+`toolchains` exists because the gate had a SMALLER surface than a developer
+desk. Measured: `check` ran 1575 tests and skipped 16; a laptop ran 1584 and
+skipped 7. The nine-test gap was mermaid, resvg and Java-backed PDF ingest —
+and the seven LibreOffice tests were exercised by nobody, anywhere. That job
+also fails if more than 2 tests skip WITH the full toolchain installed: a
+toolchain that silently stops installing would otherwise turn the suite green
+by skipping, which is the exact failure mode it was added to end.
+
+### Determinism is scoped to a toolchain
+
+`.md` -> `.docx`/HTML is byte-identical for a given pandoc, NOT across pandoc
+versions — different releases emit different bytes for identical input. What
+holds across versions is document STRUCTURE, which
+`tests/integration/test_assembled_structure_golden.py` pins (it passed on
+pandoc 3.1.3 in CI and 3.10 locally). `docs doctor` reports the pandoc
+version so a post-upgrade change in output is explainable in one command,
+and warns below 2.19 (the floor `--embed-resources` sets for `--format
+html`). See `AGENTS.md` §7. Each carries its own
 probe test against a vacuous pass — an AST walk that stops matching would
 otherwise report "0 violations" forever.
 

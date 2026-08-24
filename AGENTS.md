@@ -493,17 +493,34 @@ this is a wall-clock log, not part of the deterministic build artifact
 **Section `.md` files are the durable source of truth.** The built
 `.docx`/HTML output is a **deterministic pure function** of those `.md`
 files plus the template and configuration — same inputs, byte-identical
-output, every time, on every machine. No timestamps, no wall-clock, no
-non-deterministic iteration order anywhere in the build path.
+output, every time. No timestamps, no wall-clock, no non-deterministic
+iteration order anywhere in the build path.
+
+**Byte-identity holds for a given TOOLCHAIN, not across toolchain
+versions.** The harness pipes your Markdown through pandoc, and different
+pandoc releases emit different bytes for identical input — that is pandoc's
+prerogative, not something the harness can or should override. So upgrading
+pandoc mid-project can change your `.docx` even though you edited nothing.
+That is expected, and it is not a harness bug.
+
+What IS held across versions is the document's **structure** — heading
+outline, applied styles, section pagination, figure and table numbering,
+resolved cross-references. `docs doctor` prints the pandoc version it found
+precisely so that, when output shifts after an upgrade, you can see why in
+one command.
 
 **Byte-determinism binds `.md` → `.docx`/HTML only.** `pdf` (see §1
 Output-format selection) is an explicitly excepted, derived artifact:
 non-byte-deterministic and never held to this guarantee.
 
 This means:
-- Rebuilding **without editing any section** twice in a row MUST produce a
-  byte-identical `.docx`/HTML. If it doesn't, that is a harness bug, not
-  environmental noise.
+- Rebuilding **without editing any section** twice in a row, on the same
+  machine with the same toolchain, MUST produce a byte-identical
+  `.docx`/HTML. If it doesn't, that is a harness bug, not environmental
+  noise.
+- Rebuilding after a **pandoc upgrade** may produce different bytes for the
+  same sources. Check `docs doctor` before assuming a bug: if the pandoc
+  version changed, that is the explanation.
 - **Editing a section's prose between two builds is not a determinism
   violation.** The output legitimately changes because the source changed
   — that is authoring, not nondeterminism. Only an *unchanged* source

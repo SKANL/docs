@@ -63,7 +63,10 @@ def test_run_doctor_uses_injected_tool_resolver_not_shutil_which(tmp_path, monke
     pandoc_check = next(c for c in result.checks if c.name == "pandoc")
     libreoffice_check = next(c for c in result.checks if c.name == "libreoffice")
     assert pandoc_check.ok is True
-    assert pandoc_check.detail == "/fake/pandoc"
+    # The detail now carries the version alongside the path (see
+    # `test_doctor_reports_the_pandoc_version_it_found`); this test is about
+    # WHICH resolver was consulted, so it asserts the path is present.
+    assert "/fake/pandoc" in pandoc_check.detail
     assert libreoffice_check.ok is False
 
 
@@ -514,3 +517,87 @@ def test_run_doctor_resvg_and_mmdc_capability_checks_ok_when_present(tmp_path):
     assert resvg_check.ok is True
     assert resvg_check.detail == "/fake/resvg"
     assert resvg_check.required is False
+
+
+# --- "found" is not "usable": version reporting -------------------------------
+
+
+def _doctor(tmp_path, resolver):
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    return DoctorService(
+        JsonEvidenceRepository(), AssetService(FilesystemAssetRepository(), workspace), resolver
+    )
+
+
+def _resolver(pandoc="/fake/pandoc", version_text="pandoc 3.10"):
+    class _Resolver:
+        def resolve_pandoc(self, paths):
+            return pandoc
+
+        def resolve_libreoffice(self, paths):
+            return None
+
+        def resolve_java(self, paths):
+            return None
+
+        def resolve_mmdc(self, paths):
+            return None
+
+        def resolve_resvg(self, paths):
+            return None
+
+        def tool_version(self, executable):
+            return version_text
+
+    return _Resolver()
+
+
+def test_doctor_reports_the_pandoc_version_it_found(tmp_path):
+    result = _doctor(tmp_path, _resolver(version_text="pandoc 3.10")).run_doctor(
+        "doc-1", _config(tmp_path)
+    )
+
+    pandoc = next(c for c in result.checks if c.name == "pandoc")
+    assert "3.10" in pandoc.detail
+
+
+def test_doctor_warns_when_pandoc_is_older_than_the_harness_needs(tmp_path):
+    # `html_render` passes `--embed-resources`, which pandoc added in 2.19.
+    # Below that, `--format html` fails with a bare non-zero exit -- the
+    # exact shape of failure this check exists to pre-empt.
+    result = _doctor(tmp_path, _resolver(version_text="pandoc 2.9.2")).run_doctor(
+        "doc-1", _config(tmp_path)
+    )
+
+    check = next(c for c in result.checks if c.name == "pandoc_version")
+    assert check.ok is False
+    assert "2.9.2" in check.detail
+    assert "2.19" in check.detail
+    assert check.required is False, "una versión vieja degrada html, no bloquea docx"
+
+
+def test_doctor_passes_the_version_check_on_a_new_enough_pandoc(tmp_path):
+    result = _doctor(tmp_path, _resolver(version_text="pandoc 2.19")).run_doctor(
+        "doc-1", _config(tmp_path)
+    )
+
+    assert next(c for c in result.checks if c.name == "pandoc_version").ok is True
+
+
+def test_an_unreadable_version_is_never_reported_as_too_old(tmp_path):
+    # A tool that does not answer `--version` the expected way may be
+    # perfectly fine. Guessing "too old" would send someone to reinstall
+    # something that works.
+    result = _doctor(tmp_path, _resolver(version_text="???")).run_doctor(
+        "doc-1", _config(tmp_path)
+    )
+
+    check = next(c for c in result.checks if c.name == "pandoc_version")
+    assert check.ok is True
+    assert "desconocida" in check.detail
+
+
+def test_no_version_check_when_the_tool_is_absent(tmp_path):
+    result = _doctor(tmp_path, _resolver(pandoc=None)).run_doctor("doc-1", _config(tmp_path))
+
+    assert not any(c.name == "pandoc_version" for c in result.checks)

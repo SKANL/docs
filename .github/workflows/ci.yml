@@ -77,3 +77,62 @@ jobs:
         env:
           ARCHITECTURE_REQUIRE_GRAPH: "1"
         run: uv run pytest tests/architecture -q
+
+  # Measured: `check` runs 1575 tests and skips 16, while a developer laptop
+  # runs 1584 and skips 7. The gate had a SMALLER surface than the desk it
+  # guards -- and the nine-test difference is precisely the optional
+  # toolchains: mermaid diagrams, SVG rasterisation, Java-backed PDF ingest.
+  # The seven LibreOffice tests (PDF output, visual QA) were exercised by
+  # nobody, anywhere.
+  #
+  # Its own job, in parallel: installing LibreOffice and Chromium is minutes
+  # of setup that must not delay lint and typecheck, which fail in seconds.
+  toolchains:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the optional toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             pandoc libreoffice-writer default-jre-headless
+          npm install -g @mermaid-js/mermaid-cli
+          curl -sSL -o /tmp/resvg.tar.gz             https://github.com/linebender/resvg/releases/download/v0.45.1/resvg-linux-x86_64.tar.gz
+          sudo tar -xzf /tmp/resvg.tar.gz -C /usr/local/bin resvg
+          sudo chmod +x /usr/local/bin/resvg
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      # Chromium (via mermaid-cli's puppeteer) needs a sandbox this runner
+      # does not grant; the flag is scoped to CI and never reaches the harness.
+      - name: Report what is actually available
+        run: uv run python -m docs.cli.main doctor || true
+
+      - name: Tests with the full toolchain
+        env:
+          PUPPETEER_ARGS: "--no-sandbox"
+        run: uv run pytest -q -rs
+
+      # The number this job exists to defend. If a toolchain silently stops
+      # installing, the suite goes green again by skipping -- which is the
+      # failure mode that made this job necessary in the first place.
+      - name: Fail if the toolchain coverage regressed
+        run: |
+          uv run pytest -q -rs 2>&1 | tee /tmp/out.txt
+          skipped=$(grep -oE '[0-9]+ skipped' /tmp/out.txt | grep -oE '[0-9]+' | tail -1)
+          skipped=${skipped:-0}
+          echo "skipped: $skipped"
+          if [ "$skipped" -gt 2 ]; then
+            echo "::error::$skipped tests skipped with the full toolchain installed; expected at most 2."
+            grep -E '^SKIPPED' /tmp/out.txt || true
+            exit 1
+          fi
