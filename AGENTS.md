@@ -329,10 +329,14 @@ it only reads and reports, it never writes.
 section's authored prose. Loop:
 
 1. Run `docs review-section <id> --json`.
-2. If `"passed": false`, read `"issues"` — each issue names the failing
-   check and a human-readable detail (missing required content, an
-   unsubstantiated subjective/contested term, an inconsistency against the
-   template's normative rules, etc.).
+2. If `"passed": false`, read `"issues"` — each issue carries a `code`
+   (e.g. `apa.quote_without_locator`) plus a human-readable detail.
+   **`docs explain <code>` tells you what that code means and what clears
+   it**; `docs explain` with no argument lists the whole catalog grouped by
+   family. It needs no workspace, so it answers from anywhere. That catalog
+   is generated from the codes the harness actually emits — it can never
+   drift into documenting a code that no longer exists, or miss one that
+   does.
 3. Edit the section's `.md` body to address the issue (add the missing
    content, add quantified evidence or a citation next to a flagged claim,
    resolve the inconsistency).

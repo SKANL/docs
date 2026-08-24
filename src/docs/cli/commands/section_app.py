@@ -19,6 +19,11 @@ section_app = typer.Typer()
 
 @section_app.command("build-section")
 def build_section(ctx: typer.Context, section_id: str = typer.Argument(...)) -> None:
+    """Genera el scaffold de una sección a partir de su contrato en el template.
+
+    Escribe el encabezado gestionado por el arnés y un cuerpo de
+    marcador. El cuerpo en prosa es la ranura cognitiva: se redacta a
+    mano después."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     print(deps.pipeline.build_section(resolved.doc_id, resolved.template, section_id, resolved.config))
@@ -26,6 +31,10 @@ def build_section(ctx: typer.Context, section_id: str = typer.Argument(...)) -> 
 
 @section_app.command("pack-context")
 def pack_context(ctx: typer.Context, section_id: str = typer.Argument(..., help="<id> | all | document")) -> None:
+    """Arma el paquete de contexto que el agente lee antes de redactar.
+
+    Acepta un `<id>` de sección, `all` (todas más el paquete de
+    documento) o `document` (solo el paquete transversal)."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
@@ -57,6 +66,11 @@ def review_section(
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
+    """Revisa una sección contra su contrato y devuelve los hallazgos.
+
+    Con `--json` emite la lista estructurada de hallazgos para iterar
+    hasta verde (ver `docs guide`, §4). `--strict` aplica la política
+    estricta del template. Sale con código 1 si hay hallazgos bloqueantes."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
@@ -71,6 +85,10 @@ def review_document(
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
+    """Revisa el documento completo: coherencia entre secciones, APA y trazabilidad.
+
+    Complementa a `review-section`, que solo mira una sección aislada.
+    Sale con código 1 si hay hallazgos bloqueantes."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
