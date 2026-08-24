@@ -29,6 +29,9 @@ contract now lives in `openspec/specs/`.
   domain ports. Never import infrastructure from domain/application.
 - Adapters are wired only in the composition root (`cli/_shared.py`).
 - CLI user-facing strings are Spanish; code, comments, and docs are English.
+- A `# ponytail:` comment marks a deliberate simplification and names its
+  ceiling plus the upgrade path, so a shortcut reads as intent rather than
+  oversight. Used across `src/`, `tests/` and `tools/`.
 - Determinism: same inputs must produce identical outputs; no timestamps or
   randomness in generated artifacts.
 
@@ -121,8 +124,13 @@ After a graph-answered question, record whether it helped:
 Feed it results from all three graphs -- it is the only memory layer of the
 three, and it is what keeps routing honest over time.
 
-`tests/architecture/` enforces the layering rule above against the GitNexus
-graph and covers the bridge; both skip when no index is present.
+`tests/architecture/test_graph_invariants.py` enforces the layering rule
+above against the GitNexus graph, and skips when no index is present -- set
+`ARCHITECTURE_REQUIRE_GRAPH` to any enabling value (`1`, `true`, `yes`, `on`)
+to make a missing index fail instead, so CI can demand the check rather than
+accept a silent skip. Nothing sets it yet -- this repo has no CI config.
+`tests/architecture/test_spec_code_bridge.py` covers the bridge from its own
+fixtures and needs no graph, so it always runs.
 
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
