@@ -126,3 +126,18 @@ def test_agents_md_points_at_docs_explain_for_issue_codes():
     # The review loop (§4) is the harness's core contract with the agent; it
     # emits 31 codes and must route to the catalog rather than restate it.
     assert "docs explain" in AGENTS_MD
+
+
+def test_the_determinism_promise_is_scoped_to_a_toolchain():
+    # It used to read "byte-identical output, every time, on every machine",
+    # unqualified. The harness pipes Markdown through pandoc, and pandoc 3.1.3
+    # and 3.10 do not emit the same bytes -- a fact the first CI run made
+    # concrete. A contract that promises more than the system can deliver
+    # sends the next person hunting a harness bug that is really an upgrade.
+    #
+    # Whitespace-normalised: the claim must survive a markdown re-wrap, and
+    # asserting on an exact line break would fail on formatting, not on
+    # meaning.
+    prose = " ".join(AGENTS_MD.split())
+    assert "not across toolchain versions" in prose
+    assert "docs doctor" in prose

@@ -14,6 +14,12 @@ from docs.domain.ports.content_probe_port import ContentProbePort
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.domain.rules import review_rules
+from docs.domain.tool_versions import (
+    MINIMUM_VERSIONS,
+    describe_version,
+    parse_version,
+    version_meets,
+)
 
 
 class DoctorService:
@@ -111,14 +117,19 @@ class DoctorService:
         # without pandoc (design.md ADR-L: "required = document can't build
         # without it"). Kept `required=True` explicit, not just the default.
         pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
+        pandoc_version = self._version_of(pandoc)
         checks.append(
             Check(
                 "pandoc",
                 bool(pandoc),
-                pandoc or "No encontrado en PATH. Instalar Pandoc para build-docx.",
+                f"{pandoc} ({describe_version(pandoc_version)})"
+                if pandoc
+                else "No encontrado en PATH. Instalar Pandoc para build-docx.",
                 required=True,
             )
         )
+        if pandoc:
+            checks.append(self._version_check("pandoc", pandoc_version))
         libreoffice = self.tool_resolver.resolve_libreoffice(config.get("paths", {}))
         # Optional, unlike pandoc: LibreOffice only renders the visual QA PDF.
         # Its absence must not fail-fast the whole pipeline and deny the user a
@@ -156,6 +167,47 @@ class DoctorService:
             checks.append(Check("python-docx", False, f"No disponible: {exc}"))
 
         return DoctorResult(checks)
+
+    def _version_of(self, executable: str | None) -> tuple[int, ...] | None:
+        """The parsed version of a resolved tool, or None when unreadable."""
+        if not executable:
+            return None
+        reader = getattr(self.tool_resolver, "tool_version", None)
+        if reader is None:  # pragma: no cover - a resolver predating the port method
+            return None
+        return parse_version(reader(executable))
+
+    def _version_check(self, tool: str, found: tuple[int, ...] | None) -> Check:
+        """"Is it new enough?" -- the question `doctor` never asked.
+
+        Separate from the presence check on purpose: PRESENT and USABLE are
+        different questions, and folding them into one check would force a
+        single ok/not-ok on two independent facts. `required=False` because an
+        old pandoc degrades `--format html` (it is `--embed-resources` that
+        needs 2.19) while `--format docx` keeps working -- failing the whole
+        run would deny a user the format they can still build.
+        """
+        minimum = MINIMUM_VERSIONS[tool]
+        meets = version_meets(found, minimum)
+        if meets is None:
+            return Check(
+                f"{tool}_version",
+                True,
+                f"No se pudo leer la versión de {tool} ({describe_version(found)}); "
+                f"se asume utilizable. Mínimo soportado: {describe_version(minimum)}.",
+                required=False,
+            )
+        if meets:
+            return Check(f"{tool}_version", True, describe_version(found), required=False)
+        return Check(
+            f"{tool}_version",
+            False,
+            f"{tool} {describe_version(found)} es anterior al mínimo "
+            f"{describe_version(minimum)}. `--format html` va a fallar "
+            f"(usa `--embed-resources`, agregado en 2.19); `--format docx` sigue "
+            f"funcionando. Actualizá {tool} para habilitar HTML.",
+            required=False,
+        )
 
     def _manual_check(self, paths: dict[str, Any], strict: bool) -> Check:
         """Item E: `manual_dir` is an OPTIONAL input -- WARN, not FAIL, when

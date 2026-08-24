@@ -77,3 +77,77 @@ jobs:
         env:
           ARCHITECTURE_REQUIRE_GRAPH: "1"
         run: uv run pytest tests/architecture -q
+
+  # Measured: `check` runs 1575 tests and skips 16, while a developer laptop
+  # runs 1584 and skips 7. The gate had a SMALLER surface than the desk it
+  # guards -- and the nine-test difference is precisely the optional
+  # toolchains: mermaid diagrams, SVG rasterisation, Java-backed PDF ingest.
+  # The seven LibreOffice tests (PDF output, visual QA) were exercised by
+  # nobody, anywhere.
+  #
+  # Its own job, in parallel: installing LibreOffice and Chromium is minutes
+  # of setup that must not delay lint and typecheck, which fail in seconds.
+  toolchains:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Ubuntu 24.04 runners disable unprivileged user namespaces via AppArmor,
+      # and Chromium (which mermaid-cli drives through puppeteer) cannot start
+      # without them. Fixed in the RUNNER, never in the harness: `mmdc` is
+      # invoked by the product, and teaching it a `--no-sandbox` knob would put
+      # a CI workaround into everyone's diagram rendering.
+      - name: Allow unprivileged user namespaces (Chromium sandbox)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install the optional toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             pandoc libreoffice-writer default-jre-headless
+          npm install -g @mermaid-js/mermaid-cli
+          curl -sSL -o /tmp/resvg.tar.gz             https://github.com/linebender/resvg/releases/download/v0.45.1/resvg-linux-x86_64.tar.gz
+          sudo tar -xzf /tmp/resvg.tar.gz -C /usr/local/bin resvg
+          sudo chmod +x /usr/local/bin/resvg
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --locked
+
+      # Prints the version of every toolchain it found -- the same report a
+      # user gets, and the log line that explains a later behaviour change.
+      - name: Report what is actually available
+        run: uv run python -m docs.cli.main doctor || true
+
+      # `tests/architecture` is deliberately excluded: it needs a GitNexus
+      # index, the `architecture` job owns it, and its three skips here would
+      # muddy the zero-skip assertion below.
+      - name: Tests with the full toolchain
+        run: |
+          uv run pytest tests/unit tests/integration -q -rs 2>&1 | tee /tmp/out.txt
+
+      # What this job exists to defend: with every toolchain installed, NO test
+      # may skip FOR WANT OF A TOOL. A toolchain that silently stops
+      # installing would otherwise turn the suite green by skipping, which is
+      # exactly the failure mode this job was added to end.
+      #
+      # Not "zero skips": a couple of tests require LibreOffice to be ABSENT,
+      # because they pin the degradation path. Those are expected here and are
+      # covered the other way round by `check`, which has no LibreOffice.
+      # Between the two jobs both directions run.
+      - name: Fail if the toolchain coverage regressed
+        run: |
+          missing=$(grep -E '^SKIPPED' /tmp/out.txt | grep -Ei 'not installed|not on PATH|not available' || true)
+          if [ -n "$missing" ]; then
+            echo "::error::a toolchain went missing -- these tests skipped for want of a tool:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "no test skipped for want of a tool"
+          grep -E '^SKIPPED' /tmp/out.txt || echo "(no skips at all)"
