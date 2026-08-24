@@ -170,8 +170,8 @@ ISSUE_CODES: dict[str, IssueCode] = {
         fix="Corregí el campo según el mensaje de validación que acompaña al hallazgo.",
     ),
     "template.unknown_key": IssueCode(
-        meaning="Una clave del template no existe y se parece mucho a un campo real: casi seguro es un error de tipeo.",
-        fix="Corregí la clave al nombre que el hallazgo sugiere. Mientras esté mal escrita el arnés la ignora, así que la regla que escribiste no se aplica.",
+        meaning="Una clave del template se parece mucho a un campo real pero no es ninguno, en un contrato de sección o en un bloque de configuración (`format`, `paths`, `output`...).",
+        fix="Corregí la clave al nombre que el hallazgo sugiere. Mientras no coincida, el arnés la ignora: la regla o el valor que declaraste no se aplica. Si quedó de una versión anterior y la querés conservar como nota, prefijala con `_`.",
     ),
     "template.missing_blocks": IssueCode(
         meaning="Al template le faltan bloques de primer nivel obligatorios.",

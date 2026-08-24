@@ -9,7 +9,7 @@
   },
   "paths": {
     "manual_dir": "{inbox_dir}/guides/manual-estadia-tic",
-    "manual_pdf": "{inbox_dir}/guides/GUÍA DE REFERENCIA PARA LA ELABORACIÓN DEL REPORTE DE ESTADÍA TIC (2).pdf",
+    "_manual_pdf": "{inbox_dir}/guides/GUÍA DE REFERENCIA PARA LA ELABORACIÓN DEL REPORTE DE ESTADÍA TIC (2).pdf",
     "extracted_dir": "{inbox_dir}/extracted",
     "extracted_dir_policy": "rules_traceability_only",
     "example_pdf": "{inbox_dir}/example_tesina/RE-Ejemplo.pdf"
