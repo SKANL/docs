@@ -143,7 +143,7 @@ def test_markdown_structural_markup_divergence_does_not_prevent_near_duplicate_d
     structured_words[39] = "diferente"
     structured_text = (
         "# Encabezado\n\n"
-        + "- " + " ".join(structured_words[:20]) + "\n"
+         "- " + " ".join(structured_words[:20]) + "\n"
         + "> " + " ".join(structured_words[20:40]) + "\n"
         + "| " + " ".join(structured_words[40:]) + " |"
     )

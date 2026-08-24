@@ -67,3 +67,36 @@ def test_unregistered_format_raises_clear_error_naming_the_format():
 
     with pytest.raises(ValueError, match="csv"):
         resolve_renderer(_registry(), "csv")
+
+
+# --- the registry's members must actually satisfy the port they are typed as --
+
+
+def test_every_registered_renderer_matches_the_port_build_signature():
+    # `Deps.renderers` is annotated `dict[str, DocumentRendererPort]`, but a
+    # Protocol only constrains what a type checker sees -- and the checker
+    # was never run in CI, so the registry silently held two members whose
+    # `build()` returns `Path | None` against a port declaring `-> Path`.
+    # HTML and PDF degrade to `None` BY DESIGN (pandoc/soffice absent), and
+    # `application/pipeline.py` already branches on that `None`, so the port
+    # was the side that lied. This pins the two back together.
+    import inspect
+
+    from docs.application.docx_assembly import DocxRendererAdapter
+    from docs.application.html_render import HtmlRendererAdapter
+    from docs.application.pdf_render import PdfRendererAdapter
+
+    def _alternatives(annotation: str) -> set[str]:
+        return {part.strip() for part in annotation.split("|")}
+
+    # Assignability, not equality: an adapter that never degrades may narrow
+    # the port's union (DOCX always returns a `Path`). What is forbidden is
+    # WIDENING it — returning something the port never promised, which is
+    # exactly how `Path | None` leaked past a `-> Path` declaration.
+    allowed = _alternatives(inspect.signature(DocumentRendererPort.build).return_annotation)
+    for adapter in (DocxRendererAdapter, HtmlRendererAdapter, PdfRendererAdapter):
+        actual = _alternatives(inspect.signature(adapter.build).return_annotation)
+        assert actual <= allowed, (
+            f"{adapter.__name__}.build returns {sorted(actual)} but "
+            f"DocumentRendererPort.build only promises {sorted(allowed)}"
+        )

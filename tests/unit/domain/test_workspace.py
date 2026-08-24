@@ -1,6 +1,7 @@
 from pathlib import Path
-from docs.domain.workspace import Workspace
+
 from docs.domain.models.document import Document
+from docs.domain.workspace import Workspace
 
 
 def test_workspace_derives_registry_and_doc_root():

@@ -302,28 +302,5 @@ class TestRenderContractScaffoldLegacyParity:
 
         body = render_contract_scaffold("Resultados", contract, context)
 
-        expected = "\n".join(
-            [
-                "# Resultados",
-                "",
-                "_Borrador inicial generado por el arnés. Esta sección no debe "
-                "considerarse lista hasta resolver todos los PENDIENTE con evidencia._",
-                "",
-                "## Contexto disponible",
-                "",
-                "- Nombre: Ana",
-                "",
-                "## Pendientes normativos",
-                "",
-                "- PENDIENTE: documentar alcance con evidencia del ledger, contexto o fuentes.",
-                "- PENDIENTE: documentar objetivo con evidencia del ledger, contexto o fuentes.",
-                "",
-                "## Fuentes APA 7",
-                "",
-                "- PENDIENTE: agregar citas autor-fecha y referencias APA 7 realmente consultadas.",
-                "",
-                "PENDIENTE: ordenar alfabéticamente todas las fuentes citadas en el cuerpo conforme a APA 7.",
-                "",
-            ]
-        )
+        expected = "# Resultados\n\n_Borrador inicial generado por el arnés. Esta sección no debe considerarse lista hasta resolver todos los PENDIENTE con evidencia._\n\n## Contexto disponible\n\n- Nombre: Ana\n\n## Pendientes normativos\n\n- PENDIENTE: documentar alcance con evidencia del ledger, contexto o fuentes.\n- PENDIENTE: documentar objetivo con evidencia del ledger, contexto o fuentes.\n\n## Fuentes APA 7\n\n- PENDIENTE: agregar citas autor-fecha y referencias APA 7 realmente consultadas.\n\nPENDIENTE: ordenar alfabéticamente todas las fuentes citadas en el cuerpo conforme a APA 7.\n"
         assert body == expected

@@ -6,6 +6,7 @@ from PATH (mirrors the `pandoc`/`java`/`libreoffice` skipif precedent)."""
 from __future__ import annotations
 
 import shutil
+import subprocess
 
 import pytest
 
@@ -31,5 +32,14 @@ def test_render_invalid_mermaid_syntax_raises_with_cause(tmp_path):
     spec = VisualSpec(label="fig", type="mermaid", source="this is not valid mermaid syntax {{{")
     renderer = MermaidSvgRenderer(SystemToolResolverAdapter(), scratch_root=tmp_path)
 
-    with pytest.raises(Exception):
+    # The class docstring promises "a clean, catchable error so the
+    # generate-visuals stage can WARN+skip it". It raised a raw
+    # `CalledProcessError` instead, whose message is a Windows path dump --
+    # and mmdc's actual diagnostic went to the inherited stderr, so the
+    # stage's `WARN: {exc}` told the author nothing about their diagram.
+    with pytest.raises(RuntimeError) as excinfo:
         renderer.render(spec)
+
+    assert "mmdc" in str(excinfo.value)
+    assert "UnknownDiagramError" in str(excinfo.value), "el diagnóstico de mermaid debe llegar al autor"
+    assert isinstance(excinfo.value.__cause__, subprocess.CalledProcessError)

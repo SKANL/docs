@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import shutil
 import sys
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Protocol
+from typing import Protocol
 
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentRepository

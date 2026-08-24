@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 # Moved out of `infrastructure/ingest/opendataloader_pdf_adapter.py` (D5,
 # tech-debt closeout — deferred PR6 fresh-review SUGGESTION): the docx-named

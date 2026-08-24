@@ -1,5 +1,6 @@
 import pytest
-from docs.domain.slug import validate_slug, InvalidSlugError
+
+from docs.domain.slug import InvalidSlugError, validate_slug
 
 
 @pytest.mark.parametrize("good", ["a", "mi-proyecto", "doc1", "2026-tesis"])

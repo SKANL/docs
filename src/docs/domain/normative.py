@@ -60,7 +60,7 @@ def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
     llamada (confirmado en la revisión previa a la ejecución de Slice 5)."""
     normative = config.get("normative", {})
     excluded = normative.get("excluded_front_matter", EXCLUDED_FRONT_MATTER)
-    excluded_terms = excluded if isinstance(excluded, dict) else {term: "" for term in excluded}
+    excluded_terms = excluded if isinstance(excluded, dict) else dict.fromkeys(excluded, "")
     citation_style = config.get("apa7", {}).get("citation_style", "apa7")
     if citation_style not in CITATION_STYLES:
         allowed = ", ".join(sorted(CITATION_STYLES))

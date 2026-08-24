@@ -27,6 +27,7 @@ def built_wheel(tmp_path_factory) -> Path:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,  # returncode is asserted below, not raised
     )
     assert result.returncode == 0, result.stderr
     wheels = list(out_dir.glob("*.whl"))

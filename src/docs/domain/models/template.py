@@ -106,5 +106,5 @@ class Template(BaseModel):
     strict_policy: StrictPolicy = StrictPolicy()
 
     @classmethod
-    def from_json(cls, text: str) -> "Template":
+    def from_json(cls, text: str) -> Template:
         return cls.model_validate_json(text)

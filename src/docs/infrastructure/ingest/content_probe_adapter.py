@@ -48,7 +48,7 @@ class FilesystemContentProbeAdapter:
     def _probe_pdf(self, path: Path) -> tuple[str, tuple[str, ...]]:
         try:
             pdf = pdfium.PdfDocument(str(path))
-        except Exception:  # noqa: BLE001 -- pypdfium2 raises its own error types on malformed PDFs
+        except Exception:
             return "", ()
         try:
             title = pdf.get_metadata_value("Title") or ""
@@ -58,7 +58,7 @@ class FilesystemContentProbeAdapter:
                 if heading
             )
             return title, headings
-        except Exception:  # noqa: BLE001 -- fail-open on any pdfium read error (design.md §4)
+        except Exception:
             return "", ()
         finally:
             pdf.close()

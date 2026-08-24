@@ -20,37 +20,37 @@ def test_module_source_has_no_tesina_literal():
 
 
 def _manual_file(**overrides) -> ManualFileFact:
-    defaults = dict(
-        path="/repo/manual/00-intro.md",
-        name="00-intro.md",
-        sha256="a" * 64,
-        headings=["Introducción"],
-        excerpt="Texto de ejemplo.",
-    )
+    defaults = {
+        "path": "/repo/manual/00-intro.md",
+        "name": "00-intro.md",
+        "sha256": "a" * 64,
+        "headings": ["Introducción"],
+        "excerpt": "Texto de ejemplo.",
+    }
     defaults.update(overrides)
     return ManualFileFact(**defaults)
 
 
 def _traceability(**overrides) -> TraceabilityFact:
-    defaults = dict(path="/repo/manual.pdf", type="institutional_pdf", sha256="b" * 64, size=1024)
+    defaults = {"path": "/repo/manual.pdf", "type": "institutional_pdf", "sha256": "b" * 64, "size": 1024}
     defaults.update(overrides)
     return TraceabilityFact(**defaults)
 
 
 def _call(**overrides):
-    defaults = dict(
-        manual_files=[],
-        traceability=[],
-        advisor_overrides=[],
-        draft_mode={},
-        strict_mode={},
-        preliminaries={},
-        format={},
-        apa7={},
-        privacy={},
-        section_contracts={},
-        contract_hashes={},
-    )
+    defaults = {
+        "manual_files": [],
+        "traceability": [],
+        "advisor_overrides": [],
+        "draft_mode": {},
+        "strict_mode": {},
+        "preliminaries": {},
+        "format": {},
+        "apa7": {},
+        "privacy": {},
+        "section_contracts": {},
+        "contract_hashes": {},
+    }
     defaults.update(overrides)
     return build_manifest(**defaults)
 

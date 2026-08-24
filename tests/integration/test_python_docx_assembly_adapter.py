@@ -19,7 +19,6 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import (
     configure_roman_preliminary_section,
 )
 
-
 # --- render_pandoc -----------------------------------------------------------
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from docs.domain.pipeline import pipeline_stage_plan
@@ -40,14 +42,14 @@ def test_pipeline_stage_plan_assemble_prepends_generate_visuals_then_caller_supp
     # agnostic, design.md Decision "generate-visuals is a format-agnostic
     # stage before assemble") is always prepended ahead of it.
     stages = pipeline_stage_plan("assemble", _ASSEMBLE_DOCX_STAGES)
-    assert stages == [("generate-visuals", False)] + _ASSEMBLE_DOCX_STAGES
+    assert stages == [("generate-visuals", False), *_ASSEMBLE_DOCX_STAGES]
 
 
 def test_pipeline_stage_plan_assemble_carries_arbitrary_format_stages_unmodified():
     # A distinct, non-DOCX stage tuple flows through untouched, proving the
     # domain layer has no DOCX/"tesina" sentinel baked in.
     txt_stages = [("build-txt", True)]
-    assert pipeline_stage_plan("assemble", txt_stages) == [("generate-visuals", False)] + txt_stages
+    assert pipeline_stage_plan("assemble", txt_stages) == [("generate-visuals", False), *txt_stages]
 
 
 def test_pipeline_stage_plan_all_is_prep_plus_review_document_plus_generate_visuals_plus_assemble():
@@ -91,7 +93,7 @@ def test_generate_visuals_is_fail_fast_false():
 
 
 def test_pipeline_stage_plan_unknown_stage_set_raises_value_error():
-    with pytest.raises(ValueError, match="Conjunto de etapas desconocido: bogus. Usa prep, assemble, all o ingest."):
+    with pytest.raises(ValueError, match=re.escape("Conjunto de etapas desconocido: bogus. Usa prep, assemble, all o ingest.")):
         pipeline_stage_plan("bogus")
 
 
@@ -135,7 +137,7 @@ def test_pipeline_stage_plan_deterministic_across_repeated_calls():
     # returned lists must be independent copies — mutating one must not leak
     # into the next call or into the caller-supplied source list.
     first.append(("mutated", False))
-    assert second == [("generate-visuals", False)] + _ASSEMBLE_DOCX_STAGES
+    assert second == [("generate-visuals", False), *_ASSEMBLE_DOCX_STAGES]
     assert _ASSEMBLE_DOCX_STAGES == [
         ("build-docx", True),
         ("format-audit-docx", True),

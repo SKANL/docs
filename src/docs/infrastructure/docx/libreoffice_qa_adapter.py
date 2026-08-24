@@ -69,12 +69,16 @@ class LibreOfficeQaAdapter:
             if script_path is None or not script_path.exists():
                 results.append({"name": script, "ok": not strict, "stdout": "", "stderr": "script no encontrado"})
                 continue
+            # check=False on purpose: a failing audit script's stderr is
+            # captured into the per-script report below, so a non-zero exit
+            # is DATA here, not an exception.
             proc = subprocess.run(
                 [sys.executable, str(script_path), str(docx_path.resolve())],
                 cwd=output_dir,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                check=False,
             )
             out_path = output_dir / f"documents-{script.removesuffix('.py')}.txt"
             out_path.write_text(

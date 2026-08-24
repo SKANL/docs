@@ -1,5 +1,5 @@
+from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
 from docs.domain.models.template import Field, Topic
-from docs.domain.context import is_prose_topic, missing_fields, TopicStatus
 
 
 def _prose_topic(required: bool = True) -> Topic:

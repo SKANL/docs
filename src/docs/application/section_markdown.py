@@ -43,12 +43,14 @@ def strip_frontmatter_to_temp(
     tmp_dir = Path(tempfile.mkdtemp(prefix="docs_sections_"))
     bodies = [split_frontmatter(path.read_text(encoding="utf-8"))[1] for path in sections]
     numbered, warnings = number_and_resolve(
-        [(path.stem, body) for path, body in zip(sections, bodies)], bound_figures
+        [(path.stem, body) for path, body in zip(sections, bodies, strict=True)], bound_figures
     )
     for warning in warnings:
         print(f"WARN: {warning}", file=sys.stderr)
     stripped: list[Path] = []
-    for section_path, (_section_id, body) in zip(sections, numbered):
+    # strict=True: `numbered` is one entry per input section by contract.
+    # A silent truncation here would drop a whole section from the build.
+    for section_path, (_section_id, body) in zip(sections, numbered, strict=True):
         target = tmp_dir / section_path.name
         target.write_text(body, encoding="utf-8")
         stripped.append(target)

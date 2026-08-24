@@ -20,7 +20,7 @@ _NORMATIVE = NormativeSettings(
     secret_patterns=[],
 )
 
-_REVIEW_DOCUMENT_KWARGS = dict(manifest_exists=True, manifest_size=10, normative=_NORMATIVE)
+_REVIEW_DOCUMENT_KWARGS = {"manifest_exists": True, "manifest_size": 10, "normative": _NORMATIVE}
 
 
 @pytest.fixture

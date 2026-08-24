@@ -6,7 +6,9 @@ from pathlib import Path
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import Template
 from docs.domain.ports.document_repository import (
-    DocumentExistsError, DocumentNotFoundError, DocumentRepository,
+    DocumentExistsError,
+    DocumentNotFoundError,
+    DocumentRepository,
 )
 from docs.domain.ports.registry_repository import Registry, RegistryRepository
 from docs.domain.ports.template_repository import TemplateRepository

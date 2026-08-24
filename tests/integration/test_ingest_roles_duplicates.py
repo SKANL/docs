@@ -344,12 +344,7 @@ def test_realistic_drop_shape_roles_and_near_duplicate_all_recorded_nothing_sile
         encoding="utf-8",
     )
 
-    guide_words = (
-        "Guía de referencia para la elaboración del reporte de estadía técnica "
-        "en organizaciones receptoras y demás actores relevantes del proceso "
-        "académico institucional de vinculación profesional y sus programas "
-        "correspondientes de formación técnica reconocidos oficialmente"
-    ).split()
+    guide_words = ["Guía", "de", "referencia", "para", "la", "elaboración", "del", "reporte", "de", "estadía", "técnica", "en", "organizaciones", "receptoras", "y", "demás", "actores", "relevantes", "del", "proceso", "académico", "institucional", "de", "vinculación", "profesional", "y", "sus", "programas", "correspondientes", "de", "formación", "técnica", "reconocidos", "oficialmente"]
     guide_curated = " ".join(guide_words)
     extracted_words = [_strip_accents(word) for word in guide_words]
     guide_extracted = "# " + " ".join(extracted_words)

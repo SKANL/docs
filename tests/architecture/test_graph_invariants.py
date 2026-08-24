@@ -82,7 +82,7 @@ def _parse_markdown_table(markdown: str) -> list[dict[str, str]]:
     rows = []
     for line in lines[2:]:  # skip the |---|---| separator
         cells = [c.strip() for c in line.strip("|").split("|")]
-        rows.append(dict(zip(header, cells)))
+        rows.append(dict(zip(header, cells, strict=True)))
     return rows
 
 
@@ -147,6 +147,7 @@ def cypher(query: str, limit: int = 200) -> list[dict[str, str]]:
         capture_output=True,
         text=True,
         timeout=180,
+        check=False,  # a non-zero exit is inspected below, not raised
     )
     return parse_cypher_output(completed)
 

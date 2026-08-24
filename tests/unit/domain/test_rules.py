@@ -1,3 +1,4 @@
+import dataclasses
 import inspect
 
 import pytest
@@ -417,8 +418,8 @@ def test_normative_settings_is_a_frozen_dataclass_with_expected_defaults():
     )
     assert settings.scope_term == ""
     assert settings.scope_focus == ""
-    with pytest.raises(Exception):
-        settings.scope_term = "changed"  # frozen dataclass raises FrozenInstanceError
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        settings.scope_term = "changed"
 
 
 def _template(**overrides) -> Template:
@@ -426,15 +427,15 @@ def _template(**overrides) -> Template:
 
 
 def _call(text, contract=None, template=None, strict=False, **kwargs):
-    defaults = dict(
-        excluded_terms={},
-        is_policy_file=False,
-        first_person_patterns=[],
-        subjective_terms=[],
-        secret_patterns=[],
-        scope_term="",
-        scope_focus="",
-    )
+    defaults = {
+        "excluded_terms": {},
+        "is_policy_file": False,
+        "first_person_patterns": [],
+        "subjective_terms": [],
+        "secret_patterns": [],
+        "scope_term": "",
+        "scope_focus": "",
+    }
     defaults.update(kwargs)
     return review_section_text(
         text,
@@ -452,7 +453,7 @@ def test_review_section_text_excluded_term_flags_error_unless_policy_file():
     issues = _call(text, excluded_terms={"plagio": "No se permite contenido plagiado."})
     issue = next(i for i in issues if i.code == "scope.excluded_section")
     assert issue.severity == "error"
-    assert "Contiene apartado excluido: `plagio`. No se permite contenido plagiado." == issue.message
+    assert issue.message == "Contiene apartado excluido: `plagio`. No se permite contenido plagiado."
 
 
 def test_review_section_text_excluded_term_skipped_for_policy_file():

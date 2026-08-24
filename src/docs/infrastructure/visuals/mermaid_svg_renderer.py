@@ -54,8 +54,23 @@ class MermaidSvgRenderer:
             tmp_mmd = tmp_dir / "diagram.mmd"
             tmp_svg = tmp_dir / "diagram.svg"
             tmp_mmd.write_text(spec.source, encoding="utf-8")
-            subprocess.run(
-                [mmdc, "-i", str(tmp_mmd), "-o", str(tmp_svg), "--outputFormat", "svg"],
-                check=True,
-            )
+            try:
+                subprocess.run(
+                    [mmdc, "-i", str(tmp_mmd), "-o", str(tmp_svg), "--outputFormat", "svg"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                )
+            except subprocess.CalledProcessError as exc:
+                # A raw CalledProcessError reads as `Command '[...long paths...]'
+                # returned non-zero exit status 1` -- and mmdc's real diagnostic
+                # went to an uncaptured stderr. The generate-visuals stage
+                # surfaces this as `WARN: {exc}` to the author, so the message
+                # has to say what is wrong with THEIR diagram.
+                detail = (exc.stderr or exc.stdout or "").strip()
+                raise RuntimeError(
+                    f"mmdc no pudo renderizar el diagrama «{spec.label}»."
+                    + (f" Detalle:\n{detail}" if detail else "")
+                ) from exc
             return tmp_svg.read_text(encoding="utf-8")

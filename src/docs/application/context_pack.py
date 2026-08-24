@@ -58,9 +58,9 @@ class ContextPackService:
         lines: list[str] = [
             f"# Context pack — {section.title}",
             "",
-            "_Paquete generado por el arnés. Es el contexto curado para redactar esta sección. "
+            ("_Paquete generado por el arnés. Es el contexto curado para redactar esta sección. "
             "Redacta con `prompts/section-author.md`, luego corre `review-section "
-            f"{section_id} --strict --json` y corrige hasta quedar en verde._",
+            f"{section_id} --strict --json` y corrige hasta quedar en verde._"),
             "",
             "## Contrato de sección",
             "",
@@ -154,9 +154,9 @@ class ContextPackService:
         lines: list[str] = [
             "# Context pack — DOCUMENTO COMPLETO",
             "",
-            "_Paquete para la revisión global y el cierre del documento. Úsalo con el rol "
+            ("_Paquete para la revisión global y el cierre del documento. Úsalo con el rol "
             "`document-reviewer.md` y corre `review-document --strict --json` y `verify --strict` "
-            "hasta quedar en verde._",
+            "hasta quedar en verde._"),
             "",
             "## Estado por sección",
             "",
@@ -203,8 +203,8 @@ class ContextPackService:
                 [
                     "## Hechos canónicos (ledger)",
                     "",
-                    f"Fuente de verdad: `{ledger_path.resolve().as_posix()}`. Toda afirmación del documento "
-                    "debe ser consistente con estos hechos.",
+                    (f"Fuente de verdad: `{ledger_path.resolve().as_posix()}`. Toda afirmación del documento "
+                    "debe ser consistente con estos hechos."),
                     "",
                     ledger_text.strip(),
                     "",

@@ -17,10 +17,10 @@ from docs.application.doctor import DoctorService
 from docs.application.evidence import EvidenceService
 from docs.domain.models.template import Template
 from docs.domain.rules import review_rules
+from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
-from docs.domain.workspace import Workspace
 
 _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "templates" / "documento-generico.json"
 

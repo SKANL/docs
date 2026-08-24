@@ -13,8 +13,8 @@ def _parse_pages(spec: str, page_count: int) -> list[int]:
     0-based page indices bounded by `page_count`. Out-of-range pages are
     ignored so a stale spec never raises."""
     selected: set[int] = set()
-    for part in spec.split(","):
-        part = part.strip()
+    for raw_part in spec.split(","):
+        part = raw_part.strip()
         if not part:
             continue
         if "-" in part:

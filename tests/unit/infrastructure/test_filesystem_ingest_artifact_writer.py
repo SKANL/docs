@@ -3,6 +3,7 @@
 deterministic JSON writer every ingest-produced artifact shares."""
 from __future__ import annotations
 
+import contextlib
 import json
 from pathlib import Path
 
@@ -60,10 +61,8 @@ def test_write_json_cleans_up_temp_file_when_serialization_fails(tmp_path: Path)
     class _Unserializable:
         pass
 
-    try:
+    with contextlib.suppress(TypeError):
         writer.write_json(path, {"bad": _Unserializable()})
-    except TypeError:
-        pass
 
     assert not path.exists()
     leftovers = list(tmp_path.iterdir())

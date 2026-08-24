@@ -4,12 +4,12 @@ from __future__ import annotations
 import io
 import json
 
+import matplotlib
+
 # First-party import kept above the matplotlib block so it is not flagged
 # E402 by the eager-backend-setup code below (which must run before any
 # pyplot use); VisualSpec has no matplotlib dependency.
 from docs.domain.ports.visual_renderer_port import VisualSpec
-
-import matplotlib
 
 matplotlib.use("Agg")
 
@@ -64,12 +64,19 @@ class ChartSvgRenderer:
         if not isinstance(series, list) or not series:
             raise ValueError("Chart spec is missing required non-empty field 'series'.")
 
-        rc = {
-            "svg.hashsalt": _SVG_HASHSALT,
-            "svg.fonttype": "none",
-            "font.family": "DejaVu Sans",
-        }
-        with matplotlib.rc_context(rc):
+        # Inlined, not bound to a name first: matplotlib types `rc_context`
+        # against a Literal union of every known rcParam key, and only the
+        # call site gives the checker that expected type to infer against
+        # (a `rc = {...}` variable widens to `dict[str, str]` before it
+        # reaches the parameter). These three keys are what make the SVG
+        # deterministic -- fixed hash salt, no font hashing, pinned family.
+        with matplotlib.rc_context(
+            {
+                "svg.hashsalt": _SVG_HASHSALT,
+                "svg.fonttype": "none",
+                "font.family": "DejaVu Sans",
+            }
+        ):
             fig, ax = plt.subplots()
             try:
                 _RENDER_BY_KIND[kind](ax, labels, series)

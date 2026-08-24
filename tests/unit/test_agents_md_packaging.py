@@ -28,6 +28,7 @@ def built_wheel(tmp_path_factory) -> Path:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        check=False,  # returncode is asserted below, not raised
     )
     assert result.returncode == 0, result.stderr
     wheels = list(out_dir.glob("*.whl"))
@@ -58,6 +59,7 @@ def test_docs_guide_prints_agents_md_from_an_installed_wheel_with_no_repo_checko
         cwd=tmp_path,  # not the repo -- proves no repo checkout is needed
         capture_output=True,
         text=True,
+        check=False,  # returncode is asserted below, not raised
     )
     assert result.returncode == 0, result.stderr
     repo_root_text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")

@@ -101,7 +101,7 @@ class ContextService:
 
             if is_prose_topic(topic):
                 new_text = new_value if isinstance(new_value, str) else ""
-                merged: str = new_text.strip() if new_text.strip() else (current if isinstance(current, str) else "")
+                merged: str = new_text.strip() or (current if isinstance(current, str) else "")
                 if str(merged).strip():
                     self.context_repo.write_topic(doc_id, topic, merged)
                     written.append(topic_id)

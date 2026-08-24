@@ -88,7 +88,7 @@ def requirement_present(requirement: str, plain: str, detect: dict[str, list[str
         return any(str(candidate).lower() in scrubbed for candidate in candidates)
 
     words = [w for w in _REQUIREMENT_WORD_SPLIT_RE.split(requirement.lower()) if len(w) >= 4]
-    candidates = [requirement.lower()] + words
+    candidates = [requirement.lower(), *words]
     return any(
         re.search(rf"\b{re.escape(_stem_es(candidate))}(?:es|s)?\b", scrubbed) for candidate in candidates
     )

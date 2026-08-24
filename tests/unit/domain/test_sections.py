@@ -1,5 +1,6 @@
 # tests/unit/domain/test_sections.py
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -190,7 +191,7 @@ def test_generated_metadata_changed_checks_all_tracked_keys():
         "prompt_hash",
         "body_hash",
     ]
-    base = {key: "same" for key in tracked}
+    base = dict.fromkeys(tracked, "same")
     for key in tracked:
         current = dict(base)
         new = dict(base, **{key: "different"})
@@ -204,5 +205,5 @@ def test_section_by_id_returns_the_matching_section():
 
 def test_section_by_id_raises_value_error_with_known_ids_when_missing():
     sections = [{"id": "intro", "order": 1}, {"id": "methods", "order": 2}]
-    with pytest.raises(ValueError, match="Sección desconocida: bogus. Secciones disponibles: intro, methods"):
+    with pytest.raises(ValueError, match=re.escape("Sección desconocida: bogus. Secciones disponibles: intro, methods")):
         section_by_id(sections, "bogus")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import pytest
 
 from docs.domain.qa import ensure_child_path, render_qa_report

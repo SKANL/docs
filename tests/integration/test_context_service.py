@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from docs.application.context import ContextService
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Field, Template, Topic
 from docs.domain.ports.document_repository import DocumentNotFoundError
@@ -9,7 +10,6 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
-from docs.application.context import ContextService
 
 
 def _template() -> Template:
@@ -98,7 +98,7 @@ def test_show_returns_raw_text(setup):
 
 
 def test_show_missing_topic_raises_file_not_found(setup):
-    service, template = setup
+    service, _template = setup
     with pytest.raises(FileNotFoundError):
         service.show("alpha", "intro")
 

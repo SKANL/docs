@@ -4,11 +4,14 @@ output (SDD change harness-generality-and-revision, item C-html, PR2)."""
 from __future__ import annotations
 
 import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 
 from docs.application.html_render import HtmlRendererAdapter
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 
 
 class _FakeToolResolver:
@@ -195,3 +198,37 @@ def test_build_numbers_figures_and_resolves_refs_across_sections(tmp_path, servi
     text = output.read_text(encoding="utf-8")
     assert "Figura 1. Organigrama del equipo." in text
     assert "Consulte Ver Figura 1 para más detalle." in text
+
+
+def test_build_creates_the_parent_of_a_custom_output_path(tmp_path, monkeypatch):
+    # Found by the first CI run. The default output dir is created, but a
+    # caller-supplied `output` had its parent left to pandoc -- which pandoc
+    # 3.10 tolerates and pandoc 3.1.3 does not, so this passed on a developer
+    # machine and died in CI with a bare non-zero exit.
+    #
+    # `PdfRendererAdapter.build` already does `Path(output).parent.mkdir(...)`;
+    # HTML was the inconsistent one. Asserted here without invoking pandoc:
+    # the directory must exist by the time the subprocess is built.
+    seen: dict[str, Path] = {}
+
+    def fake_run(args, **kwargs):
+        seen["output"] = Path(args[-1])
+        Path(args[-1]).write_text("<html></html>", encoding="utf-8")
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/pandoc")
+
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nCuerpo.\n", encoding="utf-8")
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")},
+    }
+    custom = tmp_path / "carpeta" / "que" / "no" / "existe" / "final.html"
+
+    result = HtmlRendererAdapter(SystemToolResolverAdapter()).build("doc-1", config, output=custom)
+
+    assert result == custom
+    assert seen["output"].parent.is_dir()

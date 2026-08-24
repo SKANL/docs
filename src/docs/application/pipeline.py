@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
@@ -19,7 +20,6 @@ from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.domain.models.template import SectionContract, Template
-from docs.domain.section_rendering import render_section_draft
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
@@ -28,6 +28,7 @@ from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.source_repository import SourceRepository
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_rules
+from docs.domain.section_rendering import render_section_draft
 from docs.domain.workspace import Workspace
 
 
@@ -71,6 +72,12 @@ class PipelineService:
     ) -> Path:
         runs_dir = self._runs_dir(doc_id, config)
         runs_dir.mkdir(parents=True, exist_ok=True)
+        # ponytail: naive local time, not aware UTC. Run logs are metadata,
+        # explicitly outside the byte-determinism boundary (AGENTS.md §7), and
+        # this string is both the record's `timestamp` and its filename --
+        # existing `runs/` directories already hold it in this shape. Upgrade
+        # path if runs are ever compared across timezones: switch to
+        # `datetime.now(UTC)` AND migrate the filenames, together.
         timestamp = datetime.now().isoformat(timespec="microseconds")
         record = {
             "timestamp": timestamp,
@@ -272,6 +279,12 @@ class PipelineService:
 
         def stage_build_docx() -> tuple[bool, str]:
             path = renderer.build(doc_id, config)
+            if path is None:
+                # Unlike build-html/build-pdf, DOCX is the PRIMARY format:
+                # every later stage (format-audit-docx, qa-docx) reads the
+                # artifact this one produces, so a skip here is a failure,
+                # not a degrade.
+                return False, "no se generó el .docx: el renderer no produjo artefacto"
             built_docx_path["path"] = path
             return True, str(path)
 

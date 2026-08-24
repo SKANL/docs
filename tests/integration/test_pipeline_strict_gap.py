@@ -14,8 +14,8 @@ from docs.application.asset import AssetService
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
 from docs.application.context_pack import ContextPackService
-from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.doctor import DoctorService
+from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.ingest import IngestService

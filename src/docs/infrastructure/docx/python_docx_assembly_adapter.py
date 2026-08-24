@@ -22,6 +22,22 @@ from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_num
 _CAPTION_RE = re.compile(r"^(Figura|Tabla|Gr[aá]fico|Gr[aá]fica)\s+\d+\.", re.IGNORECASE)
 
 
+def _parse_part(path: Path) -> tuple[ET.ElementTree, ET.Element]:
+    """Parse one OOXML part, returning its tree and a non-optional root.
+
+    `safe_parse` (defusedxml, Design Decision 5.1) always yields a tree with
+    a root; typeshed still types `ElementTree.getroot()` as optional because
+    an `ElementTree` CAN be constructed empty. Narrowing once here keeps the
+    four part-rewriting call sites free of a guard that cannot fire, instead
+    of repeating the same `getroot()` pair at each of them.
+    """
+    tree = safe_parse(path)
+    root = tree.getroot()
+    if root is None:  # pragma: no cover - defusedxml never yields a rootless tree
+        raise ValueError(f"La parte XML no tiene elemento raíz: {path}")
+    return tree, root
+
+
 def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
     resolved = shutil.which("pandoc")
     if resolved:
@@ -36,9 +52,30 @@ def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
     return None
 
 
+def _style_is_usable(document: Any, name: str | None) -> bool:
+    """Whether `add_paragraph(style=name)` will actually work on `document`.
+
+    Listing and addressing are different questions. Iterating
+    `document.styles` can yield a name that `document.styles[name]` cannot
+    resolve, and which pandoc version produced the base document decides
+    whether that happens: 12 assembly tests passed on pandoc 3.10 and died on
+    3.1.3 with `KeyError: "no style with name 'Heading 1'"` -- raised from
+    inside `add_paragraph`, after this function had approved the name.
+
+    Asking the document to hand the style over is the only probe that answers
+    the question the caller is really asking.
+    """
+    if not name:
+        return False
+    try:
+        document.styles[name]
+    except (KeyError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
-    available = {style.name for style in document.styles}
-    if preferred_style in available:
+    if _style_is_usable(document, preferred_style):
         return preferred_style
 
     pandoc_style_map = {
@@ -47,12 +84,11 @@ def safe_style_name(document: Any, preferred_style: str | None) -> str | None:
         "Compact": "No Spacing",
     }
     mapped = pandoc_style_map.get(preferred_style or "")
-    if mapped in available:
+    if _style_is_usable(document, mapped):
         return mapped
-    if "Normal" in available:
-        return "Normal"
-    if "No Spacing" in available:
-        return "No Spacing"
+    for fallback in ("Normal", "No Spacing"):
+        if _style_is_usable(document, fallback):
+            return fallback
     return None
 
 
@@ -194,8 +230,7 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
 
         numbering_path = tmp_path / "word" / "numbering.xml"
         if numbering_path.exists():
-            numbering_tree = safe_parse(numbering_path)
-            numbering_root = numbering_tree.getroot()
+            numbering_tree, numbering_root = _parse_part(numbering_path)
         else:
             numbering_path.parent.mkdir(parents=True, exist_ok=True)
             numbering_root = ET.Element(f"{{{namespace}}}numbering")
@@ -221,8 +256,7 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
         numbering_tree.write(numbering_path, xml_declaration=True, encoding="UTF-8")
 
         rels_path = tmp_path / "word" / "_rels" / "document.xml.rels"
-        rels_tree = safe_parse(rels_path)
-        rels_root = rels_tree.getroot()
+        rels_tree, rels_root = _parse_part(rels_path)
         numbering_rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering"
         if not any(rel.get("Type") == numbering_rel_type for rel in rels_root):
             existing_ids = [int(match.group(1)) for rel in rels_root for match in [re.match(r"rId(\d+)$", rel.get("Id", ""))] if match]
@@ -231,8 +265,7 @@ def ensure_bullet_numbering_part(docx_path: Path, num_id: int = 42) -> None:
             rels_tree.write(rels_path, xml_declaration=True, encoding="UTF-8")
 
         content_types_path = tmp_path / "[Content_Types].xml"
-        content_tree = safe_parse(content_types_path)
-        content_root = content_tree.getroot()
+        content_tree, content_root = _parse_part(content_types_path)
         numbering_content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"
         if not any(override.get("PartName") == "/word/numbering.xml" for override in content_root):
             ET.SubElement(
@@ -393,8 +426,7 @@ def set_update_fields_on_open(docx_path: Path) -> None:
 
         settings_path = tmp_path / "word" / "settings.xml"
         if settings_path.exists():
-            tree = safe_parse(settings_path)  # Design Decision 5.1 (defusedxml)
-            root = tree.getroot()
+            tree, root = _parse_part(settings_path)  # Design Decision 5.1 (defusedxml)
         else:
             settings_path.parent.mkdir(parents=True, exist_ok=True)
             root = ET.Element(f"{{{namespace}}}settings")
@@ -636,7 +668,6 @@ class PythonDocxAssemblyAdapter:
 
     def _transfer_one_table(self, cover: Any, table: Any) -> None:
         from docx.oxml import OxmlElement
-        from docx.oxml.ns import qn
 
         new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
         self._apply_horizontal_only_borders(new_table)

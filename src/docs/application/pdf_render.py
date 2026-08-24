@@ -35,6 +35,13 @@ class PdfRendererAdapter:
 
     def build(self, doc_id: str, config: dict[str, Any], output: Path | None = None) -> Path | None:
         docx_path = self.docx_renderer.build(doc_id, config)
+        if docx_path is None:
+            # The composed docx renderer degraded (its own toolchain is
+            # absent) and already WARNed. There is nothing to convert, so
+            # skip with the same contract this class documents rather than
+            # handing `None` to the soffice adapter.
+            print("WARN: no se generó el .docx base. Se omite la salida PDF.", file=sys.stderr)
+            return None
         output_dir = Path(config["paths"]["output_draft_dir"])
         try:
             pdf_path = self.qa_render.render_docx_to_pdf(config, docx_path, output_dir)

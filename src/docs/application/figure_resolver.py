@@ -34,7 +34,7 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     lives here in `application/` -- never in `domain/`, which stays pure.
 
     Absent/malformed `figure-bindings.json` fails open to an empty resolver,
-    same pattern as `IngestService._read_prior_confirmed_roles`. A binding is
+    same pattern as `IngestService.read_prior_confirmed_roles`. A binding is
     admitted only if BOTH hold: the resolved file exists under
     `assets_dir/figures/`, and the catalog row has non-null
     `width_px`/`height_px` (proof the image parsed cleanly at ingest -- the

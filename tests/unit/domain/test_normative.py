@@ -50,7 +50,7 @@ def test_resolve_normative_settings_converts_list_excluded_front_matter_to_dict(
 def test_resolve_normative_settings_appends_privacy_forbidden_patterns_to_secret_patterns():
     config = {"privacy": {"forbidden_in_body_patterns": [r"\bdni\s*[:=]\s*\d{7,8}"]}}
     settings = resolve_normative_settings(config)
-    assert settings.secret_patterns == SECRET_PATTERNS + [r"\bdni\s*[:=]\s*\d{7,8}"]
+    assert settings.secret_patterns == [*SECRET_PATTERNS, r"\bdni\s*[:=]\s*\d{7,8}"]
 
 
 def test_resolve_normative_settings_returns_normative_settings_instance():
