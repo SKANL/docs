@@ -132,17 +132,22 @@ jobs:
         run: |
           uv run pytest tests/unit tests/integration -q -rs 2>&1 | tee /tmp/out.txt
 
-      # The number this job exists to defend. With every toolchain installed
-      # NOTHING may skip: a toolchain that silently stops installing would
-      # otherwise turn the suite green by skipping, which is exactly the
-      # failure mode this job was added to end.
+      # What this job exists to defend: with every toolchain installed, NO test
+      # may skip FOR WANT OF A TOOL. A toolchain that silently stops
+      # installing would otherwise turn the suite green by skipping, which is
+      # exactly the failure mode this job was added to end.
+      #
+      # Not "zero skips": a couple of tests require LibreOffice to be ABSENT,
+      # because they pin the degradation path. Those are expected here and are
+      # covered the other way round by `check`, which has no LibreOffice.
+      # Between the two jobs both directions run.
       - name: Fail if the toolchain coverage regressed
         run: |
-          skipped=$(grep -oE '[0-9]+ skipped' /tmp/out.txt | grep -oE '[0-9]+' | tail -1)
-          skipped=${skipped:-0}
-          echo "skipped with the full toolchain: $skipped"
-          if [ "$skipped" -ne 0 ]; then
-            echo "::error::$skipped tests skipped with every toolchain installed; expected 0."
-            grep -E '^SKIPPED' /tmp/out.txt || true
+          missing=$(grep -E '^SKIPPED' /tmp/out.txt | grep -Ei 'not installed|not on PATH|not available' || true)
+          if [ -n "$missing" ]; then
+            echo "::error::a toolchain went missing -- these tests skipped for want of a tool:"
+            echo "$missing"
             exit 1
           fi
+          echo "no test skipped for want of a tool"
+          grep -E '^SKIPPED' /tmp/out.txt || echo "(no skips at all)"
