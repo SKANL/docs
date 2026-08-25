@@ -68,6 +68,14 @@ three share; never re-declare an artifact filename or extension set locally.
   is not harmless: an under-broad vocabulary reports a REAL key as a typo,
   and a live key was renamed out of a shipped template on exactly that
   advice. The list errs broad on purpose.
+- **A degrading stage must say so in its own line.** `qa-docx` reported
+  `ok=True` with a bare directory path for 24 consecutive runs on a real
+  workspace while LibreOffice was absent and the visual render never
+  happened. The information was not lost -- `qa-report.md` said "PDF: no
+  disponible" -- it was one level deeper than its siblings put it.
+  `build-html` and `build-pdf` both report their own skip as
+  "omitido: ..." right in the pipeline output. A stage that degrades where
+  only a file can tell you reads as a clean success.
 - **A warning is a failure that has not happened yet.** `filterwarnings =
   ["error"]` in `pyproject.toml` is not tidiness: one invalid escape sequence
   in a docstring passed ruff AND mypy, and broke ELEVEN architecture tests
