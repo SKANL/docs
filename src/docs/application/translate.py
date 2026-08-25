@@ -20,12 +20,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from docs.domain.alignment import detect_alignment, detect_column
-from docs.domain.block_grouping import group_runs_into_blocks
+from docs.domain.block_grouping import TextBlock, group_runs_into_blocks
+from docs.domain.collision import collides
 from docs.domain.ports.pdf_classify_port import PdfClassifyPort
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, PdfTextEditPort
 from docs.domain.ports.translation_memory_port import TranslationMemoryPort
 from docs.domain.ports.translation_port import TranslationPort
-from docs.domain.text_fitting import fit_text_to_block
+from docs.domain.text_fitting import FittedText, fit_text_to_block
 from docs.domain.translation_guard import guarded_translate
 from docs.domain.translation_memory_key import memory_key
 
@@ -54,6 +55,7 @@ class TranslateReport:
     blocks_translated: int = 0
     blocks_from_cache: int = 0
     blocks_overflowed: int = 0
+    pages_with_collisions: list[int] = field(default_factory=list)
     fonts_substituted: int = 0
     fonts_unrecognized: int = 0
     pages_untrusted: list[int] = field(default_factory=list)
@@ -71,6 +73,9 @@ class TranslateReport:
             parts.append(f"{self.blocks_untranslated} sin traducir")
         if self.blocks_overflowed:
             parts.append(f"{self.blocks_overflowed} no entraron en su caja")
+        if self.pages_with_collisions:
+            pages = ", ".join(str(page) for page in self.pages_with_collisions)
+            parts.append(f"texto superpuesto en paginas: {pages}")
         if self.fonts_substituted:
             parts.append(f"{self.fonts_substituted} con fuente sustituida")
         if self.fonts_unrecognized:
@@ -121,12 +126,14 @@ class TranslateService:
         }
 
         replacements: list[BlockReplacement] = []
+        placements: list[tuple[TextBlock, FittedText]] = []
         for block in blocks:
             text, from_cache, ok = self._translate_block(block.text, source_lang, target_lang)
             report.blocks_translated += int(ok)
             report.blocks_from_cache += int(from_cache)
             fitted = fit_text_to_block(text, block)
             report.blocks_overflowed += int(fitted.overflowed)
+            placements.append((block, fitted))
             replacements.append(
                 BlockReplacement(
                     page=block.page,
@@ -141,6 +148,13 @@ class TranslateService:
                     alignment=detect_alignment(block.x, block.right, columns[block.page]),
                 )
             )
+
+        # Overlapping text is the worst thing this capability can do to a
+        # page and the least visible: every stage reports success and only a
+        # render shows it. Count it before writing.
+        report.pages_with_collisions = sorted(
+            {block.page + 1 for block in collides(placements)}
+        )
 
         write_report = self._editor.write_blocks(src, out, replacements)
         report.fonts_substituted = write_report.fonts_substituted

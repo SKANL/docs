@@ -141,6 +141,16 @@ three share; never re-declare an artifact filename or extension set locally.
   "flaky" byte-identity test is a product bug. The replacement digest is the
   SAME LENGTH as what it replaces so xref offsets stay valid. MECHANICAL:
   `tests/architecture/test_pdf_writer_invariant.py`.
+- **An embedded font is not a font you can write with.** `FPDFText_SetText` on
+  an existing text object succeeds and keeps its font -- the obvious way to
+  preserve perfect typography when translating. Measured: writing `"PRUEBA de
+  acentos: canción, año, ¿qué?"` into a running head rendered
+  `"PRUEA de centos□cncin□o□u□"`. Not just the accents; the lowercase `a` is
+  absent too, because that subset carries only the glyphs of `"The Mom Test by
+  @robfitz 10"`. It fails SILENTLY -- the text layer reads back correct
+  Spanish, and only a render shows it. Substituting a base-14 face is the only
+  option that yields a readable document, and `document-translate` counts
+  every substitution so the compromise stays visible.
 - A fifth instance of **"found" is not "usable"**: `FPDFFont_GetFamilyName` is
   present, returns success, and yields an EMPTY string for embedded subset
   fonts. `FPDFFont_GetBaseFontName` returns `GGKEDP+DejaVuSans` — strip the

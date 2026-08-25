@@ -117,6 +117,18 @@ Untranslated blocks, overflowed blocks, substituted fonts, and pages whose block
 - WHEN the command finishes
 - THEN its output line names the translated count, the untranslated count, the overflow count, and the substituted-font count
 
+#### Scenario: Overlapping text is detected and its pages named
+
+- GIVEN a block whose translation needs more lines than its source
+- WHEN the laid-out text would reach into the block below it
+- THEN that page is named in the command's output line before the document is written
+
+#### Scenario: A dialogue label beside its speech is not a collision
+
+- GIVEN two blocks on the same visual line whose bounding boxes overlap
+- WHEN collisions are counted
+- THEN they are not reported, because they are one line rather than stacked lines
+
 #### Scenario: Multi-column pages are reported as unverified
 
 - GIVEN a source PDF whose classifier reports pages with columns

@@ -41,6 +41,21 @@ _SUBSET_TAG_LENGTH = 6
 # already used, so a target-language glyph that never appeared is simply not
 # there. Map the family onto a base-14 standard font, which always carries
 # full Latin coverage, and count the substitution.
+#
+# DO NOT "optimise" this by keeping the original font. `FPDFText_SetText` on
+# an EXISTING text object succeeds and preserves its font, which looks like
+# the obvious way to keep perfect typography. It was measured on a real book:
+#
+#     wrote:    "PRUEBA de acentos: canción, año, ¿qué?"
+#     rendered: "PRUEA de centos[]cncin[]o[]u[]"
+#
+# Not merely the accents -- the lowercase "a" is gone too, because that
+# running head's subset carries only the glyphs of "The Mom Test by @robfitz
+# 10" and nothing else. And it fails SILENTLY: the text layer read back the
+# correct Spanish, so only rendering the page reveals the damage.
+#
+# Substitution is not a shortcut here. It is the only option that produces a
+# readable document.
 # ponytail: base-14 only, so non-Latin targets (Cyrillic, CJK, Arabic) are out
 # of reach. The upgrade path is `FPDFText_LoadFont` with a bundled Noto face,
 # which is a licensing and file-size decision rather than a code one.

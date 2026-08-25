@@ -187,6 +187,10 @@ Read the output line, not just the file: it names every compromise made.
 - **sin traducir** — the slot was empty or the engine refused.
 - **no entraron en su caja** — the translation was longer than its source and
   hit the minimum font scale. It is visible, not clipped.
+- **texto superpuesto en paginas** — a block needed more lines than its source
+  and reaches into the block below it. This is the worst thing translation can
+  do to a page and the least visible from a file listing, so it is counted and
+  its pages named. Expect it on diagram pages, where text sits beside icons.
 - **con fuente sustituida** — embedded PDF fonts are subsets carrying only the
   glyphs the document already used, so a target-language accent may simply not
   exist in them. Every block is redrawn in a base-14 font. This number is
