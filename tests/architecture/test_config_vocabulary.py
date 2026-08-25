@@ -56,19 +56,94 @@ def _key_path(node: ast.AST) -> tuple[str, ...] | None:
         return None
 
 
+def _literal_string_lists(tree: ast.AST) -> dict[str, list[str]]:
+    """Names bound to a list of string literals, or of tuples of them.
+
+    Both blind-spot sites in this codebase use that shape: `doctor` writes
+    `for name in ["template_docx", ...]` and `evidence` writes
+    `_TRACEABILITY_PATH_KEYS = [("manual_pdf", "institutional_pdf"), ...]`.
+    Resolving the binding is what lets the scan see keys that are loop
+    variables by the time `config.get()` receives them.
+    """
+    bound: dict[str, list[str]] = {}
+
+    def strings(node: ast.AST) -> list[str]:
+        if isinstance(node, (ast.List, ast.Tuple)):
+            found: list[str] = []
+            for item in node.elts:
+                if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                    found.append(item.value)
+                else:
+                    found.extend(strings(item))
+            return found
+        return []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            values = strings(node.value)
+            for target in node.targets:
+                if isinstance(target, ast.Name) and values:
+                    bound[target.id] = values
+        elif isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+            values = strings(node.iter)
+            if values:
+                bound[node.target.id] = values
+        elif isinstance(node, ast.For) and isinstance(node.target, ast.Tuple):
+            values = strings(node.iter)
+            for element in node.target.elts:
+                if isinstance(element, ast.Name) and values:
+                    bound[element.id] = values
+    return bound
+
+
 def _scan() -> tuple[set[tuple[str, ...]], int]:
     """(distinct key paths, total accesses) across `src/docs`."""
     paths: set[tuple[str, ...]] = set()
     accesses = 0
     for path in sorted(SRC_ROOT.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        bound = _literal_string_lists(tree)
+        for node in ast.walk(tree):
             if not isinstance(node, (ast.Subscript, ast.Call)):
                 continue
             key_path = _key_path(node)
             if key_path:
                 paths.add(key_path)
                 accesses += 1
+                continue
+            # `config["paths"].get(name)` where `name` iterates a literal
+            # list: the prefix resolves, the final key does not, and every
+            # value the name can hold is a key the code reads.
+            prefix = _key_path(_receiver(node))
+            if prefix:
+                for candidate in bound.get(_dynamic_key_name(node) or "", ()):
+                    paths.add((*prefix, candidate))
+                    accesses += 1
     return paths, accesses
+
+
+def _receiver(node: ast.AST) -> ast.AST | None:
+    """The expression a dynamic `[x]` / `.get(x)` is reading FROM."""
+    if isinstance(node, ast.Subscript):
+        return node.value
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+        return node.func.value
+    return None
+
+
+def _dynamic_key_name(node: ast.AST) -> str | None:
+    """The variable name used as the key, when the key is not a literal."""
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Name):
+        return node.slice.id
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and node.args
+        and isinstance(node.args[0], ast.Name)
+    ):
+        return node.args[0].id
+    return None
 
 
 def _declared_paths(node: dict[str, Any], prefix: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
@@ -123,3 +198,23 @@ def test_known_keys_at_merges_both_sources():
     assert {"format", "paths", "output", "privacy"} <= top_level
 
     assert known_keys_at(("no", "such", "block")) == set()
+
+
+def test_keys_read_through_a_loop_variable_are_still_declared():
+    # The regression this prevents was mine. `paths.manual_pdf` is read twice
+    # -- `doctor` loops over a literal list of key names, and
+    # `evidence._TRACEABILITY_PATH_KEYS` is a module-level list of pairs --
+    # and the plain AST scan sees neither, because by the time `.get()` runs
+    # the key is a loop variable.
+    #
+    # The vocabulary was therefore missing it, near-miss detection reported a
+    # LIVE key as a typo of `manual_dir`, and I renamed it out of a shipped
+    # template on that advice. Blind spots are fine when they are known and
+    # declared; this asserts the declaration is complete for the idiom that
+    # actually bit.
+    for key in ("template_docx", "example_pdf", "manual_pdf"):
+        assert key in known_keys_at(("paths",)), (
+            f"paths.{key} lo lee `doctor`/`evidence` a través de una lista "
+            f"literal; sin declararlo, el chequeo de casi-coincidencias lo "
+            f"trata como typo de una clave real."
+        )

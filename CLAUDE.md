@@ -53,6 +53,19 @@ three share; never re-declare an artifact filename or extension set locally.
 
 ## Determinism & collision gotchas (learned the hard way)
 
+- **A declared path may exist under a different Unicode form.** OneDrive
+  stores an accented filename decomposed (NFD: `I` + combining acute) while a
+  template declares it composed (NFC: `Í`) — the same name to a human,
+  different strings to `Path.exists()`. In a Spanish-first harness that is
+  the norm, not an edge case. `domain/doctor.py:match_normalized` owns the
+  comparison; the caller lists the directory.
+- **"Found" is not "usable", and this repo has learned it four times:**
+  `safe_style_name` (listed ≠ applicable), `MermaidSvgRenderer` (present ≠
+  renders), `doctor`'s toolchain checks (on PATH ≠ new enough), and
+  `ContentSignals.container_ok` (exists ≠ actually a `.docx`). Before adding
+  a check that a thing is THERE, ask what would make it unusable and check
+  that instead.
+
 - Any new `.docx`/zip writer MUST end in
   `infrastructure/docx/deterministic_zip.py:normalize_docx_zip_timestamps` —
   stdlib zip stamps wall-clock entry times at 2s DOS granularity, so a

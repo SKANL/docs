@@ -145,3 +145,43 @@ def test_probe_non_pdf_non_text_extension_leaves_content_fields_empty(tmp_path):
     result = FilesystemContentProbeAdapter().probe(path)
 
     assert result == ContentSignals(extension="png")
+
+
+# --- "found" is not "usable", the fourth time ---------------------------------
+
+
+def test_a_text_file_renamed_to_docx_is_reported_as_an_unreadable_container(tmp_path):
+    # Fourth appearance of one bug class in this repo: `safe_style_name` asked
+    # whether a style was LISTED, `MermaidSvgRenderer` whether the binary was
+    # PRESENT, `doctor` whether a toolchain was ON PATH -- and here, whether a
+    # file EXISTS. Existing is not being a `.docx`: `doctor` reported
+    # `template_docx: OK` for this file while opening it raises
+    # `PackageNotFoundError`, and `template_docx` is the cover base, so the
+    # build dies later with an error that never names the file.
+    fake = tmp_path / "plantilla.docx"
+    fake.write_text("esto no es un docx", encoding="utf-8")
+
+    assert FilesystemContentProbeAdapter().probe(fake).container_ok is False
+
+
+def test_a_real_docx_is_reported_as_readable(tmp_path):
+    from docx import Document
+
+    real = tmp_path / "real.docx"
+    Document().save(real)
+
+    assert FilesystemContentProbeAdapter().probe(real).container_ok is True
+
+
+def test_a_file_with_no_container_format_is_left_alone(tmp_path):
+    # Fail-open, as the port requires: the flag answers "does it open as the
+    # container its extension implies", and a `.md` implies none. Reporting
+    # False there would flag every plain-text source as broken.
+    note = tmp_path / "nota.md"
+    note.write_text("# hola\n", encoding="utf-8")
+
+    assert FilesystemContentProbeAdapter().probe(note).container_ok is True
+
+
+def test_a_missing_file_stays_fail_open(tmp_path):
+    assert FilesystemContentProbeAdapter().probe(tmp_path / "no-existe.docx").container_ok is True

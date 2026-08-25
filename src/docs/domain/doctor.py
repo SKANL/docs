@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -30,6 +31,29 @@ def find_manual_like(candidates: list[tuple[str, str]]) -> str | None:
     )
     return matches[0] if matches else None
 
+
+
+def match_normalized(declared: str, candidates: list[str]) -> str | None:
+    """Find `declared` among `candidates`, tolerating Unicode form.
+
+    A filename can be stored decomposed (NFD: `I` plus a combining acute)
+    while a template declares it composed (NFC: `Í`). They are the same name
+    to a human and different strings to `Path.exists()`, so a real workspace
+    reported a guide PDF as missing while it sat in the directory being
+    listed. This harness is Spanish-first; accented filenames are the norm.
+
+    Pure: the caller lists the directory, exactly as `find_manual_like`
+    already expects pre-probed input. Exact matches win, and among several
+    candidates that normalise alike the first in sorted order is chosen so
+    the answer never depends on directory iteration order.
+    """
+    if declared in candidates:
+        return declared
+    target = unicodedata.normalize("NFC", declared)
+    for candidate in sorted(candidates):
+        if unicodedata.normalize("NFC", candidate) == target:
+            return candidate
+    return None
 
 @dataclass
 class Check:

@@ -37,6 +37,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "contested_stack_terms": {},
         "duration_consistency": {},
     },
+    "doc_id": {},
     "documents_dir": {},
     "documents_tools": {
         "enabled": {},
@@ -75,6 +76,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "inbox_dir": {},
         "issues_manifest": {},
         "manual_dir": {},
+        "manual_pdf": {},
         "output_draft_dir": {},
         "output_qa_dir": {},
         "prompts_dir": {},
@@ -99,7 +101,6 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
     "templates_dir": {},
     "title": {},
 }
-
 
 # Keys no AST scan can attribute to `config`, with the site that reads them.
 # Each is pinned by a behavioural test, which is stronger evidence than a
