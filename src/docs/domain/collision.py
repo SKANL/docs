@@ -40,6 +40,39 @@ def drawn_bottom(block: TextBlock, fitted: FittedText) -> float:
     return block.baseline - extra * leading - fitted.font_size * DESCENDER_SHARE
 
 
+# Breathing room kept between a grown block and the one beneath it, as a
+# fraction of type size. Without it a block may end exactly on its
+# neighbour's baseline, which reads as touching.
+CLEARANCE_SHARE = 0.35
+
+
+def vertical_room(block: TextBlock, page_blocks: Iterable[TextBlock]) -> float | None:
+    """How far `block` may grow downwards before it reaches its neighbour.
+
+    Handing this to the fitter is what turns a collision into a slightly
+    smaller heading. Without it the fitter only knows the block's own extent,
+    so a title whose translation needs a second line simply grows into the
+    text below -- measured on a real book, a chapter heading landed on the
+    first line of dialogue under it.
+
+    `None` when nothing sits below it in the same column, which means the
+    block may use its own extent as before.
+    """
+    below = [
+        other
+        for other in page_blocks
+        if other is not block
+        and other.page == block.page
+        and _overlaps_horizontally(block, other)
+        and block.baseline - other.baseline >= SAME_LINE_TOLERANCE
+    ]
+    if not below:
+        return None
+    nearest = max(other.baseline for other in below)
+    clearance = block.font_size * CLEARANCE_SHARE
+    return max(block.baseline - nearest - clearance, 0.0)
+
+
 def _overlaps_horizontally(a: TextBlock, b: TextBlock) -> bool:
     return not (a.right < b.x or b.right < a.x)
 

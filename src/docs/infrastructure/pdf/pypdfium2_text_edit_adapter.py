@@ -29,6 +29,7 @@ import pypdfium2.raw as pdfium_c
 
 from docs.domain.alignment import Alignment
 from docs.domain.block_grouping import DOMINANT_STYLE_SHARE, TextRun
+from docs.domain.fonts import substitute_font
 from docs.domain.pdf_id import normalize_pdf_id
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteReport
 
@@ -70,17 +71,8 @@ _SUBSET_TAG_LENGTH = 6
 # a 120-page book -- fell through to Helvetica, silently turning a serif book
 # sans-serif. An unrecognised family is now COUNTED and reported rather than
 # quietly guessed at.
-_SERIF_FAMILIES = (
-    "times", "serif", "georgia", "garamond", "baskerville", "palatino",
-    "caslon", "bodoni", "didot", "minion", "cambria", "book", "roman",
-    "century", "clarendon", "utopia", "charter", "hoefler", "sabon", "hiramin",
-)
-_MONO_FAMILIES = ("courier", "mono", "consolas", "menlo", "monaco", "typewriter")
-_SANS_FAMILIES = (
-    "helvetica", "arial", "optima", "sans", "verdana", "tahoma", "calibri",
-    "futura", "gill", "frutiger", "univers", "myriad", "lato", "roboto", "dejavu",
-)
-_DEFAULT_FONT = b"Helvetica"
+# Family classification and the measured advances now live in `domain/fonts.py`,
+# so the layout code and the writer cannot disagree about which face is used.
 
 # Base-14 covers four styles per family, so italic and bold survive the
 # substitution instead of being flattened. The source book distinguishes
@@ -103,6 +95,17 @@ def _styled(font: bytes, bold: bool, italic: bool) -> bytes:
     return regular
 
 
+def _line_start(replacement: BlockReplacement, line_number: int) -> float:
+    """The left edge available to one line, before alignment moves it.
+
+    Line 0 keeps the start the original had; a hanging indent means that is
+    NOT the block's leftmost edge.
+    """
+    if line_number == 0 and replacement.first_line_x:
+        return replacement.first_line_x
+    return replacement.x
+
+
 def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float:
     """Where one laid-out line starts, honouring the block's alignment.
 
@@ -110,9 +113,7 @@ def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float
     different width estimates for the same line would place it somewhere the
     wrapper never intended.
     """
-    # Line 0 keeps the start the original had; a hanging indent means that is
-    # NOT the block's leftmost edge.
-    left = replacement.first_line_x if line_number == 0 and replacement.first_line_x else replacement.x
+    left = _line_start(replacement, line_number)
     if replacement.alignment is Alignment.LEFT or replacement.right <= left:
         return left
     slack = (replacement.right - left) - replacement.fitted.line_width(line)
@@ -123,39 +124,73 @@ def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float
     return left + slack
 
 
+# How far a drawn line may be re-shrunk to fit its column before we accept
+# the overrun. Deeper than the fitter's own floor because this is the last
+# line of defence: past here the text leaves the page.
+_MIN_FIT_SCALE = 0.5
+
+# Two passes are enough: the first correction is proportional, the second
+# absorbs the rounding. A third buys nothing measurable.
+_FIT_PASSES = 2
+
+
+def _place_within(
+    document: Any, font: Any, line: str, size: float, left: float, limit: float
+) -> tuple[Any, float]:
+    """Build and position one line so its ink ends at or before `limit`.
+
+    The fitter estimates widths; PDFium knows them. But knowing the object's
+    WIDTH is not enough -- a text object carries a side bearing, so ink does
+    not begin exactly at the placement point. Measuring the width alone left a
+    uniform 11-13px overrun on most pages, which is the tell-tale shape of a
+    systematic offset rather than an estimation error.
+
+    So measure the object where it will actually sit: transform first, then
+    read its bounds in PAGE coordinates and compare the right edge against the
+    column. That is the same question a reader asks.
+    """
+    def build(at_size: float) -> Any:
+        obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, at_size)
+        pdfium_c.FPDFText_SetText(obj, _widestring(line))
+        pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, left, 0)
+        return obj
+
+    obj = build(size)
+    if limit <= left:
+        return obj, size
+
+    floor = size * _MIN_FIT_SCALE
+    for _ in range(_FIT_PASSES):
+        _, _, right, _ = _object_bounds(obj)
+        overshoot = right - limit
+        if overshoot <= 0:
+            break
+        drawn = right - left
+        if drawn <= 0:
+            break
+        scaled = max(size * ((limit - left) / drawn), floor)
+        if scaled >= size:
+            break
+        size = scaled
+        pdfium_c.FPDFPageObj_Destroy(obj)
+        obj = build(size)
+    return obj, size
+
+
 def _widestring(text: str) -> Any:
     buffer = ctypes.create_string_buffer(text.encode("utf-16-le") + b"\x00\x00")
     return ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort))
 
 
 def _standard_font_for(family: str) -> tuple[bytes, bool]:
-    """Map an embedded family onto a base-14 font.
+    """The base-14 face for `family`, as bytes for the PDFium call.
 
-    Returns `(font, recognised)`. Phase 1 ALWAYS substitutes -- no path here
-    reuses the original embedded font -- so the caller counts every written
-    block as a substitution. That number is meant to look large: it is the
-    honest size of the compromise, not a metric to tune down.
-
-    `recognised` is separate and matters more: an unknown family silently
-    becomes Helvetica, which turns a serif document sans-serif across every
-    page. The caller reports the count so a wrong guess is visible instead of
-    being discovered by reading the output.
-
-    # ponytail: a name list, because the descriptor flags that should answer
-    # this are wrong in real files. Widen the lists when a document shows a
-    # family they miss; the report names it.
+    Delegates to `domain.fonts`: the fitter lays text out using that same
+    mapping's measured advance, and two copies of this decision would let the
+    layout and the writer pick different faces.
     """
-    lowered = family.lower()
-    for needle in _MONO_FAMILIES:
-        if needle in lowered:
-            return b"Courier", True
-    for needle in _SERIF_FAMILIES:
-        if needle in lowered:
-            return b"Times-Roman", True
-    for needle in _SANS_FAMILIES:
-        if needle in lowered:
-            return _DEFAULT_FONT, True
-    return _DEFAULT_FONT, False
+    name, recognized = substitute_font(family)
+    return name.encode("ascii"), recognized
 
 
 def _strip_subset_tag(name: str) -> str:
@@ -377,14 +412,19 @@ class Pypdfium2TextEditAdapter:
         font = pdfium_c.FPDFText_LoadStandardFont(document.raw, styled)
         size = replacement.fitted.font_size
         for line_number, line in enumerate(replacement.fitted.lines):
-            obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, size)
-            pdfium_c.FPDFText_SetText(obj, _widestring(line))
+            obj, size = _place_within(
+                document,
+                font,
+                line,
+                size,
+                _line_x(replacement, line, line_number),
+                replacement.right,
+            )
             pdfium_c.FPDFPageObj_SetFillColor(obj, 0, 0, 0, 255)
             leading = replacement.line_spacing or size * _LINE_SPACING
             first = replacement.baseline or (replacement.top - size)
-            baseline = first - (line_number * leading)
-            pdfium_c.FPDFPageObj_Transform(
-                obj, 1, 0, 0, 1, _line_x(replacement, line, line_number), baseline
-            )
+            # Horizontal placement already happened inside `_place_within`, so
+            # this only lifts the line to its baseline.
+            pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, 0, first - line_number * leading)
             pdfium_c.FPDFPage_InsertObject(page.raw, obj)
         return 1, recognized

@@ -61,3 +61,38 @@ def test_the_drawn_bottom_uses_the_blocks_measured_leading():
     block = _block(700.0, lines=2, spacing=16.0)
     assert block.line_spacing == 16.0
     assert drawn_bottom(block, _fitted(3)) == 700.0 - 2 * 16.0 - 14.0 * 0.25
+
+
+def test_vertical_room_stops_at_the_next_block_below():
+    """Handing the fitter the real gap is what turns a collision into a
+    slightly smaller heading instead of a title landing on the text below."""
+    from docs.domain.collision import vertical_room
+
+    heading = _block(700.0, size=36.0)
+    body = _block(640.0)
+    room = vertical_room(heading, [heading, body])
+    assert room is not None
+    assert room == 700.0 - 640.0 - 36.0 * 0.35
+
+
+def test_vertical_room_is_none_with_nothing_below():
+    from docs.domain.collision import vertical_room
+
+    lone = _block(700.0)
+    assert vertical_room(lone, [lone]) is None
+
+
+def test_vertical_room_ignores_blocks_in_another_column():
+    from docs.domain.collision import vertical_room
+
+    left = _block(700.0, x=40.0, width=60.0)
+    right = _block(600.0, x=300.0, width=200.0)
+    assert vertical_room(left, [left, right]) is None
+
+
+def test_vertical_room_ignores_the_same_visual_line():
+    from docs.domain.collision import vertical_room
+
+    label = _block(700.0, x=108.0, width=42.0)
+    speech = _block(699.6, x=126.0, width=397.0)
+    assert vertical_room(label, [label, speech]) is None

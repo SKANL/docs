@@ -28,6 +28,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from itertools import pairwise
 
+from docs.domain.fonts import BOLD_MARKERS, ITALIC_MARKERS, has_marker
+
 # Baseline jitter within one visual line, as a fraction of font size. Measured
 # need: 2.3pt of drift on 11pt text, i.e. 0.21 -- 0.35 leaves headroom without
 # reaching the ~1.18 line spacing that separates genuine lines.
@@ -91,20 +93,6 @@ _STYLE_SUFFIXES = (
 )
 
 
-# Style lives in the font NAME: `Baskerville-Italic`, `Optima-Bold`. The
-# descriptor flags that should say so are wrong in real files (measured:
-# `Courier` reported FixedPitch=False), so the name is the honest signal --
-# and deriving style FROM it rather than storing it alongside means the two
-# cannot drift apart, which they promptly did when they were separate fields.
-ITALIC_MARKERS = ("italic", "oblique")
-BOLD_MARKERS = ("bold", "black", "heavy", "semibold")
-
-
-def _has_marker(name: str, markers: tuple[str, ...]) -> bool:
-    lowered = name.lower()
-    return any(marker in lowered for marker in markers)
-
-
 def base_family(name: str) -> str:
     """`Baskerville-Italic` -> `baskerville`; `Courier` -> `courier`.
 
@@ -150,11 +138,11 @@ class TextRun:
 
     @property
     def bold(self) -> bool:
-        return _has_marker(self.font_family, BOLD_MARKERS)
+        return has_marker(self.font_family, BOLD_MARKERS)
 
     @property
     def italic(self) -> bool:
-        return _has_marker(self.font_family, ITALIC_MARKERS)
+        return has_marker(self.font_family, ITALIC_MARKERS)
 
     @property
     def right(self) -> float:

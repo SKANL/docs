@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from docs.domain.block_grouping import TextBlock
+from docs.domain.fonts import advance_ratio_for
 
 # Mean glyph advance as a fraction of font size, for Helvetica-like faces.
 # ponytail: a constant, not real font metrics. PDFium exposes
@@ -83,18 +84,34 @@ def _estimated_width(text: str, font_size: float, ratio: float) -> float:
     return len(text) * font_size * ratio
 
 
-def _wrap(text: str, width: float, font_size: float, ratio: float) -> tuple[list[str], bool]:
+def _wrap(
+    text: str,
+    width: float,
+    font_size: float,
+    ratio: float,
+    first_width: float | None = None,
+) -> tuple[list[str], bool]:
     """Greedy word wrap. Returns the lines and whether any single word was
     wider than the box -- a word that cannot be broken cannot be fitted, and
-    shrinking further will not save it past the floor."""
+    shrinking further will not save it past the floor.
+
+    `first_width` is the room available on LINE 0, which a hanging indent
+    makes smaller than the block's width: dialogue whose speech begins to the
+    right of its label has its continuation lines tucked back underneath.
+    Wrapping line 0 to the full width overran the right margin by 94-101px on
+    every dialogue page of a real book -- an inch of text off the column,
+    invisible to any check that measured with the same estimator that laid it
+    out.
+    """
     lines: list[str] = []
     current = ""
     too_wide = False
     for word in text.split():
-        if _estimated_width(word, font_size, ratio) > width:
+        room = first_width if not lines and first_width is not None else width
+        if _estimated_width(word, font_size, ratio) > room:
             too_wide = True
         candidate = f"{current} {word}".strip()
-        if current and _estimated_width(candidate, font_size, ratio) > width:
+        if current and _estimated_width(candidate, font_size, ratio) > room:
             lines.append(current)
             current = word
         else:
@@ -104,7 +121,13 @@ def _wrap(text: str, width: float, font_size: float, ratio: float) -> tuple[list
     return lines, too_wide
 
 
-def fit_text_to_block(text: str, block: TextBlock, min_scale: float = 0.6) -> FittedText:
+def fit_text_to_block(
+    text: str,
+    block: TextBlock,
+    min_scale: float = 0.6,
+    max_height: float | None = None,
+    max_width: float | None = None,
+) -> FittedText:
     """Lay `text` out inside `block`, shrinking only as far as `min_scale`.
 
     `min_scale` is a floor rather than a target: text shrunk past roughly 60%
@@ -114,17 +137,11 @@ def fit_text_to_block(text: str, block: TextBlock, min_scale: float = 0.6) -> Fi
     if not text.strip():
         return FittedText(lines=[], font_size=block.font_size, overflowed=False)
 
-    # Prefer the block's own per-run measurement: it needs no assumption
-    # about how full each line was. The bbox-derived estimate stays as the
-    # fallback for blocks that carry no usable run widths.
-    measured = block.advance_ratio
-    low, high = _PLAUSIBLE_RATIO
-    if measured is not None and low <= measured <= high:
-        ratio = measured
-    else:
-        ratio = measured_advance_ratio(
-            block.text, block.width, block.font_size, block.line_count
-        )
+    # The SUBSTITUTE font's advance, not the source's. The source font never
+    # reaches the page -- its glyphs are not there -- so laying out with its
+    # metrics wraps for a font nobody will see, and the real one then runs off
+    # the margin. Measured from PDFium, per face and weight.
+    ratio = advance_ratio_for(block.font_family)
     base = block.font_size
     floor = base * min_scale
     # The room available is what the ORIGINAL text occupied, measured in
@@ -132,10 +149,24 @@ def fit_text_to_block(text: str, block: TextBlock, min_scale: float = 0.6) -> Fi
     # glyphs, not of the lines they sit on, so using it directly reported
     # every single-line block as overflowing while it still held its own
     # untranslated text.
-    available = max(block.height, block.line_count * base * _LINE_SPACING)
+    # The room that actually exists, not just the block's own extent. A
+    # heading whose translation needs a second line must SHRINK rather than
+    # grow into the paragraph beneath it -- the caller measures the gap and
+    # passes it here.
+    own_extent = max(block.height, block.line_count * base * _LINE_SPACING)
+    available = own_extent if max_height is None else max(max_height, base)
+    # A block's own right edge is where its ORIGINAL text happened to stop,
+    # not where the page allows text to reach. For a left-aligned heading that
+    # difference is the whole problem: "Passing the mom test" ended at x=400,
+    # so the longer Spanish wrapped to a second line and dropped onto the
+    # dialogue below, while 120pt of empty column sat unused beside it. The
+    # caller passes the column's right edge; the block's own is the fallback.
+    right = max_width if max_width is not None and max_width > block.x else block.right
+    width = right - block.x
+    first_width = max(right - block.first_line_x, 0.0) or width
     size = base
     while True:
-        lines, word_too_wide = _wrap(text, block.width, size, ratio)
+        lines, word_too_wide = _wrap(text, width, size, ratio, first_width)
         needed = len(lines) * size * _LINE_SPACING
         if not word_too_wide and needed <= available:
             return FittedText(lines=lines, font_size=size, overflowed=False, advance_ratio=ratio)

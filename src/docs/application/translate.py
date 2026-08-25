@@ -19,9 +19,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from docs.domain.alignment import detect_alignment, detect_column
+from docs.domain.alignment import Alignment, detect_alignment, detect_column
 from docs.domain.block_grouping import TextBlock, group_runs_into_blocks
-from docs.domain.collision import collides
+from docs.domain.collision import collides, vertical_room
 from docs.domain.ports.pdf_classify_port import PdfClassifyPort
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, PdfTextEditPort
 from docs.domain.ports.translation_memory_port import TranslationMemoryPort
@@ -128,10 +128,35 @@ class TranslateService:
         replacements: list[BlockReplacement] = []
         placements: list[tuple[TextBlock, FittedText]] = []
         for block in blocks:
+            alignment = detect_alignment(block.x, block.right, columns[block.page])
             text, from_cache, ok = self._translate_block(block.text, source_lang, target_lang)
             report.blocks_translated += int(ok)
             report.blocks_from_cache += int(from_cache)
-            fitted = fit_text_to_block(text, block)
+            column = columns[block.page]
+            # A SINGLE-LINE block's right edge is merely where its text
+            # stopped, so a longer translation may use the rest of the column
+            # -- that is what keeps a heading on one line instead of dropping
+            # its second line onto the text below.
+            #
+            # A MULTI-line block's right edge already IS the column, because
+            # some line reached it. Widening those was measured and was much
+            # worse: overflowing blocks went 2 -> 65 and colliding pages
+            # 2 -> 9, because every indented quote and dialogue turn stretched
+            # to the full page width.
+            usable_right = (
+                column.right
+                if column is not None
+                and alignment is Alignment.LEFT
+                and block.line_count == 1
+                and column.right > block.right
+                else block.right
+            )
+            fitted = fit_text_to_block(
+                text,
+                block,
+                max_height=vertical_room(block, blocks),
+                max_width=usable_right,
+            )
             report.blocks_overflowed += int(fitted.overflowed)
             placements.append((block, fitted))
             replacements.append(
@@ -144,8 +169,8 @@ class TranslateService:
                     first_line_x=block.first_line_x,
                     baseline=block.baseline,
                     line_spacing=block.line_spacing,
-                    right=block.right,
-                    alignment=detect_alignment(block.x, block.right, columns[block.page]),
+                    right=usable_right,
+                    alignment=alignment,
                 )
             )
 

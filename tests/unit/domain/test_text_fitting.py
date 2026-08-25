@@ -73,3 +73,24 @@ def test_a_translated_line_never_exceeds_its_box():
     ])
     fitted = fit_text_to_block("palabra " * 20, block)
     assert all(fitted.line_width(line) <= block.width + 1 for line in fitted.lines)
+
+
+def test_a_wider_column_lets_a_long_line_stay_on_one_line():
+    """A single-line block's right edge is merely where its text stopped. A
+    heading whose translation is longer may use the rest of the column instead
+    of dropping a second line onto the text beneath it."""
+    from docs.domain.text_fitting import fit_text_to_block
+
+    block = TextBlock(runs=[TextRun("Passing the mom test", 108.0, 700.0, 292.0, 25.0, 0, 36.0)])
+    narrow = fit_text_to_block("Como aprobar el test de la mama", block)
+    wide = fit_text_to_block("Como aprobar el test de la mama", block, max_width=523.0)
+    assert len(narrow.lines) > len(wide.lines)
+    assert len(wide.lines) == 1
+
+
+def test_max_height_forces_a_shrink_rather_than_a_second_line():
+    from docs.domain.text_fitting import fit_text_to_block
+
+    block = TextBlock(runs=[TextRun("Titulo", 72.0, 700.0, 300.0, 25.0, 0, 36.0)])
+    cramped = fit_text_to_block("Un titulo bastante mas largo que el original", block, max_height=20.0)
+    assert cramped.font_size < 36.0
