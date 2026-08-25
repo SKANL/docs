@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +15,7 @@ from docs.domain.docx_structure import resolve_part_text, sections_index, struct
 from docs.domain.markdown_text import normalize_heading
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
+from docs.infrastructure.tools.resolution import resolve_executable
 
 # A figure/table caption line ("Figura 12. ...", "Tabla 5. ...", "Gráfico 3. ...").
 # Centered at assembly like the image it labels (academic layout), never
@@ -40,17 +40,9 @@ def _parse_part(path: Path) -> tuple[ET.ElementTree, ET.Element]:
 
 
 def resolve_pandoc_executable(paths: dict[str, Any]) -> str | None:
-    resolved = shutil.which("pandoc")
-    if resolved:
-        return resolved
-    configured = paths.get("pandoc_bin")
-    if configured and Path(configured).exists() and Path(configured).is_file():
-        return str(configured)
-    for candidate in paths.get("pandoc_fallbacks", []):
-        candidate_path = Path(candidate)
-        if candidate_path.exists() and candidate_path.is_file():
-            return str(candidate_path)
-    return None
+    """Find pandoc. No well-known locations: its installer DOES set PATH, and
+    nothing observed says otherwise -- inventing paths would be superstition."""
+    return resolve_executable(paths, names=("pandoc",), config_prefix="pandoc")
 
 
 def _style_is_usable(document: Any, name: str | None) -> bool:

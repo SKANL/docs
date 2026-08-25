@@ -97,8 +97,6 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "fact_ledger": {},
         "inbox_dir": {},
         "issues_manifest": {},
-        "libreoffice_bin": {},
-        "libreoffice_fallbacks": {},
         "manual_dir": {},
         "manual_pdf": {},
         "output_draft_dir": {},
@@ -146,10 +144,11 @@ DYNAMICALLY_READ_KEYS: dict[str, tuple[str, ...]] = {
     # `_check_margins_and_cover_policy` reads these off `template.model_extra`
     # rather than off a name called `config`.
     "format.page_margins_cm": ("cover_policy",),
-    # Toolchain overrides. Each `resolve_*_executable(paths)` takes `paths` as
-    # a FUNCTION PARAMETER, so tracing them would mean following a value
-    # across a call boundary -- genuinely beyond an AST scan, and the reason
-    # this list exists rather than being an excuse. Each one is pinned by a
+    # Toolchain overrides. All five resolvers now share one ladder, which
+    # builds the key as `f"{config_prefix}_bin"` -- a name no AST scan can
+    # read, on top of `paths` arriving as a function parameter. Genuinely
+    # beyond static analysis, and the reason this list exists rather than
+    # being an excuse. Each one is pinned by a
     # behavioural test that a configured override is honoured, which is
     # stronger evidence than a pattern match over source text.
     "paths": (

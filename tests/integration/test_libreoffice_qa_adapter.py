@@ -12,7 +12,7 @@ from docs.infrastructure.docx.libreoffice_qa_adapter import (
     resolve_libreoffice_executable,
 )
 
-_HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
+_HAS_LIBREOFFICE = resolve_libreoffice_executable({}) is not None
 
 
 def test_resolve_libreoffice_executable_prefers_path_lookup():
@@ -29,7 +29,17 @@ def test_resolve_libreoffice_executable_falls_back_to_configured_bin(tmp_path, m
 
 
 def test_resolve_libreoffice_executable_returns_none_when_nothing_matches(monkeypatch):
+    # This used to stub only `shutil.which` and assert None -- which passed
+    # for the wrong reason: on a machine WITHOUT LibreOffice it was
+    # tautological, and on one WITH it, it failed the moment the resolver
+    # learned to look where the installer actually puts things. The "nothing
+    # matches" path is only real when nothing matches, so both rungs of the
+    # ladder are emptied.
     monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        "docs.infrastructure.docx.libreoffice_qa_adapter.libreoffice_locations", tuple
+    )
+
     assert resolve_libreoffice_executable({}) is None
 
 

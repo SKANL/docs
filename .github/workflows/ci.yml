@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Green on the day you pushed says nothing about today. This project is
+  # used in bursts -- four work sessions across 25 days, measured from its
+  # own run log -- so months can pass with nothing exercising the gates while
+  # pandoc, the Python dependencies and the runner image all move underneath.
+  # A weekly run is what turns "the tests passed last time I pushed" into
+  # "the tests pass now".
+  schedule:
+    - cron: "0 6 * * 1"
+  # And a button, for when you want to know before the week is out.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}

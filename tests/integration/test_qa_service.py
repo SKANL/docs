@@ -1,7 +1,6 @@
 # tests/integration/test_qa_service.py
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -9,10 +8,10 @@ from docx import Document
 
 from docs.application.format_audit import FormatAuditService
 from docs.application.qa import QaService
-from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
+from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter, resolve_libreoffice_executable
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 
-_HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
+_HAS_LIBREOFFICE = resolve_libreoffice_executable({}) is not None
 
 
 def _make_service() -> QaService:

@@ -1,0 +1,25 @@
+# Dependencies drift silently between work sessions. Measured on this repo:
+# four bursts of work across 25 days, and by the end ten packages were behind
+# -- nobody noticed until someone looked by hand.
+#
+# Dependabot only opens the PR. The three CI jobs decide whether it is safe,
+# and the structural golden decides whether it changed anyone's document.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      # One PR for the routine bumps: reviewing ten patch releases separately
+      # is how people start rubber-stamping them.
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  # A deprecated action fails the whole pipeline with a message about YAML,
+  # not about this project. Cheap to keep current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
