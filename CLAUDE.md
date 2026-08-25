@@ -102,13 +102,37 @@ three share; never re-declare an artifact filename or extension set locally.
   seven tests kept skipping after the resolver was fixed, because the guard
   used a bare `shutil.which` while the harness used its own resolver. A
   weaker check in the guard silently narrows the suite.
-- **"Found" is not "usable", and this repo has learned it four times:**
+- **"Found" is not "usable", and this repo has learned it five times:**
   `safe_style_name` (listed ≠ applicable), `MermaidSvgRenderer` (present ≠
-  renders), `doctor`'s toolchain checks (on PATH ≠ new enough), and
-  `ContentSignals.container_ok` (exists ≠ actually a `.docx`). Before adding
+  renders), `doctor`'s toolchain checks (on PATH ≠ new enough),
+  `ContentSignals.container_ok` (exists ≠ actually a `.docx`), and
+  `FPDFFont_GetFamilyName` (returns success ≠ returns a name). Before adding
   a check that a thing is THERE, ask what would make it unusable and check
   that instead.
 
+- **PDFium destroys text objects if you mutate a page with a textpage open.**
+  Holding the handle from `FPDFText_LoadPage` while calling
+  `FPDFPage_RemoveObject`/`InsertObject`/`GenerateContent` silently deletes
+  UNRELATED text objects and raises nothing. Measured: a 3-object page came
+  back as 2, one text run gone, `FPDFPage_CountObjects` 3 -> 2, all green.
+  `pypdfium2_text_edit_adapter.py` splits read and write phases with
+  `FPDFText_ClosePage` between them for exactly this reason — that ordering is
+  load-bearing, not tidiness. Pair every `RemoveObject` with
+  `FPDFPageObj_Destroy`; removal transfers ownership to the caller.
+- Any new PDF writer MUST end in `domain/pdf_id.py:normalize_pdf_id` — PDFium
+  stamps a RANDOM `/ID` into the trailer on every save, so identical input
+  yields different bytes (measured: same 1758-byte file, first difference at
+  offset 1662, only the trailer `/ID`; `/CreationDate` is inherited and
+  stable). Same shape as the zip-timestamp rule below, same consequence: a
+  "flaky" byte-identity test is a product bug. The replacement digest is the
+  SAME LENGTH as what it replaces so xref offsets stay valid. MECHANICAL:
+  `tests/architecture/test_pdf_writer_invariant.py`.
+- A fifth instance of **"found" is not "usable"**: `FPDFFont_GetFamilyName` is
+  present, returns success, and yields an EMPTY string for embedded subset
+  fonts. `FPDFFont_GetBaseFontName` returns `GGKEDP+DejaVuSans` — strip the
+  six-letter subset tag. That tag is itself the evidence that an embedded font
+  holds only the glyphs the document already used, which is why translation
+  must substitute fonts rather than reuse them.
 - Any new `.docx`/zip writer MUST end in
   `infrastructure/docx/deterministic_zip.py:normalize_docx_zip_timestamps` —
   stdlib zip stamps wall-clock entry times at 2s DOS granularity, so a
@@ -136,12 +160,13 @@ three share; never re-declare an artifact filename or extension set locally.
 
 ## Specs & planning — read on demand (do not @import)
 
-- `openspec/specs/<capability>/spec.md` — the CURRENT contract (12
+- `openspec/specs/<capability>/spec.md` — the CURRENT contract (13
   capabilities: agent-contract, asset-management, context-curation,
   document-ingest, document-lifecycle, document-pipeline, document-render,
-  document-revise, document-template, document-visuals,
+  document-revise, document-template, document-translate, document-visuals,
   template-provisioning, workspace-config). New SDD changes delta against
-  these.
+  these. `test_spec_symbol_references.py` pins the count, so adding a
+  capability is a deliberate two-line change, never a drift.
 - `openspec/changes/<change>/` — active SDD changes, if any (none right
   now). `state.yaml` is the phase record; tasks.md checkboxes are the truth
   of progress; planning artifacts are frozen, additive edits only.
@@ -231,6 +256,7 @@ three, and it is what keeps routing honest over time.
 |---|---|---|
 | `cli → application → domain`, infra implements ports | `test_graph_invariants.py` | yes (GitNexus) |
 | Every `.docx`/zip writer ends in `normalize_docx_zip_timestamps` | `test_docx_writer_invariant.py` | no |
+| Every PDF writer ends in `normalize_pdf_id` | `test_pdf_writer_invariant.py` | no |
 | Every capability spec names ≥3 real symbols, and no dead ones | `test_spec_symbol_references.py` | no |
 | Every CLI command has help text | `tests/unit/cli/test_command_help_coverage.py` | no |
 | Every emitted `Issue.code` is in the catalog, and vice versa | `tests/unit/domain/test_issue_codes.py` | no |
