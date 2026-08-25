@@ -50,3 +50,26 @@ def test_no_word_is_lost_while_wrapping():
     text = "uno dos tres cuatro cinco seis siete ocho"
     fitted = fit_text_to_block(text, _block(50.0, 200.0))
     assert " ".join(fitted.lines).split() == text.split()
+
+
+def test_the_calibration_divides_by_characters_per_line():
+    """`width` is the width of ONE line. Dividing it by the characters of ALL
+    lines halves a two-line block's ratio, and the estimator then packs twice
+    as much onto each line and runs off the right margin."""
+    from docs.domain.text_fitting import measured_advance_ratio
+
+    one_line = measured_advance_ratio("x" * 40, 200.0, 10.0, line_count=1)
+    two_lines = measured_advance_ratio("x" * 80, 200.0, 10.0, line_count=2)
+    assert one_line == two_lines
+
+
+def test_a_translated_line_never_exceeds_its_box(): 
+    """The end-to-end symptom of that bug: text running past the margin."""
+    from docs.domain.text_fitting import fit_text_to_block
+
+    block = TextBlock(runs=[
+        TextRun("una linea de texto de ejemplo aqui", 0.0, 20.0, 200.0, 10.0, 0, 10.0),
+        TextRun("y una segunda linea del mismo bloque", 0.0, 8.0, 200.0, 10.0, 0, 10.0),
+    ])
+    fitted = fit_text_to_block("palabra " * 20, block)
+    assert all(fitted.line_width(line) <= block.width + 1 for line in fitted.lines)

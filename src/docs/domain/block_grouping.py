@@ -24,6 +24,7 @@ Pure geometry. No I/O, no imports from other layers.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from itertools import pairwise
 
@@ -42,7 +43,29 @@ COLUMN_GAP_RATIO = 1.2
 ADJACENT_GAP_RATIO = 0.2
 
 # Vertical gap that ends a block, as a fraction of the taller line's height.
+# Only a FALLBACK: see `PARAGRAPH_SPACING_RATIO` for the signal that actually
+# works.
 PARAGRAPH_GAP_RATIO = 1.6
+
+# A new paragraph starts when the baseline step exceeds the page's own line
+# spacing by this much. Baseline-to-baseline is the signal a typesetter
+# actually used; the ink gap above only approximates it, and approximated
+# wrongly. Measured on a real page: lines within a paragraph stepped 16.0pt
+# and paragraphs were separated by 32.0pt -- exactly double -- yet the ink-gap
+# rule computed 19.2 against a 20.5 threshold and merged eight short
+# paragraphs into three. The page then had huge blank gaps and a paragraph
+# running past the right margin.
+#
+# 1.7 sits in the real gap between the two: ordinary leading runs 1.2-1.45
+# times the type size, and a paragraph break is 2 or more. 1.5 was inside the
+# leading range and split a body paragraph mid-sentence, because its italic
+# runs sit ~3pt lower than the roman ones on the same visual line, which
+# stretches the measured step.
+PARAGRAPH_SPACING_RATIO = 1.7
+
+# Below this many measured steps there is no reliable modal spacing, so the
+# ink-gap fallback is safer than a number derived from two lines.
+MIN_STEPS_FOR_SPACING = 3
 
 # Two stacked lines belong to one block only if they actually sit above each
 # other. Without this a chart title and a far-left axis label merge.
@@ -217,6 +240,28 @@ class TextBlock:
         return max(run.top for run in self.runs)
 
     @property
+    def advance_ratio(self) -> float | None:
+        """Mean glyph advance as a fraction of type size, measured EXACTLY.
+
+        Every run carries both its own text and the width that text actually
+        occupied, so this needs no assumption about how full each line was.
+        Deriving it from the block's bounding box instead required guessing
+        that every line ran the full column width, and the last line of a
+        paragraph never does -- that overestimated the advance, wrapped the
+        translation early, and left every paragraph visibly narrower than the
+        one it replaced.
+
+        `None` when there is nothing to measure; the caller then falls back to
+        a constant.
+        """
+        characters = sum(len(run.text) for run in self.runs)
+        total = sum(run.width for run in self.runs)
+        size = self.font_size
+        if characters == 0 or total <= 0 or size <= 0:
+            return None
+        return total / (characters * size)
+
+    @property
     def first_line_x(self) -> float:
         """Where the block's FIRST line actually started.
 
@@ -311,6 +356,34 @@ def _overlaps(block: TextBlock, segment: list[TextRun]) -> bool:
     return (right - left) / narrower >= MIN_HORIZONTAL_OVERLAP
 
 
+def modal_line_spacing(lines: list[list[TextRun]]) -> float | None:
+    """The page's own within-paragraph baseline step, or `None` if unknowable.
+
+    The SMALLEST step that repeats, not the most common one. A page alternates
+    between line steps and paragraph steps, so on a page of two-line
+    paragraphs the two counts tie and `most_common` picks whichever came
+    first -- measured: it returned the 32pt PARAGRAPH step as the line
+    spacing, which merged the entire page into a single block. Within-
+    paragraph spacing is by construction the smaller of the two.
+
+    "Repeats" filters out one-off steps: a heading's gap or a stray
+    superscript would otherwise become the whole page's line spacing.
+
+    Rounded to whole points before counting: real baselines carry sub-point
+    jitter, and without rounding every step looks unique and nothing repeats.
+    """
+    steps: list[int] = []
+    for upper, lower in pairwise(lines):
+        step = round(max(run.y for run in upper) - max(run.y for run in lower))
+        if step > 0:
+            steps.append(step)
+    if len(steps) < MIN_STEPS_FOR_SPACING:
+        return None
+    counts = Counter(steps)
+    repeated = [step for step, times in counts.items() if times >= 2]
+    return float(min(repeated)) if repeated else float(min(steps))
+
+
 def group_runs_into_blocks(runs: list[TextRun]) -> list[TextBlock]:
     """Group `runs` into reading blocks, page by page, top to bottom.
 
@@ -327,13 +400,15 @@ def group_runs_into_blocks(runs: list[TextRun]) -> list[TextBlock]:
     """
     blocks: list[TextBlock] = []
     for page in sorted({run.page for run in runs}):
+        page_lines = _lines([r for r in runs if r.page == page])
+        spacing = modal_line_spacing(page_lines)
         open_blocks: list[TextBlock] = []
         previous_line: list[TextRun] | None = None
-        for line in _lines([r for r in runs if r.page == page]):
+        for line in page_lines:
             line_segments = _segments(line)
             attached: list[TextBlock] = []
             for segment in line_segments:
-                target = _continuable(open_blocks, segment, previous_line)
+                target = _continuable(open_blocks, segment, previous_line, spacing)
                 if target is None:
                     target = TextBlock()
                     blocks.append(target)
@@ -345,15 +420,31 @@ def group_runs_into_blocks(runs: list[TextRun]) -> list[TextBlock]:
 
 
 def _continuable(
-    open_blocks: list[TextBlock], segment: list[TextRun], previous_line: list[TextRun] | None
+    open_blocks: list[TextBlock],
+    segment: list[TextRun],
+    previous_line: list[TextRun] | None,
+    spacing: float | None = None,
 ) -> TextBlock | None:
     """The open block this segment continues, or `None` to start a new one."""
     if previous_line is None:
         return None
-    tallest = max(run.height for run in (*previous_line, *segment))
-    gap = min(run.y for run in previous_line) - max(run.top for run in segment)
-    if gap > tallest * PARAGRAPH_GAP_RATIO:
-        return None
+    if spacing is not None:
+        step = max(run.y for run in previous_line) - max(run.y for run in segment)
+        # Take the LARGER of the page's measured spacing and the local type
+        # size. One page-wide number is fragile when a page mixes headings
+        # with body text -- measured, a page whose body stepped 16pt reported
+        # a page-global 13pt because its running head is smaller, and the
+        # tighter threshold then split a paragraph mid-sentence. The local
+        # size cannot be fooled that way, and the measured spacing catches
+        # generous leading the size alone would miss.
+        local = max(run.font_size for run in (*previous_line, *segment))
+        if step > max(spacing, local) * PARAGRAPH_SPACING_RATIO:
+            return None
+    else:
+        tallest = max(run.height for run in (*previous_line, *segment))
+        gap = min(run.y for run in previous_line) - max(run.top for run in segment)
+        if gap > tallest * PARAGRAPH_GAP_RATIO:
+            return None
     segment_size = max(run.font_size for run in segment)
     segment_style = base_family(segment[0].font_family)
     for block in open_blocks:

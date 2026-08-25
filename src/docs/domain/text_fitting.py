@@ -50,7 +50,9 @@ class FittedText:
 _PLAUSIBLE_RATIO = (0.25, 0.9)
 
 
-def measured_advance_ratio(text: str, width: float, font_size: float) -> float:
+def measured_advance_ratio(
+    text: str, width: float, font_size: float, line_count: int = 1
+) -> float:
     """Calibrate the width estimate against the block's OWN original text.
 
     The constant below is a guess for a Helvetica-like face, and a guess is
@@ -62,9 +64,15 @@ def measured_advance_ratio(text: str, width: float, font_size: float) -> float:
     that text actually occupied. Dividing one by the other gives this
     document's real ratio, per block, for free. Short blocks are where the
     constant's error dominates, and they are also where this is most exact.
+
+    `line_count` is not optional in spirit: `width` is the width of ONE line,
+    so dividing it by the characters of ALL the lines halves the ratio of a
+    two-line block. The estimator then believes every glyph is half as wide,
+    packs twice as much onto each line, and the text runs off the right
+    margin -- which is exactly what it did on a real page.
     """
-    characters = len(text.strip())
-    if characters == 0 or font_size <= 0 or width <= 0:
+    characters = len(text.strip()) / max(line_count, 1)
+    if characters <= 0 or font_size <= 0 or width <= 0:
         return _MEAN_ADVANCE_RATIO
     ratio = width / (characters * font_size)
     low, high = _PLAUSIBLE_RATIO
@@ -106,7 +114,17 @@ def fit_text_to_block(text: str, block: TextBlock, min_scale: float = 0.6) -> Fi
     if not text.strip():
         return FittedText(lines=[], font_size=block.font_size, overflowed=False)
 
-    ratio = measured_advance_ratio(block.text, block.width, block.font_size)
+    # Prefer the block's own per-run measurement: it needs no assumption
+    # about how full each line was. The bbox-derived estimate stays as the
+    # fallback for blocks that carry no usable run widths.
+    measured = block.advance_ratio
+    low, high = _PLAUSIBLE_RATIO
+    if measured is not None and low <= measured <= high:
+        ratio = measured
+    else:
+        ratio = measured_advance_ratio(
+            block.text, block.width, block.font_size, block.line_count
+        )
     base = block.font_size
     floor = base * min_scale
     # The room available is what the ORIGINAL text occupied, measured in

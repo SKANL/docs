@@ -185,3 +185,53 @@ def test_first_line_x_equals_x_without_a_hanging_indent():
     runs = [_run("una linea", 72.0, 700.0, w=200.0)]
     block = group_runs_into_blocks(runs)[0]
     assert block.first_line_x == block.x
+
+
+def _line(text, y, x=72.0, size=14.0, w=400.0):
+    return TextRun(text, x, y, w, size * 0.7, 0, size, "Baskerville")
+
+
+def test_paragraphs_separate_on_baseline_step_not_ink_gap():
+    """Measured on a real page: lines within a paragraph stepped 16pt and
+    paragraphs were separated by 32pt -- exactly double -- yet the ink-gap
+    rule computed 19.2 against a 20.5 threshold and merged eight short
+    paragraphs into three, leaving huge blank gaps and a paragraph running
+    past the right margin."""
+    runs = [
+        _line("primera linea del parrafo uno", 700.0),
+        _line("segunda linea del parrafo uno", 684.0),
+        _line("primera linea del parrafo dos", 652.0),
+        _line("segunda linea del parrafo dos", 636.0),
+        _line("primera linea del parrafo tres", 604.0),
+        _line("segunda linea del parrafo tres", 588.0),
+    ]
+    blocks = group_runs_into_blocks(runs)
+    assert len(blocks) == 3, [b.text for b in blocks]
+
+
+def test_generous_leading_does_not_split_a_paragraph():
+    """A body paragraph stepping 22pt at 14pt type is leading, not a break --
+    its italic runs sit ~3pt lower than the roman ones on the same visual
+    line, which stretches the measured step."""
+    runs = [
+        _line("We know we ought to talk to customers", 114.6),
+        _line("But we still end up building stuff nobody buys", 92.2),
+        _line("people is meant to prevent?", 73.0),
+    ]
+    assert len(group_runs_into_blocks(runs)) == 1
+
+
+def test_line_spacing_is_the_smallest_repeating_step():
+    """A page of two-line paragraphs ties the line step against the paragraph
+    step, and picking the most common one returned the 32pt PARAGRAPH step as
+    the line spacing -- which merged an entire page into a single block."""
+    from docs.domain.block_grouping import _lines, modal_line_spacing
+
+    runs = [_line(f"linea {n}", y) for n, y in enumerate([700.0, 684.0, 652.0, 636.0, 604.0, 588.0])]
+    assert modal_line_spacing(_lines(runs)) == 16.0
+
+
+def test_too_few_lines_yields_no_measured_spacing():
+    from docs.domain.block_grouping import _lines, modal_line_spacing
+
+    assert modal_line_spacing(_lines([_line("una", 700.0), _line("dos", 684.0)])) is None
