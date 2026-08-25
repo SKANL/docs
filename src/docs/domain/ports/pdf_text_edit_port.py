@@ -25,6 +25,10 @@ class WriteReport:
 
     blocks_written: int
     fonts_substituted: int
+    fonts_unrecognized: int = 0
+    """Blocks whose original family matched no known face and fell back to
+    Helvetica. A serif document silently turning sans-serif on every page is
+    exactly the kind of degradation this harness refuses to hide."""
 
 
 class PdfTextEditPort(Protocol):

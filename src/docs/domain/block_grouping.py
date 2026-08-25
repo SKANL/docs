@@ -48,6 +48,14 @@ PARAGRAPH_GAP_RATIO = 1.6
 # other. Without this a chart title and a far-left axis label merge.
 MIN_HORIZONTAL_OVERLAP = 0.1
 
+# A change of font size between stacked lines is a block boundary: a heading
+# and the paragraph under it are not one paragraph. Without this, a 24pt
+# heading absorbed the 11pt body text below it, and since a block draws at its
+# LARGEST size the whole paragraph was rendered at heading size -- a page of
+# giant overlapping text. Measured on a real book, and the visual collapse
+# floor caught it at 0.39.
+MAX_FONT_SIZE_RATIO = 1.25
+
 
 @dataclass(frozen=True)
 class TextRun:
@@ -69,6 +77,12 @@ class TextRun:
     # fail the visual gate for a reason nobody could see. Defaulted so
     # pure-geometry callers need not supply it.
     font_family: str = ""
+    # Style travels with the run for the same reason the family does: the
+    # source distinguishes speech from inner thought with italics, and a
+    # translation that flattens both into roman loses information the author
+    # put there on purpose.
+    bold: bool = False
+    italic: bool = False
 
     @property
     def right(self) -> float:
@@ -123,8 +137,39 @@ class TextBlock:
 
     @property
     def font_family(self) -> str:
-        """The first named family in the block, or "" when none is known."""
+        """The first named family in the block, or "" when none is known.
+
+        Safe only because a family CHANGE ends a block: without that rule this
+        rendered a whole dialogue line in the monospace face of its "Son:"
+        label, swallowing the serif speech beside it.
+        """
         return next((run.font_family for run in self.runs if run.font_family), "")
+
+    @property
+    def bold(self) -> bool:
+        return self.runs[0].bold
+
+    @property
+    def italic(self) -> bool:
+        return self.runs[0].italic
+
+    @property
+    def style(self) -> str:
+        """What makes a block typographically homogeneous: the FAMILY only.
+
+        Deliberately NOT bold/italic. A family change is a change of ROLE -- a
+        monospace `Son:` label beside serif dialogue -- and those are separate
+        units. An italic run inside a serif paragraph is EMPHASIS inside one
+        sentence, and that sentence has to reach the translator whole.
+
+        Measured: splitting on italic too took a 120-page book from 1191
+        blocks to 1596 and the blocks that no longer fit their box from 21 to
+        218, because each fragment inherits only its own narrow bbox. The
+        emphasis is lost either way -- after translation there is no mapping
+        from translated words back to the italic source run -- so paying for
+        it in fit and in translation quality buys nothing.
+        """
+        return self.font_family
 
     @property
     def x(self) -> float:
@@ -141,6 +186,22 @@ class TextBlock:
     @property
     def top(self) -> float:
         return max(run.top for run in self.runs)
+
+    @property
+    def line_count(self) -> int:
+        """How many baselines the ORIGINAL text occupied.
+
+        The fitter needs this because `height` is the height of the INK, not
+        of the lines: a single line of 14pt text measures about 9-13pt tall,
+        so comparing it against a 16.5pt line height marks every single-line
+        block as overflowing -- while it holds the very text the box was drawn
+        around.
+        """
+        baselines: list[float] = []
+        for run in self.runs:
+            if not any(abs(run.y - y) <= _line_tolerance(run, run) for y in baselines):
+                baselines.append(run.y)
+        return max(len(baselines), 1)
 
     @property
     def width(self) -> float:
@@ -187,7 +248,11 @@ def _segments(line: list[TextRun]) -> list[list[TextRun]]:
     """
     segments: list[list[TextRun]] = [[line[0]]]
     for previous, run in pairwise(line):
-        if run.x - previous.right > COLUMN_GAP_RATIO * max(previous.font_size, run.font_size):
+        style_changed = previous.font_family != run.font_family
+        size_changed = max(previous.font_size, run.font_size) > MAX_FONT_SIZE_RATIO * min(
+            previous.font_size, run.font_size
+        ) if min(previous.font_size, run.font_size) > 0 else False
+        if style_changed or size_changed or run.x - previous.right > COLUMN_GAP_RATIO * max(previous.font_size, run.font_size):
             segments.append([run])
         else:
             segments[-1].append(run)
@@ -246,7 +311,21 @@ def _continuable(
     gap = min(run.y for run in previous_line) - max(run.top for run in segment)
     if gap > tallest * PARAGRAPH_GAP_RATIO:
         return None
+    segment_size = max(run.font_size for run in segment)
+    segment_style = segment[0].font_family
     for block in open_blocks:
-        if _overlaps(block, segment):
-            return block
+        if not _overlaps(block, segment):
+            continue
+        if block.style != segment_style:
+            # A different face or weight means a different role. Merging them
+            # renders the block in whichever style came first.
+            continue
+        larger = max(block.font_size, segment_size)
+        smaller = min(block.font_size, segment_size)
+        if smaller > 0 and larger / smaller > MAX_FONT_SIZE_RATIO:
+            # Different type size means different role. Joining them makes the
+            # block draw at the LARGER size, which renders body text at
+            # heading size and buries the page.
+            continue
+        return block
     return None

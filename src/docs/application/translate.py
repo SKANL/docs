@@ -54,6 +54,7 @@ class TranslateReport:
     blocks_from_cache: int = 0
     blocks_overflowed: int = 0
     fonts_substituted: int = 0
+    fonts_unrecognized: int = 0
     pages_untrusted: list[int] = field(default_factory=list)
 
     @property
@@ -71,6 +72,8 @@ class TranslateReport:
             parts.append(f"{self.blocks_overflowed} no entraron en su caja")
         if self.fonts_substituted:
             parts.append(f"{self.fonts_substituted} con fuente sustituida")
+        if self.fonts_unrecognized:
+            parts.append(f"{self.fonts_unrecognized} con familia no reconocida")
         if self.pages_untrusted:
             pages = ", ".join(str(page) for page in self.pages_untrusted)
             parts.append(f"paginas multicolumna sin verificar: {pages}")
@@ -125,6 +128,7 @@ class TranslateService:
 
         write_report = self._editor.write_blocks(src, out, replacements)
         report.fonts_substituted = write_report.fonts_substituted
+        report.fonts_unrecognized = write_report.fonts_unrecognized
         return report
 
     def _translate_block(

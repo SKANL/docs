@@ -43,16 +43,53 @@ _SUBSET_TAG_LENGTH = 6
 # ponytail: base-14 only, so non-Latin targets (Cyrillic, CJK, Arabic) are out
 # of reach. The upgrade path is `FPDFText_LoadFont` with a bundled Noto face,
 # which is a licensing and file-size decision rather than a code one.
-_STANDARD_FONTS = (
-    ("times", b"Times-Roman"),
-    ("serif", b"Times-Roman"),
-    ("georgia", b"Times-Roman"),
-    ("garamond", b"Times-Roman"),
-    ("courier", b"Courier"),
-    ("mono", b"Courier"),
-    ("consolas", b"Courier"),
+#
+# The family NAME is the signal, not the descriptor flags. PDFium exposes
+# `FPDFFont_GetFlags`, and on a real book those flags are simply wrong:
+# `Courier` reported `FixedPitch=False` and `Baskerville` reported
+# `Serif=False`. Both false. The call succeeds and the answer is useless.
+#
+# The list has to be broad enough to cover a real document's body face. It
+# started with four names, and `Baskerville` -- 2631 runs, the entire body of
+# a 120-page book -- fell through to Helvetica, silently turning a serif book
+# sans-serif. An unrecognised family is now COUNTED and reported rather than
+# quietly guessed at.
+_SERIF_FAMILIES = (
+    "times", "serif", "georgia", "garamond", "baskerville", "palatino",
+    "caslon", "bodoni", "didot", "minion", "cambria", "book", "roman",
+    "century", "clarendon", "utopia", "charter", "hoefler", "sabon", "hiramin",
+)
+_MONO_FAMILIES = ("courier", "mono", "consolas", "menlo", "monaco", "typewriter")
+_SANS_FAMILIES = (
+    "helvetica", "arial", "optima", "sans", "verdana", "tahoma", "calibri",
+    "futura", "gill", "frutiger", "univers", "myriad", "lato", "roboto", "dejavu",
 )
 _DEFAULT_FONT = b"Helvetica"
+
+# Base-14 covers four styles per family, so italic and bold survive the
+# substitution instead of being flattened. The source book distinguishes
+# spoken words from inner thought purely with italics; dropping that loses
+# meaning the author put there deliberately.
+_BASE14 = {
+    b"Times-Roman": (b"Times-Roman", b"Times-Bold", b"Times-Italic", b"Times-BoldItalic"),
+    b"Helvetica": (b"Helvetica", b"Helvetica-Bold", b"Helvetica-Oblique", b"Helvetica-BoldOblique"),
+    b"Courier": (b"Courier", b"Courier-Bold", b"Courier-Oblique", b"Courier-BoldOblique"),
+}
+
+# The base font name is where style lives: `Baskerville-Italic`, `Optima-Bold`.
+_ITALIC_MARKERS = ("italic", "oblique")
+_BOLD_MARKERS = ("bold", "black", "heavy", "semibold")
+
+
+def _styled(font: bytes, bold: bool, italic: bool) -> bytes:
+    regular, bold_face, italic_face, both = _BASE14[font]
+    if bold and italic:
+        return both
+    if bold:
+        return bold_face
+    if italic:
+        return italic_face
+    return regular
 
 
 def _widestring(text: str) -> Any:
@@ -60,19 +97,48 @@ def _widestring(text: str) -> Any:
     return ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort))
 
 
-def _standard_font_for(family: str) -> bytes:
+def _standard_font_for(family: str) -> tuple[bytes, bool]:
     """Map an embedded family onto a base-14 font.
 
-    Phase 1 ALWAYS substitutes -- no path here reuses the original embedded
-    font -- so the caller counts every written block as a substitution. That
-    number is meant to look large: it is the honest size of the compromise,
-    not a metric to tune down.
+    Returns `(font, recognised)`. Phase 1 ALWAYS substitutes -- no path here
+    reuses the original embedded font -- so the caller counts every written
+    block as a substitution. That number is meant to look large: it is the
+    honest size of the compromise, not a metric to tune down.
+
+    `recognised` is separate and matters more: an unknown family silently
+    becomes Helvetica, which turns a serif document sans-serif across every
+    page. The caller reports the count so a wrong guess is visible instead of
+    being discovered by reading the output.
+
+    # ponytail: a name list, because the descriptor flags that should answer
+    # this are wrong in real files. Widen the lists when a document shows a
+    # family they miss; the report names it.
     """
     lowered = family.lower()
-    for needle, font in _STANDARD_FONTS:
+    for needle in _MONO_FAMILIES:
         if needle in lowered:
-            return font
-    return _DEFAULT_FONT
+            return b"Courier", True
+    for needle in _SERIF_FAMILIES:
+        if needle in lowered:
+            return b"Times-Roman", True
+    for needle in _SANS_FAMILIES:
+        if needle in lowered:
+            return _DEFAULT_FONT, True
+    return _DEFAULT_FONT, False
+
+
+def _style_of(family: str) -> tuple[bool, bool]:
+    """`(bold, italic)` read from the base font name.
+
+    The name is where style lives in these files: `Baskerville-Italic`,
+    `Optima-Bold`. The descriptor flags that should say so are wrong (measured:
+    `Courier` claimed FixedPitch=False), so the name is the honest signal.
+    """
+    lowered = family.lower()
+    return (
+        any(marker in lowered for marker in _BOLD_MARKERS),
+        any(marker in lowered for marker in _ITALIC_MARKERS),
+    )
 
 
 def _strip_subset_tag(name: str) -> str:
@@ -171,6 +237,8 @@ class Pypdfium2TextEditAdapter:
         for obj, text, (left, bottom, right, top) in _text_objects(page, textpage):
             if not text.strip():
                 continue
+            family = self._family_of(obj)
+            bold, italic = _style_of(family)
             found.append(
                 TextRun(
                     text=text,
@@ -180,7 +248,9 @@ class Pypdfium2TextEditAdapter:
                     height=top - bottom,
                     page=page_index,
                     font_size=_effective_font_size(obj),
-                    font_family=self._family_of(obj),
+                    font_family=family,
+                    bold=bold,
+                    italic=italic,
                 )
             )
         return found
@@ -211,6 +281,7 @@ class Pypdfium2TextEditAdapter:
             by_page.setdefault(replacement.page, []).append(replacement)
 
         substituted = 0
+        unrecognized = 0
         document = pdfium.PdfDocument(str(pdf_path))
         try:
             for page_index, page_replacements in by_page.items():
@@ -223,7 +294,9 @@ class Pypdfium2TextEditAdapter:
                     for obj in objects:
                         pdfium_c.FPDFPage_RemoveObject(page.raw, obj)
                         pdfium_c.FPDFPageObj_Destroy(obj)
-                    substituted += self._draw(document, page, replacement)
+                    drawn, known = self._draw(document, page, replacement)
+                    substituted += drawn
+                    unrecognized += 0 if known else 1
                 pdfium_c.FPDFPage_GenerateContent(page.raw)
 
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -234,7 +307,11 @@ class Pypdfium2TextEditAdapter:
         # PDFium stamps a random /ID on save; without this every byte-identity
         # test in this capability is flaky for a reason that is a real bug.
         out_path.write_bytes(normalize_pdf_id(out_path.read_bytes()))
-        return WriteReport(blocks_written=len(replacements), fonts_substituted=substituted)
+        return WriteReport(
+            blocks_written=len(replacements),
+            fonts_substituted=substituted,
+            fonts_unrecognized=unrecognized,
+        )
 
     def _targets_for(
         self, page: Any, replacements: list[BlockReplacement]
@@ -256,9 +333,12 @@ class Pypdfium2TextEditAdapter:
             pdfium_c.FPDFText_ClosePage(textpage)
         return [(replacements[index], matched[index]) for index in sorted(matched)]
 
-    def _draw(self, document: Any, page: Any, replacement: BlockReplacement) -> int:
+    def _draw(self, document: Any, page: Any, replacement: BlockReplacement) -> tuple[int, bool]:
         family = replacement.remove[0].font_family if replacement.remove else ""
-        font = pdfium_c.FPDFText_LoadStandardFont(document.raw, _standard_font_for(family))
+        font_name, recognized = _standard_font_for(family)
+        run = replacement.remove[0] if replacement.remove else None
+        styled = _styled(font_name, bool(run and run.bold), bool(run and run.italic))
+        font = pdfium_c.FPDFText_LoadStandardFont(document.raw, styled)
         size = replacement.fitted.font_size
         for line_number, line in enumerate(replacement.fitted.lines):
             obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, size)
@@ -267,4 +347,4 @@ class Pypdfium2TextEditAdapter:
             baseline = replacement.top - size - (line_number * size * _LINE_SPACING)
             pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, replacement.x, baseline)
             pdfium_c.FPDFPage_InsertObject(page.raw, obj)
-        return 1
+        return 1, recognized

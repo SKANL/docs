@@ -103,3 +103,36 @@ def test_a_run_carries_its_font_family_when_one_is_known():
 
 def test_font_family_defaults_to_empty_for_pure_geometry_callers():
     assert _run("x", 0.0, 0.0).font_family == ""
+
+
+def test_a_heading_does_not_absorb_the_paragraph_below_it():
+    """A block draws at its LARGEST font size, so merging a 24pt heading with
+    the 11pt body under it renders the whole paragraph at heading size. That
+    shipped a page of giant overlapping text on a real book."""
+    runs = [
+        _run("Introduccion", 62.0, 700.0, w=120.0, h=24.0, size=24.0),
+        _run("Tratar de aprender de las conversaciones", 62.0, 676.0, w=240.0, h=11.0, size=11.0),
+    ]
+    blocks = group_runs_into_blocks(runs)
+    assert len(blocks) == 2
+    assert blocks[0].font_size == 24.0
+    assert blocks[1].font_size == 11.0
+
+
+def test_lines_of_the_same_size_still_form_one_paragraph():
+    """The size-change rule must not shatter ordinary body text."""
+    runs = [
+        _run("primera linea del parrafo", 62.0, 700.0, w=200.0, h=11.0, size=11.0),
+        _run("segunda linea del parrafo", 62.0, 687.0, w=200.0, h=11.0, size=11.0),
+    ]
+    assert len(group_runs_into_blocks(runs)) == 1
+
+
+def test_a_small_size_difference_does_not_split_a_paragraph():
+    """Real documents jitter by a fraction of a point; only a real change of
+    type size is a boundary."""
+    runs = [
+        _run("primera linea", 62.0, 700.0, w=200.0, h=11.0, size=11.0),
+        _run("segunda linea", 62.0, 687.0, w=200.0, h=11.2, size=11.2),
+    ]
+    assert len(group_runs_into_blocks(runs)) == 1

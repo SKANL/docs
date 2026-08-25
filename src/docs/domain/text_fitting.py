@@ -36,11 +36,38 @@ class FittedText:
     overflowed: bool
 
 
-def _estimated_width(text: str, font_size: float) -> float:
-    return len(text) * font_size * _MEAN_ADVANCE_RATIO
+# A block whose measured ratio falls outside this is not measuring what we
+# think -- a one-character block, a bbox that includes leading art -- so the
+# default is safer than the measurement.
+_PLAUSIBLE_RATIO = (0.25, 0.9)
 
 
-def _wrap(text: str, width: float, font_size: float) -> tuple[list[str], bool]:
+def measured_advance_ratio(text: str, width: float, font_size: float) -> float:
+    """Calibrate the width estimate against the block's OWN original text.
+
+    The constant below is a guess for a Helvetica-like face, and a guess is
+    what produced 215 blocks reported as not fitting their box while still
+    holding their untranslated English -- which is impossible by definition,
+    since the original text is exactly what the box was drawn around.
+
+    We already know the truth for every block: its source text and the width
+    that text actually occupied. Dividing one by the other gives this
+    document's real ratio, per block, for free. Short blocks are where the
+    constant's error dominates, and they are also where this is most exact.
+    """
+    characters = len(text.strip())
+    if characters == 0 or font_size <= 0 or width <= 0:
+        return _MEAN_ADVANCE_RATIO
+    ratio = width / (characters * font_size)
+    low, high = _PLAUSIBLE_RATIO
+    return ratio if low <= ratio <= high else _MEAN_ADVANCE_RATIO
+
+
+def _estimated_width(text: str, font_size: float, ratio: float) -> float:
+    return len(text) * font_size * ratio
+
+
+def _wrap(text: str, width: float, font_size: float, ratio: float) -> tuple[list[str], bool]:
     """Greedy word wrap. Returns the lines and whether any single word was
     wider than the box -- a word that cannot be broken cannot be fitted, and
     shrinking further will not save it past the floor."""
@@ -48,10 +75,10 @@ def _wrap(text: str, width: float, font_size: float) -> tuple[list[str], bool]:
     current = ""
     too_wide = False
     for word in text.split():
-        if _estimated_width(word, font_size) > width:
+        if _estimated_width(word, font_size, ratio) > width:
             too_wide = True
         candidate = f"{current} {word}".strip()
-        if current and _estimated_width(candidate, font_size) > width:
+        if current and _estimated_width(candidate, font_size, ratio) > width:
             lines.append(current)
             current = word
         else:
@@ -71,13 +98,20 @@ def fit_text_to_block(text: str, block: TextBlock, min_scale: float = 0.6) -> Fi
     if not text.strip():
         return FittedText(lines=[], font_size=block.font_size, overflowed=False)
 
+    ratio = measured_advance_ratio(block.text, block.width, block.font_size)
     base = block.font_size
     floor = base * min_scale
+    # The room available is what the ORIGINAL text occupied, measured in
+    # LINES rather than in ink height. `block.height` is the height of the
+    # glyphs, not of the lines they sit on, so using it directly reported
+    # every single-line block as overflowing while it still held its own
+    # untranslated text.
+    available = max(block.height, block.line_count * base * _LINE_SPACING)
     size = base
     while True:
-        lines, word_too_wide = _wrap(text, block.width, size)
+        lines, word_too_wide = _wrap(text, block.width, size, ratio)
         needed = len(lines) * size * _LINE_SPACING
-        if not word_too_wide and needed <= block.height:
+        if not word_too_wide and needed <= available:
             return FittedText(lines=lines, font_size=size, overflowed=False)
         if size <= floor:
             return FittedText(lines=lines, font_size=floor, overflowed=True)
