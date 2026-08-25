@@ -160,3 +160,42 @@ def test_non_text_objects_are_preserved_exactly(sample_pdf, tmp_path):
     non_text_before = {k: v for k, v in before.items() if k != pc.FPDF_PAGEOBJ_TEXT}
     non_text_after = {k: v for k, v in after.items() if k != pc.FPDF_PAGEOBJ_TEXT}
     assert non_text_after == non_text_before, "a non-text page object was altered"
+
+
+def test_font_size_comes_from_the_text_matrix_not_the_bare_api(tmp_path):
+    """`FPDFTextObj_GetFontSize` returns the UNSCALED size; real documents
+    carry the true size in the text matrix.
+
+    Measured on a 120-page book: every run reported 1.00 while its matrix held
+    11, 13 or 14. Trusting the bare call redraws the whole document at one
+    point — invisible text — and makes every width estimate in the fitter
+    wrong by more than tenfold.
+
+    A matplotlib fixture has an identity matrix and hides this completely,
+    which is why this test builds a SCALED one by hand.
+    """
+    import ctypes
+
+    import pypdfium2 as pdfium
+    import pypdfium2.raw as pc
+
+    doc = pdfium.PdfDocument.new()
+    page = doc.new_page(300, 200)
+    font = pc.FPDFText_LoadStandardFont(doc.raw, b"Helvetica")
+    obj = pc.FPDFPageObj_CreateTextObj(doc.raw, font, 1.0)  # size 1 ...
+    buf = ctypes.create_string_buffer("Escalado".encode("utf-16-le") + b"\x00\x00")
+    pc.FPDFText_SetText(obj, ctypes.cast(buf, ctypes.POINTER(ctypes.c_ushort)))
+    pc.FPDFPageObj_SetFillColor(obj, 0, 0, 0, 255)
+    pc.FPDFPageObj_Transform(obj, 14, 0, 0, 14, 20, 100)  # ... scaled x14
+    pc.FPDFPage_InsertObject(page.raw, obj)
+    pc.FPDFPage_GenerateContent(page.raw)
+    scaled = tmp_path / "scaled.pdf"
+    doc.save(str(scaled))
+    doc.close()
+
+    runs = Pypdfium2TextEditAdapter().read_runs(scaled)
+    assert runs, "the scaled fixture produced no readable run"
+    assert runs[0].font_size == pytest.approx(14.0, abs=0.5), (
+        f"expected the matrix-scaled 14pt, got {runs[0].font_size} "
+        "(1.0 means the bare API value leaked through)"
+    )

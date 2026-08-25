@@ -20,6 +20,7 @@ paired with `FPDFPageObj_Destroy`.
 from __future__ import annotations
 
 import ctypes
+import math
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +94,31 @@ def _object_text(obj: Any, textpage: Any) -> str:
     return buffer.raw[: length * 2].decode("utf-16-le").rstrip("\x00")
 
 
+def _effective_font_size(obj: Any) -> float:
+    """The size the text is actually DRAWN at, not the one the API reports.
+
+    `FPDFTextObj_GetFontSize` returns the size in unscaled text space, and a
+    real document scales it through the text matrix instead. Measured on a
+    120-page book: every run reported **1.00** while its matrix carried the
+    true 11, 13 or 14. Trusting the bare call would have redrawn the whole
+    document at one point -- invisible text -- and made every width estimate
+    in `fit_text_to_block` wrong by more than tenfold.
+
+    A matplotlib-generated fixture has an identity matrix, so the bare call
+    looks correct there. That is exactly why this needed a real document.
+
+    `hypot(a, b)` rather than `a` alone so rotated text reports its true
+    scale rather than its horizontal projection.
+    """
+    size = ctypes.c_float()
+    pdfium_c.FPDFTextObj_GetFontSize(obj, size)
+    matrix = pdfium_c.FS_MATRIX()
+    if not pdfium_c.FPDFPageObj_GetMatrix(obj, matrix):
+        return size.value
+    scale = math.hypot(matrix.a, matrix.b)
+    return size.value * scale if scale > 0 else size.value
+
+
 def _object_bounds(obj: Any) -> tuple[float, float, float, float]:
     left, bottom, right, top = (ctypes.c_float() for _ in range(4))
     pdfium_c.FPDFPageObj_GetBounds(obj, left, bottom, right, top)
@@ -145,8 +171,6 @@ class Pypdfium2TextEditAdapter:
         for obj, text, (left, bottom, right, top) in _text_objects(page, textpage):
             if not text.strip():
                 continue
-            size = ctypes.c_float()
-            pdfium_c.FPDFTextObj_GetFontSize(obj, size)
             found.append(
                 TextRun(
                     text=text,
@@ -155,7 +179,7 @@ class Pypdfium2TextEditAdapter:
                     width=right - left,
                     height=top - bottom,
                     page=page_index,
-                    font_size=size.value,
+                    font_size=_effective_font_size(obj),
                     font_family=self._family_of(obj),
                 )
             )
