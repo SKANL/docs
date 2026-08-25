@@ -135,6 +135,8 @@ class TranslateService:
                     x=block.x,
                     top=block.top,
                     first_line_x=block.first_line_x,
+                    baseline=block.baseline,
+                    line_spacing=block.line_spacing,
                     right=block.right,
                     alignment=detect_alignment(block.x, block.right, columns[block.page]),
                 )

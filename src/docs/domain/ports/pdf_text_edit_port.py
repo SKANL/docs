@@ -18,6 +18,11 @@ class BlockReplacement:
     fitted: FittedText
     x: float
     top: float
+    baseline: float = 0.0
+    """The first line's exact baseline. `top - font_size` is about a point
+    off, because `top` is the top of the ink."""
+    line_spacing: float | None = None
+    """The block's measured leading, or `None` to fall back to a constant."""
     first_line_x: float = 0.0
     """Where line 0 starts. Differs from `x` under a hanging indent."""
     right: float = 0.0

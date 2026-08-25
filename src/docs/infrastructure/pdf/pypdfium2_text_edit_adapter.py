@@ -28,7 +28,7 @@ import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
 from docs.domain.alignment import Alignment
-from docs.domain.block_grouping import TextRun
+from docs.domain.block_grouping import DOMINANT_STYLE_SHARE, TextRun
 from docs.domain.pdf_id import normalize_pdf_id
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteReport
 
@@ -76,11 +76,6 @@ _BASE14 = {
     b"Helvetica": (b"Helvetica", b"Helvetica-Bold", b"Helvetica-Oblique", b"Helvetica-BoldOblique"),
     b"Courier": (b"Courier", b"Courier-Bold", b"Courier-Oblique", b"Courier-BoldOblique"),
 }
-
-# The base font name is where style lives: `Baskerville-Italic`, `Optima-Bold`.
-_ITALIC_MARKERS = ("italic", "oblique")
-_BOLD_MARKERS = ("bold", "black", "heavy", "semibold")
-
 
 def _styled(font: bytes, bold: bool, italic: bool) -> bytes:
     regular, bold_face, italic_face, both = _BASE14[font]
@@ -146,20 +141,6 @@ def _standard_font_for(family: str) -> tuple[bytes, bool]:
         if needle in lowered:
             return _DEFAULT_FONT, True
     return _DEFAULT_FONT, False
-
-
-def _style_of(family: str) -> tuple[bool, bool]:
-    """`(bold, italic)` read from the base font name.
-
-    The name is where style lives in these files: `Baskerville-Italic`,
-    `Optima-Bold`. The descriptor flags that should say so are wrong (measured:
-    `Courier` claimed FixedPitch=False), so the name is the honest signal.
-    """
-    lowered = family.lower()
-    return (
-        any(marker in lowered for marker in _BOLD_MARKERS),
-        any(marker in lowered for marker in _ITALIC_MARKERS),
-    )
 
 
 def _strip_subset_tag(name: str) -> str:
@@ -275,8 +256,6 @@ class Pypdfium2TextEditAdapter:
         for obj, text, (left, bottom, right, top) in _text_objects(page, textpage):
             if not text.strip():
                 continue
-            family = self._family_of(obj)
-            bold, italic = _style_of(family)
             found.append(
                 TextRun(
                     text=text,
@@ -286,9 +265,7 @@ class Pypdfium2TextEditAdapter:
                     height=top - bottom,
                     page=page_index,
                     font_size=_effective_font_size(obj),
-                    font_family=family,
-                    bold=bold,
-                    italic=italic,
+                    font_family=self._family_of(obj),
                 )
             )
         return found
@@ -374,15 +351,23 @@ class Pypdfium2TextEditAdapter:
     def _draw(self, document: Any, page: Any, replacement: BlockReplacement) -> tuple[int, bool]:
         family = replacement.remove[0].font_family if replacement.remove else ""
         font_name, recognized = _standard_font_for(family)
-        run = replacement.remove[0] if replacement.remove else None
-        styled = _styled(font_name, bool(run and run.bold), bool(run and run.italic))
+        # Matches `TextBlock._dominant`: a block goes italic only when it is
+        # essentially ALL italic. A simple majority rendered whole pages in
+        # italics, which reads far worse than flattened emphasis.
+        total = sum(len(r.text) for r in replacement.remove)
+        share = total * DOMINANT_STYLE_SHARE
+        bold = sum(len(r.text) for r in replacement.remove if r.bold) >= share
+        italic = sum(len(r.text) for r in replacement.remove if r.italic) >= share
+        styled = _styled(font_name, bold, italic)
         font = pdfium_c.FPDFText_LoadStandardFont(document.raw, styled)
         size = replacement.fitted.font_size
         for line_number, line in enumerate(replacement.fitted.lines):
             obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, size)
             pdfium_c.FPDFText_SetText(obj, _widestring(line))
             pdfium_c.FPDFPageObj_SetFillColor(obj, 0, 0, 0, 255)
-            baseline = replacement.top - size - (line_number * size * _LINE_SPACING)
+            leading = replacement.line_spacing or size * _LINE_SPACING
+            first = replacement.baseline or (replacement.top - size)
+            baseline = first - (line_number * leading)
             pdfium_c.FPDFPageObj_Transform(
                 obj, 1, 0, 0, 1, _line_x(replacement, line, line_number), baseline
             )

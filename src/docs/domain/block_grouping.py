@@ -79,12 +79,30 @@ MIN_HORIZONTAL_OVERLAP = 0.1
 # floor caught it at 0.39.
 MAX_FONT_SIZE_RATIO = 1.25
 
+# Share of a block's characters that must carry a style before the whole
+# block is drawn in it. High on purpose: see `TextBlock._dominant`.
+DOMINANT_STYLE_SHARE = 0.8
+
 # Style suffixes a font name appends to its base family. Stripping them is
 # what separates "a different typeface" from "the same typeface, emphasised".
 _STYLE_SUFFIXES = (
     "bolditalic", "boldoblique", "semibold", "italic", "oblique", "bold",
     "black", "heavy", "light", "medium", "regular", "roman", "book", "it",
 )
+
+
+# Style lives in the font NAME: `Baskerville-Italic`, `Optima-Bold`. The
+# descriptor flags that should say so are wrong in real files (measured:
+# `Courier` reported FixedPitch=False), so the name is the honest signal --
+# and deriving style FROM it rather than storing it alongside means the two
+# cannot drift apart, which they promptly did when they were separate fields.
+ITALIC_MARKERS = ("italic", "oblique")
+BOLD_MARKERS = ("bold", "black", "heavy", "semibold")
+
+
+def _has_marker(name: str, markers: tuple[str, ...]) -> bool:
+    lowered = name.lower()
+    return any(marker in lowered for marker in markers)
 
 
 def base_family(name: str) -> str:
@@ -129,12 +147,14 @@ class TextRun:
     # fail the visual gate for a reason nobody could see. Defaulted so
     # pure-geometry callers need not supply it.
     font_family: str = ""
-    # Style travels with the run for the same reason the family does: the
-    # source distinguishes speech from inner thought with italics, and a
-    # translation that flattens both into roman loses information the author
-    # put there on purpose.
-    bold: bool = False
-    italic: bool = False
+
+    @property
+    def bold(self) -> bool:
+        return _has_marker(self.font_family, BOLD_MARKERS)
+
+    @property
+    def italic(self) -> bool:
+        return _has_marker(self.font_family, ITALIC_MARKERS)
 
     @property
     def right(self) -> float:
@@ -197,13 +217,30 @@ class TextBlock:
         """
         return next((run.font_family for run in self.runs if run.font_family), "")
 
+    def _dominant(self, attribute: str) -> bool:
+        """Whether the block is essentially ALL one style.
+
+        A block is drawn in a single face, so a mixed block has to pick, and
+        the two ways of being wrong are not equal. A simple majority sounded
+        right and rendered a whole page italic, because a quote followed by
+        longer italic commentary is majority-italic -- and a page of italics
+        reads far worse than a page of roman with its emphasis flattened.
+
+        So: italic only when the block is overwhelmingly italic, which is
+        exactly the pure-commentary case. Mixed blocks stay roman, which is
+        the document's ordinary voice.
+        """
+        styled = sum(len(run.text) for run in self.runs if getattr(run, attribute))
+        total = sum(len(run.text) for run in self.runs)
+        return total > 0 and styled >= total * DOMINANT_STYLE_SHARE
+
     @property
     def bold(self) -> bool:
-        return self.runs[0].bold
+        return self._dominant("bold")
 
     @property
     def italic(self) -> bool:
-        return self.runs[0].italic
+        return self._dominant("italic")
 
     @property
     def style(self) -> str:
@@ -238,6 +275,38 @@ class TextBlock:
     @property
     def top(self) -> float:
         return max(run.top for run in self.runs)
+
+    @property
+    def baseline(self) -> float:
+        """The baseline of the block's FIRST line.
+
+        Not `top - font_size`: `top` is the top of the INK, so that expression
+        lands about a point off on every block and drifts the whole page down
+        by a hair. The run's own `y` IS the baseline, exactly.
+        """
+        top = max(run.top for run in self.runs)
+        first = [run for run in self.runs if abs(run.top - top) <= _line_tolerance(run, run)]
+        return max(run.y for run in first) if first else self.bottom
+
+    @property
+    def line_spacing(self) -> float | None:
+        """This block's OWN baseline-to-baseline step, or `None` for one line.
+
+        A book sets its leading once; guessing 1.18 x type size re-spaces
+        every translated paragraph slightly differently from the one it
+        replaced. The block already knows the answer whenever it has two
+        lines.
+        """
+        # Cluster into visual LINES first. Raw baselines do not work: italic
+        # runs sit about 3pt below the roman ones on the SAME line, and taking
+        # the minimum raw step turned that 3pt offset into the leading, which
+        # stacked every line of a page on top of the one above it.
+        lines = _lines(self.runs)
+        if len(lines) < 2:
+            return None
+        tops = [max(run.y for run in line) for line in lines]
+        steps = [a - b for a, b in pairwise(tops) if a > b]
+        return min(steps) if steps else None
 
     @property
     def advance_ratio(self) -> float | None:

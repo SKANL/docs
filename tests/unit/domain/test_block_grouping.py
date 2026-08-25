@@ -235,3 +235,68 @@ def test_too_few_lines_yields_no_measured_spacing():
     from docs.domain.block_grouping import _lines, modal_line_spacing
 
     assert modal_line_spacing(_lines([_line("una", 700.0), _line("dos", 684.0)])) is None
+
+
+def _styled_run(text, x, y, family, size=14.0):
+    return TextRun(text, x, y, len(text) * 6.0, size * 0.7, 0, size, family)
+
+
+def test_a_mostly_italic_block_is_drawn_italic():
+    """A short roman quote followed by long italic commentary is italic. The
+    first run says roman, and the first run is not the block."""
+    runs = [
+        _styled_run("“Yes.” ", 72.0, 700.0, "Baskerville"),
+        _styled_run("You led me to this answer, so here you go.", 110.0, 700.0, "Baskerville-Italic"),
+    ]
+    assert group_runs_into_blocks(runs)[0].italic is True
+
+
+def test_one_emphasised_word_does_not_italicise_a_sentence():
+    runs = [
+        _styled_run("We know we ", 72.0, 700.0, "Baskerville"),
+        _styled_run("ought", 140.0, 700.0, "Baskerville-Italic"),
+        _styled_run(" to talk to customers regularly", 180.0, 700.0, "Baskerville"),
+    ]
+    assert group_runs_into_blocks(runs)[0].italic is False
+
+
+def test_the_baseline_is_the_runs_own_y_not_derived_from_the_ink_top():
+    runs = [_run("una linea", 72.0, 700.0, w=200.0, h=12.8, size=14.0)]
+    block = group_runs_into_blocks(runs)[0]
+    assert block.baseline == 700.0
+    assert block.baseline != block.top - block.font_size
+
+
+def test_line_spacing_is_measured_from_the_blocks_own_baselines():
+    runs = [
+        _run("primera", 72.0, 700.0, w=200.0, h=10.0, size=14.0),
+        _run("segunda", 72.0, 684.0, w=200.0, h=10.0, size=14.0),
+    ]
+    assert group_runs_into_blocks(runs)[0].line_spacing == 16.0
+
+
+def test_a_single_line_block_has_no_measured_spacing():
+    assert group_runs_into_blocks([_run("sola", 72.0, 700.0)])[0].line_spacing is None
+
+
+def test_a_bare_majority_of_italic_is_not_enough():
+    """A simple majority rendered a whole page in italics: a quote followed by
+    longer italic commentary is majority-italic. A page of italics reads far
+    worse than a page of roman with its emphasis flattened."""
+    runs = [
+        _styled_run("Una frase citada bastante larga en redonda", 72.0, 700.0, "Baskerville"),
+        _styled_run("y un comentario italico algo mas largo aun aqui", 340.0, 700.0, "Baskerville-Italic"),
+    ]
+    assert group_runs_into_blocks(runs)[0].italic is False
+
+
+def test_leading_ignores_the_baseline_offset_of_italic_runs():
+    """Italic runs sit ~3pt below the roman ones on the SAME visual line.
+    Taking the minimum RAW baseline step turned that offset into the leading
+    and stacked every line of a page on top of the one above it."""
+    runs = [
+        _styled_run("primera linea en redonda", 72.0, 700.0, "Baskerville"),
+        _styled_run("con enfasis", 260.0, 696.8, "Baskerville-Italic"),
+        _styled_run("segunda linea del parrafo", 72.0, 684.0, "Baskerville"),
+    ]
+    assert group_runs_into_blocks(runs)[0].line_spacing == 16.0
