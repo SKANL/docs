@@ -141,9 +141,62 @@ Two `docs doctor` checks worth knowing up front:
 | `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `mark-final` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
-| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
+| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
 | `asset` | asset registration commands |
 | `docx` | low-level `.docx` inspection commands |
+
+### Translating a PDF: `docs translate`
+
+    docs translate <archivo.pdf> --to es [--from auto] [--output <ruta>]
+
+Translates an existing PDF **in place**: same page count, same geometry,
+images and vector art untouched, text replaced inside its original bounding
+box. This is a separate entry point from the authoring pipeline — it consumes
+documents the harness did not write.
+
+**It always produces a document.** Translation is a cognitive slot like every
+other one here, so the first run has nothing to fill it with:
+
+1. `docs translate doc.pdf --to es` writes `doc.es.pdf` with every block still
+   in its source language, and `doc.es.pdf.pending.json` listing each block.
+   The output line counts what was left untranslated.
+2. Fill every `translation` field in that JSON.
+3. Re-run the identical command. The translations land in `translations/`
+   (the translation memory) and the real translated PDF is written. From then
+   on every run is a cache hit and byte-identical.
+
+The model never decides *whether* to translate. A block that comes back
+empty, refused, or unchanged is retried once, then passes through as the
+original and is **counted** — it never stops the run.
+
+**Identical source blocks appear once and share one translation.** The
+translation memory is content-addressed, which is exactly what makes reruns
+byte-identical, and one heading translated two different ways in the same
+document would be an inconsistency. The accepted cost: a string that needs
+different translations in different contexts cannot get them.
+
+A block that is legitimately the same in both languages — a number, a proper
+noun, a code snippet — should be filled with the original text. That counts as
+translated; leaving it empty does not.
+
+Read the output line, not just the file: it names every compromise made.
+
+    traducido: 412/418 bloques; 6 sin traducir; 3 no entraron en su caja;
+    418 con fuente sustituida; paginas multicolumna sin verificar: 7, 8
+
+- **sin traducir** — the slot was empty or the engine refused.
+- **no entraron en su caja** — the translation was longer than its source and
+  hit the minimum font scale. It is visible, not clipped.
+- **con fuente sustituida** — embedded PDF fonts are subsets carrying only the
+  glyphs the document already used, so a target-language accent may simply not
+  exist in them. Every block is redrawn in a base-14 font. This number is
+  expected to equal the block count; it is the honest size of the compromise.
+- **paginas multicolumna sin verificar** — block grouping is single-column.
+  Those pages are reported rather than guessed at.
+
+A scanned or image-only PDF is **refused** with a message naming OCR, never
+half-translated. Non-Latin target scripts (Cyrillic, CJK, Arabic) are out of
+reach in this phase: base-14 fonts have no coverage for them.
 
 ### Pipeline stage sets
 

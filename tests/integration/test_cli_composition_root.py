@@ -29,6 +29,11 @@ _EXPECTED_FLAT_COMMANDS = {
     # codes reached the agent through `review-section --json` while exactly
     # one of them was documented anywhere. Deliberate growth, not drift.
     "explain",
+    # `translate` is the entry point of the `document-translate` capability:
+    # it consumes PDFs the harness did not author, so it belongs beside the
+    # other flat commands rather than inside an authoring group. Deliberate
+    # growth, not drift.
+    "translate",
     "collect-sources", "build-rules", "review-rules", "collect-issues",
     "collect-code-evidence", "build-ledger", "build-section", "pack-context",
     "review-section", "review-document", "build-docx", "qa-docx",

@@ -248,6 +248,35 @@ class Deps:
         except Exception:
             self.generate_visuals_service = None
 
+        # `document-translate` adapters. Guarded like every block above: both
+        # `pypdfium2` and `pdf-inspector` are declared dependencies, but an
+        # import failure must cost the TRANSLATE command, not every command
+        # in the CLI. `None` here means `docs translate` reports why it
+        # cannot run; nothing else notices.
+        self.pdf_classifier: Any = None
+        self.pdf_text_editor: Any = None
+        try:
+            from docs.infrastructure.pdf.pdf_inspector_classify_adapter import (
+                PdfInspectorClassifyAdapter,
+            )
+            from docs.infrastructure.pdf.pypdfium2_text_edit_adapter import (
+                Pypdfium2TextEditAdapter,
+            )
+
+            self.pdf_classifier = PdfInspectorClassifyAdapter()
+            self.pdf_text_editor = Pypdfium2TextEditAdapter()
+        except Exception as exc:
+            # Degrading is correct, swallowing silently is not: without a
+            # trace, a genuinely broken adapter looks identical to an
+            # uninstalled one.
+            logger.debug("adaptadores de traduccion no registrados: %s", exc)
+
+        # The renderer used to MEASURE layout preservation. Reuses the same
+        # `pdf_render_adapter` built above -- one instance, no second
+        # rasterizer for the same job.
+        self.pdf_render: Any = pdf_render_adapter
+
+
         self.assets = asset_service
         self.evidence = evidence_service
         self.review = review_service
@@ -269,6 +298,39 @@ class Deps:
             context_service=self.context,
             generate_visuals_service=self.generate_visuals_service,
         )
+
+    def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:
+        """Build a `TranslateService` bound to this run's memory and slot file.
+
+        The adapters are chosen here, in the composition root, like every
+        other adapter in this class. Only the two PATHS vary per invocation,
+        because the translation memory and the pending-slot file live beside
+        the output document.
+
+        Returns `(service, translator)`: the caller needs the translator to
+        flush the pending-slot file after the run, and handing it back beats
+        widening `TranslationPort` with a method only one adapter has.
+
+        Returns `(None, None)` when the PDF adapters are unavailable, so the
+        command can say so instead of raising an import error at the user.
+        """
+        if self.pdf_classifier is None or self.pdf_text_editor is None:
+            return None, None
+
+        from docs.application.translate import TranslateService
+        from docs.infrastructure.translate.filesystem_translation_memory import (
+            FilesystemTranslationMemory,
+        )
+        from docs.infrastructure.translate.pending_slot_translator import PendingSlotTranslator
+
+        translator = PendingSlotTranslator(pending_file)
+        service = TranslateService(
+            classifier=self.pdf_classifier,
+            editor=self.pdf_text_editor,
+            translator=translator,
+            memory=FilesystemTranslationMemory(memory_dir),
+        )
+        return service, translator
 
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
         """Resolve the active `DocumentRendererPort` from `config["output"]["format"]`
