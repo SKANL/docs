@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import os
-import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+from docs.infrastructure.tools.resolution import resolve_executable
 
 # Moved out of `infrastructure/ingest/opendataloader_pdf_adapter.py` (D5,
 # tech-debt closeout — deferred PR6 fresh-review SUGGESTION): the docx-named
@@ -16,23 +17,14 @@ from typing import Any
 
 
 def resolve_java_executable(paths: dict[str, Any]) -> str | None:
-    """Mirrors `resolve_pandoc_executable`'s PATH-then-config-fallback shape
-    (5.1 spike condition: resolve Java via the existing `ToolResolverPort`
-    pattern). `opendataloader_pdf`'s bundled runner always invokes the bare
-    `"java"` command, so a configured `java_bin`/`java_fallbacks` entry only
-    takes effect when its directory is temporarily prepended to `PATH`
-    (see `java_on_path` below) for the duration of the conversion call."""
-    resolved = shutil.which("java")
-    if resolved:
-        return resolved
-    configured = paths.get("java_bin")
-    if configured and Path(configured).exists() and Path(configured).is_file():
-        return str(configured)
-    for candidate in paths.get("java_fallbacks", []):
-        candidate_path = Path(candidate)
-        if candidate_path.exists() and candidate_path.is_file():
-            return str(candidate_path)
-    return None
+    """Mirrors every other toolchain resolver (5.1 spike condition: resolve
+    Java via the existing `ToolResolverPort` pattern). `opendataloader_pdf`
+    always invokes the bare `"java"` command, so a configured
+    `java_bin`/`java_fallbacks` entry only takes effect while its directory
+    is prepended to `PATH` (see `java_on_path` below)."""
+    return resolve_executable(
+        paths, names=("java",), config_prefix="java"
+    )
 
 
 @contextmanager

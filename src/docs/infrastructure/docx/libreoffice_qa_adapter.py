@@ -1,26 +1,34 @@
 # src/docs/infrastructure/docx/libreoffice_qa_adapter.py
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from docs.infrastructure.tools.resolution import (
+    libreoffice_locations,
+    resolve_executable,
+)
+
 
 def resolve_libreoffice_executable(paths: dict[str, Any]) -> str | None:
-    resolved = shutil.which("soffice") or shutil.which("libreoffice")
-    if resolved:
-        return resolved
-    configured = paths.get("libreoffice_bin")
-    if configured and Path(configured).exists() and Path(configured).is_file():
-        return str(configured)
-    for candidate in paths.get("libreoffice_fallbacks", []):
-        candidate_path = Path(candidate)
-        if candidate_path.exists() and candidate_path.is_file():
-            return str(candidate_path)
-    return None
+    """Find LibreOffice, including where its installer actually puts it.
+
+    The Windows installer does NOT add itself to PATH, so a perfectly normal
+    install at `%ProgramFiles%\LibreOffice\program\soffice.exe` used to
+    resolve to nothing: the harness told a user to install software they
+    already had, refused `--format pdf`, and skipped visual QA. It answers to
+    `soffice` on Windows and `libreoffice` on most Linux packages, so both
+    names are tried.
+    """
+    return resolve_executable(
+        paths,
+        names=("soffice", "libreoffice"),
+        config_prefix="libreoffice",
+        well_known=libreoffice_locations(),
+    )
 
 
 class LibreOfficeQaAdapter:

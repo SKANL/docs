@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -23,7 +22,7 @@ from docs.application.review import ReviewService
 from docs.domain.context import TopicStatus
 from docs.domain.models.template import ContextSchema, Template, Topic
 from docs.domain.workspace import Workspace
-from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
+from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter, resolve_libreoffice_executable
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
@@ -39,7 +38,7 @@ from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenc
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
-_HAS_LIBREOFFICE = shutil.which("soffice") is not None or shutil.which("libreoffice") is not None
+_HAS_LIBREOFFICE = resolve_libreoffice_executable({}) is not None
 
 
 def _service(

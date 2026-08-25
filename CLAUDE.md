@@ -68,6 +68,19 @@ three share; never re-declare an artifact filename or extension set locally.
   is not harmless: an under-broad vocabulary reports a REAL key as a typo,
   and a live key was renamed out of a shipped template on exactly that
   advice. The list errs broad on purpose.
+- **An installed tool is not a tool on PATH.** LibreOffice's Windows
+  installer writes to `%ProgramFiles%\LibreOffice\program` and never touches
+  PATH, so a perfectly normal install resolved to nothing: the harness told a
+  user to install software they already had, refused `--format pdf`, and
+  skipped seven tests. All five toolchain resolvers now share one ladder
+  (`infrastructure/tools/resolution.py`): PATH, `<tool>_bin`,
+  `<tool>_fallbacks`, then well-known install locations. Well-known is LAST
+  so it can only find what was previously unfound. Only LibreOffice declares
+  locations, because it is the only one with evidence of needing them.
+- **A test's skip guard must ask the SAME question the product asks.** Those
+  seven tests kept skipping after the resolver was fixed, because the guard
+  used a bare `shutil.which` while the harness used its own resolver. A
+  weaker check in the guard silently narrows the suite.
 - **"Found" is not "usable", and this repo has learned it four times:**
   `safe_style_name` (listed ≠ applicable), `MermaidSvgRenderer` (present ≠
   renders), `doctor`'s toolchain checks (on PATH ≠ new enough), and
