@@ -317,7 +317,17 @@ class PipelineService:
 
         def stage_qa_docx() -> tuple[bool, str]:
             docx_path = _draft_docx_path()
-            return True, str(self.qa_service.qa_docx(config, docx_path, strict=strict))
+            qa_dir = self.qa_service.qa_docx(config, docx_path, strict=strict)
+            # The visual render is the half of QA that needs LibreOffice, and
+            # it degrades to a skip in draft. `qa-report.md` says so, but
+            # saying it only there made the pipeline line read as a clean
+            # success for 24 consecutive runs on a real workspace while half
+            # the stage never ran. `build-html` and `build-pdf` report their
+            # own degradation right here ("omitido: ..."); this now matches
+            # them instead of asking the reader to open a file.
+            if not any(Path(qa_dir).glob("*.pdf")):
+                return True, f"{qa_dir} (sin render visual: falta LibreOffice; la auditoría de formato sí corrió)"
+            return True, str(qa_dir)
 
         def stage_ingest() -> tuple[bool, str]:
             inbox_dir = Path(config["paths"]["inbox_dir"])

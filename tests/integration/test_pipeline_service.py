@@ -1047,3 +1047,81 @@ def test_run_pipeline_build_docx_stage_fails_loudly_when_the_renderer_skips(tmp_
     docx_stage = next(s for s in summary["stages"] if s["stage"] == "build-docx")
     assert docx_stage["ok"] is False
     assert docx_stage["detail"] != "None"
+
+
+def test_qa_stage_says_when_the_visual_render_was_skipped(tmp_path):
+    # Measured on a real workspace: `qa-docx` reported `ok=True` with a bare
+    # directory path for 24 consecutive runs while LibreOffice was absent and
+    # the visual render -- the "visual" half of visual QA -- never happened.
+    #
+    # The information was not lost: `qa-report.md` says "PDF: no disponible".
+    # It was one level deeper than its siblings put it. `build-html` and
+    # `build-pdf` both report their own degradation in the pipeline line
+    # ("omitido: pandoc no disponible"); this one made you open a file to
+    # find out half of it did not run.
+    class _QaWithoutRender:
+        def qa_docx(self, config, docx_path, strict=False):
+            out = Path(config["paths"]["output_qa_dir"]) / docx_path.stem
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "qa-report.md").write_text("# QA\n- PDF: no disponible\n", encoding="utf-8")
+            return out
+
+    class _FakeRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True), ("qa-docx", True)]
+
+        def build(self, doc_id, config, output=None):
+            path = Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            Document().save(path)
+            return path
+
+    service, _ = _service(tmp_path)
+    service.qa_service = _QaWithoutRender()
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+
+    stage = next(s for s in summary["stages"] if s["stage"] == "qa-docx")
+    assert stage["ok"] is True, "sigue degradando, no falla"
+    assert "sin render" in stage["detail"].lower() or "omitido" in stage["detail"].lower()
+
+
+def test_qa_stage_stays_quiet_when_the_render_happened(tmp_path):
+    class _QaWithRender:
+        def qa_docx(self, config, docx_path, strict=False):
+            out = Path(config["paths"]["output_qa_dir"]) / docx_path.stem
+            out.mkdir(parents=True, exist_ok=True)
+            (out / f"{docx_path.stem}.pdf").write_bytes(b"%PDF-1.4\n")
+            return out
+
+    class _FakeRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True), ("qa-docx", True)]
+
+        def build(self, doc_id, config, output=None):
+            path = Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            Document().save(path)
+            return path
+
+    service, _ = _service(tmp_path)
+    service.qa_service = _QaWithRender()
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+
+    stage = next(s for s in summary["stages"] if s["stage"] == "qa-docx")
+    assert "omitido" not in stage["detail"].lower()
