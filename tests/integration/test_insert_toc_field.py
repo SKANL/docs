@@ -89,7 +89,7 @@ def test_a_second_toc_placeholder_is_removed_and_warned_about(tmp_path, capsys):
     result = Document(str(path))
     bodies = [p.text.strip() for p in result.paragraphs]
     assert "[[TOC]]" not in bodies, bodies
-    assert result.element.body.xml.count("TOC \o") == 1, "un solo campo TOC, no dos"
+    assert result.element.body.xml.count(r"TOC \o") == 1, "un solo campo TOC, no dos"
     assert "WARN" in capsys.readouterr().err
 
 

@@ -58,6 +58,17 @@ packages = ["src/docs"]
 "AGENTS.md" = "docs/data/AGENTS.md"
 
 [tool.pytest.ini_options]
+# A warning is a failure that has not happened yet. One bad escape sequence
+# in a docstring -- `\L` in a non-raw string -- passed ruff AND mypy, and
+# broke ELEVEN architecture tests the moment warnings were treated as
+# errors, because every one of them parses the source with `ast`. In Python
+# 3.12+ that same sequence is a SyntaxError, so it was a future outage
+# sitting in the tree with three green gates over it.
+#
+# The suite is clean at zero warnings today; keeping it there is free. When a
+# third-party release starts warning, add a narrow `ignore::` line naming it
+# and why, never widen this back to a blanket allow.
+filterwarnings = ["error"]
 # `tools` joins `src` so the architecture tests can import the repo-local
 # scripts they cover (currently only `spec_code_bridge`). Keep that directory
 # free of names that could shadow a real dependency: everything in it is

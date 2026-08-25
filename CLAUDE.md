@@ -68,6 +68,13 @@ three share; never re-declare an artifact filename or extension set locally.
   is not harmless: an under-broad vocabulary reports a REAL key as a typo,
   and a live key was renamed out of a shipped template on exactly that
   advice. The list errs broad on purpose.
+- **A warning is a failure that has not happened yet.** `filterwarnings =
+  ["error"]` in `pyproject.toml` is not tidiness: one invalid escape sequence
+  in a docstring passed ruff AND mypy, and broke ELEVEN architecture tests
+  the moment warnings became errors -- every one of them parses the source
+  with `ast`. In Python 3.12+ that same sequence is a SyntaxError, so it was
+  a future outage sitting under three green gates. When a dependency starts
+  warning, add a narrow `ignore::` naming it and why; never widen back.
 - **An installed tool is not a tool on PATH.** LibreOffice's Windows
   installer writes to `%ProgramFiles%\LibreOffice\program` and never touches
   PATH, so a perfectly normal install resolved to nothing: the harness told a

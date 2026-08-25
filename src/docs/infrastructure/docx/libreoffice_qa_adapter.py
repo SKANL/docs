@@ -17,7 +17,7 @@ def resolve_libreoffice_executable(paths: dict[str, Any]) -> str | None:
     """Find LibreOffice, including where its installer actually puts it.
 
     The Windows installer does NOT add itself to PATH, so a perfectly normal
-    install at `%ProgramFiles%\LibreOffice\program\soffice.exe` used to
+    install at `%ProgramFiles%/LibreOffice/program/soffice.exe` used to
     resolve to nothing: the harness told a user to install software they
     already had, refused `--format pdf`, and skipped visual QA. It answers to
     `soffice` on Windows and `libreoffice` on most Linux packages, so both
