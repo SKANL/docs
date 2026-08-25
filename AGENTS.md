@@ -195,6 +195,9 @@ Read the output line, not just the file: it names every compromise made.
   glyphs the document already used, so a target-language accent may simply not
   exist in them. Every block is redrawn in a base-14 font. This number is
   expected to equal the block count; it is the honest size of the compromise.
+- **rotados sin tocar** — text set at an angle. It is left exactly as the
+  source had it, because every layout rule here reasons in page-horizontal
+  space and redrawing angled text destroys it rather than degrading it.
 - **paginas multicolumna sin verificar** — block grouping is single-column.
   Those pages are reported rather than guessed at.
 

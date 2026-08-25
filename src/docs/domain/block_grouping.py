@@ -147,6 +147,11 @@ class TextRun:
     # fail the visual gate for a reason nobody could see. Defaulted so
     # pure-geometry callers need not supply it.
     font_family: str = ""
+    # Text set at an angle. Every layout rule in this module -- line
+    # clustering, column gaps, wrapping to a width -- reasons in
+    # page-horizontal space, so a rotated run is not something to lay out
+    # differently; it is something not to touch.
+    rotated: bool = False
 
     @property
     def bold(self) -> bool:
@@ -275,6 +280,17 @@ class TextBlock:
     @property
     def top(self) -> float:
         return max(run.top for run in self.runs)
+
+    @property
+    def rotated(self) -> bool:
+        """Whether any run in this block is set at an angle.
+
+        Such a block is left EXACTLY as the source had it. Redrawing one
+        horizontally is not a degraded result but a destroyed one: a page of
+        vertical text came back as horizontal words running off the edge,
+        reported only as "1 did not fit its box".
+        """
+        return any(run.rotated for run in self.runs)
 
     @property
     def line_rights(self) -> list[float]:

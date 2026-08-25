@@ -56,6 +56,7 @@ class TranslateReport:
     blocks_from_cache: int = 0
     blocks_overflowed: int = 0
     pages_with_collisions: list[int] = field(default_factory=list)
+    blocks_rotated: int = 0
     fonts_substituted: int = 0
     fonts_unrecognized: int = 0
     fonts_embedded: int = 0
@@ -74,6 +75,8 @@ class TranslateReport:
             parts.append(f"{self.blocks_untranslated} sin traducir")
         if self.blocks_overflowed:
             parts.append(f"{self.blocks_overflowed} no entraron en su caja")
+        if self.blocks_rotated:
+            parts.append(f"{self.blocks_rotated} rotados sin tocar")
         if self.pages_with_collisions:
             pages = ", ".join(str(page) for page in self.pages_with_collisions)
             parts.append(f"texto superpuesto en paginas: {pages}")
@@ -131,6 +134,13 @@ class TranslateService:
         replacements: list[BlockReplacement] = []
         placements: list[tuple[TextBlock, FittedText]] = []
         for block in blocks:
+            if block.rotated:
+                # Left EXACTLY as the source had it. Every layout rule here
+                # reasons in page-horizontal space, so redrawing angled text
+                # does not degrade it, it destroys it -- a page of vertical
+                # lines came back as horizontal words running off the edge.
+                report.blocks_rotated += 1
+                continue
             alignment = detect_alignment(block.x, block.right, columns[block.page])
             # The block's OWN geometry outranks anything inferred from the
             # column: it states what the typesetter did, rather than guessing

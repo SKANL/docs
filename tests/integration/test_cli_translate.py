@@ -141,3 +141,33 @@ def test_identical_blocks_share_one_translation(tmp_path):
 
     texts = [run.text for run in Pypdfium2TextEditAdapter().read_runs(out)]
     assert texts.count("Suma") == 2, "both occurrences must carry the translation"
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("notapdf.pdf", b"esto no es un pdf en absoluto"),
+        ("truncated.pdf", b"%PDF-1.7\nstartxref\n999999\n%%EOF\n"),
+    ],
+)
+def test_a_malformed_pdf_exits_non_zero(tmp_path, name, content):
+    """`AGENTS.md` promises exit codes usable in CI. A malformed input
+    reported as a successful translation would make that promise false."""
+    src = tmp_path / name
+    src.write_bytes(content)
+    result = runner.invoke(app, ["translate", str(src), "--to", "es"])
+    assert result.exit_code != 0
+
+
+def test_a_pdf_with_no_text_layer_exits_non_zero(tmp_path):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("pdf")
+    import matplotlib.pyplot as plt
+
+    figure = plt.figure(figsize=(4, 3))
+    src = tmp_path / "blank.pdf"
+    figure.savefig(src)
+    plt.close(figure)
+    result = runner.invoke(app, ["translate", str(src), "--to", "es"])
+    assert result.exit_code != 0
+    assert "capa de texto" in result.output

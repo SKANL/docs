@@ -177,6 +177,36 @@ A base-14 face is encoded WinAnsi, so it renders Cyrillic or Greek as empty boxe
 - WHEN text requiring one is drawn
 - THEN the base-14 face is used and the substitution is counted, and the run still completes
 
+### Requirement: Angled Text Is Left Alone
+
+Text set at an angle MUST be left exactly as the source had it, and the count MUST be reported.
+
+Every layout rule in this capability reasons in page-horizontal space, so redrawing angled text does not degrade it, it destroys it: a page of vertical lines came back as horizontal words running off the edge, reported only as an overflow.
+
+#### Scenario: A rotated text object survives untouched
+
+- GIVEN a page whose text is set at 90 degrees
+- WHEN translation runs
+- THEN that block is not removed or redrawn
+- AND the rendered page is identical to the original
+- AND the count of untouched rotated blocks is reported
+
+#### Scenario: Ordinary text is never treated as rotated
+
+- GIVEN an upright document
+- WHEN blocks are formed
+- THEN none is classified as rotated, so nothing is refused that could be translated
+
+### Requirement: Page Geometry Independence
+
+The system MUST behave identically across page rotations and page sizes.
+
+#### Scenario: Every rotation and page size preserves its text
+
+- GIVEN pages rotated 0, 90, 180 or 270 degrees, or sized landscape or A5
+- WHEN translation runs
+- THEN the text-object count is unchanged and the rendered ink stays within a few points of the original
+
 ### Requirement: Text-Layer Integrity
 
 The output MUST remain a usable document, not a picture of one. Every word present in the source's text layer MUST be present in the output's, separated as words.

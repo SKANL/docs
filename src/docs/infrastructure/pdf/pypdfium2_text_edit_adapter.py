@@ -135,6 +135,10 @@ def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float
 # How far a drawn line may be re-shrunk to fit its column before we accept
 # the overrun. Deeper than the fitter's own floor because this is the last
 # line of defence: past here the text leaves the page.
+# Sine of the smallest angle counted as a rotation. Sub-degree skews occur in
+# ordinary documents and are not worth refusing to translate over.
+_ROTATION_TOLERANCE = 0.02
+
 _MIN_FIT_SCALE = 0.5
 
 # Most a justified line may be stretched horizontally. Beyond this the glyphs
@@ -269,6 +273,22 @@ def _object_text(obj: Any, textpage: Any) -> str:
     return _drop_unmapped(buffer.raw[: length * 2].decode("utf-16-le").rstrip("\x00"))
 
 
+def _is_rotated(obj: Any) -> bool:
+    """Whether the text object's matrix turns or skews it.
+
+    A pure translate-and-scale matrix has b and c at zero. Anything else is a
+    rotation or a skew, and this capability lays text out in page-horizontal
+    space only.
+    """
+    matrix = pdfium_c.FS_MATRIX()
+    if not pdfium_c.FPDFPageObj_GetMatrix(obj, matrix):
+        return False
+    scale = math.hypot(matrix.a, matrix.b)
+    if scale <= 0:
+        return False
+    return abs(matrix.b) / scale > _ROTATION_TOLERANCE
+
+
 def _effective_font_size(obj: Any) -> float:
     """The size the text is actually DRAWN at, not the one the API reports.
 
@@ -398,6 +418,7 @@ class Pypdfium2TextEditAdapter:
                     page=page_index,
                     font_size=_effective_font_size(obj),
                     font_family=self._family_of(obj),
+                    rotated=_is_rotated(obj),
                 )
             )
         return found
