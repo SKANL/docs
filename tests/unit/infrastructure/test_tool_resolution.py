@@ -5,7 +5,7 @@ Five resolvers (`pandoc`, `libreoffice`, `java`, `mmdc`, `resvg`) each held
 the same PATH-then-`_bin`-then-`_fallbacks` ladder, copied. That is five
 places to fix anything, and it showed: LibreOffice's Windows installer does
 NOT add itself to PATH, so a perfectly normal install at
-`C:\Program Files\LibreOffice\program\soffice.exe` resolved to nothing.
+`C:/Program Files/LibreOffice/program/soffice.exe` resolved to nothing.
 The user had it installed; the harness reported `NO DISPONIBLE`, refused to
 render PDF, skipped visual QA, and skipped seven tests.
 
