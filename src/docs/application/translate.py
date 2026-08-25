@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from docs.domain.alignment import detect_alignment, detect_column
 from docs.domain.block_grouping import group_runs_into_blocks
 from docs.domain.ports.pdf_classify_port import PdfClassifyPort
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, PdfTextEditPort
@@ -108,6 +109,16 @@ class TranslateService:
         )
         blocks = group_runs_into_blocks(self._editor.read_runs(src))
         report.blocks_total = len(blocks)
+        # One column per page, derived from that page's own blocks: alignment
+        # is a property of the text column, and a document's margins differ
+        # between a title page and a body page.
+        columns = {
+            page: detect_column(
+                [b.x for b in blocks if b.page == page],
+                [b.right for b in blocks if b.page == page],
+            )
+            for page in {b.page for b in blocks}
+        }
 
         replacements: list[BlockReplacement] = []
         for block in blocks:
@@ -123,6 +134,9 @@ class TranslateService:
                     fitted=fitted,
                     x=block.x,
                     top=block.top,
+                    first_line_x=block.first_line_x,
+                    right=block.right,
+                    alignment=detect_alignment(block.x, block.right, columns[block.page]),
                 )
             )
 

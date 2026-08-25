@@ -136,3 +136,52 @@ def test_a_small_size_difference_does_not_split_a_paragraph():
         _run("segunda linea", 62.0, 687.0, w=200.0, h=11.2, size=11.2),
     ]
     assert len(group_runs_into_blocks(runs)) == 1
+
+
+def test_emphasis_stays_inside_its_sentence():
+    """`Baskerville` and `Baskerville-Italic` are the same TYPEFACE. Treating
+    them as different families cut every sentence apart at each italicised
+    word: "We know we ought to talk to customers" became "We know we",
+    "ought" and the rest, which destroyed the sentence for the translator and
+    made the fragments overlap when redrawn."""
+    runs = [
+        _run("We know we ", 72.0, 700.0, w=60.0, size=14.0),
+        _run("ought", 133.0, 700.0, w=30.0, size=14.0),
+        _run(" to talk to customers", 164.0, 700.0, w=110.0, size=14.0),
+    ]
+    runs = [
+        TextRun(r.text, r.x, r.y, r.width, r.height, r.page, r.font_size, family)
+        for r, family in zip(
+            runs, ["Baskerville", "Baskerville-Italic", "Baskerville"], strict=True
+        )
+    ]
+    blocks = group_runs_into_blocks(runs)
+    assert len(blocks) == 1
+    assert blocks[0].text == "We know we ought to talk to customers"
+
+
+def test_a_different_typeface_still_ends_a_block():
+    """A monospace label beside serif dialogue is a change of ROLE."""
+    runs = [
+        TextRun("Son:", 72.0, 700.0, 30.0, 10.0, 0, 14.0, "Courier"),
+        TextRun("Hola", 110.0, 700.0, 40.0, 10.0, 0, 14.0, "Baskerville"),
+    ]
+    assert {b.text for b in group_runs_into_blocks(runs)} == {"Son:", "Hola"}
+
+
+def test_the_first_line_keeps_its_own_start_under_a_hanging_indent():
+    """Line 0 began right of the block's leftmost edge; redrawing it at `x`
+    slid it into the dialogue label beside it."""
+    runs = [
+        TextRun("primera linea", 235.0, 700.0, 200.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("continuacion", 185.0, 686.0, 200.0, 10.0, 0, 14.0, "Baskerville"),
+    ]
+    block = group_runs_into_blocks(runs)[0]
+    assert block.x == 185.0
+    assert block.first_line_x == 235.0
+
+
+def test_first_line_x_equals_x_without_a_hanging_indent():
+    runs = [_run("una linea", 72.0, 700.0, w=200.0)]
+    block = group_runs_into_blocks(runs)[0]
+    assert block.first_line_x == block.x

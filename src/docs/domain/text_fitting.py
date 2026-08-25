@@ -34,6 +34,14 @@ class FittedText:
     lines: list[str]
     font_size: float
     overflowed: bool
+    advance_ratio: float = _MEAN_ADVANCE_RATIO
+    """The calibration used to measure these lines. The writer needs the SAME
+    number to place a centred or right-aligned line, or it would measure the
+    text differently from the code that wrapped it."""
+
+
+    def line_width(self, line: str) -> float:
+        return len(line) * self.font_size * self.advance_ratio
 
 
 # A block whose measured ratio falls outside this is not measuring what we
@@ -112,7 +120,7 @@ def fit_text_to_block(text: str, block: TextBlock, min_scale: float = 0.6) -> Fi
         lines, word_too_wide = _wrap(text, block.width, size, ratio)
         needed = len(lines) * size * _LINE_SPACING
         if not word_too_wide and needed <= available:
-            return FittedText(lines=lines, font_size=size, overflowed=False)
+            return FittedText(lines=lines, font_size=size, overflowed=False, advance_ratio=ratio)
         if size <= floor:
-            return FittedText(lines=lines, font_size=floor, overflowed=True)
+            return FittedText(lines=lines, font_size=floor, overflowed=True, advance_ratio=ratio)
         size = max(floor, size - _SHRINK_STEP)

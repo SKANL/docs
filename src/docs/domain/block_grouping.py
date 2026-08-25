@@ -56,6 +56,35 @@ MIN_HORIZONTAL_OVERLAP = 0.1
 # floor caught it at 0.39.
 MAX_FONT_SIZE_RATIO = 1.25
 
+# Style suffixes a font name appends to its base family. Stripping them is
+# what separates "a different typeface" from "the same typeface, emphasised".
+_STYLE_SUFFIXES = (
+    "bolditalic", "boldoblique", "semibold", "italic", "oblique", "bold",
+    "black", "heavy", "light", "medium", "regular", "roman", "book", "it",
+)
+
+
+def base_family(name: str) -> str:
+    """`Baskerville-Italic` -> `baskerville`; `Courier` -> `courier`.
+
+    A block splits on a change of TYPEFACE, never on emphasis. The two are
+    indistinguishable in the raw name -- `Baskerville` and
+    `Baskerville-Italic` are different strings for the same face -- and
+    treating them as different families cut every sentence apart at each
+    italicised word. Measured on a real book: `"We know we ought to talk to
+    customers"` became three blocks, `"We know we"`, `"ought"` and the rest,
+    which destroyed the sentence for the translator AND made the fragments
+    overlap when redrawn. 48 blocks were invading their neighbours.
+    """
+    stem = name.lower().replace(" ", "")
+    for separator in ("-", ",", "_"):
+        stem = stem.split(separator)[0]
+    for suffix in _STYLE_SUFFIXES:
+        if stem.endswith(suffix) and len(stem) > len(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    return stem
+
 
 @dataclass(frozen=True)
 class TextRun:
@@ -169,7 +198,7 @@ class TextBlock:
         from translated words back to the italic source run -- so paying for
         it in fit and in translation quality buys nothing.
         """
-        return self.font_family
+        return base_family(self.font_family)
 
     @property
     def x(self) -> float:
@@ -186,6 +215,20 @@ class TextBlock:
     @property
     def top(self) -> float:
         return max(run.top for run in self.runs)
+
+    @property
+    def first_line_x(self) -> float:
+        """Where the block's FIRST line actually started.
+
+        Not the same as `x`, which is the leftmost edge of the whole block. A
+        hanging indent -- a dialogue label with the speech beginning to its
+        right and continuation lines tucked under the speech -- makes those
+        two different, and redrawing the first line at `x` slid it left into
+        the label, printing "Son" and the opening quote on top of each other.
+        """
+        top = max(run.top for run in self.runs)
+        first = [run for run in self.runs if abs(run.top - top) <= _line_tolerance(run, run)]
+        return min(run.x for run in first) if first else self.x
 
     @property
     def line_count(self) -> int:
@@ -248,7 +291,7 @@ def _segments(line: list[TextRun]) -> list[list[TextRun]]:
     """
     segments: list[list[TextRun]] = [[line[0]]]
     for previous, run in pairwise(line):
-        style_changed = previous.font_family != run.font_family
+        style_changed = base_family(previous.font_family) != base_family(run.font_family)
         size_changed = max(previous.font_size, run.font_size) > MAX_FONT_SIZE_RATIO * min(
             previous.font_size, run.font_size
         ) if min(previous.font_size, run.font_size) > 0 else False
@@ -312,7 +355,7 @@ def _continuable(
     if gap > tallest * PARAGRAPH_GAP_RATIO:
         return None
     segment_size = max(run.font_size for run in segment)
-    segment_style = segment[0].font_family
+    segment_style = base_family(segment[0].font_family)
     for block in open_blocks:
         if not _overlaps(block, segment):
             continue

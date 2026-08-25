@@ -27,6 +27,7 @@ from typing import Any
 import pypdfium2 as pdfium
 import pypdfium2.raw as pdfium_c
 
+from docs.domain.alignment import Alignment
 from docs.domain.block_grouping import TextRun
 from docs.domain.pdf_id import normalize_pdf_id
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteReport
@@ -92,6 +93,26 @@ def _styled(font: bytes, bold: bool, italic: bool) -> bytes:
     return regular
 
 
+def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float:
+    """Where one laid-out line starts, honouring the block's alignment.
+
+    Measured with the fitter's OWN calibration rather than a fresh guess: two
+    different width estimates for the same line would place it somewhere the
+    wrapper never intended.
+    """
+    # Line 0 keeps the start the original had; a hanging indent means that is
+    # NOT the block's leftmost edge.
+    left = replacement.first_line_x if line_number == 0 and replacement.first_line_x else replacement.x
+    if replacement.alignment is Alignment.LEFT or replacement.right <= left:
+        return left
+    slack = (replacement.right - left) - replacement.fitted.line_width(line)
+    if slack <= 0:
+        return left
+    if replacement.alignment is Alignment.CENTER:
+        return left + slack / 2
+    return left + slack
+
+
 def _widestring(text: str) -> Any:
     buffer = ctypes.create_string_buffer(text.encode("utf-16-le") + b"\x00\x00")
     return ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort))
@@ -149,6 +170,23 @@ def _strip_subset_tag(name: str) -> str:
     return name
 
 
+def _drop_unmapped(text: str) -> str:
+    """Remove control characters left by glyphs the font never mapped.
+
+    A PDF whose font encoding is incomplete hands back raw CID codes instead
+    of Unicode -- exactly what `pdf-inspector` means by `has_encoding_issues`,
+    which this document reported and which was ignored once already. Measured
+    on a 120-page book: 17 U+0002 and 3 U+0001, each a hyphen or ligature at
+    a line break, reaching the reader as visible garbage.
+
+    Dropping them is right for the common case rather than merely tidy: the
+    character is a LINE-BREAK hyphen, so "mis" + "interpreted" rejoins as
+    "misinterpreted", which is the word the author wrote. Keeping a code we
+    cannot decode only guarantees it reaches the reader as noise.
+    """
+    return "".join(ch for ch in text if ch.isprintable() or ch.isspace())
+
+
 def _object_text(obj: Any, textpage: Any) -> str:
     length = pdfium_c.FPDFTextObj_GetText(obj, textpage, None, 0)
     if length <= 0:
@@ -157,7 +195,7 @@ def _object_text(obj: Any, textpage: Any) -> str:
     pdfium_c.FPDFTextObj_GetText(
         obj, textpage, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort)), length
     )
-    return buffer.raw[: length * 2].decode("utf-16-le").rstrip("\x00")
+    return _drop_unmapped(buffer.raw[: length * 2].decode("utf-16-le").rstrip("\x00"))
 
 
 def _effective_font_size(obj: Any) -> float:
@@ -345,6 +383,8 @@ class Pypdfium2TextEditAdapter:
             pdfium_c.FPDFText_SetText(obj, _widestring(line))
             pdfium_c.FPDFPageObj_SetFillColor(obj, 0, 0, 0, 255)
             baseline = replacement.top - size - (line_number * size * _LINE_SPACING)
-            pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, replacement.x, baseline)
+            pdfium_c.FPDFPageObj_Transform(
+                obj, 1, 0, 0, 1, _line_x(replacement, line, line_number), baseline
+            )
             pdfium_c.FPDFPage_InsertObject(page.raw, obj)
         return 1, recognized

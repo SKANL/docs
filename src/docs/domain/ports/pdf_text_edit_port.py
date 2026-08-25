@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from docs.domain.alignment import Alignment
 from docs.domain.block_grouping import TextRun
 from docs.domain.text_fitting import FittedText
 
@@ -17,6 +18,13 @@ class BlockReplacement:
     fitted: FittedText
     x: float
     top: float
+    first_line_x: float = 0.0
+    """Where line 0 starts. Differs from `x` under a hanging indent."""
+    right: float = 0.0
+    alignment: Alignment = Alignment.LEFT
+    """A PDF stores no alignment, only placement, so redrawing every block at
+    its left edge slides every centred title and page number leftwards the
+    moment the text length changes."""
 
 
 @dataclass(frozen=True)
