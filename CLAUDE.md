@@ -82,6 +82,20 @@ three share; never re-declare an artifact filename or extension set locally.
   reports "nothing found" without having looked. Same "found != usable"
   shape as the rest of this list, aimed at our own tooling. Use `rtk ls`,
   `find` or `rg`, or check `command -v` first.
+- **A tool that FAKES success is worse than one that stays quiet, and we have
+  one.** `gitnexus analyze --index-only --pdg` printed `Analysis failed: ...
+  FTS index 'file_fts' is inconsistent` and **exited 0**. The index silently
+  stayed pinned to an old commit. Run immediately after, with
+  `ARCHITECTURE_REQUIRE_GRAPH=1` set, `test_graph_invariants.py` reported **27
+  passed** — against a graph that predated every module it claimed to check.
+  That env var only asserts the index EXISTS, never that it is CURRENT, so a
+  stale-but-present index turns the layering rule into decoration that looks
+  exactly like enforcement. Never trust the exit code: grep the output for
+  `Analysis failed`/`Error:`, and confirm `.gitnexus/meta.json` actually names
+  a symbol you just wrote. Recovery is `gitnexus clean --force` then re-analyze
+  (`--yes` is not a flag; plain `clean` refuses without `--force`). The check
+  that cannot lie to you here is an `ast` scan of imports per layer — it needs
+  no index, so it cannot pass vacuously.
 - **A warning is a failure that has not happened yet.** `filterwarnings =
   ["error"]` in `pyproject.toml` is not tidiness: one invalid escape sequence
   in a docstring passed ruff AND mypy, and broke ELEVEN architecture tests
