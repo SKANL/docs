@@ -38,6 +38,9 @@ class WriteReport:
 
     blocks_written: int
     fonts_substituted: int
+    fonts_embedded: int = 0
+    """Blocks drawn with a REAL font because no base-14 face could render
+    them. Only non-Latin targets reach this; it is correctness, not taste."""
     fonts_unrecognized: int = 0
     """Blocks whose original family matched no known face and fell back to
     Helvetica. A serif document silently turning sans-serif on every page is

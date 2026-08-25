@@ -52,3 +52,21 @@ def test_without_a_column_everything_is_left_aligned():
 
 def test_a_degenerate_column_falls_back_to_left():
     assert detect_alignment(10.0, 20.0, Column(50.0, 50.0)) is Alignment.LEFT
+
+
+def test_base14_covers_latin_targets():
+    """Spanish, French, German and Portuguese all fit cp1252, so translating
+    into them never needs a megabyte of embedded font."""
+    from docs.domain.fonts import needs_embedded_font
+
+    assert needs_embedded_font("canción, año, ¿qué? ¡Sí!") is False
+    assert needs_embedded_font("Grüße, café, ação") is False
+
+
+def test_non_latin_targets_require_a_real_font():
+    """A base-14 face renders Cyrillic and Greek as empty boxes: not a
+    degraded document, a destroyed one."""
+    from docs.domain.fonts import needs_embedded_font
+
+    assert needs_embedded_font("привет мир") is True
+    assert needs_embedded_font("γεια σου") is True

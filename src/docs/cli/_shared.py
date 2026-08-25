@@ -256,6 +256,7 @@ class Deps:
         self.pdf_classifier: Any = None
         self.pdf_text_editor: Any = None
         try:
+            from docs.infrastructure.fonts.dejavu_font_source import DejaVuFontSource
             from docs.infrastructure.pdf.pdf_inspector_classify_adapter import (
                 PdfInspectorClassifyAdapter,
             )
@@ -264,7 +265,9 @@ class Deps:
             )
 
             self.pdf_classifier = PdfInspectorClassifyAdapter()
-            self.pdf_text_editor = Pypdfium2TextEditAdapter()
+            # The font source is what makes non-Latin targets possible at all:
+            # a base-14 face draws Cyrillic and Greek as empty boxes.
+            self.pdf_text_editor = Pypdfium2TextEditAdapter(DejaVuFontSource())
         except Exception as exc:
             # Degrading is correct, swallowing silently is not: without a
             # trace, a genuinely broken adapter looks identical to an

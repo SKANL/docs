@@ -305,6 +305,18 @@ class TextBlock:
         spans = self.line_spans
         if len(spans) < 2:
             return False
+
+        # Two lines sharing a left edge mean the block is FLUSH LEFT, whatever
+        # its midpoints happen to do. Without this, an ordinary paragraph
+        # whose last line falls a few points short reads as centred -- both
+        # lines start at 72, one ends at 523 and the other at 517, and the
+        # midpoints land within tolerance. It centred 20 blocks that were
+        # nothing of the kind, including dialogue with a hanging indent.
+        lefts = sorted(left for left, _ in spans)
+        for earlier, later in pairwise(lefts):
+            if later - earlier <= self.font_size * CENTRED_LINE_TOLERANCE:
+                return False
+
         midpoints = [(left + right) / 2 for left, right in spans]
         widths = [right - left for left, right in spans]
         if max(widths) - min(widths) <= JUSTIFY_TOLERANCE:

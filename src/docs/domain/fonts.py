@@ -81,6 +81,31 @@ def substitute_font(family: str) -> tuple[str, bool]:
     return HELVETICA, False
 
 
+# What a base-14 face can actually draw. The Standard 14 fonts are encoded
+# with WinAnsi, which is cp1252 -- so this is not a heuristic, it is the
+# encoding itself asking whether it can represent the text.
+_BASE14_ENCODING = "cp1252"
+
+
+def needs_embedded_font(text: str) -> bool:
+    """Whether `text` contains glyphs no base-14 face can draw.
+
+    Spanish, French, German and Portuguese all fit cp1252, so translating into
+    them costs nothing extra. Russian, Greek and Ukrainian do not fit at all --
+    a base-14 face renders them as empty boxes, which is not a degraded
+    document but a destroyed one.
+
+    Embedding a real font is therefore driven by CORRECTNESS, not taste: it
+    happens when the target language requires it and not otherwise, so a
+    Spanish translation does not carry a megabyte of font it never needed.
+    """
+    try:
+        text.encode(_BASE14_ENCODING)
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
 def advance_ratio_for(family: str) -> float:
     """How wide the SUBSTITUTE draws, which is the only width that matters.
 

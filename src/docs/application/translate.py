@@ -58,6 +58,7 @@ class TranslateReport:
     pages_with_collisions: list[int] = field(default_factory=list)
     fonts_substituted: int = 0
     fonts_unrecognized: int = 0
+    fonts_embedded: int = 0
     pages_untrusted: list[int] = field(default_factory=list)
 
     @property
@@ -78,6 +79,8 @@ class TranslateReport:
             parts.append(f"texto superpuesto en paginas: {pages}")
         if self.fonts_substituted:
             parts.append(f"{self.fonts_substituted} con fuente sustituida")
+        if self.fonts_embedded:
+            parts.append(f"{self.fonts_embedded} con fuente real embebida")
         if self.fonts_unrecognized:
             parts.append(f"{self.fonts_unrecognized} con familia no reconocida")
         if self.pages_untrusted:
@@ -191,6 +194,7 @@ class TranslateService:
         write_report = self._editor.write_blocks(src, out, replacements)
         report.fonts_substituted = write_report.fonts_substituted
         report.fonts_unrecognized = write_report.fonts_unrecognized
+        report.fonts_embedded = write_report.fonts_embedded
         return report
 
     def _translate_block(

@@ -29,8 +29,9 @@ import pypdfium2.raw as pdfium_c
 
 from docs.domain.alignment import Alignment
 from docs.domain.block_grouping import DOMINANT_STYLE_SHARE, TextRun
-from docs.domain.fonts import substitute_font
+from docs.domain.fonts import needs_embedded_font, substitute_font
 from docs.domain.pdf_id import normalize_pdf_id
+from docs.domain.ports.font_source_port import FontSourcePort
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteReport
 
 _LINE_SPACING = 1.18
@@ -325,6 +326,48 @@ def _match_key(text: str, left: float, bottom: float) -> tuple[str, float, float
 class Pypdfium2TextEditAdapter:
     """`PdfTextEditPort` implementation over the raw PDFium C API."""
 
+    def __init__(self, font_source: FontSourcePort | None = None) -> None:
+        # Optional: without it, text a base-14 face cannot draw renders as
+        # empty boxes and the run reports the substitution, like every other
+        # missing optional toolchain here.
+        self._font_source = font_source
+
+    def _font_for(
+        self, document: Any, cache: dict[Any, Any], face: bytes, bold: bool,
+        italic: bool, text: str,
+    ) -> tuple[Any, bool]:
+        """The PDFium font handle to draw `text` with, and whether it is real.
+
+        A real font is embedded ONCE PER DOCUMENT per face. Loading it per
+        block would embed hundreds of copies of a 370KB file, which is the
+        difference between a readable document and an unusable one.
+        """
+        embed = self._font_source is not None and needs_embedded_font(text)
+        key = (face, bold, italic, embed)
+        if key in cache:
+            return cache[key]
+
+        handle = None
+        if embed and self._font_source is not None:
+            data = self._font_source.load(face.decode("ascii"), bold, italic)
+            if data:
+                buffer = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+                # `cid=True` is not optional: a simple font is single-byte, so
+                # every character above U+00FF comes back as a replacement
+                # mark. Measured -- Cyrillic read back as a row of the same
+                # glyph until this was set.
+                handle = pdfium_c.FPDFText_LoadFont(
+                    document.raw, buffer, len(data), pdfium_c.FPDF_FONT_TRUETYPE, True
+                )
+                self._buffers.append(buffer)
+
+        if handle:
+            cache[key] = (handle, True)
+        else:
+            styled = _styled(face, bold, italic)
+            cache[key] = (pdfium_c.FPDFText_LoadStandardFont(document.raw, styled), False)
+        return cache[key]
+
     def read_runs(self, pdf_path: Path) -> list[TextRun]:
         runs: list[TextRun] = []
         document = pdfium.PdfDocument(str(pdf_path))
@@ -386,6 +429,11 @@ class Pypdfium2TextEditAdapter:
 
         substituted = 0
         unrecognized = 0
+        embedded = 0
+        font_cache: dict[Any, Any] = {}
+        # PDFium reads the font bytes lazily, so the buffers must outlive the
+        # loop that created them.
+        self._buffers: list[Any] = []
         document = pdfium.PdfDocument(str(pdf_path))
         try:
             for page_index, page_replacements in by_page.items():
@@ -398,9 +446,12 @@ class Pypdfium2TextEditAdapter:
                     for obj in objects:
                         pdfium_c.FPDFPage_RemoveObject(page.raw, obj)
                         pdfium_c.FPDFPageObj_Destroy(obj)
-                    drawn, known = self._draw(document, page, replacement)
+                    drawn, known, real = self._draw(
+                        document, page, replacement, font_cache
+                    )
                     substituted += drawn
                     unrecognized += 0 if known else 1
+                    embedded += 1 if real else 0
                 pdfium_c.FPDFPage_GenerateContent(page.raw)
 
             out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -415,6 +466,7 @@ class Pypdfium2TextEditAdapter:
             blocks_written=len(replacements),
             fonts_substituted=substituted,
             fonts_unrecognized=unrecognized,
+            fonts_embedded=embedded,
         )
 
     def _targets_for(
@@ -437,7 +489,10 @@ class Pypdfium2TextEditAdapter:
             pdfium_c.FPDFText_ClosePage(textpage)
         return [(replacements[index], matched[index]) for index in sorted(matched)]
 
-    def _draw(self, document: Any, page: Any, replacement: BlockReplacement) -> tuple[int, bool]:
+    def _draw(
+        self, document: Any, page: Any, replacement: BlockReplacement,
+        font_cache: dict[Any, Any],
+    ) -> tuple[int, bool, bool]:
         family = replacement.remove[0].font_family if replacement.remove else ""
         font_name, recognized = _standard_font_for(family)
         # Matches `TextBlock._dominant`: a block goes italic only when it is
@@ -447,8 +502,10 @@ class Pypdfium2TextEditAdapter:
         share = total * DOMINANT_STYLE_SHARE
         bold = sum(len(r.text) for r in replacement.remove if r.bold) >= share
         italic = sum(len(r.text) for r in replacement.remove if r.italic) >= share
-        styled = _styled(font_name, bold, italic)
-        font = pdfium_c.FPDFText_LoadStandardFont(document.raw, styled)
+        font, real = self._font_for(
+            document, font_cache, font_name, bold, italic,
+            " ".join(replacement.fitted.lines),
+        )
         size = replacement.fitted.font_size
         lines = replacement.fitted.lines
         for line_number, line in enumerate(lines):
@@ -472,4 +529,4 @@ class Pypdfium2TextEditAdapter:
             # this only lifts the line to its baseline.
             pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, 0, first - line_number * leading)
             pdfium_c.FPDFPage_InsertObject(page.raw, obj)
-        return 1, recognized
+        return 1, recognized, real

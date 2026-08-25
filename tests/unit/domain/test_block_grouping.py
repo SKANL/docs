@@ -339,3 +339,26 @@ def test_flush_lines_are_not_called_centred():
         TextRun("segunda linea igual", 72.0, 684.0, 451.0, 10.0, 0, 14.0, "Baskerville"),
     ]
     assert group_runs_into_blocks(runs)[0].centered is False
+
+
+def test_a_left_paragraph_with_a_short_last_line_is_not_centred():
+    """Both lines start at 72; one ends at 523 and the other at 517, so their
+    midpoints land within tolerance. Reading that as centred centred 20 blocks
+    that were nothing of the kind, dialogue among them."""
+    runs = [
+        TextRun("primera linea completa", 72.0, 700.0, 451.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("segunda casi completa", 72.0, 684.0, 445.0, 10.0, 0, 14.0, "Baskerville"),
+    ]
+    assert group_runs_into_blocks(runs)[0].centered is False
+
+
+def test_a_hanging_indent_is_not_centred():
+    """Dialogue whose continuation lines tuck under the speech shares a left
+    edge between those lines, which is what makes it flush rather than
+    centred."""
+    runs = [
+        TextRun("primera linea de la frase", 151.0, 700.0, 334.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("continuacion de la frase", 126.0, 684.0, 379.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("y el final de la frase", 127.0, 668.0, 371.0, 10.0, 0, 14.0, "Baskerville"),
+    ]
+    assert group_runs_into_blocks(runs)[0].centered is False

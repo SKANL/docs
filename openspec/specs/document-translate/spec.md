@@ -152,6 +152,31 @@ A PDF with no text layer MUST be refused with a message naming OCR as the remedy
 - WHEN translation runs
 - THEN its text blocks are translated normally
 
+### Requirement: Non-Latin Target Languages
+
+The system MUST embed a real font when the target text contains characters no base-14 face can draw, and MUST NOT embed one otherwise.
+
+A base-14 face is encoded WinAnsi, so it renders Cyrillic or Greek as empty boxes -- a destroyed document, not a degraded one. Embedding is therefore driven by correctness: a Latin target pays nothing, and a non-Latin target becomes possible at all. Each face is embedded once per document; embedding per block would place hundreds of copies of a 370KB file in the output.
+
+#### Scenario: A Latin target embeds nothing
+
+- GIVEN a translation into Spanish, French, German or Portuguese
+- WHEN the document is written
+- THEN no font is embedded and the output carries no extra font data
+
+#### Scenario: A non-Latin target renders correctly
+
+- GIVEN a translation into a language written in Cyrillic or Greek
+- WHEN the document is written
+- THEN a real font is embedded and the text is drawn, not replaced by boxes
+- AND the count of blocks drawn with an embedded font is reported
+
+#### Scenario: A missing font source degrades and is reported
+
+- GIVEN no font source is configured
+- WHEN text requiring one is drawn
+- THEN the base-14 face is used and the substitution is counted, and the run still completes
+
 ### Requirement: Text-Layer Integrity
 
 The output MUST remain a usable document, not a picture of one. Every word present in the source's text layer MUST be present in the output's, separated as words.

@@ -148,9 +148,14 @@ three share; never re-declare an artifact filename or extension set locally.
   `"PRUEA de centos□cncin□o□u□"`. Not just the accents; the lowercase `a` is
   absent too, because that subset carries only the glyphs of `"The Mom Test by
   @robfitz 10"`. It fails SILENTLY -- the text layer reads back correct
-  Spanish, and only a render shows it. Substituting a base-14 face is the only
-  option that yields a readable document, and `document-translate` counts
-  every substitution so the compromise stays visible.
+  Spanish, and only a render shows it. **But that closes only the question of
+  REUSING the embedded font.** `FPDFText_LoadFont(..., cid=True)` embeds a
+  DIFFERENT face and draws Cyrillic, Greek and accented Latin correctly --
+  which is how `document-translate` supports non-Latin targets at all. `cid`
+  is not optional: a simple font is single-byte, so `cid=False` returns the
+  same replacement mark for every character above U+00FF. The font comes from
+  matplotlib's bundled DejaVu (already a dependency) rather than the OS, so
+  the output stays byte-identical across machines.
 - A fifth instance of **"found" is not "usable"**: `FPDFFont_GetFamilyName` is
   present, returns success, and yields an EMPTY string for embedded subset
   fonts. `FPDFFont_GetBaseFontName` returns `GGKEDP+DejaVuSans` — strip the
