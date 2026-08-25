@@ -44,17 +44,39 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "required_in_strict": {},
         "scripts": {},
     },
-    "evidence_sources": {},
+    "evidence_sources": {
+        "code_globs": {},
+        "dependency_tokens": {},
+        "files": {},
+        "git_log": {},
+        "root": {},
+        "scope_contradiction_terms": {},
+        "source_tokens": {},
+    },
     "format": {
         "keyword_bold_terms": {},
         "page_margins_cm": {
-            "non_cover": {},
+            "non_cover": {
+                "bottom": {},
+                "bottom_margin": {},
+                "left": {},
+                "left_margin": {},
+                "right": {},
+                "right_margin": {},
+                "top": {},
+                "top_margin": {},
+            },
         },
         "page_size": {},
     },
     "ledger_seed": {},
     "normative": {
+        "excluded_front_matter": {},
+        "first_person_patterns": {},
         "normative_source": {},
+        "scope_focus": {},
+        "scope_term": {},
+        "subjective_terms": {},
     },
     "output": {
         "body_name": {},
@@ -75,9 +97,12 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "fact_ledger": {},
         "inbox_dir": {},
         "issues_manifest": {},
+        "libreoffice_bin": {},
+        "libreoffice_fallbacks": {},
         "manual_dir": {},
         "manual_pdf": {},
         "output_draft_dir": {},
+        "output_final_dir": {},
         "output_qa_dir": {},
         "prompts_dir": {},
         "rules_manifest": {},
@@ -86,7 +111,12 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "source_manifest": {},
         "template_docx": {},
     },
-    "preliminaries": {},
+    "preliminaries": {
+        "blank_page": {},
+        "body_pagination_start": {},
+        "responsibility_page": {},
+        "roman_pagination": {},
+    },
     "privacy": {
         "forbidden_in_body_patterns": {},
         "sensitive_context_fields": {},
@@ -96,7 +126,10 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
     },
     "section_contracts": {},
     "sections": {},
-    "strict_policy": {},
+    "strict_policy": {
+        "draft": {},
+        "strict": {},
+    },
     "structure": {},
     "templates_dir": {},
     "title": {},
@@ -113,6 +146,19 @@ DYNAMICALLY_READ_KEYS: dict[str, tuple[str, ...]] = {
     # `_check_margins_and_cover_policy` reads these off `template.model_extra`
     # rather than off a name called `config`.
     "format.page_margins_cm": ("cover_policy",),
+    # Toolchain overrides. Each `resolve_*_executable(paths)` takes `paths` as
+    # a FUNCTION PARAMETER, so tracing them would mean following a value
+    # across a call boundary -- genuinely beyond an AST scan, and the reason
+    # this list exists rather than being an excuse. Each one is pinned by a
+    # behavioural test that a configured override is honoured, which is
+    # stronger evidence than a pattern match over source text.
+    "paths": (
+        "java_bin", "java_fallbacks",
+        "libreoffice_bin", "libreoffice_fallbacks",
+        "mmdc_bin", "mmdc_fallbacks",
+        "pandoc_bin", "pandoc_fallbacks",
+        "resvg_bin", "resvg_fallbacks",
+    ),
 }
 
 
