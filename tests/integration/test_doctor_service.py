@@ -722,3 +722,72 @@ def test_an_accented_filename_stored_decomposed_is_found(tmp_path):
     result = service.run_doctor("doc-1", _config(tmp_path, manual_pdf=declared))
 
     assert next(c for c in result.checks if c.name == "manual_pdf").ok is True
+
+
+def test_stale_outputs_are_reported_in_the_final_directory_too(tmp_path):
+    # My own fix, done by halves. `output/final/` is the folder you deliver
+    # FROM, and the real workspace had five files in it -- three obsolete,
+    # including the same `tesina-*` pair. Checking only `draft/` guarded the
+    # cheaper half.
+    final = tmp_path / "final"
+    final.mkdir()
+    (final / "Informe.docx").write_bytes(b"x")
+    (final / "tesina-draft.docx").write_bytes(b"x")
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", _config(tmp_path, output_final_dir=str(final)))
+
+    check = next(c for c in result.checks if c.name == "stale_finals")
+    assert check.ok is False
+    assert "tesina-draft.docx" in check.detail
+
+
+def test_a_draft_inside_the_final_directory_is_always_wrong(tmp_path):
+    # Distinct from an outdated name: a `*-draft.docx` in `final/` is a copy
+    # mistake, never a stale configuration. `doc mark-final` promotes a build
+    # INTO `final/`; a draft landing there means something was copied by hand.
+    final = tmp_path / "final"
+    final.mkdir()
+    (final / "informe-draft.docx").write_bytes(b"x")
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", _config(tmp_path, output_final_dir=str(final)))
+
+    check = next(c for c in result.checks if c.name == "stale_finals")
+    assert check.ok is False
+    assert "borrador" in check.detail.lower()
+
+
+def test_a_clean_final_directory_passes(tmp_path):
+    final = tmp_path / "final"
+    final.mkdir()
+    (final / "Informe.docx").write_bytes(b"x")
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", _config(tmp_path, output_final_dir=str(final)))
+
+    assert next(c for c in result.checks if c.name == "stale_finals").ok is True
+
+
+def test_the_libreoffice_check_names_everything_its_absence_costs(tmp_path):
+    # It said "para el QA visual (opcional)" and stopped there, while
+    # `PdfRendererAdapter` depends on the same binary. A user reading doctor
+    # never learned that `--format pdf` was unavailable to them.
+    class _NoLibreOffice:
+        def resolve_pandoc(self, paths): return "/fake/pandoc"
+        def resolve_libreoffice(self, paths): return None
+        def resolve_java(self, paths): return None
+        def resolve_mmdc(self, paths): return None
+        def resolve_resvg(self, paths): return None
+        def tool_version(self, executable): return "pandoc 3.10"
+
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    service = DoctorService(
+        JsonEvidenceRepository(), AssetService(FilesystemAssetRepository(), workspace), _NoLibreOffice()
+    )
+
+    result = service.run_doctor("doc-1", _config(tmp_path))
+
+    detail = next(c for c in result.checks if c.name == "libreoffice").detail
+    assert "pdf" in detail.lower(), "debe decir que se pierde la salida PDF"
+    assert "qa" in detail.lower(), "y también el QA visual"

@@ -138,11 +138,15 @@ class DoctorService:
             Check(
                 "libreoffice",
                 bool(libreoffice),
-                libreoffice or "No encontrado en PATH. Instalar LibreOffice para el QA visual (opcional).",
+                libreoffice
+                or "No encontrado en PATH. Sin LibreOffice se pierden DOS cosas: la "
+                "salida `--format pdf` y el QA visual (`qa-docx`). El `.docx` se "
+                "construye igual. Instalá LibreOffice para habilitarlas.",
                 required=False,
             )
         )
         checks.append(self._stale_drafts_check(config))
+        checks.append(self._stale_finals_check(config))
         checks.extend(self._image_page_caption_checks(config))
         checks.extend(self._capability_checks(config))
 
@@ -240,6 +244,47 @@ class DoctorService:
             f"configuración anterior. Borralos vos para no entregar el equivocado.",
             required=False,
         )
+
+    def _stale_finals_check(self, config: dict[str, Any]) -> Check:
+        """`output/final/` is the folder you deliver FROM.
+
+        Same hazard as `_stale_drafts_check` and a worse blast radius, which
+        is why checking only `draft/` guarded the cheaper half. A real
+        workspace held five files here, three obsolete. One case is sharper
+        than a stale name: a `*-draft.docx` inside `final/` is a copy
+        mistake, never an outdated configuration -- `doc mark-final` promotes
+        a build INTO this directory, so a draft landing here was moved by
+        hand.
+
+        Reports, never deletes.
+        """
+        final_dir_value = config.get("paths", {}).get("output_final_dir")
+        if not final_dir_value:
+            return Check("stale_finals", True, "Sin directorio final configurado.", required=False)
+        final_dir = Path(final_dir_value)
+        if not final_dir.is_dir():
+            return Check("stale_finals", True, "Todavía no se promovió nada a final.", required=False)
+        outputs = sorted(p.name for p in final_dir.glob("*.docx"))
+        drafts = [name for name in outputs if name.endswith("-draft.docx")]
+        if drafts:
+            return Check(
+                "stale_finals",
+                False,
+                f"Hay borrador(es) dentro de {final_dir}: {', '.join(drafts)}. "
+                f"`doc mark-final` promueve la build a esta carpeta; un "
+                f"`-draft.docx` acá se copió a mano y no debería entregarse.",
+                required=False,
+            )
+        if len(outputs) > 1:
+            return Check(
+                "stale_finals",
+                False,
+                f"Hay {len(outputs)} .docx en {final_dir}: {', '.join(outputs)}. "
+                f"Es la carpeta desde la que entregás: dejá solo el vigente para "
+                f"no mandar el equivocado.",
+                required=False,
+            )
+        return Check("stale_finals", True, outputs[0] if outputs else "Sin salidas finales.", required=False)
 
     def _image_page_caption_checks(self, config: dict[str, Any]) -> list[Check]:
         """A full-page image with no `caption` falls back to its filename.

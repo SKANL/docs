@@ -26,3 +26,26 @@ def test_resolve_pandoc_executable_falls_back_to_fallback_list(monkeypatch, tmp_
 def test_resolve_pandoc_executable_returns_none_when_nothing_found(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert resolve_pandoc_executable({}) is None
+
+
+def test_a_configured_override_is_honoured(tmp_path, monkeypatch):
+    # Pins `paths.pandoc_bin` behaviourally. The AST scan cannot see it --
+    # `resolve_pandoc_executable(paths)` takes `paths` as a parameter, so the
+    # key is read across a call boundary -- so it lives in
+    # `DYNAMICALLY_READ_KEYS`, and a declaration nobody exercises is a
+    # declaration that can quietly become false.
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    configured = tmp_path / "pandoc.exe"
+    configured.write_text("", encoding="utf-8")
+
+    assert resolve_pandoc_executable({"pandoc_bin": str(configured)}) == str(configured)
+
+
+def test_a_configured_fallback_is_honoured(tmp_path, monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    fallback = tmp_path / "otro-pandoc.exe"
+    fallback.write_text("", encoding="utf-8")
+
+    resolved = resolve_pandoc_executable({"pandoc_fallbacks": [str(fallback)]})
+
+    assert resolved == str(fallback)

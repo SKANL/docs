@@ -59,6 +59,15 @@ three share; never re-declare an artifact filename or extension set locally.
   different strings to `Path.exists()`. In a Spanish-first harness that is
   the norm, not an edge case. `domain/doctor.py:match_normalized` owns the
   comparison; the caller lists the directory.
+- **The config vocabulary's blind spots are the expensive part.** The AST
+  scan in `tests/architecture/test_config_vocabulary.py` resolves three
+  shapes: a literal key, a loop variable bound to a literal list, and a local
+  alias of `config`. What it cannot resolve -- a key read across a call
+  boundary, like `resolve_pandoc_executable(paths)` -- is declared in
+  `DYNAMICALLY_READ_KEYS` and pinned by a behavioural test. Missing a shape
+  is not harmless: an under-broad vocabulary reports a REAL key as a typo,
+  and a live key was renamed out of a shipped template on exactly that
+  advice. The list errs broad on purpose.
 - **"Found" is not "usable", and this repo has learned it four times:**
   `safe_style_name` (listed ≠ applicable), `MermaidSvgRenderer` (present ≠
   renders), `doctor`'s toolchain checks (on PATH ≠ new enough), and

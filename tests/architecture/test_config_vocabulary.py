@@ -96,6 +96,30 @@ def _literal_string_lists(tree: ast.AST) -> dict[str, list[str]]:
     return bound
 
 
+def _config_aliases(tree: ast.AST) -> dict[str, tuple[str, ...]]:
+    """Local names bound to a slice of `config`, and the path they stand for.
+
+    `status.py` writes `paths = config["paths"]` and then
+    `paths.get("output_final_dir")`. Rooting the scan on the name `config`
+    alone made nineteen legitimate keys invisible -- every toolchain override
+    and the final output directory among them -- and near-miss detection then
+    reported `paths.output_final_dir` as a probable typo of `output_qa_dir`.
+    That is the same advice that got a live key renamed out of a shipped
+    template, so the shape is resolved rather than merely documented.
+    """
+    aliases: dict[str, tuple[str, ...]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        key_path = _key_path(node.value)
+        if key_path:
+            aliases[target.id] = key_path
+    return aliases
+
+
 def _scan() -> tuple[set[tuple[str, ...]], int]:
     """(distinct key paths, total accesses) across `src/docs`."""
     paths: set[tuple[str, ...]] = set()
@@ -103,6 +127,7 @@ def _scan() -> tuple[set[tuple[str, ...]], int]:
     for path in sorted(SRC_ROOT.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         bound = _literal_string_lists(tree)
+        aliases = _config_aliases(tree)
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Subscript, ast.Call)):
                 continue
@@ -114,13 +139,44 @@ def _scan() -> tuple[set[tuple[str, ...]], int]:
             # `config["paths"].get(name)` where `name` iterates a literal
             # list: the prefix resolves, the final key does not, and every
             # value the name can hold is a key the code reads.
-            prefix = _key_path(_receiver(node))
+            prefix = _key_path(_receiver(node)) or _alias_prefix(_receiver(node), aliases)
+            if prefix is None:
+                continue
+            # A literal key read off an alias: `paths.get("output_final_dir")`.
+            literal = _literal_key(node)
+            if literal:
+                paths.add((*prefix, literal))
+                accesses += 1
             if prefix:
                 for candidate in bound.get(_dynamic_key_name(node) or "", ()):
                     paths.add((*prefix, candidate))
                     accesses += 1
     return paths, accesses
 
+
+
+def _alias_prefix(node: ast.AST | None, aliases: dict[str, tuple[str, ...]]) -> tuple[str, ...] | None:
+    """The config path a local alias stands for, when the receiver is one."""
+    if isinstance(node, ast.Name):
+        return aliases.get(node.id)
+    return None
+
+
+def _literal_key(node: ast.AST) -> str | None:
+    """The string key of a `[...]` / `.get(...)` access, when it is literal."""
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+        value = node.slice.value
+        return value if isinstance(value, str) else None
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "get"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ):
+        return node.args[0].value
+    return None
 
 def _receiver(node: ast.AST) -> ast.AST | None:
     """The expression a dynamic `[x]` / `.get(x)` is reading FROM."""
@@ -218,3 +274,36 @@ def test_keys_read_through_a_loop_variable_are_still_declared():
             f"literal; sin declararlo, el chequeo de casi-coincidencias lo "
             f"trata como typo de una clave real."
         )
+
+
+def test_keys_read_through_a_local_alias_are_still_declared():
+    # Third time this blind spot cost something. `status.py` writes
+    # `paths = config["paths"]` and then `paths.get("output_final_dir")`; the
+    # scan rooted on the name `config`, so nineteen legitimate keys were
+    # invisible -- every toolchain override (`pandoc_bin`, `java_fallbacks`,
+    # ...) and the final output directory among them.
+    #
+    # Measured consequence before the fix: a template declaring
+    # `paths.output_final_dir` was told it was probably a typo of
+    # `output_qa_dir`. That is exactly the advice that made me rename a live
+    # key out of a shipped template. Declaring blind spots is not enough when
+    # something acts on the output; this one is closed instead.
+    declared = known_keys_at(("paths",))
+    for key in ("output_final_dir", "pandoc_bin", "pandoc_fallbacks", "libreoffice_bin", "java_bin"):
+        assert key in declared, f"paths.{key} se lee vía alias local y no está declarada"
+
+
+def test_no_real_config_key_is_reported_as_a_typo():
+    # The end-to-end property all of this exists for: a template declaring
+    # keys the harness actually reads must produce ZERO near-miss findings.
+    from docs.domain.template_validation import validate_template
+
+    raw = {
+        "type": "t", "title": "T",
+        "sections": [{"id": "a", "title": "A", "order": 1}],
+        "section_contracts": {"a": {}},
+        "context_schema": {"topics": []},
+        "paths": dict.fromkeys(sorted(known_keys_at(("paths",))), "x"),
+    }
+    near = [i for i in validate_template(raw) if i.code == "template.unknown_key"]
+    assert near == [], [i.message for i in near]
