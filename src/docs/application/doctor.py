@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.asset import AssetService
-from docs.domain.doctor import Check, DoctorResult, find_manual_like
+from docs.application.output_names import resolve_draft_docx_name
+from docs.domain.doctor import Check, DoctorResult, find_manual_like, match_normalized
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.content_probe_port import ContentProbePort
@@ -70,8 +71,7 @@ class DoctorService:
         for name in ["template_docx", "example_pdf", "manual_pdf"]:
             value = config["paths"].get(name)
             if value:
-                path = Path(value)
-                checks.append(Check(name, path.exists() and path.is_file(), str(path), required=False))
+                checks.append(self._declared_file_check(name, Path(value)))
 
         for part in structure_parts(config):
             if part.get("type") in {"cover_from_asset", "embed_docx"}:
@@ -142,6 +142,8 @@ class DoctorService:
                 required=False,
             )
         )
+        checks.append(self._stale_drafts_check(config))
+        checks.extend(self._image_page_caption_checks(config))
         checks.extend(self._capability_checks(config))
 
         scripts_dir_value = config.get("paths", {}).get("documents_scripts_dir")
@@ -167,6 +169,104 @@ class DoctorService:
             checks.append(Check("python-docx", False, f"No disponible: {exc}"))
 
         return DoctorResult(checks)
+
+    def _resolve_declared_path(self, path: Path) -> Path:
+        """The declared path, or its sibling that differs only in Unicode form.
+
+        A filename can sit on disk decomposed (NFD) while a template declares
+        it composed (NFC) -- the same name to a human, different strings to
+        `Path.exists()`. A real OneDrive workspace hit exactly that and doctor
+        called a guide PDF missing while listing the directory it was in.
+        Listing is the I/O; `match_normalized` owns the comparison.
+        """
+        if path.exists() or not path.parent.is_dir():
+            return path
+        try:
+            candidates = [entry.name for entry in path.parent.iterdir()]
+        except OSError:  # pragma: no cover - unreadable directory
+            return path
+        matched = match_normalized(path.name, candidates)
+        return path.parent / matched if matched else path
+
+    def _declared_file_check(self, name: str, path: Path) -> Check:
+        """A declared input file must exist AND be what its extension claims.
+
+        Existing is the cheap half. `template_docx` is the cover base, so a
+        text file renamed `.docx` used to pass here and die much later inside
+        python-docx with an error that never named the file the user got
+        wrong -- the same "found is not usable" shape as `safe_style_name`,
+        `MermaidSvgRenderer` and the toolchain version checks.
+        """
+        path = self._resolve_declared_path(path)
+        if not (path.exists() and path.is_file()):
+            return Check(name, False, str(path), required=False)
+        if self.content_probe is not None and not self.content_probe.probe(path).container_ok:
+            return Check(
+                name,
+                False,
+                f"{path} existe pero no se abre como `.docx`: la extensión dice "
+                f"una cosa y el contenido otra. Revisá que sea el archivo correcto.",
+                required=False,
+            )
+        return Check(name, True, str(path), required=False)
+
+    def _stale_drafts_check(self, config: dict[str, Any]) -> Check:
+        """More than one `*-draft.docx` in the output directory is a hazard.
+
+        Found in a real workspace: `reporte-estadia-draft.docx` sitting next
+        to `tesina-draft.docx`, left behind when the output name changed.
+        Two files called "draft" and nothing saying which is current -- the
+        wrong one is one careless copy away from being delivered.
+
+        Reports, never deletes. Removing someone's output without asking is
+        exactly what a harness must not do.
+        """
+        draft_dir_value = config.get("paths", {}).get("output_draft_dir")
+        if not draft_dir_value:
+            return Check("stale_drafts", True, "Sin directorio de salida configurado.", required=False)
+        draft_dir = Path(draft_dir_value)
+        if not draft_dir.is_dir():
+            return Check("stale_drafts", True, "Todavía no se construyó nada.", required=False)
+        drafts = sorted(p.name for p in draft_dir.glob("*-draft.docx"))
+        if len(drafts) <= 1:
+            return Check("stale_drafts", True, drafts[0] if drafts else "Sin borradores.", required=False)
+        current = resolve_draft_docx_name(config.get("doc_id", ""), config)
+        others = [name for name in drafts if name != current]
+        return Check(
+            "stale_drafts",
+            False,
+            f"Hay {len(drafts)} borradores en {draft_dir}: {', '.join(drafts)}. "
+            f"El vigente es `{current}`; {', '.join(others)} quedaron de una "
+            f"configuración anterior. Borralos vos para no entregar el equivocado.",
+            required=False,
+        )
+
+    def _image_page_caption_checks(self, config: dict[str, Any]) -> list[Check]:
+        """A full-page image with no `caption` falls back to its filename.
+
+        Rebuilding a real document surfaced two of these -- the alt text read
+        `carta-empresarial` and `carta-academica`. Better than the nothing
+        they had before, and worse than a sentence the author could write in
+        five seconds. A whole page that IS an image is the worst place for a
+        screen reader to hear a filename.
+        """
+        checks: list[Check] = []
+        for part in structure_parts(config):
+            if part.get("type") != "image_page" or part.get("caption"):
+                continue
+            image = str(part.get("image", "(sin imagen)"))
+            checks.append(
+                Check(
+                    f"image_page_caption:{image}",
+                    False,
+                    f"La página completa `{image}` no declara `caption`, así que su "
+                    f"texto alternativo va a ser el nombre del archivo. Agregá "
+                    f"`\"caption\"` a esa parte de `structure` para que un lector de "
+                    f"pantalla anuncie qué es.",
+                    required=False,
+                )
+            )
+        return checks
 
     def _version_of(self, executable: str | None) -> tuple[int, ...] | None:
         """The parsed version of a resolved tool, or None when unreadable."""

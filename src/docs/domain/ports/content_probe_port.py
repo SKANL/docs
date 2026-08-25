@@ -17,6 +17,14 @@ class ContentSignals:
     folding, keeping the adapter role-agnostic."""
 
     extension: str = ""
+    # Whether the file opens as the container its extension implies. `True`
+    # for a readable `.docx`, for a missing file, and for any extension that
+    # implies no container at all (`.md`, `.txt`) -- fail-open, as this port
+    # requires. `False` ONLY when the file demonstrably is not what it claims:
+    # a text file renamed `.docx` is the case that motivated it, because
+    # `doctor` reported it OK and the build then died on a `PackageNotFound`
+    # that never named the file.
+    container_ok: bool = True
     pdf_title: str = ""
     first_headings: tuple[str, ...] = ()
     head_keywords: tuple[str, ...] = ()

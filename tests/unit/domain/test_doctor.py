@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from docs.domain.doctor import Check, DoctorResult, find_manual_like
+import unicodedata
+
+from docs.domain.doctor import Check, DoctorResult, find_manual_like, match_normalized
 
 
 def test_check_to_dict_includes_all_fields():
@@ -66,3 +68,39 @@ def test_find_manual_like_is_deterministic_and_picks_lowest_sorted_path():
         ("a/normativa.pdf", "pdf"),
     ]
     assert find_manual_like(candidates) == "a/normativa.pdf"
+
+
+# --- accented filenames: NFC on one side, NFD on the other --------------------
+
+
+def test_match_normalized_finds_a_name_stored_in_a_different_unicode_form():
+    # Found by pointing the harness at a real OneDrive workspace. The template
+    # declares the guide as NFC (a precomposed `Í`); the filesystem stored it
+    # as NFD (`I` plus a combining acute). `Path.exists()` says False and
+    # doctor reported a file that is RIGHT THERE as missing.
+    #
+    # This harness is Spanish-first: accented filenames are the norm, so this
+    # is not an exotic case.
+    declared = unicodedata.normalize("NFC", "GUÍA DE REFERENCIA.pdf")
+    on_disk = unicodedata.normalize("NFD", "GUÍA DE REFERENCIA.pdf")
+    assert declared != on_disk
+
+    assert match_normalized(declared, [on_disk, "otra-cosa.pdf"]) == on_disk
+
+
+def test_match_normalized_prefers_an_exact_hit():
+    assert match_normalized("a.pdf", ["a.pdf", "A.pdf"]) == "a.pdf"
+
+
+def test_match_normalized_returns_none_when_nothing_matches():
+    assert match_normalized("falta.pdf", ["otra.pdf"]) is None
+    assert match_normalized("falta.pdf", []) is None
+
+
+def test_match_normalized_is_deterministic_across_several_candidates():
+    # Two candidates can normalise to the same name; the harness demands the
+    # same answer every run, so the first in sorted order wins.
+    same = [unicodedata.normalize("NFD", "Ñ.pdf"), unicodedata.normalize("NFC", "Ñ.pdf")]
+    first = match_normalized("Ñ.pdf", same)
+    assert first == match_normalized("Ñ.pdf", list(reversed(same)))
+    assert first is not None

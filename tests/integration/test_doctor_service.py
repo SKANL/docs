@@ -601,3 +601,124 @@ def test_no_version_check_when_the_tool_is_absent(tmp_path):
     result = _doctor(tmp_path, _resolver(pandoc=None)).run_doctor("doc-1", _config(tmp_path))
 
     assert not any(c.name == "pandoc_version" for c in result.checks)
+
+
+# --- three findings from rebuilding one real, delivered document --------------
+
+
+class _Probe:
+    """A content probe that reports one path as an unreadable container."""
+
+    def __init__(self, broken: str = "") -> None:
+        self.broken = broken
+
+    def probe(self, path):
+        from docs.domain.ports.content_probe_port import ContentSignals
+
+        return ContentSignals(
+            extension=path.suffix.lower().lstrip("."),
+            container_ok=str(path) != self.broken,
+        )
+
+
+def _doctor_with_probe(tmp_path, probe):
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    return DoctorService(
+        JsonEvidenceRepository(),
+        AssetService(FilesystemAssetRepository(), workspace),
+        _resolver(),
+        content_probe=probe,
+    )
+
+
+def test_a_file_that_is_not_really_a_docx_fails_its_check(tmp_path):
+    # `template_docx` IS the cover base. Pointing at the wrong file used to
+    # pass doctor and die much later inside python-docx, with an error that
+    # never names the file the user got wrong.
+    fake = tmp_path / "plantilla.docx"
+    fake.write_text("no soy un docx", encoding="utf-8")
+    service = _doctor_with_probe(tmp_path, _Probe(broken=str(fake)))
+
+    result = service.run_doctor("doc-1", _config(tmp_path, template_docx=str(fake)))
+
+    check = next(c for c in result.checks if c.name == "template_docx")
+    assert check.ok is False
+    assert "docx" in check.detail.lower()
+
+
+def test_a_real_docx_still_passes_its_check(tmp_path):
+    from docx import Document
+
+    real = tmp_path / "plantilla.docx"
+    Document().save(real)
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", _config(tmp_path, template_docx=str(real)))
+
+    assert next(c for c in result.checks if c.name == "template_docx").ok is True
+
+
+def test_doctor_warns_when_two_drafts_share_the_output_directory(tmp_path):
+    # Found in a real workspace: `output/draft/` held `reporte-estadia-draft.docx`
+    # next to `tesina-draft.docx`, left behind when the output name changed.
+    # Two files called "draft", nothing saying which is current, and the wrong
+    # one is one careless copy away from being delivered.
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    (draft / "informe-draft.docx").write_bytes(b"x")
+    (draft / "tesina-draft.docx").write_bytes(b"x")
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", _config(tmp_path, output_draft_dir=str(draft)))
+
+    check = next(c for c in result.checks if c.name == "stale_drafts")
+    assert check.ok is False
+    assert "tesina-draft.docx" in check.detail
+    assert check.required is False, "avisa, nunca borra la salida de alguien"
+
+
+def test_a_single_draft_is_not_reported(tmp_path):
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    (draft / "informe-draft.docx").write_bytes(b"x")
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", _config(tmp_path, output_draft_dir=str(draft)))
+
+    assert next(c for c in result.checks if c.name == "stale_drafts").ok is True
+
+
+def test_doctor_suggests_a_caption_for_a_full_page_image_without_one(tmp_path):
+    # Rebuilding a real document showed two full-page inserts falling back to
+    # their filename for alt text (`carta-empresarial`, `carta-academica`).
+    # Better than the nothing they had, and worse than a sentence the author
+    # could write in five seconds.
+    config = _config(tmp_path)
+    config["structure"] = [{"type": "image_page", "image": "carta.png"}, {"type": "sections"}]
+    service = _doctor_with_probe(tmp_path, _Probe())
+
+    result = service.run_doctor("doc-1", config)
+
+    check = next(c for c in result.checks if c.name == "image_page_caption:carta.png")
+    assert check.ok is False
+    assert "caption" in check.detail
+    assert check.required is False
+
+
+def test_an_accented_filename_stored_decomposed_is_found(tmp_path):
+    # The real-workspace bug, end to end: OneDrive stored the guide's name
+    # decomposed, the template declares it composed, and doctor reported a
+    # file that was right there as missing.
+    import unicodedata
+
+    guides = tmp_path / "guides"
+    guides.mkdir()
+    on_disk = guides / unicodedata.normalize("NFD", "GUÍA DE REFERENCIA.pdf")
+    on_disk.write_bytes(b"%PDF-1.4\n")
+    declared = str(guides / unicodedata.normalize("NFC", "GUÍA DE REFERENCIA.pdf"))
+    assert not Path(declared).exists(), "el fixture debe reproducir el desencuentro"
+
+    service = _doctor_with_probe(tmp_path, _Probe())
+    result = service.run_doctor("doc-1", _config(tmp_path, manual_pdf=declared))
+
+    assert next(c for c in result.checks if c.name == "manual_pdf").ok is True

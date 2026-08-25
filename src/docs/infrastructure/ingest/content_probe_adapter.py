@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import zipfile
 from itertools import islice
 from pathlib import Path
 
@@ -17,6 +18,32 @@ _HEAD_BYTES = 4000
 _MAX_HEADINGS = 5
 _TEXT_EXTENSIONS = frozenset({"md", "txt"})
 _WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+# A `.docx` is an OPC package: a zip whose parts include the main document.
+# Checking the container costs one zip open and answers the question the
+# extension only claims to answer.
+_CONTAINER_PARTS = {"docx": "word/document.xml"}
+
+
+def _container_ok(path: Path, extension: str) -> bool:
+    """Whether `path` opens as the container `extension` implies.
+
+    Fail-open in every direction the port demands: an extension with no
+    container, a missing file, or an unreadable one all report True. Only a
+    file that opens as a zip WITHOUT its required part -- or does not open as
+    a zip at all while claiming to -- is reported False.
+    """
+    required = _CONTAINER_PARTS.get(extension)
+    if required is None or not path.is_file():
+        return True
+    try:
+        with zipfile.ZipFile(path) as archive:
+            return required in archive.namelist()
+    except zipfile.BadZipFile:
+        return False
+    except OSError:  # pragma: no cover - unreadable file, not a wrong format
+        return True
 
 
 class FilesystemContentProbeAdapter:
@@ -40,10 +67,19 @@ class FilesystemContentProbeAdapter:
             return ContentSignals()
         if extension == "pdf":
             pdf_title, first_headings = self._probe_pdf(path)
-            return ContentSignals(extension=extension, pdf_title=pdf_title, first_headings=first_headings)
+            return ContentSignals(
+                extension=extension,
+                pdf_title=pdf_title,
+                first_headings=first_headings,
+                container_ok=_container_ok(path, extension),
+            )
         if extension in _TEXT_EXTENSIONS:
-            return ContentSignals(extension=extension, head_keywords=self._probe_text(path))
-        return ContentSignals(extension=extension)
+            return ContentSignals(
+                extension=extension,
+                head_keywords=self._probe_text(path),
+                container_ok=_container_ok(path, extension),
+            )
+        return ContentSignals(extension=extension, container_ok=_container_ok(path, extension))
 
     def _probe_pdf(self, path: Path) -> tuple[str, tuple[str, ...]]:
         try:
