@@ -300,3 +300,42 @@ def test_leading_ignores_the_baseline_offset_of_italic_runs():
         _styled_run("segunda linea del parrafo", 72.0, 684.0, "Baskerville"),
     ]
     assert group_runs_into_blocks(runs)[0].line_spacing == 16.0
+
+
+def test_a_two_line_block_is_not_mistaken_for_justified():
+    """With two lines the comparison is one value against itself, so the
+    spread is trivially zero. That stretched a centred chapter title across
+    the column with a hole in the middle."""
+    runs = [
+        _styled_run("Asking important", 100.0, 700.0, "Optima-Bold", size=36.0),
+        _styled_run("questions", 240.0, 640.0, "Optima-Bold", size=36.0),
+    ]
+    assert group_runs_into_blocks(runs)[0].justified is False
+
+
+def test_three_flush_lines_are_justified():
+    runs = [
+        TextRun("primera linea llena", 72.0, 700.0, 451.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("segunda linea llena", 72.0, 684.0, 451.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("ultima corta", 72.0, 668.0, 120.0, 10.0, 0, 14.0, "Baskerville"),
+    ]
+    assert group_runs_into_blocks(runs)[0].justified is True
+
+
+def test_a_centred_heading_is_detected_from_its_lines():
+    """The block's BOX spans nearly the whole column once both lines are
+    enclosed, so a box-based test calls it left-aligned and drops the short
+    second line against the left margin."""
+    runs = [
+        TextRun("Asking important", 100.0, 700.0, 627.0, 25.0, 0, 36.0, "Optima-Bold"),
+        TextRun("questions", 240.0, 640.0, 350.0, 25.0, 0, 36.0, "Optima-Bold"),
+    ]
+    assert group_runs_into_blocks(runs)[0].centered is True
+
+
+def test_flush_lines_are_not_called_centred():
+    runs = [
+        TextRun("primera linea igual", 72.0, 700.0, 451.0, 10.0, 0, 14.0, "Baskerville"),
+        TextRun("segunda linea igual", 72.0, 684.0, 451.0, 10.0, 0, 14.0, "Baskerville"),
+    ]
+    assert group_runs_into_blocks(runs)[0].centered is False

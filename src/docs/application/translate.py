@@ -129,6 +129,13 @@ class TranslateService:
         placements: list[tuple[TextBlock, FittedText]] = []
         for block in blocks:
             alignment = detect_alignment(block.x, block.right, columns[block.page])
+            # The block's OWN geometry outranks anything inferred from the
+            # column: it states what the typesetter did, rather than guessing
+            # it from where the text happened to land.
+            if block.justified:
+                alignment = Alignment.JUSTIFY
+            elif block.centered:
+                alignment = Alignment.CENTER
             text, from_cache, ok = self._translate_block(block.text, source_lang, target_lang)
             report.blocks_translated += int(ok)
             report.blocks_from_cache += int(from_cache)

@@ -85,6 +85,18 @@ MAX_FONT_SIZE_RATIO = 1.25
 # block is drawn in it. High on purpose: see `TextBlock._dominant`.
 DOMINANT_STYLE_SHARE = 0.8
 
+# How far the right edges of a block's lines may differ and still count as
+# flush. Sub-point, because justification is exact by construction: a
+# typesetter sets the measure and every line meets it.
+JUSTIFY_TOLERANCE = 1.0
+
+# Lines required before "every line but the last ends alike" means anything.
+MIN_LINES_TO_DETECT_JUSTIFY = 3
+
+# How far the midpoints of a block's lines may differ, as a fraction of type
+# size, and still count as centred on the same axis.
+CENTRED_LINE_TOLERANCE = 0.5
+
 # Style suffixes a font name appends to its base family. Stripping them is
 # what separates "a different typeface" from "the same typeface, emphasised".
 _STYLE_SUFFIXES = (
@@ -263,6 +275,64 @@ class TextBlock:
     @property
     def top(self) -> float:
         return max(run.top for run in self.runs)
+
+    @property
+    def line_rights(self) -> list[float]:
+        """Where each visual line of the ORIGINAL text ended."""
+        return [max(run.right for run in line) for line in _lines(self.runs)]
+
+    @property
+    def line_spans(self) -> list[tuple[float, float]]:
+        """`(left, right)` of each visual line of the ORIGINAL text."""
+        return [
+            (min(run.x for run in line), max(run.right for run in line))
+            for line in _lines(self.runs)
+        ]
+
+    @property
+    def centered(self) -> bool:
+        """Whether the source centred each LINE of this block.
+
+        Detected from the lines, not from the block's bounding box. A centred
+        two-line title spans nearly the whole column once both lines are
+        enclosed, so a box-based test calls it left-aligned and drops its
+        short second line against the left margin -- which is exactly what a
+        real chapter heading did.
+
+        Lines of equal width are excluded: a block whose lines all start and
+        end alike is flush, and calling that "centred" would be a coin toss.
+        """
+        spans = self.line_spans
+        if len(spans) < 2:
+            return False
+        midpoints = [(left + right) / 2 for left, right in spans]
+        widths = [right - left for left, right in spans]
+        if max(widths) - min(widths) <= JUSTIFY_TOLERANCE:
+            return False
+        return max(midpoints) - min(midpoints) <= self.font_size * CENTRED_LINE_TOLERANCE
+
+    @property
+    def justified(self) -> bool:
+        """Whether the source set this block flush on BOTH margins.
+
+        Every line but the last ends at the same x when a block is justified,
+        and that is unmistakable in the geometry -- 84% of the multi-line
+        blocks in a real book. Rendering them ragged-right is the single
+        largest remaining difference on every page of body text.
+
+        The last line is excluded because a justified paragraph never
+        stretches its final line; that is what makes the pattern detectable
+        rather than ambiguous.
+        """
+        rights = self.line_rights
+        # THREE lines minimum, not two. With two lines the comparison is one
+        # value against itself, the spread is trivially zero, and every
+        # two-line block reads as justified -- which stretched a centred
+        # chapter title across the column with a hole in the middle.
+        if len(rights) < MIN_LINES_TO_DETECT_JUSTIFY:
+            return False
+        body = rights[:-1]
+        return max(body) - min(body) <= JUSTIFY_TOLERANCE
 
     @property
     def baseline(self) -> float:

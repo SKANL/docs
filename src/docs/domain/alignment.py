@@ -43,6 +43,10 @@ class Alignment(str, Enum):
     LEFT = "left"
     CENTER = "center"
     RIGHT = "right"
+    JUSTIFY = "justify"
+    """Flush on BOTH margins. Detected from the source's own line ends rather
+    than inferred from the column, because a justified block states it
+    unambiguously: every line but the last stops at the same x."""
 
 
 @dataclass(frozen=True)
