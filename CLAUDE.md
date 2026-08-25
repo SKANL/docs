@@ -76,6 +76,12 @@ three share; never re-declare an artifact filename or extension set locally.
   `build-html` and `build-pdf` both report their own skip as
   "omitido: ..." right in the pipeline output. A stage that degrades where
   only a file can tell you reads as a clean success.
+- **A silent tool is a check that never ran.** `fd`, `bat` and `eza` are not
+  on this machine's Git Bash PATH -- only `rg` is. Paired with `2>/dev/null`
+  they return nothing instead of failing, so a verification written with `fd`
+  reports "nothing found" without having looked. Same "found != usable"
+  shape as the rest of this list, aimed at our own tooling. Use `rtk ls`,
+  `find` or `rg`, or check `command -v` first.
 - **A warning is a failure that has not happened yet.** `filterwarnings =
   ["error"]` in `pyproject.toml` is not tidiness: one invalid escape sequence
   in a docstring passed ruff AND mypy, and broke ELEVEN architecture tests
