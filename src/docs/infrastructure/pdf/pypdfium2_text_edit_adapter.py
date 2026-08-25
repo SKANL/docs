@@ -136,13 +136,25 @@ def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float
 # line of defence: past here the text leaves the page.
 _MIN_FIT_SCALE = 0.5
 
+# Most a justified line may be stretched horizontally. Beyond this the glyphs
+# read as visibly distorted, so the line is left ragged instead: a slightly
+# short line is a smaller lie than a squashed typeface.
+MAX_JUSTIFY_STRETCH = 1.12
+
+
 # Two passes are enough: the first correction is proportional, the second
 # absorbs the rounding. A third buys nothing measurable.
 _FIT_PASSES = 2
 
 
 def _place_within(
-    document: Any, font: Any, line: str, size: float, left: float, limit: float
+    document: Any,
+    font: Any,
+    line: str,
+    size: float,
+    left: float,
+    limit: float,
+    justify: bool = False,
 ) -> tuple[Any, float]:
     """Build and position one line so its ink ends at or before `limit`.
 
@@ -156,10 +168,12 @@ def _place_within(
     read its bounds in PAGE coordinates and compare the right edge against the
     column. That is the same question a reader asks.
     """
-    def build(at_size: float) -> Any:
+    def build(at_size: float, stretch: float = 1.0) -> Any:
         obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, at_size)
         pdfium_c.FPDFText_SetText(obj, _widestring(line))
-        pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, left, 0)
+        # Scale about the origin, THEN translate: the object is created at
+        # x=0, so this leaves its left edge exactly at `left`.
+        pdfium_c.FPDFPageObj_Transform(obj, stretch, 0, 0, 1, left, 0)
         return obj
 
     obj = build(size)
@@ -181,52 +195,25 @@ def _place_within(
         size = scaled
         pdfium_c.FPDFPageObj_Destroy(obj)
         obj = build(size)
+
+    if justify:
+        # Justify by stretching the WHOLE line, not by repositioning each
+        # word. Placing words individually needs each word's ADVANCE, and
+        # measuring its INK width instead loses the side bearing at every
+        # step: words crept together until PDFium stopped seeing a boundary
+        # and the text layer came back as "Excuseme!Doesanyonehereknow".
+        # The page looked right; the document was unusable for copying,
+        # searching, or a screen reader.
+        #
+        # One object holding real space CHARACTERS cannot have that problem.
+        _, _, right, _ = _object_bounds(obj)
+        drawn = right - left
+        if drawn > 0:
+            stretch = (limit - left) / drawn
+            if 1.0 < stretch <= MAX_JUSTIFY_STRETCH:
+                pdfium_c.FPDFPageObj_Destroy(obj)
+                obj = build(size, stretch)
     return obj, size
-
-
-def _measure(document: Any, font: Any, text: str, size: float) -> float:
-    """The exact drawn width of `text`, asked of PDFium rather than estimated."""
-    obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, size)
-    pdfium_c.FPDFText_SetText(obj, _widestring(text))
-    left, _, right, _ = _object_bounds(obj)
-    pdfium_c.FPDFPageObj_Destroy(obj)
-    return right - left
-
-
-def _draw_justified(
-    document: Any, page: Any, font: Any, line: str, size: float,
-    left: float, right: float, baseline: float,
-) -> bool:
-    """Set one line flush on BOTH margins, one word per text object.
-
-    84% of the multi-line blocks in a real book are justified, and rendering
-    them ragged-right is the largest remaining difference on every page of
-    body text. There is no PDFium call that stretches the spaces inside a
-    string, so each word is placed at a computed x -- which also makes the
-    spacing exact rather than approximated.
-
-    Returns False when the line cannot be justified (one word, or it already
-    overruns), leaving the caller to draw it normally.
-    """
-    words = line.split()
-    if len(words) < 2 or right <= left:
-        return False
-
-    widths = [_measure(document, font, word, size) for word in words]
-    slack = (right - left) - sum(widths)
-    if slack <= 0:
-        return False
-    gap = slack / (len(words) - 1)
-
-    x = left
-    for word, width in zip(words, widths, strict=True):
-        obj = pdfium_c.FPDFPageObj_CreateTextObj(document.raw, font, size)
-        pdfium_c.FPDFText_SetText(obj, _widestring(word))
-        pdfium_c.FPDFPageObj_SetFillColor(obj, 0, 0, 0, 255)
-        pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, x, baseline)
-        pdfium_c.FPDFPage_InsertObject(page.raw, obj)
-        x += width + gap
-    return True
 
 
 def _widestring(text: str) -> Any:
@@ -465,19 +452,6 @@ class Pypdfium2TextEditAdapter:
         size = replacement.fitted.font_size
         lines = replacement.fitted.lines
         for line_number, line in enumerate(lines):
-            leading_now = replacement.line_spacing or size * _LINE_SPACING
-            first_baseline = replacement.baseline or (replacement.top - size)
-            at = first_baseline - line_number * leading_now
-            # A justified paragraph never stretches its LAST line.
-            if (
-                replacement.alignment is Alignment.JUSTIFY
-                and line_number < len(lines) - 1
-                and _draw_justified(
-                    document, page, font, line, size,
-                    _line_start(replacement, line_number), replacement.right, at,
-                )
-            ):
-                continue
             obj, size = _place_within(
                 document,
                 font,
@@ -485,6 +459,11 @@ class Pypdfium2TextEditAdapter:
                 size,
                 _line_x(replacement, line, line_number),
                 replacement.right,
+                # A justified paragraph never stretches its LAST line.
+                justify=(
+                    replacement.alignment is Alignment.JUSTIFY
+                    and line_number < len(lines) - 1
+                ),
             )
             pdfium_c.FPDFPageObj_SetFillColor(obj, 0, 0, 0, 255)
             leading = replacement.line_spacing or size * _LINE_SPACING

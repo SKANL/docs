@@ -198,6 +198,11 @@ Read the output line, not just the file: it names every compromise made.
 - **paginas multicolumna sin verificar** — block grouping is single-column.
   Those pages are reported rather than guessed at.
 
+The output stays a real document: its text layer is preserved word for word,
+so the result can still be copied, searched and read aloud. Justified
+paragraphs are reproduced by stretching each line, capped at 12% so the
+glyphs never read as distorted.
+
 A scanned or image-only PDF is **refused** with a message naming OCR, never
 half-translated. Non-Latin target scripts (Cyrillic, CJK, Arabic) are out of
 reach in this phase: base-14 fonts have no coverage for them.

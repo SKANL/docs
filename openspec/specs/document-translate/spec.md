@@ -152,6 +152,24 @@ A PDF with no text layer MUST be refused with a message naming OCR as the remedy
 - WHEN translation runs
 - THEN its text blocks are translated normally
 
+### Requirement: Text-Layer Integrity
+
+The output MUST remain a usable document, not a picture of one. Every word present in the source's text layer MUST be present in the output's, separated as words.
+
+This is the strongest correctness guarantee here and the least visible: copy, search and screen readers all read the text layer, while the rendered page can look perfect with the text beneath it destroyed.
+
+#### Scenario: No word disappears
+
+- GIVEN a source PDF whose text layer contains a set of words
+- WHEN it is translated or passed through untranslated
+- THEN every one of those words is still extractable from the output
+
+#### Scenario: Justification does not join words
+
+- GIVEN a justified line
+- WHEN it is laid out flush to both margins
+- THEN its words remain separated in the extracted text, never run together
+
 ### Requirement: Structural Preservation
 
 The system MUST leave every non-text page object untouched. This is asserted structurally — by object kind and count — not estimated from rendered pixels, because only text objects are ever removed or inserted.

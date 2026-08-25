@@ -199,3 +199,46 @@ def test_font_size_comes_from_the_text_matrix_not_the_bare_api(tmp_path):
         f"expected the matrix-scaled 14pt, got {runs[0].font_size} "
         "(1.0 means the bare API value leaked through)"
     )
+
+
+def test_no_word_is_lost_from_the_output_text_layer(tmp_path):
+    """A translated PDF must remain a usable DOCUMENT, not just a picture of
+    one: copy, search and screen readers all read the text layer.
+
+    Justifying by repositioning each word broke exactly this. PDFium infers
+    word boundaries from the DISTANCE between text objects, so words placed a
+    fraction of a point apart came back joined --
+    `"Excuseme!Doesanyonehereknow..."`. The pages looked right; 217 words
+    across a real book were unreadable to anything but an eye. Justifying by
+    stretching one object, whose spaces are real characters, cannot do that.
+    """
+    import re
+
+    import pypdfium2 as pdfium
+
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("pdf")
+    import matplotlib.pyplot as plt
+
+    figure = plt.figure(figsize=(6, 4))
+    sentence = "Excuse me does anyone here know anyone who works at a big firm"
+    figure.text(0.1, 0.8, sentence, fontsize=9)
+    figure.text(0.1, 0.6, "Second line with several separate words", fontsize=9)
+    src = tmp_path / "words.pdf"
+    figure.savefig(src)
+    plt.close(figure)
+
+    adapter = Pypdfium2TextEditAdapter()
+    out = tmp_path / "out.pdf"
+    _translate_all(adapter, src, out, {})
+
+    def words(path):
+        doc = pdfium.PdfDocument(str(path))
+        try:
+            text = "".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
+        finally:
+            doc.close()
+        return set(re.findall(r"\w+", text.lower()))
+
+    missing = words(src) - words(out)
+    assert not missing, f"the output text layer lost words: {sorted(missing)}"
