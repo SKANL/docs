@@ -152,23 +152,25 @@ A PDF with no text layer MUST be refused with a message naming OCR as the remedy
 - WHEN translation runs
 - THEN its text blocks are translated normally
 
-### Requirement: Non-Latin Target Languages
+### Requirement: Font Coverage
 
-The system MUST embed a real font when the target text contains characters no base-14 face can draw, and MUST NOT embed one otherwise.
+The system MUST embed a real font when the text to draw contains characters no base-14 face can render, and MUST NOT embed one otherwise.
 
-A base-14 face is encoded WinAnsi, so it renders Cyrillic or Greek as empty boxes -- a destroyed document, not a degraded one. Embedding is therefore driven by correctness: a Latin target pays nothing, and a non-Latin target becomes possible at all. Each face is embedded once per document; embedding per block would place hundreds of copies of a 370KB file in the output.
+A base-14 face is encoded WinAnsi, so anything outside it draws as empty boxes -- a destroyed document, not a degraded one. Embedding is therefore driven by coverage, never by taste: the common case pays nothing, and text that would be unreadable becomes readable. Each face is embedded once per document; embedding per block would place hundreds of copies of a 370KB file in the output.
 
-#### Scenario: A Latin target embeds nothing
+The bundled DejaVu family is the boundary of this guarantee. Characters it does not carry still draw as boxes and are counted, and widening that boundary is out of scope.
 
-- GIVEN a translation into Spanish, French, German or Portuguese
+#### Scenario: Text within base-14 coverage embeds nothing
+
+- GIVEN text that WinAnsi can represent
 - WHEN the document is written
 - THEN no font is embedded and the output carries no extra font data
 
-#### Scenario: A non-Latin target renders correctly
+#### Scenario: Text beyond base-14 coverage is drawn, not boxed
 
-- GIVEN a translation into a language written in Cyrillic or Greek
+- GIVEN text containing characters WinAnsi cannot represent
 - WHEN the document is written
-- THEN a real font is embedded and the text is drawn, not replaced by boxes
+- THEN a real font is embedded and the text is drawn
 - AND the count of blocks drawn with an embedded font is reported
 
 #### Scenario: A missing font source degrades and is reported

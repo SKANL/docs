@@ -58,9 +58,9 @@ _SUBSET_TAG_LENGTH = 6
 #
 # Substitution is not a shortcut here. It is the only option that produces a
 # readable document.
-# ponytail: base-14 only, so non-Latin targets (Cyrillic, CJK, Arabic) are out
-# of reach. The upgrade path is `FPDFText_LoadFont` with a bundled Noto face,
-# which is a licensing and file-size decision rather than a code one.
+# When base-14 cannot draw the text at all, `FontSourcePort` supplies a real
+# face instead; see `infrastructure/fonts/`. Base-14 remains the default
+# because it embeds nothing.
 #
 # The family NAME is the signal, not the descriptor flags. PDFium exposes
 # `FPDFFont_GetFlags`, and on a real book those flags are simply wrong:

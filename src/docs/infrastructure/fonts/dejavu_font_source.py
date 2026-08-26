@@ -15,20 +15,21 @@ operating system would make the output depend on which fonts a machine
 happens to have installed, and this harness promises byte-identical reruns.
 A font that arrives with a declared dependency is the same font everywhere.
 
-# ponytail: two known gaps, both reported rather than hidden.
+# ponytail: DejaVu's coverage IS the boundary of this capability, not a step
+# towards a wider one. Anything it cannot draw draws a box and is counted.
+# Deliberately not pursued:
 #
-# DejaVu has no CJK, Arabic or Hebrew coverage, so those targets still draw
-# boxes. The upgrade is a bundled Noto CJK face, which is a package-size
-# decision rather than a code one -- Noto CJK alone is larger than this whole
-# project.
+# - Scripts DejaVu lacks (CJK, Arabic, Hebrew). Adding them means bundling a
+#   Noto face larger than this whole project, for a target nobody has asked
+#   for.
+# - Per-glyph face selection. Coverage differs BETWEEN DejaVu faces -- Sans
+#   carries the ballot box, Serif does not -- so a serif block containing one
+#   still shows a box. Measured on a diagram page: the female sign resolved,
+#   the ballot boxes did not. Choosing a face per glyph needs a font library
+#   to ask about coverage; three symbols on three pages of one book do not
+#   justify one.
 #
-# And coverage differs BETWEEN DejaVu faces: Sans carries symbols like the
-# ballot box that Serif does not, so a serif block containing one still draws
-# a box even with a real font embedded. Measured on a diagram page: the
-# female sign resolved, the ballot boxes did not. Choosing a face per glyph
-# needs a font library to ask about coverage, and adding one to render three
-# symbols on three pages of one book is not a trade this project should make
-# before a document demands it.
+# Both are limits with a measurement behind them, not a backlog.
 """
 from __future__ import annotations
 

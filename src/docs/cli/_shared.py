@@ -265,8 +265,8 @@ class Deps:
             )
 
             self.pdf_classifier = PdfInspectorClassifyAdapter()
-            # The font source is what makes non-Latin targets possible at all:
-            # a base-14 face draws Cyrillic and Greek as empty boxes.
+            # Supplies a real face for characters base-14 cannot draw, which
+            # would otherwise reach the page as empty boxes.
             self.pdf_text_editor = Pypdfium2TextEditAdapter(DejaVuFontSource())
         except Exception as exc:
             # Degrading is correct, swallowing silently is not: without a
