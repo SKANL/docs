@@ -27,6 +27,49 @@ _MEAN_ADVANCE_RATIO = 0.5
 _LINE_SPACING = 1.18
 _SHRINK_STEP = 0.5
 
+# Fraction of the type size that hangs below the LAST baseline. Declared here
+# rather than beside the collision check because the fitter and that check
+# must measure the same block the same way; two copies of this number is how
+# a layout gets approved by one and rejected by the other.
+DESCENDER_SHARE = 0.25
+
+
+def leading_for(
+    fitted_size: float, original_size: float, measured: float | None
+) -> float:
+    """The baseline-to-baseline step the writer will ACTUALLY use.
+
+    A block's measured leading belongs to the block at its ORIGINAL type
+    size. Reusing it after the fitter shrank the text spaces small type as
+    though it were large: a 60pt chapter title shrunk to 36pt kept its 72pt
+    baselines, so its three lines spanned the height of three 60pt ones and
+    the last one landed on the paragraph below.
+
+    Declared once because three places need the same answer -- the fitter
+    deciding whether a layout fits, the collision check measuring where it
+    ends, and the writer placing the baselines. Two of them disagreeing is
+    how a layout gets approved and then drawn taller than the hole it was
+    measured against.
+    """
+    if measured is None or original_size <= 0:
+        return fitted_size * _LINE_SPACING
+    return measured * (fitted_size / original_size)
+
+
+def extent_below_baseline(
+    line_count: int, font_size: float, leading: float
+) -> float:
+    """How far laid-out text reaches BELOW its first baseline.
+
+    This is the unit `vertical_room` speaks in -- the gap from a block's own
+    first baseline down to its neighbour's -- so it is the unit the fitter has
+    to answer in. It previously answered in full block height, counting one
+    line of type that sits ABOVE the first baseline and therefore cannot
+    collide with anything: the two measurements differed by a whole line, and
+    a chapter title was approved into a hole a line too small for it.
+    """
+    return max(line_count - 1, 0) * leading + font_size * DESCENDER_SHARE
+
 
 @dataclass(frozen=True)
 class FittedText:
@@ -153,8 +196,21 @@ def fit_text_to_block(
     # heading whose translation needs a second line must SHRINK rather than
     # grow into the paragraph beneath it -- the caller measures the gap and
     # passes it here.
-    own_extent = max(block.height, block.line_count * base * _LINE_SPACING)
-    available = own_extent if max_height is None else max(max_height, base)
+    # Blocks WITH a neighbour below get the measured gap: that is the honest
+    # constraint, and it covers 1194 of this book's 1329 blocks. The rest have
+    # nothing beneath them, so they fall back to their own box -- whichever of
+    # its ink height or its line count says there is more room, minus the one
+    # line that sits ABOVE the first baseline and cannot collide with
+    # anything.
+    own_leading = leading_for(base, base, block.line_spacing)
+    available = (
+        max(
+            block.height - base,
+            extent_below_baseline(block.line_count, base, own_leading),
+        )
+        if max_height is None
+        else max_height
+    )
     # A block's own right edge is where its ORIGINAL text happened to stop,
     # not where the page allows text to reach. For a left-aligned heading that
     # difference is the whole problem: "Passing the mom test" ended at x=400,
@@ -167,7 +223,9 @@ def fit_text_to_block(
     size = base
     while True:
         lines, word_too_wide = _wrap(text, width, size, ratio, first_width)
-        needed = len(lines) * size * _LINE_SPACING
+        needed = extent_below_baseline(
+            len(lines), size, leading_for(size, base, block.line_spacing)
+        )
         if not word_too_wide and needed <= available:
             return FittedText(lines=lines, font_size=size, overflowed=False, advance_ratio=ratio)
         if size <= floor:

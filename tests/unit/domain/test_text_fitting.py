@@ -94,3 +94,56 @@ def test_max_height_forces_a_shrink_rather_than_a_second_line():
     block = TextBlock(runs=[TextRun("Titulo", 72.0, 700.0, 300.0, 25.0, 0, 36.0)])
     cramped = fit_text_to_block("Un titulo bastante mas largo que el original", block, max_height=20.0)
     assert cramped.font_size < 36.0
+
+
+def _two_line_heading(size, spacing, x, right):
+    """A heading the typesetter already set on two lines, so the block knows
+    its own baseline-to-baseline step."""
+    width = right - x
+    return TextBlock(
+        runs=[
+            TextRun("Running the", x, 572.0, width, size * 0.7, 0, size),
+            TextRun("process", x, 572.0 - spacing, width, size * 0.7, 0, size),
+        ]
+    )
+
+
+def test_leading_shrinks_with_the_type_it_separates():
+    """A 60pt heading with 72pt baselines that shrinks to 36pt keeps 72pt
+    baselines under `measured or size * ratio`, so three shrunken lines still
+    span the height of three full-size ones. On a real page that is exactly
+    how a chapter title landed on the paragraph beneath it: the fitter shrank
+    the text and the writer spaced it as if it had not.
+    """
+    from docs.domain.text_fitting import leading_for
+
+    assert round(leading_for(36.0, 60.0, 72.0), 4) == 43.2
+
+
+def test_leading_without_a_measurement_falls_back_to_the_type_size():
+    from docs.domain.text_fitting import leading_for
+
+    assert round(leading_for(20.0, 20.0, None), 4) == round(20.0 * 1.18, 4)
+
+
+def test_leading_is_unchanged_when_the_type_is_unchanged():
+    from docs.domain.text_fitting import leading_for
+
+    assert round(leading_for(60.0, 60.0, 72.0), 4) == 72.0
+
+
+def test_a_heading_shrinks_instead_of_landing_on_the_paragraph_below():
+    """The fitter must measure with the leading the WRITER will use, or it
+    approves a layout the writer then draws taller than the hole it measured.
+    """
+    from docs.domain.text_fitting import fit_text_to_block, leading_for
+
+    block = _two_line_heading(60.0, 72.0, 144.0, 455.9)
+    fitted = fit_text_to_block(
+        "Como llevar adelante el proceso", block, max_height=100.1
+    )
+    drawn = (len(fitted.lines) - 1) * leading_for(
+        fitted.font_size, block.font_size, block.line_spacing
+    )
+    assert fitted.overflowed is False
+    assert drawn <= 100.1

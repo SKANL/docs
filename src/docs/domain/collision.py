@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from docs.domain.block_grouping import TextBlock
-from docs.domain.text_fitting import FittedText
+from docs.domain.text_fitting import DESCENDER_SHARE, FittedText, leading_for
 
 # Baselines closer than this belong to the same visual LINE, not to stacked
 # lines. Without it a dialogue label and the speech beside it -- whose boxes
@@ -26,16 +26,10 @@ from docs.domain.text_fitting import FittedText
 # read as 90 collisions on a book that had 3.
 SAME_LINE_TOLERANCE = 4.0
 
-# Fraction of the type size allowed to hang below the last baseline before it
-# counts as touching the block underneath: descenders are not a collision.
-DESCENDER_SHARE = 0.25
-
-_FALLBACK_LEADING = 1.18
-
 
 def drawn_bottom(block: TextBlock, fitted: FittedText) -> float:
     """The lowest point the laid-out text will occupy."""
-    leading = block.line_spacing or fitted.font_size * _FALLBACK_LEADING
+    leading = leading_for(fitted.font_size, block.font_size, block.line_spacing)
     extra = max(len(fitted.lines) - 1, 0)
     return block.baseline - extra * leading - fitted.font_size * DESCENDER_SHARE
 

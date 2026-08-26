@@ -26,7 +26,7 @@ from docs.domain.ports.pdf_classify_port import PdfClassifyPort
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, PdfTextEditPort
 from docs.domain.ports.translation_memory_port import TranslationMemoryPort
 from docs.domain.ports.translation_port import TranslationPort
-from docs.domain.text_fitting import FittedText, fit_text_to_block
+from docs.domain.text_fitting import FittedText, fit_text_to_block, leading_for
 from docs.domain.translation_guard import guarded_translate
 from docs.domain.translation_memory_key import memory_key
 
@@ -188,7 +188,13 @@ class TranslateService:
                     top=block.top,
                     first_line_x=block.first_line_x,
                     baseline=block.baseline,
-                    line_spacing=block.line_spacing,
+                    # SCALED to the size the fitter chose. The measured
+                    # step belongs to the block at its original type size,
+                    # so reusing it after a shrink spaces small type as
+                    # though it were still large.
+                    line_spacing=leading_for(
+                        fitted.font_size, block.font_size, block.line_spacing
+                    ),
                     right=usable_right,
                     alignment=alignment,
                 )
