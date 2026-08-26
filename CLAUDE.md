@@ -76,6 +76,27 @@ three share; never re-declare an artifact filename or extension set locally.
   `build-html` and `build-pdf` both report their own skip as
   "omitido: ..." right in the pipeline output. A stage that degrades where
   only a file can tell you reads as a clean success.
+- **The mode of an edge is not a margin.** Eight dialogue labels ending at
+  the same x outvoted the body text, so page 10 of a real book detected its
+  column as 72 -> 142: the speaker gutter, on a page whose lines ran to 522.
+  A margin is an edge that REPEATS, so take the FURTHEST repeated edge -- not
+  the mode, which a short gutter wins, and not the maximum, which one long
+  URL drags out of the page. Same shape one level up: centring measured
+  against the COLUMN passes any block wide enough to have little slack, so
+  measure the asymmetry against the block's own SLACK instead. On that book
+  every real centred block split its slack within 1.5% of even and every
+  coincidence was above 2%.
+- **Two measurements of the same block must use the same unit.**
+  `vertical_room` reports the gap from a block's first baseline DOWN;
+  `fit_text_to_block` answered in full block height, which counts one line
+  sitting ABOVE that baseline that cannot collide with anything. A chapter
+  title was approved into a hole a whole line too small for it. Related:
+  leading measured on a block belongs to it at its ORIGINAL size -- shrink
+  the type and the baselines must shrink with it, or three shrunken lines
+  span the height of three full-size ones. That rule lived in three places
+  (fitter, collision check, writer); it now lives in
+  `domain/text_fitting.py:leading_for`.
+
 - **A silent tool is a check that never ran.** `fd`, `bat` and `eza` are not
   on this machine's Git Bash PATH -- only `rg` is. Paired with `2>/dev/null`
   they return nothing instead of failing, so a verification written with `fd`
