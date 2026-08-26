@@ -28,10 +28,19 @@ from enum import Enum
 # assuming points.
 EDGE_TOLERANCE = 0.02
 
-# How far a block's midpoint may sit from the column's midpoint and still
-# count as centred. Looser than the edge tolerance because centring is
-# computed from two edges, so it accumulates both their errors.
-CENTRE_TOLERANCE = 0.04
+# How unevenly a block may split its own SLACK -- the column width it does
+# not use -- and still count as centred.
+#
+# Measured against the slack, not the column: a dialogue line filling 87% of
+# the column has about 27pt of margin on each side, so a tolerance worth 4%
+# of the column passes it whatever it does, and six body paragraphs of a real
+# book were classified centred on that coincidence. Re-centring a translated
+# line of a different length then moves it visibly.
+#
+# Typesetting centres exactly. On that same book every genuinely centred
+# block -- footers, chapter labels, display titles -- split its slack within
+# 1.5% of even, and every coincidence was above 2%.
+CENTRE_TOLERANCE = 0.02
 
 # A block must be meaningfully narrower than the column before its alignment
 # is even a question: a full-width paragraph is left-aligned by definition,
@@ -72,10 +81,30 @@ def detect_column(lefts: Sequence[float], rights: Sequence[float]) -> Column | N
     if not lefts or not rights:
         return None
     left = Counter(round(value) for value in lefts).most_common(1)[0][0]
-    right = Counter(round(value) for value in rights).most_common(1)[0][0]
+    right = _right_margin(rights)
     if right <= left:
         return None
     return Column(float(left), float(right))
+
+
+def _right_margin(rights: Sequence[float]) -> int:
+    """The furthest edge the page uses TWICE.
+
+    Not the most common one: eight dialogue labels ending at the same x
+    outvoted the body text on a real page, and the column came back as the
+    speaker gutter -- 72 -> 142 on a page whose text ran to 522. Every block
+    was then measured against a margin four times too close, and a heading
+    that had 120pt of empty column beside it wrapped instead of using it.
+
+    Not the maximum either: one block bleeding past the margin -- a long URL,
+    a wide caption -- would drag the column out with it and widen every other
+    block on the page into the margin. Repetition is what distinguishes a
+    margin from an accident, so require it, and fall back to the maximum when
+    nothing repeats at all.
+    """
+    counts = Counter(round(value) for value in rights)
+    repeated = [edge for edge, times in counts.items() if times > 1]
+    return max(repeated) if repeated else max(counts)
 
 
 def detect_alignment(
@@ -101,9 +130,12 @@ def detect_alignment(
         # look centred, because that is where its next line would start.
         return Alignment.LEFT
 
-    midpoint = (block_left + block_right) / 2
-    if abs(midpoint - column.centre) <= column.width * CENTRE_TOLERANCE:
-        return Alignment.CENTER
+    slack = column.width - block_width
+    if slack > 0:
+        left_gap = block_left - column.left
+        right_gap = column.right - block_right
+        if abs(left_gap - right_gap) <= slack * CENTRE_TOLERANCE:
+            return Alignment.CENTER
     if touches_right:
         return Alignment.RIGHT
     return Alignment.LEFT

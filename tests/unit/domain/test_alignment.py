@@ -70,3 +70,48 @@ def test_non_latin_targets_require_a_real_font():
 
     assert needs_embedded_font("привет мир") is True
     assert needs_embedded_font("γεια σου") is True
+
+
+def test_a_label_gutter_does_not_become_the_right_margin():
+    """Eight dialogue labels ending at the same x outvote the body text under
+    a mode, and page 10 of a real book detected its column as 72 -> 142: the
+    speaker gutter, not the text. A heading was then never widened past it
+    and dropped its second line onto the dialogue below.
+
+    A margin is an edge that REPEATS, and the right margin is the furthest
+    such edge -- so a repeated short edge can no longer outvote a repeated
+    long one.
+    """
+    labels = [141.6] * 8
+    body = [337.5, 398.4, 481.1, 519.5, 522.1, 522.4]
+    column = detect_column([74.6] + [108.1] * 8 + [126.4] * 5, labels + body)
+    assert column is not None
+    assert column.right == 522.0
+
+
+def test_a_lone_edge_past_the_margin_does_not_set_it():
+    """A single block bleeding past the margin -- a long URL, a wide caption
+    -- would drag the column with it under a plain maximum, and every other
+    block on the page would then be widened into the margin."""
+    rights = [523.0, 523.0, 523.1, 611.0]
+    assert detect_column([72.0, 72.0, 72.0, 72.0], rights) == Column(72.0, 523.0)
+
+
+def test_a_wide_block_whose_midpoint_lands_near_the_centre_is_not_centred():
+    """A dialogue line filling most of the column has ~27pt of slack per side,
+    so a tolerance measured against the COLUMN passes it trivially. Measured
+    on a real book: six body paragraphs were classified centred that way, and
+    re-centring a translated line of a different length moves it visibly.
+
+    A block that was actually centred splits its slack almost exactly in half
+    -- every real centred block on that book was within 1.5% of even, and
+    every coincidence was above 2%.
+    """
+    # 375pt of text in a 451pt column: 65.5pt of slack, split 41/24.
+    assert detect_alignment(113.0, 488.0, COLUMN) is Alignment.LEFT
+
+
+def test_a_block_that_splits_its_slack_evenly_is_centred():
+    """A 60pt display title spans 80% of the column and is still centred --
+    width alone cannot tell the two apart, only symmetry can."""
+    assert detect_alignment(117.5, 477.5, COLUMN) is Alignment.CENTER
