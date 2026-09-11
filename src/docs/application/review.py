@@ -65,7 +65,12 @@ class ReviewService:
                 )
                 for issue in section_issues:
                     issues.append(
-                        Issue(issue.severity, f"{section_path.name}: {issue.message}", code=issue.code)
+                        Issue(
+                            issue.severity,
+                            f"{section_path.name}: {issue.message}",
+                            code=issue.code,
+                            dimension=issue.dimension,
+                        )
                     )
 
         if not self.repository.sections_dir_exists(doc_id):

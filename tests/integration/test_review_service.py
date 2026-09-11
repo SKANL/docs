@@ -8,6 +8,7 @@ import pytest
 from docs.application.review import ReviewService
 from docs.domain.models.template import Section, Template
 from docs.domain.normative import NormativeSettings
+from docs.domain.review import ReviewDimension
 from docs.domain.workspace import Workspace
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
@@ -160,6 +161,30 @@ def test_review_document_includes_cross_consistency_issues(workspace: Workspace,
     )
     codes = [issue.code for issue in result.issues]
     assert "coherence.citation_without_global_reference" in codes
+    consistency = result.filter_dimensions({ReviewDimension.CONSISTENCY})
+    assert [issue.code for issue in consistency.issues] == ["coherence.citation_without_global_reference"]
+
+
+def test_review_document_preserves_evidence_dimension_when_prefixing_section_issues(workspace: Workspace, service: ReviewService):
+    template = _template(
+        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)],
+        section_contracts={"introduccion": {"evidence_required": True}},
+    )
+    _write_section(
+        workspace, "doc-1", 1, "introduccion",
+        body="# Introducción\n\nTexto sin respaldo verificable.\n",
+        metadata={"section_id": "introduccion"},
+    )
+
+    result = service.review_document(
+        "doc-1", template, strict=False, manifest_exists=True, manifest_size=10, normative=_NORMATIVE,
+    )
+
+    evidence = result.filter_dimensions({ReviewDimension.EVIDENCE})
+    assert [(issue.code, issue.dimension) for issue in evidence.issues] == [
+        ("evidence.required", ReviewDimension.EVIDENCE)
+    ]
+    assert evidence.issues[0].message.startswith("001-introduccion.md:")
 
 
 def test_review_document_includes_rules_issues_when_manifest_missing(workspace: Workspace, service: ReviewService):

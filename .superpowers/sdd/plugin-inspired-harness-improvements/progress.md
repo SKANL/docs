@@ -91,3 +91,11 @@ Task 9-10: pending
 - RED: `uv run pytest tests/unit/domain/test_review.py tests/integration/test_cli_section.py tests/integration/test_format_audit_service.py -q` failed at collection because `ReviewDimension` was absent.
 - GREEN: the same focused command passed: 22 passed.
 - Static checks: focused `ruff` passed; focused `mypy` passed for 4 source files.
+
+## Task 8 review corrections: complete
+- Root cause: the initial dimension change only labeled the DOCX format-audit producer. `StructuralAuditAdapter` still constructed default-editorial issues, and `ReviewService.review_document` rebuilt section issues without carrying their dimension.
+- Structural audit findings now use `STRUCTURAL`; missing image captions use `ACCESSIBILITY`. Existing DOCX format-audit visual findings remain `VISUAL`.
+- Evidence/APA producers now emit `EVIDENCE`; every cross-section coherence producer emits `CONSISTENCY`. Messages and issue codes are unchanged.
+- RED: focused structural, review-document, evidence-filter, and consistency-filter tests failed with default-editorial dimensions or empty filtered results.
+- GREEN: `uv run pytest tests/unit/infrastructure/test_structural_audit_adapter.py -q` — 4 passed; `uv run pytest tests/integration/test_review_service.py -q` — 28 passed; `uv run pytest tests/integration/test_cli_section.py tests/integration/test_format_audit_service.py tests/unit/domain/test_review.py -q` — 22 passed.
+- Static checks: focused `ruff` and `mypy` passed for the 4 changed source files.

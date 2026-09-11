@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import base64
+
 from docx import Document
 from docx.shared import Inches
 
 from docs.application.structural_audit import StructuralAuditService
+from docs.domain.review import ReviewDimension
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 
 
@@ -59,6 +62,7 @@ def test_docx_structural_audit_reports_missing_declared_requirements(tmp_path):
         "structure.references.missing",
         "structure.metadata.missing",
     }
+    assert all(issue.dimension is ReviewDimension.STRUCTURAL for issue in result.issues)
 
 
 def test_structural_audit_accepts_json_page_size_list(tmp_path):
@@ -71,3 +75,22 @@ def test_structural_audit_accepts_json_page_size_list(tmp_path):
     result = StructuralAuditService(StructuralAuditAdapter()).audit(docx_path, {"page_size": [600, 790]})
 
     assert any(issue.code == "structure.page_size" for issue in result.issues)
+
+
+def test_docx_structural_audit_classifies_missing_captions_as_accessibility(tmp_path):
+    image_path = tmp_path / "image.png"
+    image_path.write_bytes(
+        base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL6OwAAAABJRU5ErkJggg==")
+    )
+    docx_path = tmp_path / "report.docx"
+    document = Document()
+    document.add_picture(str(image_path))
+    document.save(docx_path)
+
+    result = StructuralAuditService(StructuralAuditAdapter()).audit(
+        docx_path, {"captions": {"required": True}}
+    )
+
+    assert [(issue.code, issue.dimension) for issue in result.issues] == [
+        ("structure.captions.missing", ReviewDimension.ACCESSIBILITY)
+    ]

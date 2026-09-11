@@ -85,11 +85,16 @@ def review_document(
     ctx: typer.Context,
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
-    dimensions: list[ReviewDimension] | None = typer.Option(None, "--dimension"),
+    dimensions: list[ReviewDimension] | None = typer.Option(
+        None,
+        "--dimension",
+        help="Filtra hallazgos por dimensión; se puede repetir.",
+    ),
 ) -> None:
     """Revisa el documento completo: coherencia entre secciones, APA y trazabilidad.
 
-    Complementa a `review-section`, que solo mira una sección aislada.
+    Complementa a `review-section`, que solo mira una sección aislada. `--dimension`
+    puede repetirse para limitar la salida a categorías concretas.
     Sale con código 1 si hay hallazgos bloqueantes."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
