@@ -201,3 +201,52 @@ def test_visual_theme_applies_body_heading_caption_header_and_footer_styles(tmp_
     assert str(caption.runs[0].font.color.rgb) == "D97706"
     assert document.sections[-1].header.paragraphs[0].text == "CISSP DOMAIN 6"
     assert document.sections[-1].footer.paragraphs[0].runs[0].font.size.pt == 9
+
+
+def test_no_visual_theme_preserves_legacy_table_and_footer_run_ooxml(tmp_path):
+    """A theme-free document must not acquire explicit visual overrides."""
+    body_path = tmp_path / "body.docx"
+    body = Document()
+    body.add_paragraph("DOMAIN 6", style="Heading 1")
+    body.add_table(rows=1, cols=1).cell(0, 0).text = "Legacy table value"
+    body.save(str(body_path))
+
+    config = {
+        "structure": [
+            {"type": "sections", "body_restart_section": "domain", "body_pagination": {"format": "decimal"}}
+        ],
+        "sections": [{"id": "domain", "title": "DOMAIN 6"}],
+    }
+
+    document = PythonDocxAssemblyAdapter()._build_main_document(config, body_path, None)
+
+    table_run = document.tables[0].cell(0, 0).paragraphs[0].runs[0]
+    footer_run = document.sections[-1].footer.paragraphs[0].runs[0]
+    assert table_run.font.size is None
+    assert table_run.font.color.rgb is None
+    assert footer_run.font.color.rgb is None
+
+
+def test_visual_theme_uses_configured_semantic_heading_colors(tmp_path):
+    body_path = tmp_path / "body.docx"
+    body = Document()
+    body.add_paragraph("LEVEL ONE", style="Heading 1")
+    body.add_paragraph("Level two", style="Heading 2")
+    body.add_paragraph("Level three", style="Heading 3")
+    body.save(str(body_path))
+
+    config = {
+        "format": {
+            "visual_theme": {
+                "colors": {"heading_1": "D97706", "heading_2": "2563EB", "heading_3": "BE123C"}
+            }
+        },
+        "structure": [{"type": "sections"}],
+    }
+
+    document = PythonDocxAssemblyAdapter()._build_main_document(config, body_path, None)
+    headings = [paragraph for paragraph in document.paragraphs if paragraph.text.strip()][-3:]
+
+    assert str(headings[0].runs[0].font.color.rgb) == "D97706"
+    assert str(headings[1].runs[0].font.color.rgb) == "2563EB"
+    assert str(headings[2].runs[0].font.color.rgb) == "BE123C"

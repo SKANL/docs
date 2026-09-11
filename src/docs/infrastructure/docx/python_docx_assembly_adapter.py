@@ -30,6 +30,9 @@ class ThemeColors:
     teal: str = "000000"
     warm_accent: str = "000000"
     soft_background: str = "FFFFFF"
+    heading_1: str = "000000"
+    heading_2: str = "000000"
+    heading_3: str = "000000"
 
 
 @dataclass(frozen=True)
@@ -104,12 +107,17 @@ def resolve_visual_theme(config: dict[str, Any]) -> VisualTheme:
     footer = _mapping(raw.get("footer"))
     captions = _mapping(raw.get("captions"))
     defaults = ThemeColors()
+    navy = _hex_color(colors.get("navy"), defaults.navy)
+    teal = _hex_color(colors.get("teal"), defaults.teal)
     return VisualTheme(
         colors=ThemeColors(
-            navy=_hex_color(colors.get("navy"), defaults.navy),
-            teal=_hex_color(colors.get("teal"), defaults.teal),
+            navy=navy,
+            teal=teal,
             warm_accent=_hex_color(colors.get("warm_accent"), defaults.warm_accent),
             soft_background=_hex_color(colors.get("soft_background"), defaults.soft_background),
+            heading_1=_hex_color(colors.get("heading_1"), navy),
+            heading_2=_hex_color(colors.get("heading_2"), navy),
+            heading_3=_hex_color(colors.get("heading_3"), teal),
         ),
         typography=ThemeTypography(
             body_font=str(typography.get("body_font") or ThemeTypography.body_font),
@@ -124,6 +132,10 @@ def resolve_visual_theme(config: dict[str, Any]) -> VisualTheme:
         footer=ThemeFooter(font_size_pt=_number(footer.get("font_size_pt"), ThemeFooter.font_size_pt), color=str(footer.get("color") or "navy")),
         captions=ThemeCaptions(color=str(captions.get("color") or "navy")),
     )
+
+
+def has_visual_theme(config: dict[str, Any]) -> bool:
+    return isinstance(_mapping(config.get("format")).get("visual_theme"), dict)
 
 
 def _theme_color(theme: VisualTheme, name: str) -> str:
@@ -230,7 +242,7 @@ def configure_numbered_body_section(section: Any, config: dict[str, Any]) -> Non
     clear_story_part(section.footer)
     theme = resolve_visual_theme(config)
     apply_header_theme(section.header, theme)
-    add_page_number_footer(section.footer, theme)
+    add_page_number_footer(section.footer, theme if has_visual_theme(config) else None)
     set_section_page_number_start(section, 1, "decimal")
 
 
@@ -242,7 +254,7 @@ def configure_roman_preliminary_section(section: Any, config: dict[str, Any], st
     clear_story_part(section.footer)
     theme = resolve_visual_theme(config)
     apply_header_theme(section.header, theme)
-    add_page_number_footer(section.footer, theme)
+    add_page_number_footer(section.footer, theme if has_visual_theme(config) else None)
     set_section_page_number_start(section, start, "lowerRoman")
 
 
@@ -304,10 +316,13 @@ def add_page_number_footer(footer: Any, theme: VisualTheme | None = None) -> Non
     paragraph = footer.paragraphs[-1] if footer.paragraphs else footer.add_paragraph()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     run = paragraph.add_run()
-    theme = theme or VisualTheme()
-    run.font.name = theme.typography.body_font
-    run.font.size = Pt(theme.footer.font_size_pt)
-    run.font.color.rgb = RGBColor.from_string(_theme_color(theme, theme.footer.color))
+    if theme is None:
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(12)
+    else:
+        run.font.name = theme.typography.body_font
+        run.font.size = Pt(theme.footer.font_size_pt)
+        run.font.color.rgb = RGBColor.from_string(_theme_color(theme, theme.footer.color))
 
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
@@ -762,9 +777,10 @@ class PythonDocxAssemblyAdapter:
         from docx.table import Table
 
         ctx = self._body_transfer_context(sections_part, config)
+        table_theme = resolve_visual_theme(config) if has_visual_theme(config) else None
         for block in self._iter_body_blocks(body):
             if isinstance(block, Table):
-                self._transfer_one_table(cover, block, resolve_visual_theme(config))
+                self._transfer_one_table(cover, block, table_theme)
             else:
                 self._transfer_one_paragraph(cover, body, block, ctx, config)
 
@@ -855,15 +871,15 @@ class PythonDocxAssemblyAdapter:
             if style_name == "Heading 1":
                 new_run.font.name = theme.typography.heading_font
                 new_run.font.size = Pt(theme.typography.heading_1_size_pt)
-                new_run.font.color.rgb = RGBColor.from_string(theme.colors.navy)
+                new_run.font.color.rgb = RGBColor.from_string(theme.colors.heading_1)
             elif style_name == "Heading 2":
                 new_run.font.name = theme.typography.heading_font
                 new_run.font.size = Pt(theme.typography.heading_2_size_pt)
-                new_run.font.color.rgb = RGBColor.from_string(theme.colors.navy)
+                new_run.font.color.rgb = RGBColor.from_string(theme.colors.heading_2)
             elif style_name == "Heading 3":
                 new_run.font.name = theme.typography.heading_font
                 new_run.font.size = Pt(theme.typography.heading_3_size_pt)
-                new_run.font.color.rgb = RGBColor.from_string(theme.colors.teal)
+                new_run.font.color.rgb = RGBColor.from_string(theme.colors.heading_3)
             else:
                 new_run.font.name = theme.typography.body_font
                 new_run.font.size = Pt(theme.typography.body_size_pt)
@@ -879,7 +895,6 @@ class PythonDocxAssemblyAdapter:
         from docx.oxml import OxmlElement
         from docx.shared import Pt
 
-        theme = theme or VisualTheme()
         new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
         self._apply_horizontal_only_borders(new_table)
         for row_idx, row in enumerate(table.rows):
@@ -888,8 +903,9 @@ class PythonDocxAssemblyAdapter:
                 new_cell.text = cell.text
                 for paragraph in new_cell.paragraphs:
                     for run in paragraph.runs:
-                        run.font.name = theme.typography.body_font
-                        run.font.size = Pt(theme.typography.body_size_pt)
+                        run.font.name = theme.typography.body_font if theme else "Times New Roman"
+                        if theme:
+                            run.font.size = Pt(theme.typography.body_size_pt)
                         if row_idx == 0:
                             run.bold = True
         # Multi-page table hygiene: keep each row intact across page boundaries
