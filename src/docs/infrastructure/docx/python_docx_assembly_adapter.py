@@ -833,12 +833,13 @@ class PythonDocxAssemblyAdapter:
                 numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
             )
             ctx["restart_started"] = True
-        elif is_heading_1 and ctx["body_heading_seen"] and not ctx["just_broke"]:
-            cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+        page_break_before = is_heading_1 and ctx["body_heading_seen"] and not ctx["just_broke"]
         ctx["just_broke"] = False
         new_paragraph = cover.add_paragraph(style=style_name)
         theme = resolve_visual_theme(config)
         apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, theme, is_list=is_list)
+        if page_break_before:
+            new_paragraph.paragraph_format.page_break_before = True
         # Academic figure layout: an image paragraph and its caption are centered
         # (never left-aligned or first-line-indented), and the image keeps with
         # the next paragraph so its "Figura N." caption never orphans onto the

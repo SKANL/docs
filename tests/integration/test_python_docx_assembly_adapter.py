@@ -194,7 +194,7 @@ def test_assemble_copies_run_formatting_from_body(tmp_path):
     assert target.runs[0].font.size == Pt(12)
 
 
-def test_assemble_inserts_page_break_before_second_heading_1(tmp_path):
+def test_assemble_marks_second_heading_1_with_page_break_before(tmp_path):
     document = Document()
     document.add_heading("Primero", level=1)
     document.add_paragraph("Texto uno.")
@@ -206,7 +206,9 @@ def test_assemble_inserts_page_break_before_second_heading_1(tmp_path):
     output = tmp_path / "out.docx"
     PythonDocxAssemblyAdapter().assemble({}, body, output, cover_asset_path=None, embed_front_paths=[], embed_back_paths=[])
     result = Document(str(output))
-    assert _count_page_breaks(result) == 1
+    headings = [p for p in result.paragraphs if p.style and p.style.name == "Heading 1"]
+    assert headings[1].paragraph_format.page_break_before is True
+    assert _count_page_breaks(result) == 0
 
 
 # --- assemble: section count (structural only, not numbering format) ------------
