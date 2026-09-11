@@ -104,3 +104,8 @@ Task 9-10: pending
 - Added top-level `template_contract` to `SCANNED_CONFIG_KEYS`, matching the new evidence-service config read and restoring architecture-vocabulary coverage.
 - RED: `uv run pytest tests/architecture/test_config_vocabulary.py -q` reported the missing `template_contract` declaration.
 - GREEN: same architecture suite passed (8 passed); focused `ruff` and `mypy` passed.
+
+
+## Task 9: documentation — complete
+- Updated `AGENTS.md` and `README.md` with native artifact/provenance contracts, scratch/publish behavior, editorial/structural/visual verification, draft versus strict degradation, template fidelity, plugin independence, QA inspection, and renderer/template extension guidance.
+- Added a focused AGENTS.md drift guard for the new capability vocabulary.

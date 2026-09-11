@@ -47,6 +47,12 @@ def test_documents_visual_specs_authoring_format():
     assert "WARN" in AGENTS_MD
 
 
+def test_documents_native_capability_boundaries():
+    prose = " ".join(AGENTS_MD.split()).lower()
+    for term in ("provenance", "scratch", "structural", "visual", "strict mode", "template_contract", "documents, pdf, and template creator plugins"):
+        assert term in prose
+
+
 # --- drift guard: 4k words of contract vs. the CLI it describes ---------------
 
 import ast

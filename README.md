@@ -29,6 +29,18 @@ That boundary is what makes the second property possible:
 PDF is an explicitly excepted derived artifact: it goes through LibreOffice,
 whose rendering varies by version, and is never held to byte identity.
 
+## Native contracts and QA
+
+The CLI is self-contained: it does **not** require the Documents, PDF, or Template Creator plugins at runtime. Plugins may assist a user, but artifact generation, provenance, verification, and publication remain native harness responsibilities.
+
+- **Contracts and provenance:** transforms declare expected artifacts; outputs and section edits retain evidence, hashes, authorship, diffs, and append-only history.
+- **Safe publication:** transforms build in scratch, validate declared outputs, then publish; failed publication restores the previous output and cleans temporary files.
+- **Verification:** editorial review checks prose, structural verification checks document mechanics and template requirements, and visual verification checks rendered pages.
+- **Degradation:** draft mode reports permitted missing tools/evidence as warnings or skips; strict mode requires complete evidence and gates on applicable errors.
+- **Template fidelity:** templates may opt into `template_contract` for geometry, styles, components, editable slots, assets, fidelity checks, and allowed degradations.
+
+Assembly writes `qa-report.md` plus available render previews below the configured QA output directory (normally `output/qa/<artifact-stem>/previews/`). Open the report and page images together; `docs doctor` explains unavailable optional tools. Extend the system by implementing and registering a renderer behind its domain port with deterministic/degradation tests, or by scaffolding and validating a data-only template with `docs template init <id>` and `docs template validate <id>`.
+
 ## Quick start
 
 ```bash

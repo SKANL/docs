@@ -65,6 +65,24 @@ reads the section and reports issues; running it does not update
 Everything below exists to get you to and through that one cognitive slot
 as fast as possible, then verify the result mechanically.
 
+### Native capability contracts
+
+The harness owns the document lifecycle; external plugins are not runtime dependencies. Documents, PDF, and Template Creator plugins may assist authoring or inspection, but the CLI remains complete without them.
+
+- **Artifact contracts and provenance.** Transforms declare expected outputs. Generated artifacts and section edits retain input/configuration evidence, hashes, authorship, diffs, and append-only provenance.
+- **Atomic transforms.** Builds happen in a private scratch directory, validate every declared output, then publish. Failed ordinary publication restores the previous files; temporary files are cleaned.
+- **Three verification layers.** Editorial review checks prose and section rules; structural verification checks document mechanics and template requirements; visual verification checks rendered pages. A green editorial review does not replace the other layers.
+- **Draft versus strict.** Draft mode reports permitted missing tools/evidence as warnings or skips. Strict mode requests complete evidence and promotes applicable failures to errors.
+- **Template fidelity.** `template_contract` can declare page geometry, styles, components, editable slots, required assets, `fidelity_checks`, and `allowed_degradations`. It is validated and provenance-bound; legacy templates without it retain existing behavior.
+
+#### Inspecting QA evidence
+
+After assembly, inspect `output/draft/` and `qa-report.md`. Render verification writes page previews under the configured QA output directory (normally `output/qa/<artifact-stem>/previews/`); open those images alongside the report. Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+
+#### Extending renderers and templates
+
+To add a renderer, implement and register its domain port by visual `type`, keep input data-shaped, and add deterministic output and degraded-tool tests. To add a template, run `docs template init <id>`, fill its structure, contracts, context, and policies, then run `docs template validate <id>`.
+
 ## 1. End-to-end workflow
 
 ```
