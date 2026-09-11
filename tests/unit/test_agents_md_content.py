@@ -49,8 +49,21 @@ def test_documents_visual_specs_authoring_format():
 
 def test_documents_native_capability_boundaries():
     prose = " ".join(AGENTS_MD.split()).lower()
-    for term in ("provenance", "scratch", "structural", "visual", "strict mode", "template_contract", "documents, pdf, and template creator plugins"):
+    for term in ("provenance", "scratch", "structural", "visual", "strict mode", "template_contract"):
         assert term in prose
+
+
+def test_documents_plugin_boundary_is_explicit():
+    prose = " ".join(AGENTS_MD.split()).lower()
+    assert "external plugins are not runtime dependencies" in prose
+    assert "documents, pdf, and template creator plugins may assist authoring or inspection" in prose
+    assert "cli remains complete without them" in prose
+
+
+def test_documents_qa_report_path_is_precise():
+    prose = " ".join(AGENTS_MD.split())
+    assert "output_qa_dir/<docx-stem>/qa-report.md" in prose
+    assert "output_qa_dir/<docx-stem>/previews/" in prose
 
 
 # --- drift guard: 4k words of contract vs. the CLI it describes ---------------

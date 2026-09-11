@@ -77,7 +77,7 @@ The harness owns the document lifecycle; external plugins are not runtime depend
 
 #### Inspecting QA evidence
 
-After assembly, inspect `output/draft/` and `qa-report.md`. Render verification writes page previews under the configured QA output directory (normally `output/qa/<artifact-stem>/previews/`); open those images alongside the report. Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+After assembly, inspect `output/draft/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
 
 #### Extending renderers and templates
 

@@ -109,3 +109,10 @@ Task 9-10: pending
 ## Task 9: documentation — complete
 - Updated `AGENTS.md` and `README.md` with native artifact/provenance contracts, scratch/publish behavior, editorial/structural/visual verification, draft versus strict degradation, template fidelity, plugin independence, QA inspection, and renderer/template extension guidance.
 - Added a focused AGENTS.md drift guard for the new capability vocabulary.
+
+
+## Task 9 review corrections: complete
+- Clarified the QA evidence contract with the precise `output_qa_dir/<docx-stem>/qa-report.md` and sibling `previews/` paths.
+- Added focused AGENTS.md assertions for the QA path and the boundary that Documents, PDF, and Template Creator plugins assist authoring/inspection but are not runtime dependencies.
+- Scope intentionally excludes CISSP documents.
+- Focused: `uv run pytest tests/unit/test_agents_md_content.py -q` — 12 passed.
