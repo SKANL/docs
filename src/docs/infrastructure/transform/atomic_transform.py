@@ -71,7 +71,14 @@ class AtomicTransform:
                 target.unlink(missing_ok=True)
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(prefix=f".{target.name}.restore-", dir=target.parent, delete=False) as file:
-                file.write(content)
-                restored = Path(file.name)
-            os.replace(restored, target)
+            restored: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    prefix=f".{target.name}.restore-", dir=target.parent, delete=False
+                ) as file:
+                    file.write(content)
+                    restored = Path(file.name)
+                os.replace(restored, target)
+            finally:
+                if restored is not None:
+                    restored.unlink(missing_ok=True)

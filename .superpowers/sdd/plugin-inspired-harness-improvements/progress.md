@@ -13,7 +13,7 @@ Task 1-3: complete
 - RED: `uv run pytest tests/unit/domain/test_artifacts.py tests/unit/domain/test_provenance.py tests/integration/test_atomic_transform.py -v` failed at collection because the three new modules did not exist.
 - GREEN: same focused command passed: 7 passed.
 - Related suite: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` passed: 686 passed.
-Task 4-5: pending
+Task 4-5: complete
 Task 6-8: pending
 Task 9-10: pending
 
@@ -38,3 +38,13 @@ Task 9-10: pending
 - Added injected second-replacement failure coverage proving both prior direct files are restored. File-as-output-directory rejection remains covered.
 - Focused: `uv run pytest tests/integration/test_atomic_transform.py -v` — 6 passed.
 - Related: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` — 689 passed.
+
+## Task 4-5: complete
+- Added `RenderProfile`, `RenderVerificationPort`, and `RenderVerificationService`; artifact identity is SHA-256 bound before format-specific verification.
+- Added format-neutral verification adapter: PDF pages are opened/rendered with pypdfium2, per-page validity/blank-page findings and deterministic previews are emitted; DOCX uses python-docx for readability/page dimensions and degrades when optional page rendering is absent; HTML and image opening/dimensions are also covered.
+- Added `StructuralAuditPort`, `StructuralAuditService`, and declarative DOCX/PDF structural checks for headings/section order, table and image minima, captions, references, metadata, PDF readability, and page dimensions. Editorial review remains separate.
+- QA can accept an optional render-verification service and add its findings to `qa-report.md`; current callers retain the existing constructor behavior. Composition-root wiring remains intentionally deferred to Task 7.
+- Fixed the pending rollback hygiene minor: restore staging files are removed even when `os.replace` fails during rollback.
+- RED: focused service tests initially failed at missing module imports; adapter and rollback-cleanup tests then failed before implementation/fix.
+- GREEN: `uv run pytest tests/unit/domain/test_artifacts.py tests/unit/application/test_render_verification_service.py tests/unit/application/test_structural_audit_service.py tests/unit/infrastructure/test_render_verification_adapter.py tests/unit/infrastructure/test_structural_audit_adapter.py tests/integration/test_atomic_transform.py tests/integration/test_qa_service.py tests/integration/test_format_audit_service.py -q` passed (with one pre-existing skip).
+- Static checks: focused `ruff` passed; `mypy` passed for 10 source files.

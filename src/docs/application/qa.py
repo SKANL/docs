@@ -6,15 +6,23 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.format_audit import FormatAuditService
+from docs.application.render_verification import RenderVerificationService
+from docs.domain.artifacts import RenderProfile, VerificationReport
 from docs.domain.ports.qa_render_port import QaRenderPort
 from docs.domain.qa import ensure_child_path, render_qa_report
 from docs.domain.review import Issue
 
 
 class QaService:
-    def __init__(self, port: QaRenderPort, format_audit_service: FormatAuditService) -> None:
+    def __init__(
+        self,
+        port: QaRenderPort,
+        format_audit_service: FormatAuditService,
+        render_verification_service: RenderVerificationService | None = None,
+    ) -> None:
         self.port = port
         self.format_audit_service = format_audit_service
+        self.render_verification_service = render_verification_service
 
     def qa_docx(self, config: dict[str, Any], docx_path: Path, strict: bool = False) -> Path:
         if not docx_path.exists():
@@ -37,6 +45,12 @@ class QaService:
                 raise
             expected_pdf = None
 
+        render_verification: VerificationReport | None = None
+        if expected_pdf is not None and self.render_verification_service is not None:
+            render_verification = self.render_verification_service.verify(
+                expected_pdf, RenderProfile(format="pdf"), output_dir / "previews"
+            )
+
         # PNG-per-page rendering is permanently out of scope (user decision,
         # 2026-06-21) — will be reimplemented differently later. Verbatim
         # strict-mode consequence preserved: strict QA still requires PNG
@@ -52,7 +66,7 @@ class QaService:
             for item in document_audits:
                 if not item["ok"]:
                     audit.issues.append(Issue("error", f"Auditoría Documents falló: {item['name']}"))
-        report = render_qa_report(docx_path, expected_pdf, pngs, audit, document_audits)
+        report = render_qa_report(docx_path, expected_pdf, pngs, audit, document_audits, render_verification)
         (output_dir / "qa-report.md").write_text(report, encoding="utf-8")
         if strict and not audit.passed:
             raise RuntimeError(f"QA estricto falló; revisar {output_dir / 'qa-report.md'}")

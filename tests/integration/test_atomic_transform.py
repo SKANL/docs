@@ -133,3 +133,39 @@ def test_atomic_transform_rejects_a_file_as_the_output_target(tmp_path: Path):
         AtomicTransform(lambda _spec, _scratch: None).transform(spec)
 
     assert output_dir.read_text(encoding="utf-8") == "not a directory"
+
+
+def test_atomic_transform_cleans_scratch_and_restore_temps_when_rollback_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Breaks if a rollback exception strands temporary scratch or restore files."""
+    output_dir = tmp_path / "output"
+    spec = TransformSpec(output_dir=output_dir, expected_outputs=("report.txt", "manifest.json"))
+
+    def build_old(_spec: TransformSpec, scratch: Path) -> None:
+        (scratch / "report.txt").write_text("old report", encoding="utf-8")
+        (scratch / "manifest.json").write_text('{"version":"old"}', encoding="utf-8")
+
+    AtomicTransform(build_old).transform(spec)
+    replace = atomic_transform_module.os.replace
+
+    def fail_publication_and_restore(source: str, destination: str) -> None:
+        source_path = Path(source)
+        target_path = Path(destination)
+        if target_path.name == "manifest.json" and source_path.parent.name.startswith(".scratch-"):
+            raise OSError("simulated publication failure")
+        if target_path.name == "report.txt" and source_path.name.startswith(".report.txt.restore-"):
+            raise OSError("simulated rollback failure")
+        replace(source, destination)
+
+    monkeypatch.setattr(atomic_transform_module.os, "replace", fail_publication_and_restore)
+
+    def build_new(_spec: TransformSpec, scratch: Path) -> None:
+        (scratch / "report.txt").write_text("new report", encoding="utf-8")
+        (scratch / "manifest.json").write_text('{"version":"new"}', encoding="utf-8")
+
+    with pytest.raises(OSError, match="simulated rollback failure"):
+        AtomicTransform(build_new).transform(spec)
+
+    assert not list(output_dir.glob(".scratch-*"))
+    assert not list(output_dir.rglob("*.restore-*"))

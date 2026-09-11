@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from docs.domain.artifacts import VerificationReport
 from docs.domain.review import ReviewResult
 
 
@@ -19,6 +20,7 @@ def render_qa_report(
     pngs: list[Path],
     audit: ReviewResult,
     document_audits: list[dict[str, Any]] | None = None,
+    render_verification: VerificationReport | None = None,
 ) -> str:
     document_audits = document_audits or []
     # `pdf_path is None` means the visual render was skipped in draft because
@@ -41,9 +43,22 @@ def render_qa_report(
         "",
         audit.to_markdown(),
         "",
-        "## Auditorías Documents",
+        "## Verificación de render",
         "",
     ]
+    if render_verification is None:
+        lines.append("- No ejecutada.")
+    else:
+        lines.append(f"- Resultado: {'OK' if render_verification.passed else 'FAIL'}")
+        for finding in render_verification.findings:
+            lines.append(f"- {finding.severity.upper()} `{finding.code}`: {finding.message}")
+    lines.extend(
+        [
+            "",
+        "## Auditorías Documents",
+        "",
+        ]
+    )
     if document_audits:
         for item in document_audits:
             marker = "OK" if item.get("ok") else "FAIL"

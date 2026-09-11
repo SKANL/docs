@@ -12,6 +12,17 @@ class ArtifactState(str, Enum):
 
 
 @dataclass(frozen=True)
+class RenderProfile:
+    """Declarative expectations shared by every renderable artifact type."""
+
+    format: str
+    expected_page_size: tuple[float, float] | None = None
+    require_previews: bool = False
+    allow_blank_pages: bool = False
+    preview_dpi: int = 150
+
+
+@dataclass(frozen=True)
 class ArtifactRef:
     path: str
     sha256: str

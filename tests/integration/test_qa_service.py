@@ -122,3 +122,33 @@ def test_qa_docx_draft_degrades_without_libreoffice_and_still_audits_format(tmp_
     report = (output_dir / "qa-report.md").read_text(encoding="utf-8")
     assert "no disponible" in report.lower()
     assert "auditor" in report.lower()  # the format audit still ran
+
+
+def test_qa_docx_optionally_includes_render_verification_without_changing_default_api(tmp_path):
+    from docs.domain.artifacts import ArtifactRef, VerificationReport
+
+    class QaPort:
+        def render_docx_to_pdf(self, _config, docx_path, output_dir):
+            pdf_path = output_dir / f"{docx_path.stem}.pdf"
+            pdf_path.write_bytes(b"pdf")
+            return pdf_path
+
+        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
+            return []
+
+    class VerificationService:
+        def verify(self, artifact_path, profile, preview_dir=None):
+            assert profile.format == "pdf"
+            assert preview_dir == artifact_path.parent / "previews"
+            return VerificationReport(ArtifactRef(artifact_path.as_posix(), "a" * 64))
+
+    docx_path = _make_docx(tmp_path)
+    service = QaService(
+        QaPort(),
+        FormatAuditService(PythonDocxAuditAdapter()),
+        render_verification_service=VerificationService(),
+    )
+
+    output_dir = service.qa_docx({"paths": {"output_qa_dir": str(tmp_path / "qa")}}, docx_path)
+
+    assert "## Verificación de render" in (output_dir / "qa-report.md").read_text(encoding="utf-8")
