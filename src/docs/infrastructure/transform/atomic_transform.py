@@ -49,11 +49,29 @@ class AtomicTransform:
     def _publish(scratch: Path, output_dir: Path, outputs: tuple[str, ...]) -> None:
         """Atomically replace each complete staged file at its public path.
 
-        A process can stop between files, but no public path is removed or
-        partially written: each path resolves to its prior complete file or to
-        the new complete staged file.
+        Ordinary publication errors roll every target back to its prior complete
+        state. Process-kill atomicity is not promised across multiple direct
+        files: an external termination can observe a mixed generation.
         """
-        for name in outputs:
-            target = output_dir / name
+        targets = [output_dir / name for name in outputs]
+        previous = {target: target.read_bytes() if target.exists() else None for target in targets}
+        try:
+            for name, target in zip(outputs, targets, strict=True):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(scratch / name, target)
+        except Exception:
+            AtomicTransform._restore(targets, previous)
+            raise
+
+    @staticmethod
+    def _restore(targets: list[Path], previous: dict[Path, bytes | None]) -> None:
+        for target in targets:
+            content = previous[target]
+            if content is None:
+                target.unlink(missing_ok=True)
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(scratch / name, target)
+            with tempfile.NamedTemporaryFile(prefix=f".{target.name}.restore-", dir=target.parent, delete=False) as file:
+                file.write(content)
+                restored = Path(file.name)
+            os.replace(restored, target)

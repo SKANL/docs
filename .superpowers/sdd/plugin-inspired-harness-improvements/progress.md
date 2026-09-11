@@ -30,3 +30,11 @@ Task 9-10: pending
 - Direct-path and injected file-replacement-failure tests pass; file-as-output-directory rejection remains covered.
 - Focused: `uv run pytest tests/integration/test_atomic_transform.py -v` — 5 passed.
 - Related: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` — 688 passed.
+
+## Publication rollback correction
+- Re-review found that sequential direct replacements could leave a mixed generation after a late replacement failure.
+- Before publication, `AtomicTransform` snapshots every target file or its absence. Any ordinary `os.replace` failure restores all declared targets using staged restore files plus atomic replacement; transient scratch and restore files are cleaned.
+- Process-kill atomicity across multiple direct files is explicitly not promised; ordinary transform failures leave no mixed generation.
+- Added injected second-replacement failure coverage proving both prior direct files are restored. File-as-output-directory rejection remains covered.
+- Focused: `uv run pytest tests/integration/test_atomic_transform.py -v` — 6 passed.
+- Related: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` — 689 passed.

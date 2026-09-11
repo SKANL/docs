@@ -88,6 +88,41 @@ def test_atomic_transform_preserves_prior_direct_files_when_replacement_fails(
     assert (output_dir / "manifest.json").read_text(encoding="utf-8") == '{"version":"old"}'
 
 
+def test_atomic_transform_rolls_back_every_direct_file_when_the_second_replacement_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Breaks if a late replacement leaves a mixed old/new output generation."""
+    output_dir = tmp_path / "output"
+    spec = TransformSpec(output_dir=output_dir, expected_outputs=("report.txt", "manifest.json"))
+
+    def build_old(_spec: TransformSpec, scratch: Path) -> None:
+        (scratch / "report.txt").write_text("old report", encoding="utf-8")
+        (scratch / "manifest.json").write_text('{"version":"old"}', encoding="utf-8")
+
+    AtomicTransform(build_old).transform(spec)
+    replace = atomic_transform_module.os.replace
+    failed = False
+
+    def fail_second_replacement_once(source: str, destination: str) -> None:
+        nonlocal failed
+        if Path(destination).name == "manifest.json" and not failed:
+            failed = True
+            raise OSError("simulated second replacement failure")
+        replace(source, destination)
+
+    monkeypatch.setattr(atomic_transform_module.os, "replace", fail_second_replacement_once)
+
+    def build_new(_spec: TransformSpec, scratch: Path) -> None:
+        (scratch / "report.txt").write_text("new report", encoding="utf-8")
+        (scratch / "manifest.json").write_text('{"version":"new"}', encoding="utf-8")
+
+    with pytest.raises(OSError, match="simulated second replacement failure"):
+        AtomicTransform(build_new).transform(spec)
+
+    assert (output_dir / "report.txt").read_text(encoding="utf-8") == "old report"
+    assert (output_dir / "manifest.json").read_text(encoding="utf-8") == '{"version":"old"}'
+
+
 def test_atomic_transform_rejects_a_file_as_the_output_target(tmp_path: Path):
     """Breaks if publication can overwrite a file where an output directory is required."""
     output_dir = tmp_path / "output"
