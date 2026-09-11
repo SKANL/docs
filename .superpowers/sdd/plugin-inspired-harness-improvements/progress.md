@@ -14,7 +14,8 @@ Task 1-3: complete
 - GREEN: same focused command passed: 7 passed.
 - Related suite: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` passed: 686 passed.
 Task 4-5: complete
-Task 6-8: pending
+Task 6-7: complete
+Task 8: complete
 Task 9-10: pending
 
 ## Atomic publication fix
@@ -82,3 +83,11 @@ Task 9-10: pending
 - Static checks: `uv run ruff check src/docs/application/pipeline.py src/docs/application/qa.py src/docs/cli/_shared.py tests/integration/test_pipeline_service.py` passed; `uv run mypy src/docs/application/pipeline.py src/docs/application/qa.py src/docs/cli/_shared.py` passed.
 - Runtime wiring: `uv run python -c "from docs.cli._shared import Deps; Deps(); print('Deps wiring ok')"` passed.
 - Review: approved with no Important findings; only minor coverage suggestions were recorded for future work. Scratch review diff removed; no scope expansion applied.
+
+## Task 8: complete
+- Added the six-category `ReviewDimension` enum and a backward-compatible `Issue.dimension` field; legacy three-positional-argument callers retain the editorial default while JSON findings now include `dimension`.
+- `review-section` remains editorial by default. `review-document` accepts repeatable `--dimension` filtering without changing its existing invocation, while missing document structure is explicitly structural.
+- DOCX audit findings now classify document mechanics as structural, layout as visual, and missing figure captions as accessibility, so `docs verify` can distinguish output concerns from content review.
+- RED: `uv run pytest tests/unit/domain/test_review.py tests/integration/test_cli_section.py tests/integration/test_format_audit_service.py -q` failed at collection because `ReviewDimension` was absent.
+- GREEN: the same focused command passed: 22 passed.
+- Static checks: focused `ruff` passed; focused `mypy` passed for 4 source files.

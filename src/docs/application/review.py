@@ -7,7 +7,7 @@ from pathlib import Path
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.ports.section_repository import SectionRepository
-from docs.domain.review import Issue, ReviewResult
+from docs.domain.review import Issue, ReviewDimension, ReviewResult
 from docs.domain.rules import review_cross_consistency, review_rules, review_section_text
 from docs.domain.sections import (
     apply_stamp,
@@ -48,6 +48,7 @@ class ReviewService:
                         "error",
                         f"Sección requerida faltante: `{section.id}`.",
                         code="structure.missing_section",
+                        dimension=ReviewDimension.STRUCTURAL,
                     )
                 )
             elif exists:
@@ -74,6 +75,7 @@ class ReviewService:
                     "error",
                     f"No existe directorio de secciones: {sections_dir}",
                     code="structure.missing_sections_dir",
+                    dimension=ReviewDimension.STRUCTURAL,
                 )
             )
 

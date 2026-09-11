@@ -13,6 +13,7 @@ import typer
 
 from docs.cli._shared import _ctx, emit_result
 from docs.domain.normative import resolve_normative_settings
+from docs.domain.review import ReviewDimension
 
 section_app = typer.Typer()
 
@@ -84,6 +85,7 @@ def review_document(
     ctx: typer.Context,
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
+    dimensions: list[ReviewDimension] | None = typer.Option(None, "--dimension"),
 ) -> None:
     """Revisa el documento completo: coherencia entre secciones, APA y trazabilidad.
 
@@ -97,5 +99,7 @@ def review_document(
         resolved.doc_id, resolved.template, strict=strict,
         manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
     )
+    if dimensions:
+        result = result.filter_dimensions(set(dimensions))
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
