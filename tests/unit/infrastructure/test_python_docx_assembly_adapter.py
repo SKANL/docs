@@ -124,3 +124,80 @@ def test_transfer_body_paragraphs_preserves_inline_images():
     transferred_text = "".join(p.text for p in cover.paragraphs)
     assert "before" in transferred_text
     assert "after" in transferred_text
+
+
+def test_visual_theme_merges_defaults_and_normalizes_hex_colors():
+    from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_visual_theme
+
+    theme = resolve_visual_theme(
+        {
+            "format": {
+                "visual_theme": {
+                    "colors": {"navy": "#0b1f33", "teal": "0f766e"},
+                    "typography": {"body_font": "Aptos", "body_size_pt": 11},
+                    "spacing": {"body_line_spacing": 1.25, "heading_1_after_pt": 10},
+                    "header": {"title": "CISSP DOMAIN 6"},
+                    "footer": {"font_size_pt": 9},
+                }
+            }
+        }
+    )
+
+    assert theme.colors.navy == "0B1F33"
+    assert theme.colors.teal == "0F766E"
+    assert theme.typography.body_font == "Aptos"
+    assert theme.typography.body_size_pt == 11
+    assert theme.spacing.body_line_spacing == 1.25
+    assert theme.spacing.heading_1_after_pt == 10
+    assert theme.header.title == "CISSP DOMAIN 6"
+    assert theme.footer.font_size_pt == 9
+    # Partial themes retain legacy behavior for every unspecified value.
+    assert theme.typography.heading_font == "Times New Roman"
+    assert theme.spacing.body_after_pt == 18
+
+
+def test_visual_theme_applies_body_heading_caption_header_and_footer_styles(tmp_path):
+    from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+
+    body_path = tmp_path / "body.docx"
+    body = Document()
+    body.add_paragraph("DOMAIN 6", style="Heading 1")
+    body.add_paragraph("Body paragraph.")
+    body.add_paragraph("Figura 1. A figure caption.")
+    body.save(str(body_path))
+
+    config = {
+        "format": {
+            "visual_theme": {
+                "colors": {"navy": "0B1F33", "teal": "0F766E", "warm_accent": "D97706"},
+                "typography": {
+                    "body_font": "Aptos",
+                    "body_size_pt": 11,
+                    "heading_font": "Aptos Display",
+                    "heading_1_size_pt": 18,
+                },
+                "spacing": {"body_line_spacing": 1.25, "body_after_pt": 8, "heading_1_after_pt": 12},
+                "header": {"title": "CISSP DOMAIN 6", "accent_color": "teal"},
+                "footer": {"font_size_pt": 9, "color": "teal"},
+                "captions": {"color": "warm_accent"},
+            }
+        },
+        "structure": [
+            {"type": "sections", "body_restart_section": "domain", "body_pagination": {"format": "decimal"}}
+        ],
+        "sections": [{"id": "domain", "title": "DOMAIN 6"}],
+    }
+
+    document = PythonDocxAssemblyAdapter()._build_main_document(config, body_path, None)
+    heading, body_paragraph, caption = [p for p in document.paragraphs if p.text.strip()][-3:]
+
+    assert heading.runs[0].font.name == "Aptos Display"
+    assert str(heading.runs[0].font.color.rgb) == "0B1F33"
+    assert heading.paragraph_format.space_after.pt == 12
+    assert body_paragraph.runs[0].font.name == "Aptos"
+    assert body_paragraph.runs[0].font.size.pt == 11
+    assert body_paragraph.paragraph_format.line_spacing == 1.25
+    assert body_paragraph.paragraph_format.space_after.pt == 8
+    assert str(caption.runs[0].font.color.rgb) == "D97706"
+    assert document.sections[-1].header.paragraphs[0].text == "CISSP DOMAIN 6"
+    assert document.sections[-1].footer.paragraphs[0].runs[0].font.size.pt == 9
