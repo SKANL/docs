@@ -226,3 +226,48 @@ def test_every_builtin_template_validates_with_no_near_misses():
         raw = json.loads(builtin.joinpath(name).read_text(encoding="utf-8"))
         near = [i for i in validate_template(raw) if i.code == "template.unknown_key"]
         assert near == [], f"{name}: {[i.message for i in near]}"
+
+
+def test_template_contract_validates_all_declared_fields():
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["template_contract"] = {
+        "page_geometry": {"size": "A4"},
+        "style_contract": {"body_font": "Aptos"},
+        "components": [{"kind": "cover"}],
+        "editable_slots": [{"id": "title"}],
+        "required_assets": [{"id": "logo"}],
+        "fidelity_checks": [{"id": "page-count"}],
+        "allowed_degradations": ["missing optional preview"],
+    }
+
+    assert validate_template(raw) == []
+
+
+def test_template_contract_invalid_field_type_is_reported():
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["template_contract"] = {"components": "cover"}
+
+    issues = validate_template(raw)
+
+    assert any(issue.code == "template.invalid_field" and "template_contract.components" in issue.message for issue in issues)
+
+
+def test_near_miss_template_contract_key_is_reported():
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["template_contract"] = {"page_geometery": {"size": "A4"}}
+
+    issues = [issue for issue in validate_template(raw) if issue.code == "template.unknown_key"]
+
+    assert len(issues) == 1, issues
+    assert "page_geometery" in issues[0].message
+    assert "page_geometry" in issues[0].message
+
+
+def test_template_contract_allows_deliberate_nested_extensions():
+    raw = copy.deepcopy(_MINIMAL_VALID)
+    raw["template_contract"] = {
+        "page_geometry": {"vendor_layout": {"bleed_mm": 3}},
+        "render_provider_extension": {"preserve_native_chart": True},
+    }
+
+    assert validate_template(raw) == []

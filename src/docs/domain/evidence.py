@@ -37,8 +37,10 @@ def build_manifest(
     normative_source: str = "",
     pdf_and_extracted_use: str = "",
     skipped_paths: list[str] | None = None,
+    template_contract: dict[str, Any] | None = None,
+    template_contract_hash: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    manifest = {
         "schema": 1,
         "policy": {
             # Template-declared, never a hardcoded document-type literal (spec:
@@ -84,6 +86,12 @@ def build_manifest(
         # Guards Absent Paths").
         "skipped_paths": skipped_paths or [],
     }
+    # Omitted and empty contracts preserve legacy manifests byte-for-byte.
+    # Only a non-empty, explicitly declared contract is provenance-bound.
+    if template_contract is not None:
+        manifest["template_contract"] = template_contract
+        manifest["template_contract_hash"] = template_contract_hash
+    return manifest
 
 
 @dataclass(frozen=True)
@@ -99,8 +107,9 @@ def build_rules_hash_payload(
     apa7: dict,
     structure: list[dict],
     preliminaries: dict,
+    template_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "manual_dir": [{"path": fact.path, "sha256": fact.sha256} for fact in manual_files],
         "section_contracts": section_contracts,
         "format": format,
@@ -108,6 +117,9 @@ def build_rules_hash_payload(
         "structure": structure,
         "preliminaries": preliminaries,
     }
+    if template_contract is not None:
+        payload["template_contract"] = template_contract
+    return payload
 
 
 @dataclass(frozen=True)

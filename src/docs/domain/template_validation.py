@@ -17,6 +17,7 @@ from docs.domain.models.template import (
     StrictPolicy,
     StrictPolicyBlock,
     Template,
+    TemplateContract,
     Topic,
 )
 from docs.domain.review import Issue
@@ -235,6 +236,7 @@ def _check_near_miss_keys(raw: dict[str, Any]) -> list[Issue]:
                         _near_miss_keys(field, Field, f"context_schema.topics[{index}].fields[{f_index}]")
                     )
     issues.extend(_near_miss_keys(raw.get("apa7"), Apa7Config, "apa7"))
+    issues.extend(_near_miss_keys(raw.get("template_contract"), TemplateContract, "template_contract"))
     strict_policy = raw.get("strict_policy")
     issues.extend(_near_miss_keys(strict_policy, StrictPolicy, "strict_policy"))
     if isinstance(strict_policy, dict):

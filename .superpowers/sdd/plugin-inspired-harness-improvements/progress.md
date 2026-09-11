@@ -55,3 +55,21 @@ Task 9-10: pending
 - Strict QA includes a failed render-verification report in both the QA report and its final gate; constructor compatibility is preserved.
 - Structural page-size rules now accept JSON arrays as well as tuples. `require_previews` is explicitly optional by default and becomes an error when requested but unavailable.
 - RED tests covered blank-page policy, format mismatch, artifact mutation, strict QA gating, and JSON page-size validation.
+
+## Task 6: complete
+- Added the opt-in `TemplateContract` model under `Template.template_contract` with declarative page geometry, styling, component, editable-slot, asset, fidelity-check, and degradation fields.
+- Legacy templates omit the contract from serialized config and retain byte-compatible evidence manifests and per-section contract hashes when no template contract is declared.
+- Declared template contracts are now bound into rules manifests and rules-hash fallback payloads through a separate `template_contract_hash`; validation also reports near-miss contract keys without rejecting deliberate extensions.
+- RED: `uv run pytest tests/unit/domain/models/test_template.py tests/unit/domain/test_template_validation.py tests/integration/test_evidence_service.py -q` failed during collection because `TemplateContract` did not exist.
+- GREEN: `uv run pytest tests/unit/domain/models/test_template.py tests/unit/domain/test_template_validation.py tests/unit/domain/test_evidence.py tests/integration/test_evidence_service.py -q` — 109 passed.
+- Static checks: focused `ruff` passed; `mypy` passed for 4 source files.
+
+## Task 6 review corrections: complete
+- Root cause: `Template.template_contract` defaulted to an empty model, so a legacy template's serialized config carried default contract fields and changed evidence/provenance despite no opt-in declaration.
+- `template_contract` now defaults to `None`; evidence canonicalizes absent, `{}`, and default-only legacy serializations as no declaration. Legacy manifests omit template-contract fields and section hashes remain section-only.
+- Template-wide fidelity data is bound independently as `template_contract_hash` in the rules manifest and fallback `rules_hash`; it is no longer folded into per-section `contract_hash` values.
+- Added regression coverage across legacy template serialization -> config -> build_rules manifest -> section provenance, fallback rules hashing, and deliberately nested extension data.
+- RED: legacy serialization and provenance tests failed with the empty default contract present in the model and manifest.
+- GREEN: `uv run pytest tests/unit/domain/models/test_template.py tests/unit/domain/test_template_validation.py tests/unit/domain/test_evidence.py tests/integration/test_evidence_service.py -q` — 112 passed.
+- Static checks: focused `ruff` passed; `mypy` passed for 4 source files.
+- Reviewer re-check approved all Important/Critical findings; aligned the empty-contract comment with canonicalization behavior and renamed the provenance test for its section-only hash semantics. No review artifact files retained.
