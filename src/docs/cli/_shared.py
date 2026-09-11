@@ -27,15 +27,18 @@ from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
+from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
 from docs.application.status import StatusService
+from docs.application.structural_audit import StructuralAuditService
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
+from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
@@ -54,6 +57,7 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
 
 @dataclass(frozen=True)
@@ -138,7 +142,11 @@ class Deps:
             pdf_renderer_service.output_format: pdf_renderer_service,
         }
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
-        qa_service = QaService(libreoffice_qa_adapter, format_audit_service)
+        render_verification_service = RenderVerificationService(RenderVerificationAdapter())
+        structural_audit_service = StructuralAuditService(StructuralAuditAdapter())
+        qa_service = QaService(
+            libreoffice_qa_adapter, format_audit_service, render_verification_service=render_verification_service
+        )
         # Stateless -- one instance shared by the doctor's manual auto-detect
         # (item E) and ingest's content-based classification (item D, PR4),
         # never a second port/adapter (design.md ADR-D).
@@ -300,6 +308,7 @@ class Deps:
             format_audit_service, qa_service, self.workspace, self.ingest,
             context_service=self.context,
             generate_visuals_service=self.generate_visuals_service,
+            structural_audit_service=structural_audit_service,
         )
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:

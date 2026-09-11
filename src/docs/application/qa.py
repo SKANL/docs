@@ -75,6 +75,8 @@ class QaService:
                     audit.issues.append(Issue("error", f"Auditoría Documents falló: {item['name']}"))
         report = render_qa_report(docx_path, expected_pdf, pngs, audit, document_audits, render_verification)
         (output_dir / "qa-report.md").write_text(report, encoding="utf-8")
+        if render_verification is not None and not render_verification.passed:
+            raise RuntimeError(f"Verificación de render falló; revisar {output_dir / 'qa-report.md'}")
         if strict and strict_failures:
             raise RuntimeError(f"{strict_failures[0]}; revisar {output_dir / 'qa-report.md'}")
         if strict and not audit.passed:

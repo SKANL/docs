@@ -19,6 +19,7 @@ from docs.application.ingest import IngestService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.domain.artifacts import ArtifactRef, VerificationFinding, VerificationReport
 from docs.domain.context import TopicStatus
 from docs.domain.models.template import ContextSchema, Template, Topic
 from docs.domain.workspace import Workspace
@@ -1125,3 +1126,97 @@ def test_qa_stage_stays_quiet_when_the_render_happened(tmp_path):
 
     stage = next(s for s in summary["stages"] if s["stage"] == "qa-docx")
     assert "omitido" not in stage["detail"].lower()
+
+
+def test_assemble_fails_when_wired_render_verification_reports_an_error(tmp_path):
+    class _QaPort:
+        def render_docx_to_pdf(self, _config, docx_path, output_dir):
+            pdf_path = output_dir / f"{docx_path.stem}.pdf"
+            pdf_path.write_bytes(b"pdf")
+            return pdf_path
+
+        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
+            return []
+
+    class _BlockingVerification:
+        def verify(self, artifact_path, _profile, _preview_dir=None):
+            return VerificationReport(
+                ArtifactRef(artifact_path.as_posix(), "a" * 64),
+                [VerificationFinding("render.page.blank", "blank page", "error")],
+            )
+
+    class _FakeRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True), ("qa-docx", True)]
+
+        def build(self, _doc_id, config, output=None):
+            path = output or Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            Document().save(path)
+            return path
+
+    service, _ = _service(tmp_path)
+    service.qa_service = QaService(
+        _QaPort(),
+        FormatAuditService(PythonDocxAuditAdapter()),
+        render_verification_service=_BlockingVerification(),
+    )
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+
+    assert summary["passed"] is False
+    assert next(stage for stage in summary["stages"] if stage["stage"] == "qa-docx")["ok"] is False
+
+
+def test_assemble_allows_wired_render_verification_warnings_in_non_strict_mode(tmp_path):
+    class _QaPort:
+        def render_docx_to_pdf(self, _config, docx_path, output_dir):
+            pdf_path = output_dir / f"{docx_path.stem}.pdf"
+            pdf_path.write_bytes(b"pdf")
+            return pdf_path
+
+        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
+            return []
+
+    class _WarningVerification:
+        def verify(self, artifact_path, _profile, _preview_dir=None):
+            return VerificationReport(
+                ArtifactRef(artifact_path.as_posix(), "a" * 64),
+                [VerificationFinding("render.preview.unavailable", "preview unavailable", "warning")],
+            )
+
+    class _FakeRenderer:
+        output_format = "docx"
+
+        def stage_plan(self):
+            return [("build-docx", True), ("qa-docx", True)]
+
+        def build(self, _doc_id, config, output=None):
+            path = output or Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            Document().save(path)
+            return path
+
+    service, _ = _service(tmp_path)
+    service.qa_service = QaService(
+        _QaPort(),
+        FormatAuditService(PythonDocxAuditAdapter()),
+        render_verification_service=_WarningVerification(),
+    )
+    config = _pipeline_config(tmp_path)
+    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
+    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+
+    summary = service.run_pipeline(
+        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    )
+
+    assert summary["passed"] is True
+    assert next(stage for stage in summary["stages"] if stage["stage"] == "qa-docx")["ok"] is True

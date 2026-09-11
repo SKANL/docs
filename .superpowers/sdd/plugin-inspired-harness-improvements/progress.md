@@ -73,3 +73,12 @@ Task 9-10: pending
 - GREEN: `uv run pytest tests/unit/domain/models/test_template.py tests/unit/domain/test_template_validation.py tests/unit/domain/test_evidence.py tests/integration/test_evidence_service.py -q` — 112 passed.
 - Static checks: focused `ruff` passed; `mypy` passed for 4 source files.
 - Reviewer re-check approved all Important/Critical findings; aligned the empty-contract comment with canonicalization behavior and renamed the provenance test for its section-only hash semantics. No review artifact files retained.
+
+## Task 7: complete
+- Wired render verification and structural audit services at the composition root without changing the existing stage plan. `qa-docx` now treats an error-severity render verification report as a blocking QA failure; warning-only reports continue in non-strict mode. When a template declares a contract, the optional structural audit runs at that same final QA gate and blocks only on its existing error findings.
+- The compatible adapter is intentionally additive: `PipelineService.structural_audit_service` defaults to `None`, so direct callers and templates without an opt-in contract retain prior behavior.
+- RED: `uv run pytest tests/integration/test_pipeline_service.py -q -k 'wired_render_verification'` failed because an error report still let assemble pass.
+- GREEN: same focused command — 2 passed, 41 deselected.
+- Static checks: `uv run ruff check src/docs/application/pipeline.py src/docs/application/qa.py src/docs/cli/_shared.py tests/integration/test_pipeline_service.py` passed; `uv run mypy src/docs/application/pipeline.py src/docs/application/qa.py src/docs/cli/_shared.py` passed.
+- Runtime wiring: `uv run python -c "from docs.cli._shared import Deps; Deps(); print('Deps wiring ok')"` passed.
+- Review: approved with no Important findings; only minor coverage suggestions were recorded for future work. Scratch review diff removed; no scope expansion applied.
