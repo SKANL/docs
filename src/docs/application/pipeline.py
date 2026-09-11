@@ -20,6 +20,7 @@ from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.application.structural_audit import StructuralAuditService
+from docs.domain.cover import cover_provenance
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
@@ -470,6 +471,9 @@ class PipelineService:
                 if fail_fast:
                     break
         summary = {"stage_set": stage_set, "strict": strict, "passed": passed, "stages": results}
+        cover = cover_provenance(config)
+        if cover is not None:
+            summary["cover"] = cover
         if stage_set in ("assemble", "all"):
             summary["build_version"] = self._next_build_version(doc_id, config)
         self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)

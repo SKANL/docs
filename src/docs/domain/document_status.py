@@ -30,9 +30,10 @@ class DocumentStatus:
     # `runs/`. `build_version` is `None` before any assemble run.
     lifecycle: str = "draft"
     build_version: int | None = None
+    cover: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "doc_id": self.doc_id,
             "lifecycle": self.lifecycle,
             "build_version": self.build_version,
@@ -58,6 +59,9 @@ class DocumentStatus:
                 "final_exists": self.output_final_exists,
             },
         }
+        if self.cover is not None:
+            result["cover"] = self.cover
+        return result
 
     def to_markdown(self) -> str:
         lines = [f"# Estado del documento `{self.doc_id}`", ""]
@@ -85,4 +89,10 @@ class DocumentStatus:
         lines.append("## Salida (output)")
         lines.append(f"- Borrador (draft): {'sí' if self.output_draft_exists else 'no'}")
         lines.append(f"- Final: {'sí' if self.output_final_exists else 'no'}")
+        if self.cover is not None:
+            lines.extend(
+                ["", "## Portada", f"- Modo: {self.cover['mode']}", f"- Variante: {self.cover['variant']}"]
+            )
+            if self.cover["missing_slots"]:
+                lines.append(f"- Slots sin resolver: {', '.join(self.cover['missing_slots'])}")
         return "\n".join(lines)

@@ -5,6 +5,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField
 
+from docs.domain.cover import CoverSpec
+
 # A template is HAND-WRITTEN JSON: the primary trust boundary of this
 # harness. Every model here stays permissive ON PURPOSE, for two documented
 # reasons that a blanket `extra="forbid"` would break:
@@ -145,6 +147,8 @@ class Template(BaseModel):
     type: str
     title: str
     project_defaults: dict = {}
+    # Optional native declarative cover. Absent keeps legacy structure parts.
+    cover: CoverSpec | None = None
     structure: list[dict] = []
     sections: list[Section] = []
     section_contracts: dict[str, SectionContract] = {}

@@ -296,6 +296,37 @@ ingest step, or classification action ever copies ingested content into
 "section content done" is the most common way to end up with an empty or
 scaffold-only section that later fails `review-section`.
 
+### Native declarative covers
+
+Legacy `cover_from_asset` and `cover_from_template` structure parts remain
+supported. For a native generated cover, add this optional `cover` block to a
+template or document configuration; it replaces the legacy cover source while
+leaving the rest of the structure unchanged:
+
+```json
+{
+  "cover": {
+    "mode": "generated",
+    "variant": "academic",
+    "slots": {
+      "institution": "{{project.institution}}",
+      "title": "{{title}}",
+      "author": "{{project.author}}",
+      "date": "2026"
+    }
+  }
+}
+```
+
+`variant` accepts `academic`, `institutional`, `technical`, `minimal`,
+`visual`, or `custom`. Slots resolve deterministically in declaration order;
+`{{title}}` reads the document title and `{{project.author}}` walks the
+merged project configuration. Missing values render as empty and appear in
+`doc status --json` and assemble-run provenance as `missing_slots` so a build
+never silently invents cover content. DOCX uses the native compositor and HTML
+receives the same slots as a semantic cover fragment. No external plugin is a
+runtime dependency.
+
 ### A document freezes its structure at creation
 
 `docs doc new` copies the template's `structure` list into the document's own

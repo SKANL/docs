@@ -12,8 +12,10 @@ from typing import Any
 
 from defusedxml.ElementTree import parse as safe_parse
 
+from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
+from docs.infrastructure.docx.cover_compositor import compose_generated_cover
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
 from docs.infrastructure.tools.resolution import resolve_executable
@@ -687,7 +689,14 @@ class PythonDocxAssemblyAdapter:
         leading = parts[:idx]
 
         has_cover_from_asset_part = any(p.get("type") == "cover_from_asset" for p in leading)
-        cover = self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
+        generated_cover = resolve_cover_spec(config)
+        cover = (
+            Document()
+            if generated_cover and generated_cover.mode in {CoverMode.GENERATED, CoverMode.NONE}
+            else self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
+        )
+        if generated_cover and generated_cover.mode is CoverMode.GENERATED:
+            compose_generated_cover(cover, generated_cover, config)
         body = Document(str(body_docx))
 
         self._configure_preliminary_pagination(cover, sections_part, config)

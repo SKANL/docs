@@ -223,3 +223,25 @@ def test_status_summary_reports_latest_build_version_from_runs_dir(tmp_path, ser
     status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
 
     assert status.build_version == 2
+
+
+def test_status_summary_exposes_generated_cover_variant_and_missing_slots(tmp_path, service):
+    config = _config(tmp_path)
+    config.update(
+        {
+            "title": "Cover report",
+            "cover": {
+                "mode": "generated",
+                "variant": "academic",
+                "slots": {"title": "{{title}}", "author": "{{project.author}}"},
+            },
+        }
+    )
+
+    status = service.status_summary("alpha", _template(), config, normative=_NORMATIVE)
+
+    assert status.to_dict()["cover"] == {
+        "mode": "generated",
+        "variant": "academic",
+        "missing_slots": ["author"],
+    }

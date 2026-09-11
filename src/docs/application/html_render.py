@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import tempfile
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,7 @@ from typing import Any
 from docs.application.figure_resolver import build_bound_figures_resolver
 from docs.application.output_names import resolve_html_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
+from docs.domain.cover import CoverMode, render_cover_html, resolve_cover_spec
 from docs.domain.figure_binding import BoundFigure
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 
@@ -97,7 +100,19 @@ class HtmlRendererAdapter:
             if sections_dir and assets_dir
             else {}
         )
-        stripped_sections = strip_frontmatter_to_temp(existing_sections, bound_figures)
+        generated_cover = resolve_cover_spec(config)
+        temp_cover = (
+            tempfile.TemporaryDirectory(prefix="docs_cover_")
+            if generated_cover and generated_cover.mode is CoverMode.GENERATED
+            else nullcontext()
+        )
+        with temp_cover as temp_dir:
+            stripped_sections = strip_frontmatter_to_temp(existing_sections, bound_figures)
+            if generated_cover and generated_cover.mode is CoverMode.GENERATED:
+                assert temp_dir is not None
+                cover_path = Path(temp_dir) / "000-cover.html"
+                cover_path.write_text(render_cover_html(generated_cover, config), encoding="utf-8")
+                stripped_sections.insert(0, cover_path)
         # `--standalone` produces a full HTML document (not a fragment);
         # `--embed-resources` inlines any referenced assets so the artifact
         # stays a single self-contained file (design.md Open Question:
@@ -108,17 +123,19 @@ class HtmlRendererAdapter:
         # passed explicitly -- without it pandoc's standalone HTML falls back
         # to the first input filename (a section stem like "010-overview")
         # for <title>, which is not the document's title.
-        subprocess.run(
-            [
-                pandoc,
-                *map(str, stripped_sections),
-                "--standalone",
-                "--embed-resources",
-                "--metadata",
-                f"title={self._title(doc_id, config)}",
-                "-o",
-                str(output),
-            ],
-            check=True,
-        )
+            subprocess.run(
+                [
+                    pandoc,
+                    "--from",
+                    "markdown",
+                    *map(str, stripped_sections),
+                    "--standalone",
+                    "--embed-resources",
+                    "--metadata",
+                    f"title={self._title(doc_id, config)}",
+                    "-o",
+                    str(output),
+                ],
+                check=True,
+            )
         return output

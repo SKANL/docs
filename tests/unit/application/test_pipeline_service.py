@@ -61,3 +61,28 @@ def test_rules_manifest_state_skips_size_lookup_when_manifest_absent():
     exists, size = service.rules_manifest_state({"paths": {"rules_manifest": "missing.json"}})
 
     assert (exists, size) == (False, 0)
+
+
+def test_run_pipeline_records_generated_cover_provenance(tmp_path, monkeypatch):
+    class SourceRepository:
+        def run_git_rev_parse_head(self, repo_root):
+            return "abc123"
+
+    service = _service(_FakeEvidenceRepository())
+    service.source_repository = SourceRepository()
+    monkeypatch.setattr("docs.application.pipeline.pipeline_stage_plan", lambda stage_set, renderer_stages: [])
+
+    summary = service.run_pipeline(
+        "alpha",
+        object(),
+        {
+            "title": "Report",
+            "cover": {"mode": "generated", "variant": "minimal", "slots": {"title": "{{title}}"}},
+            "paths": {"runs_dir": str(tmp_path / "runs")},
+        },
+        "assemble",
+        tmp_path,
+        renderer=type("Renderer", (), {"stage_plan": lambda self: []})(),
+    )
+
+    assert summary["cover"] == {"mode": "generated", "variant": "minimal", "missing_slots": []}

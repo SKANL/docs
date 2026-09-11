@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from docs.domain.cover import CoverMode, resolve_cover_spec
+
 EMU_PER_CM = 360000
 
 DEFAULT_RESPONSIBILITY_TEXT = (
@@ -17,35 +19,41 @@ _MARGIN_KEYS = ("top", "right", "bottom", "left")
 def structure_parts(config: dict[str, Any]) -> list[dict[str, Any]]:
     structure = config.get("structure")
     if structure:
-        return structure
-    prelim = config.get("preliminaries", {})
-    parts: list[dict[str, Any]] = [{"type": "cover_from_template"}]
-    if prelim.get("blank_page", {}).get("enabled"):
-        parts.append({"type": "blank_page"})
-    if prelim.get("responsibility_page", {}).get("enabled"):
+        parts = list(structure)
+    else:
+        prelim = config.get("preliminaries", {})
+        parts = [{"type": "cover_from_template"}]
+        if prelim.get("blank_page", {}).get("enabled"):
+            parts.append({"type": "blank_page"})
+        if prelim.get("responsibility_page", {}).get("enabled"):
+            parts.append(
+                {
+                    "type": "fixed_text_page",
+                    "text": prelim["responsibility_page"].get("text", DEFAULT_RESPONSIBILITY_TEXT),
+                }
+            )
+        roman = prelim.get("roman_pagination", {})
+        body_start = prelim.get("body_pagination_start", {})
         parts.append(
             {
-                "type": "fixed_text_page",
-                "text": prelim["responsibility_page"].get("text", DEFAULT_RESPONSIBILITY_TEXT),
+                "type": "sections",
+                "preliminary_pagination": (
+                    {"format": "lowerRoman", "start": int(prelim.get("blank_page", {}).get("start", 2))}
+                    if roman.get("enabled")
+                    else {}
+                ),
+                "body_restart_section": body_start.get("section_id", ""),
+                "body_pagination": {
+                    "format": body_start.get("format", "decimal"),
+                    "start": int(body_start.get("start", 1)),
+                },
             }
         )
-    roman = prelim.get("roman_pagination", {})
-    body_start = prelim.get("body_pagination_start", {})
-    parts.append(
-        {
-            "type": "sections",
-            "preliminary_pagination": (
-                {"format": "lowerRoman", "start": int(prelim.get("blank_page", {}).get("start", 2))}
-                if roman.get("enabled")
-                else {}
-            ),
-            "body_restart_section": body_start.get("section_id", ""),
-            "body_pagination": {
-                "format": body_start.get("format", "decimal"),
-                "start": int(body_start.get("start", 1)),
-            },
-        }
-    )
+    cover_spec = resolve_cover_spec(config)
+    if cover_spec and cover_spec.mode in {CoverMode.GENERATED, CoverMode.NONE}:
+        parts = [part for part in parts if part.get("type") not in {"cover_from_template", "cover_from_asset"}]
+        if cover_spec.mode is CoverMode.GENERATED:
+            parts.insert(0, {"type": "cover_generated"})
     return parts
 
 
