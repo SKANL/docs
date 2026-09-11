@@ -16,3 +16,10 @@ Task 1-3: complete
 Task 4-5: pending
 Task 6-8: pending
 Task 9-10: pending
+
+## Atomic publication fix
+- Root cause: replacing a non-empty directory needs two renames on Windows; termination between them can leave no published target.
+- Replaced directory swapping with immutable `.versions/<id>` directories and an atomically replaced `.current` file pointer. The prior pointer and its version remain reachable until the new pointer is installed.
+- Added tests for pointer-swap failure preservation and file output-target rejection.
+- Focused: `uv run pytest tests/integration/test_atomic_transform.py -v` — 5 passed.
+- Related: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` — 688 passed.

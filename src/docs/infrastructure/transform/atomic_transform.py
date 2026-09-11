@@ -21,15 +21,20 @@ class AtomicTransform:
     def transform(self, spec: TransformSpec) -> TransformResult:
         self._validate_spec(spec)
         output_dir = Path(spec.output_dir)
+        if output_dir.exists() and not output_dir.is_dir():
+            raise ValueError("output_dir must be a directory")
         output_dir.parent.mkdir(parents=True, exist_ok=True)
-        scratch = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.scratch-", dir=output_dir.parent))
+        output_dir.mkdir(exist_ok=True)
+        versions_dir = output_dir / ".versions"
+        versions_dir.mkdir(exist_ok=True)
+        scratch = Path(tempfile.mkdtemp(prefix=".scratch-", dir=versions_dir))
         try:
             self._builder(spec, scratch)
             missing = [name for name in spec.expected_outputs if not (scratch / name).is_file()]
             if missing:
                 raise ValueError(f"missing declared outputs: {', '.join(missing)}")
-            self._publish(scratch, output_dir)
-            return TransformResult(output_dir=output_dir, outputs=tuple(output_dir / name for name in spec.expected_outputs))
+            published_dir = self._publish(scratch, output_dir, versions_dir)
+            return TransformResult(output_dir=output_dir, outputs=tuple(published_dir / name for name in spec.expected_outputs))
         finally:
             if scratch.exists():
                 shutil.rmtree(scratch, ignore_errors=True)
@@ -44,18 +49,20 @@ class AtomicTransform:
                 raise ValueError(f"output must be relative to output_dir: {name}")
 
     @staticmethod
-    def _publish(scratch: Path, output_dir: Path) -> None:
-        backup = output_dir.with_name(f".{output_dir.name}.previous-{uuid4().hex}")
-        moved_previous = False
+    def _publish(scratch: Path, output_dir: Path, versions_dir: Path) -> Path:
+        """Install an immutable version, then atomically switch a file pointer.
+
+        Directory replacement is not atomic on Windows. A same-directory file
+        replace is, so the current pointer remains valid until the complete new
+        version is available and its replacement succeeds.
+        """
+        version = versions_dir / uuid4().hex
+        pending_pointer = output_dir / f".current-{uuid4().hex}.tmp"
         try:
-            if output_dir.exists():
-                os.replace(output_dir, backup)
-                moved_previous = True
-            os.replace(scratch, output_dir)
+            os.replace(scratch, version)
+            pending_pointer.write_text(version.name, encoding="utf-8")
+            os.replace(pending_pointer, output_dir / ".current")
         except Exception:
-            if moved_previous and backup.exists() and not output_dir.exists():
-                os.replace(backup, output_dir)
+            pending_pointer.unlink(missing_ok=True)
             raise
-        else:
-            if moved_previous:
-                shutil.rmtree(backup, ignore_errors=True)
+        return version
