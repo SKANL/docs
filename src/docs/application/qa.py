@@ -57,17 +57,26 @@ class QaService:
         # evidence and therefore always raises here until that capability
         # lands under a future, differently-shaped slice.
         pngs: list[Path] = []
-        if strict and not pngs:
-            raise RuntimeError(f"QA estricto requiere PNG por página y no se generó ninguno en: {output_dir}")
 
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)
+        strict_failures: list[str] = []
+        if strict and render_verification is not None and not render_verification.passed:
+            message = "Verificación de render falló."
+            audit.issues.append(Issue("error", message))
+            strict_failures.append(message)
+        if strict and not pngs:
+            message = f"QA estricto requiere PNG por página y no se generó ninguno en: {output_dir}"
+            audit.issues.append(Issue("error", message))
+            strict_failures.append(message)
         if strict:
             for item in document_audits:
                 if not item["ok"]:
                     audit.issues.append(Issue("error", f"Auditoría Documents falló: {item['name']}"))
         report = render_qa_report(docx_path, expected_pdf, pngs, audit, document_audits, render_verification)
         (output_dir / "qa-report.md").write_text(report, encoding="utf-8")
+        if strict and strict_failures:
+            raise RuntimeError(f"{strict_failures[0]}; revisar {output_dir / 'qa-report.md'}")
         if strict and not audit.passed:
             raise RuntimeError(f"QA estricto falló; revisar {output_dir / 'qa-report.md'}")
         return output_dir

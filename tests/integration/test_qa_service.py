@@ -152,3 +152,36 @@ def test_qa_docx_optionally_includes_render_verification_without_changing_defaul
     output_dir = service.qa_docx({"paths": {"output_qa_dir": str(tmp_path / "qa")}}, docx_path)
 
     assert "## Verificación de render" in (output_dir / "qa-report.md").read_text(encoding="utf-8")
+
+
+def test_qa_docx_strict_includes_failed_render_verification_in_its_gate(tmp_path):
+    from docs.domain.artifacts import ArtifactRef, VerificationFinding, VerificationReport
+
+    class QaPort:
+        def render_docx_to_pdf(self, _config, docx_path, output_dir):
+            pdf_path = output_dir / f"{docx_path.stem}.pdf"
+            pdf_path.write_bytes(b"pdf")
+            return pdf_path
+
+        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
+            return []
+
+    class FailingVerificationService:
+        def verify(self, artifact_path, _profile, _preview_dir=None):
+            return VerificationReport(
+                ArtifactRef(artifact_path.as_posix(), "a" * 64),
+                [VerificationFinding("render.page.blank", "blank page", "error")],
+            )
+
+    docx_path = _make_docx(tmp_path)
+    service = QaService(
+        QaPort(),
+        FormatAuditService(PythonDocxAuditAdapter()),
+        render_verification_service=FailingVerificationService(),
+    )
+
+    with pytest.raises(RuntimeError, match="Verificación de render"):
+        service.qa_docx({"paths": {"output_qa_dir": str(tmp_path / "qa")}}, docx_path, strict=True)
+
+    report = (tmp_path / "qa" / "doc" / "qa-report.md").read_text(encoding="utf-8")
+    assert "- Resultado: FAIL" in report

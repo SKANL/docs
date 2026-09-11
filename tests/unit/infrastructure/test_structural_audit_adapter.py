@@ -59,3 +59,15 @@ def test_docx_structural_audit_reports_missing_declared_requirements(tmp_path):
         "structure.references.missing",
         "structure.metadata.missing",
     }
+
+
+def test_structural_audit_accepts_json_page_size_list(tmp_path):
+    docx_path = tmp_path / "report.docx"
+    document = Document()
+    document.sections[0].page_width = Inches(8.5)
+    document.sections[0].page_height = Inches(11)
+    document.save(docx_path)
+
+    result = StructuralAuditService(StructuralAuditAdapter()).audit(docx_path, {"page_size": [600, 790]})
+
+    assert any(issue.code == "structure.page_size" for issue in result.issues)

@@ -92,7 +92,7 @@ class StructuralAuditAdapter:
 
     def _page_size(self, issues: list[Issue], dimensions: list[tuple[float, float]], rules: dict[str, object]) -> None:
         expected = rules.get("page_size")
-        if not isinstance(expected, tuple) or len(expected) != 2:
+        if not isinstance(expected, (list, tuple)) or len(expected) != 2:
             return
         for width, height in dimensions:
             if abs(width - expected[0]) > 0.5 or abs(height - expected[1]) > 0.5:

@@ -13,7 +13,11 @@ class ArtifactState(str, Enum):
 
 @dataclass(frozen=True)
 class RenderProfile:
-    """Declarative expectations shared by every renderable artifact type."""
+    """Declarative expectations shared by every renderable artifact type.
+
+    Previews are optional by default; ``require_previews`` makes their
+    unavailability a reported requirement instead of silently requesting one.
+    """
 
     format: str
     expected_page_size: tuple[float, float] | None = None

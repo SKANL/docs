@@ -42,3 +42,18 @@ def test_verification_service_rejects_missing_artifact(tmp_path):
         assert "No existe artefacto" in str(error)
     else:
         raise AssertionError("expected missing artifact to fail")
+
+
+def test_verification_service_fails_when_artifact_changes_during_inspection(tmp_path):
+    artifact = tmp_path / "report.pdf"
+    artifact.write_bytes(b"before")
+
+    class MutatingVerifier(RecordingVerifier):
+        def verify(self, checked_artifact, profile: RenderProfile, preview_dir: Path | None = None) -> VerificationReport:
+            artifact.write_bytes(b"after")
+            return VerificationReport(artifact=checked_artifact)
+
+    report = RenderVerificationService(MutatingVerifier()).verify(artifact, RenderProfile(format="pdf"))
+
+    assert report.passed is False
+    assert any(finding.code == "artifact.identity_changed" and finding.severity == "error" for finding in report.findings)

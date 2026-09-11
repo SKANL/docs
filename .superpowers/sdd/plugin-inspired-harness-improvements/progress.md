@@ -48,3 +48,10 @@ Task 9-10: pending
 - RED: focused service tests initially failed at missing module imports; adapter and rollback-cleanup tests then failed before implementation/fix.
 - GREEN: `uv run pytest tests/unit/domain/test_artifacts.py tests/unit/application/test_render_verification_service.py tests/unit/application/test_structural_audit_service.py tests/unit/infrastructure/test_render_verification_adapter.py tests/unit/infrastructure/test_structural_audit_adapter.py tests/integration/test_atomic_transform.py tests/integration/test_qa_service.py tests/integration/test_format_audit_service.py -q` passed (with one pre-existing skip).
 - Static checks: focused `ruff` passed; `mypy` passed for 10 source files.
+
+## Task 4-5 review corrections: complete
+- Empty rendered pages now honor `RenderProfile.allow_blank_pages`: prohibited pages are errors; explicitly allowed pages remain warnings.
+- Verification rejects profile/actual format mismatches, re-hashes before and after inspection, and fails with `artifact.identity_changed` on mutation.
+- Strict QA includes a failed render-verification report in both the QA report and its final gate; constructor compatibility is preserved.
+- Structural page-size rules now accept JSON arrays as well as tuples. `require_previews` is explicitly optional by default and becomes an error when requested but unavailable.
+- RED tests covered blank-page policy, format mismatch, artifact mutation, strict QA gating, and JSON page-size validation.

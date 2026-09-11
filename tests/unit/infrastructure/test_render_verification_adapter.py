@@ -36,7 +36,9 @@ def test_pdf_verification_emits_preview_and_page_findings(tmp_path):
     _write_blank_pdf(pdf)
 
     report = RenderVerificationService(RenderVerificationAdapter()).verify(
-        pdf, RenderProfile(format="pdf", expected_page_size=(612, 792), require_previews=True), tmp_path / "previews"
+        pdf,
+        RenderProfile(format="pdf", expected_page_size=(612, 792), require_previews=True, allow_blank_pages=True),
+        tmp_path / "previews",
     )
 
     assert (tmp_path / "previews" / "report-p01.png").is_file()
@@ -54,3 +56,35 @@ def test_image_verification_detects_wrong_dimensions(tmp_path):
     )
 
     assert any(finding.code == "render.dimensions" and finding.severity == "error" for finding in report.findings)
+
+
+def test_pdf_verification_rejects_blank_page_when_profile_disallows_it(tmp_path):
+    pdf = tmp_path / "blank.pdf"
+    _write_blank_pdf(pdf)
+
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
+
+    assert report.passed is False
+    assert any(finding.code == "render.page.blank" and finding.severity == "error" for finding in report.findings)
+
+
+def test_pdf_verification_warns_for_blank_page_when_profile_allows_it(tmp_path):
+    pdf = tmp_path / "blank.pdf"
+    _write_blank_pdf(pdf)
+
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(
+        pdf, RenderProfile(format="pdf", allow_blank_pages=True)
+    )
+
+    assert report.passed is True
+    assert any(finding.code == "render.page.blank" and finding.severity == "warning" for finding in report.findings)
+
+
+def test_render_verification_reports_profile_format_mismatch(tmp_path):
+    pdf = tmp_path / "report.pdf"
+    _write_blank_pdf(pdf)
+
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="image"))
+
+    assert report.passed is False
+    assert any(finding.code == "render.format_mismatch" and finding.severity == "error" for finding in report.findings)
