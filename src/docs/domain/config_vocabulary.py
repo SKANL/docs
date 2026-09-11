@@ -129,6 +129,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "strict": {},
     },
     "structure": {},
+    "template_contract": {},
     "templates_dir": {},
     "title": {},
 }

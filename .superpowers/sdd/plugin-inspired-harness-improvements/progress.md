@@ -99,3 +99,8 @@ Task 9-10: pending
 - RED: focused structural, review-document, evidence-filter, and consistency-filter tests failed with default-editorial dimensions or empty filtered results.
 - GREEN: `uv run pytest tests/unit/infrastructure/test_structural_audit_adapter.py -q` — 4 passed; `uv run pytest tests/integration/test_review_service.py -q` — 28 passed; `uv run pytest tests/integration/test_cli_section.py tests/integration/test_format_audit_service.py tests/unit/domain/test_review.py -q` — 22 passed.
 - Static checks: focused `ruff` and `mypy` passed for the 4 changed source files.
+
+## Task 6 final-suite follow-up: complete
+- Added top-level `template_contract` to `SCANNED_CONFIG_KEYS`, matching the new evidence-service config read and restoring architecture-vocabulary coverage.
+- RED: `uv run pytest tests/architecture/test_config_vocabulary.py -q` reported the missing `template_contract` declaration.
+- GREEN: same architecture suite passed (8 passed); focused `ruff` and `mypy` passed.
