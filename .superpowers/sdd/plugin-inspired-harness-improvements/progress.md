@@ -23,3 +23,10 @@ Task 9-10: pending
 - Added tests for pointer-swap failure preservation and file output-target rejection.
 - Focused: `uv run pytest tests/integration/test_atomic_transform.py -v` — 5 passed.
 - Related: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` — 688 passed.
+
+## Direct-path publication correction
+- Re-review found the pointer-version design broke the planned public output paths. It is superseded.
+- `AtomicTransform` now stages files under the output directory and uses `os.replace` per declared file into `output_dir/<relative path>`; interruption leaves each path either the prior complete file or a complete replacement.
+- Direct-path and injected file-replacement-failure tests pass; file-as-output-directory rejection remains covered.
+- Focused: `uv run pytest tests/integration/test_atomic_transform.py -v` — 5 passed.
+- Related: `uv run pytest tests/unit/domain tests/integration/test_atomic_transform.py -q` — 688 passed.

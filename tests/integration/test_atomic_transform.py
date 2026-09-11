@@ -19,9 +19,8 @@ def test_atomic_transform_publishes_only_a_complete_scratch_output(tmp_path: Pat
     result = AtomicTransform(build).transform(spec)
 
     assert result.output_dir == output_dir
-    assert (output_dir / ".current").is_file()
-    assert (result.outputs[0]).read_text(encoding="utf-8") == "complete"
-    assert sorted(path.name for path in result.outputs) == ["manifest.json", "report.txt"]
+    assert (output_dir / "report.txt").read_text(encoding="utf-8") == "complete"
+    assert result.outputs == (output_dir / "report.txt", output_dir / "manifest.json")
 
 
 def test_atomic_transform_keeps_the_previous_output_when_build_fails(tmp_path: Path):
@@ -57,35 +56,36 @@ def test_atomic_transform_rejects_missing_declared_outputs_without_publishing(tm
     assert (output_dir / "report.txt").read_text(encoding="utf-8") == "last known good"
 
 
-def test_atomic_transform_preserves_the_current_output_when_pointer_publication_fails(
+def test_atomic_transform_preserves_prior_direct_files_when_replacement_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Breaks if a failed pointer swap makes the last complete output unreachable."""
+    """Breaks if a failed file replacement deletes a prior direct output."""
     output_dir = tmp_path / "output"
-    spec = TransformSpec(output_dir=output_dir, expected_outputs=("report.txt",))
+    spec = TransformSpec(output_dir=output_dir, expected_outputs=("report.txt", "manifest.json"))
 
     def build_old(_spec: TransformSpec, scratch: Path) -> None:
         (scratch / "report.txt").write_text("last known good", encoding="utf-8")
+        (scratch / "manifest.json").write_text('{"version":"old"}', encoding="utf-8")
 
-    previous = AtomicTransform(build_old).transform(spec)
-    previous_pointer = (output_dir / ".current").read_text(encoding="utf-8")
+    AtomicTransform(build_old).transform(spec)
     replace = atomic_transform_module.os.replace
 
-    def fail_pointer_swap(source: str, destination: str) -> None:
-        if Path(destination).name == ".current":
-            raise OSError("simulated pointer publication failure")
+    def fail_report_replacement(source: str, destination: str) -> None:
+        if Path(destination).name == "report.txt":
+            raise OSError("simulated file publication failure")
         replace(source, destination)
 
-    monkeypatch.setattr(atomic_transform_module.os, "replace", fail_pointer_swap)
+    monkeypatch.setattr(atomic_transform_module.os, "replace", fail_report_replacement)
 
     def build_new(_spec: TransformSpec, scratch: Path) -> None:
         (scratch / "report.txt").write_text("new output", encoding="utf-8")
+        (scratch / "manifest.json").write_text('{"version":"new"}', encoding="utf-8")
 
-    with pytest.raises(OSError, match="simulated pointer publication failure"):
+    with pytest.raises(OSError, match="simulated file publication failure"):
         AtomicTransform(build_new).transform(spec)
 
-    assert (previous.outputs[0]).read_text(encoding="utf-8") == "last known good"
-    assert (output_dir / ".current").read_text(encoding="utf-8") == previous_pointer
+    assert (output_dir / "report.txt").read_text(encoding="utf-8") == "last known good"
+    assert (output_dir / "manifest.json").read_text(encoding="utf-8") == '{"version":"old"}'
 
 
 def test_atomic_transform_rejects_a_file_as_the_output_target(tmp_path: Path):

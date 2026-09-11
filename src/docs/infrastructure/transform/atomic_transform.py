@@ -5,7 +5,6 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from uuid import uuid4
 
 from docs.domain.transform import TransformResult, TransformSpec
 
@@ -25,16 +24,14 @@ class AtomicTransform:
             raise ValueError("output_dir must be a directory")
         output_dir.parent.mkdir(parents=True, exist_ok=True)
         output_dir.mkdir(exist_ok=True)
-        versions_dir = output_dir / ".versions"
-        versions_dir.mkdir(exist_ok=True)
-        scratch = Path(tempfile.mkdtemp(prefix=".scratch-", dir=versions_dir))
+        scratch = Path(tempfile.mkdtemp(prefix=".scratch-", dir=output_dir))
         try:
             self._builder(spec, scratch)
             missing = [name for name in spec.expected_outputs if not (scratch / name).is_file()]
             if missing:
                 raise ValueError(f"missing declared outputs: {', '.join(missing)}")
-            published_dir = self._publish(scratch, output_dir, versions_dir)
-            return TransformResult(output_dir=output_dir, outputs=tuple(published_dir / name for name in spec.expected_outputs))
+            self._publish(scratch, output_dir, spec.expected_outputs)
+            return TransformResult(output_dir=output_dir, outputs=tuple(output_dir / name for name in spec.expected_outputs))
         finally:
             if scratch.exists():
                 shutil.rmtree(scratch, ignore_errors=True)
@@ -49,20 +46,14 @@ class AtomicTransform:
                 raise ValueError(f"output must be relative to output_dir: {name}")
 
     @staticmethod
-    def _publish(scratch: Path, output_dir: Path, versions_dir: Path) -> Path:
-        """Install an immutable version, then atomically switch a file pointer.
+    def _publish(scratch: Path, output_dir: Path, outputs: tuple[str, ...]) -> None:
+        """Atomically replace each complete staged file at its public path.
 
-        Directory replacement is not atomic on Windows. A same-directory file
-        replace is, so the current pointer remains valid until the complete new
-        version is available and its replacement succeeds.
+        A process can stop between files, but no public path is removed or
+        partially written: each path resolves to its prior complete file or to
+        the new complete staged file.
         """
-        version = versions_dir / uuid4().hex
-        pending_pointer = output_dir / f".current-{uuid4().hex}.tmp"
-        try:
-            os.replace(scratch, version)
-            pending_pointer.write_text(version.name, encoding="utf-8")
-            os.replace(pending_pointer, output_dir / ".current")
-        except Exception:
-            pending_pointer.unlink(missing_ok=True)
-            raise
-        return version
+        for name in outputs:
+            target = output_dir / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(scratch / name, target)
