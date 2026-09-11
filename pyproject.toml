@@ -16,6 +16,7 @@ dependencies = [
     "filetype>=1.2.0",
     "matplotlib>=3.11.1",
     "opendataloader-pdf>=2.4.7",
+    "pdf-inspector>=1.17.0",
     "pillow>=11.0.0",
     "pydantic>=2.13.4",
     "pypdfium2>=4.30.0",
@@ -93,7 +94,9 @@ module = [
     "filetype",
     "matplotlib.*",
     "opendataloader_pdf",
+    "pdf_inspector",
     "pypdfium2",
+    "pypdfium2.*",
 ]
 ignore_missing_imports = true
 

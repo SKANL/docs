@@ -17,6 +17,7 @@ from docs.domain.evidence import (
     build_source_hash_payload,
 )
 from docs.domain.markdown_text import clean_markdown_text, dedupe_strings, extract_markdown_headings
+from docs.domain.models.template import TemplateContract
 from docs.domain.ports.evidence_repository import EvidenceRepository
 
 _TRACEABILITY_PATH_KEYS = [
@@ -26,6 +27,18 @@ _TRACEABILITY_PATH_KEYS = [
 _EXCERPT_LENGTH = 1200
 
 _MANIFEST_PATH_KEYS = ["source_manifest", "issues_manifest", "code_evidence_manifest"]
+
+
+def _declared_template_contract(config: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a non-empty contract in canonical form, else preserve legacy."""
+    raw = config.get("template_contract")
+    if not isinstance(raw, dict):
+        return None
+    # `exclude_defaults` means an absent contract, `{}`, and older serializations
+    # containing only empty model defaults all retain legacy evidence bytes.
+    # `extra="allow"` preserves contract-specific extension keys recursively.
+    contract = TemplateContract.model_validate(raw).model_dump(exclude_defaults=True)
+    return contract or None
 
 _LEDGER_HEADINGS = {
     "confirmado": "Datos confirmados",
@@ -106,6 +119,7 @@ class EvidenceService:
             section_id: self.repository.hash_json(contract)
             for section_id, contract in section_contracts.items()
         }
+        template_contract = _declared_template_contract(config)
 
         strict_policy = config.get("strict_policy", {})
         manifest = build_manifest(
@@ -123,6 +137,8 @@ class EvidenceService:
             normative_source=config.get("normative", {}).get("normative_source", ""),
             pdf_and_extracted_use=config["paths"].get("extracted_dir_policy", ""),
             skipped_paths=skipped_paths,
+            template_contract=template_contract,
+            template_contract_hash=(self.repository.hash_json(template_contract) if template_contract is not None else None),
         )
 
         path = Path(config["paths"]["rules_manifest"])
@@ -149,11 +165,15 @@ class EvidenceService:
             apa7=config.get("apa7", {}),
             structure=config.get("structure", []),
             preliminaries=config.get("preliminaries", {}),
+            template_contract=_declared_template_contract(config),
         )
         return self.repository.hash_json(payload)
 
     def contract_hash(self, config: dict[str, Any], section_id: str) -> str:
         section_contracts = config.get("section_contracts", {})
+        # Keep existing section-provenance hashes stable. Template-wide
+        # fidelity constraints are separately bound as `template_contract_hash`
+        # in the rules manifest.
         return self.repository.hash_json(section_contracts.get(section_id, {}))
 
     def source_hash(self, config: dict[str, Any]) -> str:

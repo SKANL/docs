@@ -65,6 +65,24 @@ reads the section and reports issues; running it does not update
 Everything below exists to get you to and through that one cognitive slot
 as fast as possible, then verify the result mechanically.
 
+### Native capability contracts
+
+The harness owns the document lifecycle; external plugins are not runtime dependencies. Documents, PDF, and Template Creator plugins may assist authoring or inspection, but the CLI remains complete without them.
+
+- **Artifact contracts and provenance.** Transforms declare expected outputs. Generated artifacts and section edits retain input/configuration evidence, hashes, authorship, diffs, and append-only provenance.
+- **Atomic transforms.** Builds happen in a private scratch directory, validate every declared output, then publish. Failed ordinary publication restores the previous files; temporary files are cleaned.
+- **Three verification layers.** Editorial review checks prose and section rules; structural verification checks document mechanics and template requirements; visual verification checks rendered pages. A green editorial review does not replace the other layers.
+- **Draft versus strict.** Draft mode reports permitted missing tools/evidence as warnings or skips. Strict mode requests complete evidence and promotes applicable failures to errors.
+- **Template fidelity.** `template_contract` can declare page geometry, styles, components, editable slots, required assets, `fidelity_checks`, and `allowed_degradations`. It is validated and provenance-bound; legacy templates without it retain existing behavior.
+
+#### Inspecting QA evidence
+
+After assembly, inspect `output/draft/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+
+#### Extending renderers and templates
+
+To add a renderer, implement and register its domain port by visual `type`, keep input data-shaped, and add deterministic output and degraded-tool tests. To add a template, run `docs template init <id>`, fill its structure, contracts, context, and policies, then run `docs template validate <id>`.
+
 ## 1. End-to-end workflow
 
 ```
@@ -141,9 +159,74 @@ Two `docs doctor` checks worth knowing up front:
 | `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `mark-final` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
-| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
+| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
 | `asset` | asset registration commands |
 | `docx` | low-level `.docx` inspection commands |
+
+### Translating a PDF: `docs translate`
+
+    docs translate <archivo.pdf> --to es [--from auto] [--output <ruta>]
+
+Translates an existing PDF **in place**: same page count, same geometry,
+images and vector art untouched, text replaced inside its original bounding
+box. This is a separate entry point from the authoring pipeline — it consumes
+documents the harness did not write.
+
+**It always produces a document.** Translation is a cognitive slot like every
+other one here, so the first run has nothing to fill it with:
+
+1. `docs translate doc.pdf --to es` writes `doc.es.pdf` with every block still
+   in its source language, and `doc.es.pdf.pending.json` listing each block.
+   The output line counts what was left untranslated.
+2. Fill every `translation` field in that JSON.
+3. Re-run the identical command. The translations land in `translations/`
+   (the translation memory) and the real translated PDF is written. From then
+   on every run is a cache hit and byte-identical.
+
+The model never decides *whether* to translate. A block that comes back
+empty, refused, or unchanged is retried once, then passes through as the
+original and is **counted** — it never stops the run.
+
+**Identical source blocks appear once and share one translation.** The
+translation memory is content-addressed, which is exactly what makes reruns
+byte-identical, and one heading translated two different ways in the same
+document would be an inconsistency. The accepted cost: a string that needs
+different translations in different contexts cannot get them.
+
+A block that is legitimately the same in both languages — a number, a proper
+noun, a code snippet — should be filled with the original text. That counts as
+translated; leaving it empty does not.
+
+Read the output line, not just the file: it names every compromise made.
+
+    traducido: 412/418 bloques; 6 sin traducir; 3 no entraron en su caja;
+    418 con fuente sustituida; paginas multicolumna sin verificar: 7, 8
+
+- **sin traducir** — the slot was empty or the engine refused.
+- **no entraron en su caja** — the translation was longer than its source and
+  hit the minimum font scale. It is visible, not clipped.
+- **texto superpuesto en paginas** — a block needed more lines than its source
+  and reaches into the block below it. This is the worst thing translation can
+  do to a page and the least visible from a file listing, so it is counted and
+  its pages named. Expect it on diagram pages, where text sits beside icons.
+- **con fuente sustituida** — embedded PDF fonts are subsets carrying only the
+  glyphs the document already used, so a target-language accent may simply not
+  exist in them. Every block is redrawn in a base-14 font. This number is
+  expected to equal the block count; it is the honest size of the compromise.
+- **rotados sin tocar** — text set at an angle. It is left exactly as the
+  source had it, because every layout rule here reasons in page-horizontal
+  space and redrawing angled text destroys it rather than degrading it.
+- **paginas multicolumna sin verificar** — block grouping is single-column.
+  Those pages are reported rather than guessed at.
+
+The output stays a real document: its text layer is preserved word for word,
+so the result can still be copied, searched and read aloud. Justified
+paragraphs are reproduced by stretching each line, capped at 12% so the
+glyphs never read as distorted.
+
+A scanned or image-only PDF is **refused** with a message naming OCR, never
+half-translated. Non-Latin target scripts (Cyrillic, CJK, Arabic) are out of
+reach in this phase: base-14 fonts have no coverage for them.
 
 ### Pipeline stage sets
 
@@ -212,6 +295,37 @@ ingest step, or classification action ever copies ingested content into
 `sections/NNN-<id>.md`. Treating "ingest ran" or "a role got confirmed" as
 "section content done" is the most common way to end up with an empty or
 scaffold-only section that later fails `review-section`.
+
+### Native declarative covers
+
+Legacy `cover_from_asset` and `cover_from_template` structure parts remain
+supported. For a native generated cover, add this optional `cover` block to a
+template or document configuration; it replaces the legacy cover source while
+leaving the rest of the structure unchanged:
+
+```json
+{
+  "cover": {
+    "mode": "generated",
+    "variant": "academic",
+    "slots": {
+      "institution": "{{project.institution}}",
+      "title": "{{title}}",
+      "author": "{{project.author}}",
+      "date": "2026"
+    }
+  }
+}
+```
+
+`variant` accepts `academic`, `institutional`, `technical`, `minimal`,
+`visual`, or `custom`. Slots resolve deterministically in declaration order;
+`{{title}}` reads the document title and `{{project.author}}` walks the
+merged project configuration. Missing values render as empty and appear in
+`doc status --json` and assemble-run provenance as `missing_slots` so a build
+never silently invents cover content. DOCX uses the native compositor and HTML
+receives the same slots as a semantic cover fragment. No external plugin is a
+runtime dependency.
 
 ### A document freezes its structure at creation
 

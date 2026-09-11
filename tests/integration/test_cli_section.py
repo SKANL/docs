@@ -54,6 +54,15 @@ def test_review_document_json_mode(ws):
     result = runner.invoke(app, ["review-document", "--json"])
     payload = json.loads(result.output)
     assert payload["passed"] is False  # required section absent
+    assert any(issue["dimension"] == "structural" for issue in payload["issues"])
+
+
+def test_review_document_filters_findings_by_dimension(ws):
+    result = runner.invoke(app, ["review-document", "--dimension", "structural", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert [issue["dimension"] for issue in payload["issues"]] == ["structural"]
 
 
 def test_review_section_errors_when_section_absent(ws):

@@ -27,9 +27,13 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "docs"
 NORMALIZER = "normalize_docx_zip_timestamps"
 
 # The normalizer's own home: it IS the fix, so it cannot be required to call
-# itself. The only exemption, and it is named rather than pattern-matched so
-# a second exemption has to be argued for in a diff.
-EXEMPT = {"infrastructure/docx/deterministic_zip.py"}
+# itself. Exemptions are named rather than pattern-matched so each one has to
+# be justified in a diff. The verification adapter only renders PDFs/previews
+# and writes no DOCX, so the invariant does not apply to it.
+EXEMPT = {
+    "infrastructure/docx/deterministic_zip.py",
+    "infrastructure/verification/render_verification_adapter.py",
+}
 
 _ZIP_WRITE_MODES = {"w", "a", "x"}
 

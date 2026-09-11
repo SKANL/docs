@@ -27,15 +27,18 @@ from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
+from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
 from docs.application.status import StatusService
+from docs.application.structural_audit import StructuralAuditService
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
+from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
@@ -54,6 +57,7 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
 
 @dataclass(frozen=True)
@@ -138,7 +142,11 @@ class Deps:
             pdf_renderer_service.output_format: pdf_renderer_service,
         }
         format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
-        qa_service = QaService(libreoffice_qa_adapter, format_audit_service)
+        render_verification_service = RenderVerificationService(RenderVerificationAdapter())
+        structural_audit_service = StructuralAuditService(StructuralAuditAdapter())
+        qa_service = QaService(
+            libreoffice_qa_adapter, format_audit_service, render_verification_service=render_verification_service
+        )
         # Stateless -- one instance shared by the doctor's manual auto-detect
         # (item E) and ingest's content-based classification (item D, PR4),
         # never a second port/adapter (design.md ADR-D).
@@ -248,6 +256,38 @@ class Deps:
         except Exception:
             self.generate_visuals_service = None
 
+        # `document-translate` adapters. Guarded like every block above: both
+        # `pypdfium2` and `pdf-inspector` are declared dependencies, but an
+        # import failure must cost the TRANSLATE command, not every command
+        # in the CLI. `None` here means `docs translate` reports why it
+        # cannot run; nothing else notices.
+        self.pdf_classifier: Any = None
+        self.pdf_text_editor: Any = None
+        try:
+            from docs.infrastructure.fonts.dejavu_font_source import DejaVuFontSource
+            from docs.infrastructure.pdf.pdf_inspector_classify_adapter import (
+                PdfInspectorClassifyAdapter,
+            )
+            from docs.infrastructure.pdf.pypdfium2_text_edit_adapter import (
+                Pypdfium2TextEditAdapter,
+            )
+
+            self.pdf_classifier = PdfInspectorClassifyAdapter()
+            # Supplies a real face for characters base-14 cannot draw, which
+            # would otherwise reach the page as empty boxes.
+            self.pdf_text_editor = Pypdfium2TextEditAdapter(DejaVuFontSource())
+        except Exception as exc:
+            # Degrading is correct, swallowing silently is not: without a
+            # trace, a genuinely broken adapter looks identical to an
+            # uninstalled one.
+            logger.debug("adaptadores de traduccion no registrados: %s", exc)
+
+        # The renderer used to MEASURE layout preservation. Reuses the same
+        # `pdf_render_adapter` built above -- one instance, no second
+        # rasterizer for the same job.
+        self.pdf_render: Any = pdf_render_adapter
+
+
         self.assets = asset_service
         self.evidence = evidence_service
         self.review = review_service
@@ -268,7 +308,41 @@ class Deps:
             format_audit_service, qa_service, self.workspace, self.ingest,
             context_service=self.context,
             generate_visuals_service=self.generate_visuals_service,
+            structural_audit_service=structural_audit_service,
         )
+
+    def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:
+        """Build a `TranslateService` bound to this run's memory and slot file.
+
+        The adapters are chosen here, in the composition root, like every
+        other adapter in this class. Only the two PATHS vary per invocation,
+        because the translation memory and the pending-slot file live beside
+        the output document.
+
+        Returns `(service, translator)`: the caller needs the translator to
+        flush the pending-slot file after the run, and handing it back beats
+        widening `TranslationPort` with a method only one adapter has.
+
+        Returns `(None, None)` when the PDF adapters are unavailable, so the
+        command can say so instead of raising an import error at the user.
+        """
+        if self.pdf_classifier is None or self.pdf_text_editor is None:
+            return None, None
+
+        from docs.application.translate import TranslateService
+        from docs.infrastructure.translate.filesystem_translation_memory import (
+            FilesystemTranslationMemory,
+        )
+        from docs.infrastructure.translate.pending_slot_translator import PendingSlotTranslator
+
+        translator = PendingSlotTranslator(pending_file)
+        service = TranslateService(
+            classifier=self.pdf_classifier,
+            editor=self.pdf_text_editor,
+            translator=translator,
+            memory=FilesystemTranslationMemory(memory_dir),
+        )
+        return service, translator
 
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
         """Resolve the active `DocumentRendererPort` from `config["output"]["format"]`

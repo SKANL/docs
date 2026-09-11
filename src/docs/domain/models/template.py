@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict
+from pydantic import Field as PydanticField
+
+from docs.domain.cover import CoverSpec
 
 # A template is HAND-WRITTEN JSON: the primary trust boundary of this
 # harness. Every model here stays permissive ON PURPOSE, for two documented
@@ -118,17 +123,42 @@ class StrictPolicy(BaseModel):
     )
 
 
+class TemplateContract(BaseModel):
+    """Declarative fidelity constraints for a template-derived document.
+
+    Every field is optional so the existing hand-written templates retain
+    their legacy behavior until they explicitly opt in to this contract.
+    Individual entries stay data-shaped rather than prescriptive because the
+    renderer and template plugins own their component-specific vocabularies.
+    """
+
+    model_config = _PERMISSIVE
+    page_geometry: dict[str, Any] = PydanticField(default_factory=dict)
+    style_contract: dict[str, Any] = PydanticField(default_factory=dict)
+    components: list[dict[str, Any]] = PydanticField(default_factory=list)
+    editable_slots: list[dict[str, Any]] = PydanticField(default_factory=list)
+    required_assets: list[dict[str, Any]] = PydanticField(default_factory=list)
+    fidelity_checks: list[dict[str, Any]] = PydanticField(default_factory=list)
+    allowed_degradations: list[str] = PydanticField(default_factory=list)
+
+
 class Template(BaseModel):
     model_config = _PERMISSIVE
     type: str
     title: str
     project_defaults: dict = {}
+    # Optional native declarative cover. Absent keeps legacy structure parts.
+    cover: CoverSpec | None = None
     structure: list[dict] = []
     sections: list[Section] = []
     section_contracts: dict[str, SectionContract] = {}
     context_schema: ContextSchema = ContextSchema()
     apa7: Apa7Config = Apa7Config()
     strict_policy: StrictPolicy = StrictPolicy()
+    # An absent contract must remain absent in serialized legacy templates.
+    # `None` (rather than an empty model) keeps the old config and provenance
+    # bytes intact until a template explicitly opts into fidelity constraints.
+    template_contract: TemplateContract | None = None
 
     @classmethod
     def from_json(cls, text: str) -> Template:

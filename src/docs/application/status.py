@@ -9,6 +9,7 @@ from docs.application.context import ContextService
 from docs.application.ingest_names import CLASSIFICATION_QUEUE_NAME, DETECTION_REPORT_NAME
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.review import ReviewService
+from docs.domain.cover import cover_provenance
 from docs.domain.document_status import DocumentStatus
 from docs.domain.models.template import Template
 from docs.domain.normative import NormativeSettings
@@ -108,6 +109,7 @@ class StatusService:
             output_final_exists=output_final_dir.is_dir() and any(output_final_dir.iterdir()),
             lifecycle=self.document_repository.read_document(doc_id).lifecycle,
             build_version=self._latest_build_version(paths),
+            cover=cover_provenance(config),
         )
 
     def _latest_build_version(self, paths: dict[str, Any]) -> int | None:

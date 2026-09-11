@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from docs.application.evidence import EvidenceService
+from docs.domain.models.template import Template
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 
 
@@ -296,6 +297,46 @@ def test_contract_hash_hashes_empty_dict_when_section_unknown(tmp_path, service)
     config = _config(tmp_path)
     expected = hashlib.sha256(json.dumps({}, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
     assert service.contract_hash(config, "unknown") == expected
+
+
+def test_template_contract_is_bound_into_manifest_while_section_provenance_remains_section_only(tmp_path, service):
+    contracts = {"intro": {"title": "Introducción"}}
+    template_contract = {"page_geometry": {"size": "A4"}, "components": [{"kind": "cover"}]}
+    config = _config(tmp_path, section_contracts=contracts, template_contract=template_contract)
+
+    path = service.build_rules(config)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+
+    assert manifest["template_contract"] == template_contract
+    assert manifest["template_contract_hash"] == service.repository.hash_json(template_contract)
+    assert service.contract_hash(config, "intro") == service.repository.hash_json(contracts["intro"])
+
+
+def test_legacy_template_serialization_preserves_section_only_provenance(tmp_path, service):
+    raw = json.loads((_FIXTURES_DIR / "reporte-estadia-tic.json").read_text(encoding="utf-8"))
+    config = Template.model_validate(raw).model_dump(exclude_none=True)
+    config["paths"] = {"rules_manifest": str(tmp_path / "manual-rules.json")}
+    section_id = "introduccion"
+
+    path = service.build_rules(config)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+
+    assert "template_contract" not in manifest
+    assert "template_contract_hash" not in manifest
+    assert service.contract_hash(config, section_id) == service.repository.hash_json(
+        config["section_contracts"][section_id]
+    )
+
+
+def test_rules_hash_fallback_changes_for_a_declared_template_contract(tmp_path, service):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = _config(first_dir, template_contract={"page_geometry": {"size": "A4"}})
+    second = _config(second_dir, template_contract={"page_geometry": {"size": "letter"}})
+
+    assert service.rules_hash(first) != service.rules_hash(second)
 
 
 def test_manifest_hash_empty_string_when_path_value_falsy(service):

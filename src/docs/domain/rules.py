@@ -16,7 +16,7 @@ from docs.domain.markdown_text import (
 )
 from docs.domain.models.template import SectionContract, StrictPolicyBlock, Template
 from docs.domain.normative import NormativeSettings
-from docs.domain.review import Issue, ReviewResult
+from docs.domain.review import Issue, ReviewDimension, ReviewResult
 
 _WORD_RE = re.compile(r"\b[\wÁÉÍÓÚÜÑáéíóúüñ-]+\b")
 _EVIDENCE_RE = re.compile(
@@ -150,9 +150,10 @@ def review_section_contract(
         if not has_pending and not has_evidence:
             issues.append(
                 Issue(
-                    strict_policy.missing_evidence,
-                    f"`{section_id}` requiere evidencia o marcador PENDIENTE.",
-                    code="evidence.required",
+                strict_policy.missing_evidence,
+                f"`{section_id}` requiere evidencia o marcador PENDIENTE.",
+                code="evidence.required",
+                dimension=ReviewDimension.EVIDENCE,
                 )
             )
 
@@ -167,6 +168,7 @@ def review_section_contract(
                 strict_policy.apa_violations,
                 f"`{section_id}` requiere citas APA 7 o marcador PENDIENTE.",
                 code="apa.required",
+                dimension=ReviewDimension.EVIDENCE,
             )
         )
 
@@ -202,7 +204,7 @@ def review_apa7_text(
         )
         for citation in sorted(citations):
             issues.append(
-                Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference")
+                Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference", dimension=ReviewDimension.EVIDENCE)
             )
 
     # A dedicated bibliography (references_list section) legitimately holds
@@ -213,7 +215,7 @@ def review_apa7_text(
     if references and not citations and not is_references_list:
         for entry in references:
             issues.append(
-                Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation")
+                Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation", dimension=ReviewDimension.EVIDENCE)
             )
 
     citation_keys = {citation_author_key(citation) for citation in citations}
@@ -223,26 +225,26 @@ def review_apa7_text(
         key = citation_author_key(citation)
         if key and references and not any(key in ref_key or ref_key in key for ref_key in reference_keys):
             issues.append(
-                Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference")
+                Issue(severity, f"Cita sin referencia correspondiente: `{citation}`.", code="apa.citation_without_reference", dimension=ReviewDimension.EVIDENCE)
             )
 
     for entry in references:
         key = reference_author_key(entry)
         if key and citations and not any(key in cite_key or cite_key in key for cite_key in citation_keys):
             issues.append(
-                Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation")
+                Issue(severity, f"Referencia sin cita correspondiente: `{entry[:90]}`.", code="apa.reference_without_citation", dimension=ReviewDimension.EVIDENCE)
             )
 
     if references and references != sorted(references, key=normalize_for_sort):
         issues.append(
-            Issue(severity, "Las referencias no están ordenadas alfabéticamente.", code="apa.references_not_sorted")
+            Issue(severity, "Las referencias no están ordenadas alfabéticamente.", code="apa.references_not_sorted", dimension=ReviewDimension.EVIDENCE)
         )
 
     for match in _QUOTE_RE.finditer(text):
         window = text[match.end():match.end() + 90]
         if not _LOCATOR_RE.search(window):
             issues.append(
-                Issue(severity, "Cita textual detectada sin localizador APA 7 cercano.", code="apa.quote_without_locator")
+            Issue(severity, "Cita textual detectada sin localizador APA 7 cercano.", code="apa.quote_without_locator", dimension=ReviewDimension.EVIDENCE)
             )
 
     return issues
@@ -379,6 +381,7 @@ def _check_results_evidence(lowered: str) -> list[Issue]:
                 "warning",
                 "Menciona resultados sin evidencia detectable ni marcador PENDIENTE.",
                 code="evidence.results_without_evidence",
+                dimension=ReviewDimension.EVIDENCE,
             )
         ]
     return []
@@ -603,6 +606,7 @@ def review_cross_consistency(
                         severity,
                         f"Cita `{citation}` usada en el cuerpo no tiene referencia en REFERENCIAS BIBLIOGRÁFICAS.",
                         code="coherence.citation_without_global_reference",
+                        dimension=ReviewDimension.CONSISTENCY,
                     )
                 )
         for entry in references:
@@ -613,6 +617,7 @@ def review_cross_consistency(
                         severity,
                         f"Referencia `{entry[:80]}` no está citada en ninguna sección del cuerpo.",
                         code="coherence.reference_without_global_citation",
+                        dimension=ReviewDimension.CONSISTENCY,
                     )
                 )
 
@@ -633,6 +638,7 @@ def review_cross_consistency(
                     severity,
                     f"La duración de la estadía es inconsistente entre secciones: {values}.",
                     code="coherence.duration_mismatch",
+                    dimension=ReviewDimension.CONSISTENCY,
                 )
             )
 
@@ -656,6 +662,7 @@ def review_cross_consistency(
                         f"`{section_id}` menciona tecnología en disputa `{term}` como definitiva "
                         "sin delimitarla ni marcar PENDIENTE.",
                         code="coherence.contested_stack_unqualified",
+                        dimension=ReviewDimension.CONSISTENCY,
                     )
                 )
 

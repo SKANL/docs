@@ -172,3 +172,26 @@ def test_sections_index_is_the_single_shared_implementation():
 
     assert not hasattr(DocxRendererAdapter, "_sections_index")
     assert not hasattr(PythonDocxAssemblyAdapter, "_sections_index")
+
+
+def test_structure_parts_inserts_generated_cover_before_sections():
+    parts = structure_parts(
+        {
+            "cover": {"mode": "generated", "variant": "academic", "slots": {"title": "{{title}}"}},
+            "structure": [{"type": "toc"}, {"type": "sections"}],
+        }
+    )
+
+    assert parts[0] == {"type": "cover_generated"}
+    assert [part["type"] for part in parts].count("cover_generated") == 1
+
+
+def test_structure_parts_removes_legacy_cover_when_mode_none_is_explicit():
+    parts = structure_parts(
+        {
+            "format": {"cover": {"mode": "none"}},
+            "structure": [{"type": "cover_from_template"}, {"type": "sections"}],
+        }
+    )
+
+    assert parts == [{"type": "sections"}]

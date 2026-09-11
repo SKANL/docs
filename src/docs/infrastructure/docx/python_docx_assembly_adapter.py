@@ -6,13 +6,16 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from defusedxml.ElementTree import parse as safe_parse
 
+from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
+from docs.infrastructure.docx.cover_compositor import compose_generated_cover
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
 from docs.infrastructure.tools.resolution import resolve_executable
@@ -21,6 +24,124 @@ from docs.infrastructure.tools.resolution import resolve_executable
 # Centered at assembly like the image it labels (academic layout), never
 # first-line-indented as body text. Matches the leading token only.
 _CAPTION_RE = re.compile(r"^(Figura|Tabla|Gr[aá]fico|Gr[aá]fica)\s+\d+\.", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ThemeColors:
+    navy: str = "000000"
+    teal: str = "000000"
+    warm_accent: str = "000000"
+    soft_background: str = "FFFFFF"
+    heading_1: str = "000000"
+    heading_2: str = "000000"
+    heading_3: str = "000000"
+
+
+@dataclass(frozen=True)
+class ThemeTypography:
+    body_font: str = "Times New Roman"
+    body_size_pt: float = 12
+    heading_font: str = "Times New Roman"
+    heading_1_size_pt: float = 12
+    heading_2_size_pt: float = 12
+    heading_3_size_pt: float = 12
+
+
+@dataclass(frozen=True)
+class ThemeSpacing:
+    body_line_spacing: float = 1.5
+    body_after_pt: float = 18
+    heading_1_before_pt: float = 0
+    heading_1_after_pt: float = 18
+    heading_2_before_pt: float = 0
+    heading_2_after_pt: float = 18
+    heading_3_before_pt: float = 0
+    heading_3_after_pt: float = 18
+
+
+@dataclass(frozen=True)
+class ThemeHeader:
+    title: str = ""
+    accent_color: str = "navy"
+
+
+@dataclass(frozen=True)
+class ThemeFooter:
+    font_size_pt: float = 12
+    color: str = "navy"
+
+
+@dataclass(frozen=True)
+class ThemeCaptions:
+    color: str = "navy"
+
+
+@dataclass(frozen=True)
+class VisualTheme:
+    colors: ThemeColors = ThemeColors()
+    typography: ThemeTypography = ThemeTypography()
+    spacing: ThemeSpacing = ThemeSpacing()
+    header: ThemeHeader = ThemeHeader()
+    footer: ThemeFooter = ThemeFooter()
+    captions: ThemeCaptions = ThemeCaptions()
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _hex_color(value: Any, default: str) -> str:
+    candidate = str(value or default).lstrip("#").upper()
+    return candidate if re.fullmatch(r"[0-9A-F]{6}", candidate) else default
+
+
+def _number(value: Any, default: float) -> float:
+    return float(value) if isinstance(value, (int, float)) else default
+
+
+def resolve_visual_theme(config: dict[str, Any]) -> VisualTheme:
+    """Resolve the optional document visual theme while retaining legacy defaults."""
+    raw = _mapping(_mapping(config.get("format")).get("visual_theme"))
+    colors = _mapping(raw.get("colors"))
+    typography = _mapping(raw.get("typography"))
+    spacing = _mapping(raw.get("spacing"))
+    header = _mapping(raw.get("header"))
+    footer = _mapping(raw.get("footer"))
+    captions = _mapping(raw.get("captions"))
+    defaults = ThemeColors()
+    navy = _hex_color(colors.get("navy"), defaults.navy)
+    teal = _hex_color(colors.get("teal"), defaults.teal)
+    return VisualTheme(
+        colors=ThemeColors(
+            navy=navy,
+            teal=teal,
+            warm_accent=_hex_color(colors.get("warm_accent"), defaults.warm_accent),
+            soft_background=_hex_color(colors.get("soft_background"), defaults.soft_background),
+            heading_1=_hex_color(colors.get("heading_1"), navy),
+            heading_2=_hex_color(colors.get("heading_2"), navy),
+            heading_3=_hex_color(colors.get("heading_3"), teal),
+        ),
+        typography=ThemeTypography(
+            body_font=str(typography.get("body_font") or ThemeTypography.body_font),
+            body_size_pt=_number(typography.get("body_size_pt"), ThemeTypography.body_size_pt),
+            heading_font=str(typography.get("heading_font") or ThemeTypography.heading_font),
+            heading_1_size_pt=_number(typography.get("heading_1_size_pt"), ThemeTypography.heading_1_size_pt),
+            heading_2_size_pt=_number(typography.get("heading_2_size_pt"), ThemeTypography.heading_2_size_pt),
+            heading_3_size_pt=_number(typography.get("heading_3_size_pt"), ThemeTypography.heading_3_size_pt),
+        ),
+        spacing=ThemeSpacing(**{field: _number(spacing.get(field), getattr(ThemeSpacing(), field)) for field in ThemeSpacing.__dataclass_fields__}),
+        header=ThemeHeader(title=str(header.get("title") or ""), accent_color=str(header.get("accent_color") or "navy")),
+        footer=ThemeFooter(font_size_pt=_number(footer.get("font_size_pt"), ThemeFooter.font_size_pt), color=str(footer.get("color") or "navy")),
+        captions=ThemeCaptions(color=str(captions.get("color") or "navy")),
+    )
+
+
+def has_visual_theme(config: dict[str, Any]) -> bool:
+    return isinstance(_mapping(config.get("format")).get("visual_theme"), dict)
+
+
+def _theme_color(theme: VisualTheme, name: str) -> str:
+    return getattr(theme.colors, name, theme.colors.navy)
 
 
 def _parse_part(path: Path) -> tuple[ET.ElementTree, ET.Element]:
@@ -112,6 +233,7 @@ def configure_unnumbered_section(section: Any, config: dict[str, Any]) -> None:
     section.footer.is_linked_to_previous = False
     clear_story_part(section.header)
     clear_story_part(section.footer)
+    apply_header_theme(section.header, resolve_visual_theme(config))
 
 
 def configure_numbered_body_section(section: Any, config: dict[str, Any]) -> None:
@@ -120,7 +242,9 @@ def configure_numbered_body_section(section: Any, config: dict[str, Any]) -> Non
     section.footer.is_linked_to_previous = False
     clear_story_part(section.header)
     clear_story_part(section.footer)
-    add_page_number_footer(section.footer)
+    theme = resolve_visual_theme(config)
+    apply_header_theme(section.header, theme)
+    add_page_number_footer(section.footer, theme if has_visual_theme(config) else None)
     set_section_page_number_start(section, 1, "decimal")
 
 
@@ -130,7 +254,9 @@ def configure_roman_preliminary_section(section: Any, config: dict[str, Any], st
     section.footer.is_linked_to_previous = False
     clear_story_part(section.header)
     clear_story_part(section.footer)
-    add_page_number_footer(section.footer)
+    theme = resolve_visual_theme(config)
+    apply_header_theme(section.header, theme)
+    add_page_number_footer(section.footer, theme if has_visual_theme(config) else None)
     set_section_page_number_start(section, start, "lowerRoman")
 
 
@@ -153,17 +279,52 @@ def apply_non_cover_section_layout(section: Any, config: dict[str, Any]) -> None
             setattr(section, attr, Cm(float(value)))
 
 
-def add_page_number_footer(footer: Any) -> None:
+def apply_header_theme(header: Any, theme: VisualTheme) -> None:
+    """Render an optional title-only header without changing legacy documents."""
+    if not theme.header.title:
+        return
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Pt
+    from docx.shared import Pt, RGBColor
+
+    paragraph = header.paragraphs[-1] if header.paragraphs else header.add_paragraph()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    paragraph.paragraph_format.space_after = Pt(3)
+    p_pr = paragraph._p.get_or_add_pPr()
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:fill"), theme.colors.soft_background)
+    p_pr.append(shading)
+    border = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "8")
+    bottom.set(qn("w:color"), _theme_color(theme, theme.header.accent_color))
+    border.append(bottom)
+    p_pr.append(border)
+    run = paragraph.add_run(theme.header.title)
+    run.font.name = theme.typography.heading_font
+    run.font.size = Pt(8)
+    color = _theme_color(theme, theme.header.accent_color)
+    run.font.color.rgb = RGBColor.from_string(color)
+
+
+def add_page_number_footer(footer: Any, theme: VisualTheme | None = None) -> None:
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
 
     paragraph = footer.paragraphs[-1] if footer.paragraphs else footer.add_paragraph()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     run = paragraph.add_run()
-    run.font.name = "Times New Roman"
-    run.font.size = Pt(12)
+    if theme is None:
+        run.font.name = "Times New Roman"
+        run.font.size = Pt(12)
+    else:
+        run.font.name = theme.typography.body_font
+        run.font.size = Pt(theme.footer.font_size_pt)
+        run.font.color.rgb = RGBColor.from_string(_theme_color(theme, theme.footer.color))
 
     fld_begin = OxmlElement("w:fldChar")
     fld_begin.set(qn("w:fldCharType"), "begin")
@@ -313,18 +474,19 @@ def _transfer_drawing_run(run: Any, new_paragraph: Any, source_part: Any, dest_p
     new_paragraph._p.append(new_r)
 
 
-def add_fixed_text_page(document: Any, text: str) -> None:
+def add_fixed_text_page(document: Any, text: str, theme: VisualTheme | None = None) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm, Pt
 
     paragraph = document.add_paragraph()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    paragraph.paragraph_format.line_spacing = 1.5
+    theme = theme or VisualTheme()
+    paragraph.paragraph_format.line_spacing = theme.spacing.body_line_spacing
     paragraph.paragraph_format.first_line_indent = Cm(1.25)
-    paragraph.paragraph_format.space_after = Pt(18)
+    paragraph.paragraph_format.space_after = Pt(theme.spacing.body_after_pt)
     run = paragraph.add_run(text)
-    run.font.name = "Times New Roman"
-    run.font.size = Pt(12)
+    run.font.name = theme.typography.body_font
+    run.font.size = Pt(theme.typography.body_size_pt)
 
 
 def add_image_page(document: Any, image_path: Path, caption: str = "") -> None:
@@ -373,15 +535,27 @@ def set_picture_alt_text(picture: Any, description: str) -> None:
         doc_pr.set("descr", description)
 
 
-def apply_normative_paragraph_format(paragraph: Any, style_name: str | None, text: str, is_list: bool = False) -> None:
+def apply_normative_paragraph_format(
+    paragraph: Any, style_name: str | None, text: str, theme: VisualTheme, is_list: bool = False
+) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.shared import Cm, Pt
 
-    paragraph.paragraph_format.line_spacing = 1.5
-    paragraph.paragraph_format.space_after = Pt(18)
+    paragraph.paragraph_format.line_spacing = theme.spacing.body_line_spacing
+    paragraph.paragraph_format.space_after = Pt(theme.spacing.body_after_pt)
     if style_name == "Heading 1":
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         paragraph.paragraph_format.first_line_indent = None
+        paragraph.paragraph_format.space_before = Pt(theme.spacing.heading_1_before_pt)
+        paragraph.paragraph_format.space_after = Pt(theme.spacing.heading_1_after_pt)
+    elif style_name == "Heading 2":
+        paragraph.paragraph_format.first_line_indent = None
+        paragraph.paragraph_format.space_before = Pt(theme.spacing.heading_2_before_pt)
+        paragraph.paragraph_format.space_after = Pt(theme.spacing.heading_2_after_pt)
+    elif style_name == "Heading 3":
+        paragraph.paragraph_format.first_line_indent = None
+        paragraph.paragraph_format.space_before = Pt(theme.spacing.heading_3_before_pt)
+        paragraph.paragraph_format.space_after = Pt(theme.spacing.heading_3_after_pt)
     elif is_list:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         paragraph.paragraph_format.first_line_indent = None
@@ -515,7 +689,14 @@ class PythonDocxAssemblyAdapter:
         leading = parts[:idx]
 
         has_cover_from_asset_part = any(p.get("type") == "cover_from_asset" for p in leading)
-        cover = self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
+        generated_cover = resolve_cover_spec(config)
+        cover = (
+            Document()
+            if generated_cover and generated_cover.mode in {CoverMode.GENERATED, CoverMode.NONE}
+            else self._cover_base_document(config, cover_asset_path, has_cover_from_asset_part)
+        )
+        if generated_cover and generated_cover.mode is CoverMode.GENERATED:
+            compose_generated_cover(cover, generated_cover, config)
         body = Document(str(body_docx))
 
         self._configure_preliminary_pagination(cover, sections_part, config)
@@ -568,7 +749,7 @@ class PythonDocxAssemblyAdapter:
                 if kind == "toc":
                     cover.add_paragraph("[[TOC]]")
                 else:
-                    add_fixed_text_page(cover, resolve_part_text(config, part))
+                    add_fixed_text_page(cover, resolve_part_text(config, part), resolve_visual_theme(config))
                 cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
     def _body_transfer_context(self, sections_part: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -605,9 +786,10 @@ class PythonDocxAssemblyAdapter:
         from docx.table import Table
 
         ctx = self._body_transfer_context(sections_part, config)
+        table_theme = resolve_visual_theme(config) if has_visual_theme(config) else None
         for block in self._iter_body_blocks(body):
             if isinstance(block, Table):
-                self._transfer_one_table(cover, block)
+                self._transfer_one_table(cover, block, table_theme)
             else:
                 self._transfer_one_paragraph(cover, body, block, ctx, config)
 
@@ -660,11 +842,13 @@ class PythonDocxAssemblyAdapter:
                 numbered_section, int(body_pag.get("start", 1)), body_pag.get("format", "decimal")
             )
             ctx["restart_started"] = True
-        elif is_heading_1 and ctx["body_heading_seen"] and not ctx["just_broke"]:
-            cover.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+        page_break_before = is_heading_1 and ctx["body_heading_seen"] and not ctx["just_broke"]
         ctx["just_broke"] = False
         new_paragraph = cover.add_paragraph(style=style_name)
-        apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, is_list=is_list)
+        theme = resolve_visual_theme(config)
+        apply_normative_paragraph_format(new_paragraph, style_name, paragraph_text, theme, is_list=is_list)
+        if page_break_before:
+            new_paragraph.paragraph_format.page_break_before = True
         # Academic figure layout: an image paragraph and its caption are centered
         # (never left-aligned or first-line-indented), and the image keeps with
         # the next paragraph so its "Figura N." caption never orphans onto the
@@ -694,16 +878,32 @@ class PythonDocxAssemblyAdapter:
             new_run.bold = run.bold
             new_run.italic = run.italic
             new_run.underline = run.underline
-            new_run.font.name = "Times New Roman"
-            new_run.font.size = Pt(12)
-            new_run.font.color.rgb = RGBColor(0, 0, 0)
+            if style_name == "Heading 1":
+                new_run.font.name = theme.typography.heading_font
+                new_run.font.size = Pt(theme.typography.heading_1_size_pt)
+                new_run.font.color.rgb = RGBColor.from_string(theme.colors.heading_1)
+            elif style_name == "Heading 2":
+                new_run.font.name = theme.typography.heading_font
+                new_run.font.size = Pt(theme.typography.heading_2_size_pt)
+                new_run.font.color.rgb = RGBColor.from_string(theme.colors.heading_2)
+            elif style_name == "Heading 3":
+                new_run.font.name = theme.typography.heading_font
+                new_run.font.size = Pt(theme.typography.heading_3_size_pt)
+                new_run.font.color.rgb = RGBColor.from_string(theme.colors.heading_3)
+            else:
+                new_run.font.name = theme.typography.body_font
+                new_run.font.size = Pt(theme.typography.body_size_pt)
+                new_run.font.color.rgb = RGBColor(0, 0, 0)
+            if _CAPTION_RE.match(paragraph_text):
+                new_run.font.color.rgb = RGBColor.from_string(_theme_color(theme, theme.captions.color))
 
     def _transfer_body_tables(self, cover: Any, body: Any) -> None:
         for table in body.tables:
             self._transfer_one_table(cover, table)
 
-    def _transfer_one_table(self, cover: Any, table: Any) -> None:
+    def _transfer_one_table(self, cover: Any, table: Any, theme: VisualTheme | None = None) -> None:
         from docx.oxml import OxmlElement
+        from docx.shared import Pt
 
         new_table = cover.add_table(rows=len(table.rows), cols=len(table.columns))
         self._apply_horizontal_only_borders(new_table)
@@ -713,7 +913,9 @@ class PythonDocxAssemblyAdapter:
                 new_cell.text = cell.text
                 for paragraph in new_cell.paragraphs:
                     for run in paragraph.runs:
-                        run.font.name = "Times New Roman"
+                        run.font.name = theme.typography.body_font if theme else "Times New Roman"
+                        if theme:
+                            run.font.size = Pt(theme.typography.body_size_pt)
                         if row_idx == 0:
                             run.bold = True
         # Multi-page table hygiene: keep each row intact across page boundaries

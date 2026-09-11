@@ -7,6 +7,7 @@ import pytest
 from docx import Document
 
 from docs.application.format_audit import FormatAuditService
+from docs.domain.review import ReviewDimension
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 
 
@@ -44,3 +45,4 @@ def test_audit_format_returns_result_with_issues_for_lowercase_heading(
 
     assert result.issues
     assert any("mayúsculas sostenidas" in issue.message for issue in result.issues)
+    assert any(issue.dimension is ReviewDimension.VISUAL for issue in result.issues)

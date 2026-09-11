@@ -10,6 +10,7 @@ from docs.domain.models.template import (
     StrictPolicy,
     StrictPolicyBlock,
     Template,
+    TemplateContract,
     Topic,
 )
 
@@ -97,6 +98,30 @@ def test_template_has_apa7_and_strict_policy_defaults():
     assert template.strict_policy.draft.allow_pending is True
 
 
+def test_template_contract_round_trips_all_declared_fidelity_fields():
+    contract = TemplateContract(
+        page_geometry={"size": "A4", "margins_cm": {"top": 2.5}},
+        style_contract={"body_font": "Aptos", "heading_color": "000000"},
+        components=[{"kind": "cover", "required": True}],
+        editable_slots=[{"id": "title", "required": True}],
+        required_assets=[{"id": "logo", "kind": "image"}],
+        fidelity_checks=[{"id": "page-count", "minimum": 3}],
+        allowed_degradations=["missing optional preview"],
+    )
+
+    parsed = Template.model_validate({"type": "report", "title": "Report", "template_contract": contract.model_dump()})
+
+    assert parsed.template_contract == contract
+    assert parsed.model_dump()["template_contract"] == contract.model_dump()
+
+
+def test_legacy_template_omits_template_contract_from_serialized_config():
+    template = _load("reporte-estadia-tic")
+
+    assert template.template_contract is None
+    assert "template_contract" not in template.model_dump(exclude_none=True)
+
+
 def test_template_models_dont_share_mutable_default_state():
     a = Template(type="a", title="A")
     b = Template(type="b", title="B")
@@ -159,7 +184,7 @@ def test_every_model_stays_permissive_so_comment_siblings_and_passthrough_surviv
     # The typo hazard permissiveness creates is caught by
     # `template_validation` instead — see test_template_validation.py.
     for model in (Template, Section, SectionContract, Topic, Field, ContextSchema,
-                  LengthSpec, Apa7Config, StrictPolicy, StrictPolicyBlock):
+                  LengthSpec, Apa7Config, StrictPolicy, StrictPolicyBlock, TemplateContract):
         assert model.model_config.get("extra") == "allow", model.__name__
 
 

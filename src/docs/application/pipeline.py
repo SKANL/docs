@@ -19,6 +19,8 @@ from docs.application.ingest import IngestService
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.application.structural_audit import StructuralAuditService
+from docs.domain.cover import cover_provenance
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
@@ -50,6 +52,7 @@ class PipelineService:
         ingest_service: IngestService,
         context_service: ContextService,
         generate_visuals_service: GenerateVisualsService | None = None,
+        structural_audit_service: StructuralAuditService | None = None,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -66,6 +69,7 @@ class PipelineService:
         self.ingest_service = ingest_service
         self.context_service = context_service
         self.generate_visuals_service = generate_visuals_service
+        self.structural_audit_service = structural_audit_service
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -318,6 +322,12 @@ class PipelineService:
         def stage_qa_docx() -> tuple[bool, str]:
             docx_path = _draft_docx_path()
             qa_dir = self.qa_service.qa_docx(config, docx_path, strict=strict)
+            if self.structural_audit_service is not None and template.template_contract is not None:
+                structural = self.structural_audit_service.audit(
+                    docx_path, template.template_contract.model_dump(exclude_none=True)
+                )
+                if not structural.passed:
+                    return False, structural.to_markdown()
             # The visual render is the half of QA that needs LibreOffice, and
             # it degrades to a skip in draft. `qa-report.md` says so, but
             # saying it only there made the pipeline line read as a clean
@@ -461,6 +471,9 @@ class PipelineService:
                 if fail_fast:
                     break
         summary = {"stage_set": stage_set, "strict": strict, "passed": passed, "stages": results}
+        cover = cover_provenance(config)
+        if cover is not None:
+            summary["cover"] = cover
         if stage_set in ("assemble", "all"):
             summary["build_version"] = self._next_build_version(doc_id, config)
         self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)

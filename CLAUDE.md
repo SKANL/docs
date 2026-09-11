@@ -76,12 +76,47 @@ three share; never re-declare an artifact filename or extension set locally.
   `build-html` and `build-pdf` both report their own skip as
   "omitido: ..." right in the pipeline output. A stage that degrades where
   only a file can tell you reads as a clean success.
+- **The mode of an edge is not a margin.** Eight dialogue labels ending at
+  the same x outvoted the body text, so page 10 of a real book detected its
+  column as 72 -> 142: the speaker gutter, on a page whose lines ran to 522.
+  A margin is an edge that REPEATS, so take the FURTHEST repeated edge -- not
+  the mode, which a short gutter wins, and not the maximum, which one long
+  URL drags out of the page. Same shape one level up: centring measured
+  against the COLUMN passes any block wide enough to have little slack, so
+  measure the asymmetry against the block's own SLACK instead. On that book
+  every real centred block split its slack within 1.5% of even and every
+  coincidence was above 2%.
+- **Two measurements of the same block must use the same unit.**
+  `vertical_room` reports the gap from a block's first baseline DOWN;
+  `fit_text_to_block` answered in full block height, which counts one line
+  sitting ABOVE that baseline that cannot collide with anything. A chapter
+  title was approved into a hole a whole line too small for it. Related:
+  leading measured on a block belongs to it at its ORIGINAL size -- shrink
+  the type and the baselines must shrink with it, or three shrunken lines
+  span the height of three full-size ones. That rule lived in three places
+  (fitter, collision check, writer); it now lives in
+  `domain/text_fitting.py:leading_for`.
+
 - **A silent tool is a check that never ran.** `fd`, `bat` and `eza` are not
   on this machine's Git Bash PATH -- only `rg` is. Paired with `2>/dev/null`
   they return nothing instead of failing, so a verification written with `fd`
   reports "nothing found" without having looked. Same "found != usable"
   shape as the rest of this list, aimed at our own tooling. Use `rtk ls`,
   `find` or `rg`, or check `command -v` first.
+- **A tool that FAKES success is worse than one that stays quiet, and we have
+  one.** `gitnexus analyze --index-only --pdg` printed `Analysis failed: ...
+  FTS index 'file_fts' is inconsistent` and **exited 0**. The index silently
+  stayed pinned to an old commit. Run immediately after, with
+  `ARCHITECTURE_REQUIRE_GRAPH=1` set, `test_graph_invariants.py` reported **27
+  passed** — against a graph that predated every module it claimed to check.
+  That env var only asserts the index EXISTS, never that it is CURRENT, so a
+  stale-but-present index turns the layering rule into decoration that looks
+  exactly like enforcement. Never trust the exit code: grep the output for
+  `Analysis failed`/`Error:`, and confirm `.gitnexus/meta.json` actually names
+  a symbol you just wrote. Recovery is `gitnexus clean --force` then re-analyze
+  (`--yes` is not a flag; plain `clean` refuses without `--force`). The check
+  that cannot lie to you here is an `ast` scan of imports per layer — it needs
+  no index, so it cannot pass vacuously.
 - **A warning is a failure that has not happened yet.** `filterwarnings =
   ["error"]` in `pyproject.toml` is not tidiness: one invalid escape sequence
   in a docstring passed ruff AND mypy, and broke ELEVEN architecture tests
@@ -102,13 +137,52 @@ three share; never re-declare an artifact filename or extension set locally.
   seven tests kept skipping after the resolver was fixed, because the guard
   used a bare `shutil.which` while the harness used its own resolver. A
   weaker check in the guard silently narrows the suite.
-- **"Found" is not "usable", and this repo has learned it four times:**
+- **"Found" is not "usable", and this repo has learned it five times:**
   `safe_style_name` (listed ≠ applicable), `MermaidSvgRenderer` (present ≠
-  renders), `doctor`'s toolchain checks (on PATH ≠ new enough), and
-  `ContentSignals.container_ok` (exists ≠ actually a `.docx`). Before adding
+  renders), `doctor`'s toolchain checks (on PATH ≠ new enough),
+  `ContentSignals.container_ok` (exists ≠ actually a `.docx`), and
+  `FPDFFont_GetFamilyName` (returns success ≠ returns a name). Before adding
   a check that a thing is THERE, ask what would make it unusable and check
   that instead.
 
+- **PDFium destroys text objects if you mutate a page with a textpage open.**
+  Holding the handle from `FPDFText_LoadPage` while calling
+  `FPDFPage_RemoveObject`/`InsertObject`/`GenerateContent` silently deletes
+  UNRELATED text objects and raises nothing. Measured: a 3-object page came
+  back as 2, one text run gone, `FPDFPage_CountObjects` 3 -> 2, all green.
+  `pypdfium2_text_edit_adapter.py` splits read and write phases with
+  `FPDFText_ClosePage` between them for exactly this reason — that ordering is
+  load-bearing, not tidiness. Pair every `RemoveObject` with
+  `FPDFPageObj_Destroy`; removal transfers ownership to the caller.
+- Any new PDF writer MUST end in `domain/pdf_id.py:normalize_pdf_id` — PDFium
+  stamps a RANDOM `/ID` into the trailer on every save, so identical input
+  yields different bytes (measured: same 1758-byte file, first difference at
+  offset 1662, only the trailer `/ID`; `/CreationDate` is inherited and
+  stable). Same shape as the zip-timestamp rule below, same consequence: a
+  "flaky" byte-identity test is a product bug. The replacement digest is the
+  SAME LENGTH as what it replaces so xref offsets stay valid. MECHANICAL:
+  `tests/architecture/test_pdf_writer_invariant.py`.
+- **An embedded font is not a font you can write with.** `FPDFText_SetText` on
+  an existing text object succeeds and keeps its font -- the obvious way to
+  preserve perfect typography when translating. Measured: writing `"PRUEBA de
+  acentos: canción, año, ¿qué?"` into a running head rendered
+  `"PRUEA de centos□cncin□o□u□"`. Not just the accents; the lowercase `a` is
+  absent too, because that subset carries only the glyphs of `"The Mom Test by
+  @robfitz 10"`. It fails SILENTLY -- the text layer reads back correct
+  Spanish, and only a render shows it. **But that closes only the question of
+  REUSING the embedded font.** `FPDFText_LoadFont(..., cid=True)` embeds a
+  DIFFERENT face and draws Cyrillic, Greek and accented Latin correctly --
+  which is how `document-translate` supports non-Latin targets at all. `cid`
+  is not optional: a simple font is single-byte, so `cid=False` returns the
+  same replacement mark for every character above U+00FF. The font comes from
+  matplotlib's bundled DejaVu (already a dependency) rather than the OS, so
+  the output stays byte-identical across machines.
+- A fifth instance of **"found" is not "usable"**: `FPDFFont_GetFamilyName` is
+  present, returns success, and yields an EMPTY string for embedded subset
+  fonts. `FPDFFont_GetBaseFontName` returns `GGKEDP+DejaVuSans` — strip the
+  six-letter subset tag. That tag is itself the evidence that an embedded font
+  holds only the glyphs the document already used, which is why translation
+  must substitute fonts rather than reuse them.
 - Any new `.docx`/zip writer MUST end in
   `infrastructure/docx/deterministic_zip.py:normalize_docx_zip_timestamps` —
   stdlib zip stamps wall-clock entry times at 2s DOS granularity, so a
@@ -136,12 +210,13 @@ three share; never re-declare an artifact filename or extension set locally.
 
 ## Specs & planning — read on demand (do not @import)
 
-- `openspec/specs/<capability>/spec.md` — the CURRENT contract (12
+- `openspec/specs/<capability>/spec.md` — the CURRENT contract (13
   capabilities: agent-contract, asset-management, context-curation,
   document-ingest, document-lifecycle, document-pipeline, document-render,
-  document-revise, document-template, document-visuals,
+  document-revise, document-template, document-translate, document-visuals,
   template-provisioning, workspace-config). New SDD changes delta against
-  these.
+  these. `test_spec_symbol_references.py` pins the count, so adding a
+  capability is a deliberate two-line change, never a drift.
 - `openspec/changes/<change>/` — active SDD changes, if any (none right
   now). `state.yaml` is the phase record; tasks.md checkboxes are the truth
   of progress; planning artifacts are frozen, additive edits only.
@@ -231,6 +306,7 @@ three, and it is what keeps routing honest over time.
 |---|---|---|
 | `cli → application → domain`, infra implements ports | `test_graph_invariants.py` | yes (GitNexus) |
 | Every `.docx`/zip writer ends in `normalize_docx_zip_timestamps` | `test_docx_writer_invariant.py` | no |
+| Every PDF writer ends in `normalize_pdf_id` | `test_pdf_writer_invariant.py` | no |
 | Every capability spec names ≥3 real symbols, and no dead ones | `test_spec_symbol_references.py` | no |
 | Every CLI command has help text | `tests/unit/cli/test_command_help_coverage.py` | no |
 | Every emitted `Issue.code` is in the catalog, and vice versa | `tests/unit/domain/test_issue_codes.py` | no |

@@ -8,7 +8,7 @@ from typing import Any
 
 from docs.domain.docx_structure import margins_match, non_cover_margin_emu, resolve_part_text, structure_parts
 from docs.domain.markdown_text import normalize_heading
-from docs.domain.review import Issue
+from docs.domain.review import Issue, ReviewDimension
 
 
 def _section_margin_emu(section: Any) -> dict[str, int]:
@@ -92,16 +92,16 @@ class PythonDocxAuditAdapter:
     ) -> list[Issue]:
         issues: list[Issue] = []
         if strict and restart_id and len(document.sections) < 2:
-            issues.append(Issue("error", "El DOCX no tiene secciones suficientes para el reinicio de paginación del cuerpo."))
+            issues.append(Issue("error", "El DOCX no tiene secciones suficientes para el reinicio de paginación del cuerpo.", dimension=ReviewDimension.STRUCTURAL))
         if strict and restart_title and not any(normalize_heading(restart_title) in normalize_heading(text) for text in heading_texts):
-            issues.append(Issue("warning", f"No se detectó el título `{restart_title}`; no puede verificarse el reinicio de paginación."))
+            issues.append(Issue("warning", f"No se detectó el título `{restart_title}`; no puede verificarse el reinicio de paginación.", dimension=ReviewDimension.STRUCTURAL))
         return issues
 
     def _check_fixed_text_pages_present(self, docx_xml: str, fixed_texts: list[str]) -> list[Issue]:
         issues: list[Issue] = []
         for fixed_text in fixed_texts:
             if fixed_text and fixed_text not in docx_xml:
-                issues.append(Issue("error", "No se encontró una página de texto fijo declarada en la estructura."))
+                issues.append(Issue("error", "No se encontró una página de texto fijo declarada en la estructura.", dimension=ReviewDimension.STRUCTURAL))
         return issues
 
     def _check_pagination_markers(
@@ -117,18 +117,18 @@ class PythonDocxAuditAdapter:
                 rf"<w:pgNumType\b[^>]*w:start=\"{start}\"[^>]*w:fmt=\"{fmt}\"|<w:pgNumType\b[^>]*w:fmt=\"{fmt}\"[^>]*w:start=\"{start}\"",
                 docx_xml,
             ):
-                issues.append(Issue("error", "No se detectó la paginación de preliminares declarada en la estructura."))
+                issues.append(Issue("error", "No se detectó la paginación de preliminares declarada en la estructura.", dimension=ReviewDimension.STRUCTURAL))
         if body_pag.get("format"):
             paginated += 1
             if not re.search(rf"<w:pgNumType\b[^>]*w:start=\"{body_pag.get('start', 1)}\"", docx_xml):
-                issues.append(Issue("error", "La sección del cuerpo no reinicia la paginación según la estructura."))
+                issues.append(Issue("error", "La sección del cuerpo no reinicia la paginación según la estructura.", dimension=ReviewDimension.STRUCTURAL))
         if paginated:
             if "PAGE" not in footer_xml:
-                issues.append(Issue("error", "No se encontró campo PAGE en el pie de página de las secciones numeradas."))
+                issues.append(Issue("error", "No se encontró campo PAGE en el pie de página de las secciones numeradas.", dimension=ReviewDimension.STRUCTURAL))
             if 'w:jc w:val="right"' not in footer_xml:
-                issues.append(Issue("error", "El campo de paginación no está alineado a la derecha."))
+                issues.append(Issue("error", "El campo de paginación no está alineado a la derecha.", dimension=ReviewDimension.STRUCTURAL))
             if footer_xml.count("PAGE") < paginated:
-                issues.append(Issue("error", "Faltan campos PAGE para las secciones paginadas declaradas."))
+                issues.append(Issue("error", "Faltan campos PAGE para las secciones paginadas declaradas.", dimension=ReviewDimension.STRUCTURAL))
         return issues
 
     def _check_non_cover_margins(self, document: Any, config: dict[str, Any]) -> list[Issue]:
@@ -141,7 +141,7 @@ class PythonDocxAuditAdapter:
                 actual_margins = _section_margin_emu(section)
                 if not margins_match(actual_margins, expected_margins):
                     issues.append(
-                        Issue("error", f"La sección {section_index + 1} no conserva márgenes de 2.5 cm en todos los lados.")
+                        Issue("error", f"La sección {section_index + 1} no conserva márgenes de 2.5 cm en todos los lados.", dimension=ReviewDimension.STRUCTURAL)
                     )
                     break
         return issues
@@ -150,9 +150,9 @@ class PythonDocxAuditAdapter:
         issues: list[Issue] = []
         for style, text in headings:
             if style == "Heading 1" and text != text.upper():
-                issues.append(Issue("warning", f"Título de primer orden no está en mayúsculas sostenidas: `{text}`."))
+                issues.append(Issue("warning", f"Título de primer orden no está en mayúsculas sostenidas: `{text}`.", dimension=ReviewDimension.VISUAL))
             if style == "Heading 1" and re.match(r"^\d+(\.\d+)*\s+", text):
-                issues.append(Issue("warning", f"Título de primer orden parece numerado manualmente: `{text}`."))
+                issues.append(Issue("warning", f"Título de primer orden parece numerado manualmente: `{text}`.", dimension=ReviewDimension.VISUAL))
         return issues
 
     def _check_table_borders(self, document: Any) -> list[Issue]:
@@ -160,7 +160,7 @@ class PythonDocxAuditAdapter:
         for idx, table in enumerate(document.tables, start=1):
             if table_has_vertical_borders_or_shading(table):
                 issues.append(
-                    Issue("error", f"Tabla {idx} contiene bordes verticales o sombreado; el manual exige sólo líneas horizontales sin colores.")
+                    Issue("error", f"Tabla {idx} contiene bordes verticales o sombreado; el manual exige sólo líneas horizontales sin colores.", dimension=ReviewDimension.VISUAL)
                 )
         return issues
 
@@ -176,7 +176,7 @@ class PythonDocxAuditAdapter:
             if paragraph_index + 1 < len(document.paragraphs):
                 next_text = document.paragraphs[paragraph_index + 1].text.strip()
             if not re.match(r"^Figura\s+\d+\.", next_text, re.IGNORECASE):
-                issues.append(Issue("warning", "Figura detectada sin caption inferior con patrón `Figura N.`."))
+                issues.append(Issue("warning", "Figura detectada sin caption inferior con patrón `Figura N.`.", dimension=ReviewDimension.ACCESSIBILITY))
         return issues
 
     def _check_strict_paragraph_formatting(self, document: Any, body_start: int) -> list[Issue]:
@@ -190,17 +190,17 @@ class PythonDocxAuditAdapter:
                 continue
             paragraph_format = paragraph.paragraph_format
             if paragraph_format.line_spacing != 1.5:
-                issues.append(Issue("error", f"Párrafo sin interlineado 1.5: `{text[:60]}`."))
+                issues.append(Issue("error", f"Párrafo sin interlineado 1.5: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
                 break
             if paragraph_format.space_after != Pt(18):
-                issues.append(Issue("error", f"Párrafo sin espacio posterior de 18 pt: `{text[:60]}`."))
+                issues.append(Issue("error", f"Párrafo sin espacio posterior de 18 pt: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
                 break
             if style_name.startswith("List") or paragraph_has_numbering(paragraph):
                 if paragraph_format.first_line_indent not in {None, 0}:
-                    issues.append(Issue("error", f"Lista con sangría inicial no permitida: `{text[:60]}`."))
+                    issues.append(Issue("error", f"Lista con sangría inicial no permitida: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
                     break
                 continue
             if paragraph_format.first_line_indent is None or abs(paragraph_format.first_line_indent - Cm(1.25)) > 10000:
-                issues.append(Issue("error", f"Párrafo ordinario sin sangría inicial de 1.25 cm: `{text[:60]}`."))
+                issues.append(Issue("error", f"Párrafo ordinario sin sangría inicial de 1.25 cm: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
                 break
         return issues
