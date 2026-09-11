@@ -81,6 +81,7 @@ def test_review_rules_reporte_estadia_tic_strict_manifest_absent_snapshot():
             "severity": "error",
             "message": "No existe manual-rules.json; ejecuta `build-rules`.",
             "code": "",
+            "dimension": "editorial",
         }
     ]
     assert result.passed is False
@@ -116,21 +117,25 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                 "severity": "error",
                 "message": "Contiene primera persona o voz no permitida: patrón `\\byo\\b`.",
                 "code": "voice.first_person",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "Contiene primera persona o voz no permitida: patrón `\\bconsidero\\b`.",
                 "code": "voice.first_person",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "Contiene término subjetivo sin evidencia automática: `excelente`.",
                 "code": "voice.subjective_term",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "Contiene término subjetivo sin evidencia automática: `éxito`.",
                 "code": "voice.subjective_term",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
@@ -139,16 +144,19 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "`\\bpassword\\s*[:=]\\s*['\\\"]?[^'\\\"\\s]{8,}`."
                 ),
                 "code": "privacy.sensitive_data",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "La sección no tiene título principal Markdown.",
                 "code": "structure.missing_title",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "La sección `introduccion` tiene 20 palabras; mínimo esperado: 900.",
                 "code": "contract.length_below_min",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
@@ -159,16 +167,19 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "procedimiento, capitulado."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "`introduccion` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
+                "dimension": "evidence",
             },
             {
                 "severity": "warning",
                 "message": "Menciona resultados sin evidencia detectable ni marcador PENDIENTE.",
                 "code": "evidence.results_without_evidence",
+                "dimension": "evidence",
             },
         ],
         "strict": [
@@ -176,21 +187,25 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                 "severity": "error",
                 "message": "Contiene primera persona o voz no permitida: patrón `\\byo\\b`.",
                 "code": "voice.first_person",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "Contiene primera persona o voz no permitida: patrón `\\bconsidero\\b`.",
                 "code": "voice.first_person",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "Contiene término subjetivo sin evidencia automática: `excelente`.",
                 "code": "voice.subjective_term",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "Contiene término subjetivo sin evidencia automática: `éxito`.",
                 "code": "voice.subjective_term",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
@@ -199,16 +214,19 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "`\\bpassword\\s*[:=]\\s*['\\\"]?[^'\\\"\\s]{8,}`."
                 ),
                 "code": "privacy.sensitive_data",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "La sección no tiene título principal Markdown.",
                 "code": "structure.missing_title",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "La sección `introduccion` tiene 20 palabras; mínimo esperado: 900.",
                 "code": "contract.length_below_min",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
@@ -219,16 +237,19 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "procedimiento, capitulado."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "`introduccion` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
+                "dimension": "evidence",
             },
             {
                 "severity": "warning",
                 "message": "Menciona resultados sin evidencia detectable ni marcador PENDIENTE.",
                 "code": "evidence.results_without_evidence",
+                "dimension": "evidence",
             },
         ],
     },
@@ -238,6 +259,7 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                 "severity": "warning",
                 "message": "La sección `resumen` tiene 12 palabras; mínimo esperado: 220.",
                 "code": "contract.length_below_min",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
@@ -247,11 +269,13 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "importantes o PENDIENTE."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "`resumen` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
+                "dimension": "evidence",
             },
         ],
         "strict": [
@@ -259,6 +283,7 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                 "severity": "error",
                 "message": "La sección `resumen` tiene 12 palabras; mínimo esperado: 220.",
                 "code": "contract.length_below_min",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
@@ -268,11 +293,13 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "importantes o PENDIENTE."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "`resumen` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
+                "dimension": "evidence",
             },
         ],
     },
@@ -292,11 +319,13 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "deductivo, autores, teorías, conceptos clave, antecedentes."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
             {
                 "severity": "warning",
                 "message": "`capitulo-ii-marco-teorico` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
+                "dimension": "evidence",
             },
         ],
         "strict": [
@@ -308,11 +337,13 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "deductivo, autores, teorías, conceptos clave, antecedentes."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
             {
                 "severity": "error",
                 "message": "`capitulo-ii-marco-teorico` requiere evidencia o marcador PENDIENTE.",
                 "code": "evidence.required",
+                "dimension": "evidence",
             },
         ],
     },
@@ -331,6 +362,7 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "APA 7, orden alfabético."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
         ],
         "strict": [
@@ -341,6 +373,7 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
                     "APA 7, orden alfabético."
                 ),
                 "code": "contract.missing_required",
+                "dimension": "editorial",
             },
         ],
     },
@@ -368,6 +401,7 @@ def test_review_cross_consistency_reporte_estadia_tic_contested_stack_terms_snap
                 "definitiva sin delimitarla ni marcar PENDIENTE."
             ),
             "code": "coherence.contested_stack_unqualified",
+            "dimension": "consistency",
         }
     ]
 
@@ -395,6 +429,7 @@ def test_review_cross_consistency_reporte_estadia_tic_duration_mismatch_snapshot
             "severity": "warning",
             "message": "La duración de la estadía es inconsistente entre secciones: 160 horas, 200 horas.",
             "code": "coherence.duration_mismatch",
+            "dimension": "consistency",
         }
     ]
 
