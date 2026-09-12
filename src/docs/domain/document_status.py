@@ -31,9 +31,13 @@ class DocumentStatus:
     lifecycle: str = "draft"
     build_version: int | None = None
     cover: dict[str, Any] | None = None
+    v2_capabilities: dict[str, Any] | None = None
+    v2_execution: dict[str, Any] | None = None
+    v2_provenance: dict[str, Any] | None = None
+    v2_succeeded: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        result = {
+        result: dict[str, Any] = {
             "doc_id": self.doc_id,
             "lifecycle": self.lifecycle,
             "build_version": self.build_version,
@@ -61,6 +65,14 @@ class DocumentStatus:
         }
         if self.cover is not None:
             result["cover"] = self.cover
+        v2 = {
+            "capabilities": self.v2_capabilities,
+            "execution": self.v2_execution,
+            "provenance": self.v2_provenance,
+            "succeeded": self.v2_succeeded,
+        }
+        if any(value is not None for value in v2.values()):
+            result["v2"] = v2
         return result
 
     def to_markdown(self) -> str:

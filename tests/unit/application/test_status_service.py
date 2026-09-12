@@ -11,8 +11,12 @@ from pathlib import Path
 import pytest
 
 from docs.application.context import ContextService
+from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.application.review import ReviewService
 from docs.application.status import StatusService
+from docs.application.v2_status import V2Status, V2StatusReader
+from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
+from docs.domain.document_status import DocumentStatus
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Section, SectionContract, Template, Topic
 from docs.domain.normative import NormativeSettings
@@ -30,6 +34,16 @@ _NORMATIVE = NormativeSettings(
     subjective_terms=[],
     secret_patterns=[],
 )
+
+
+class _V2StatusReaderStub:
+    def __init__(self, status: V2Status) -> None:
+        self.status = status
+        self.document_roots: list[Path] = []
+
+    def read(self, document_root: Path) -> V2Status:
+        self.document_roots.append(document_root)
+        return self.status
 
 
 def _template() -> Template:
@@ -245,3 +259,75 @@ def test_status_summary_exposes_generated_cover_variant_and_missing_slots(tmp_pa
         "variant": "academic",
         "missing_slots": ["author"],
     }
+
+
+def test_document_status_serializes_optional_v2_observability() -> None:
+    status = DocumentStatus(
+        doc_id="alpha",
+        context_filled=0,
+        context_total=0,
+        v2_capabilities={"pandoc": {"available": True}},
+        v2_execution={"results": []},
+        v2_provenance={"run_id": "run-1"},
+        v2_succeeded=True,
+    )
+
+    assert status.to_dict()["v2"] == {
+        "capabilities": {"pandoc": {"available": True}},
+        "execution": {"results": []},
+        "provenance": {"run_id": "run-1"},
+        "succeeded": True,
+    }
+
+
+def test_status_summary_reads_v2_observability_through_reader(tmp_path, service, workspace):
+    reader = _V2StatusReaderStub(
+        V2Status(
+            execution={"schema": "docs.build/v2"},
+            provenance={"run_id": "run-1"},
+            succeeded=True,
+        )
+    )
+    service.v2_status_reader = reader
+
+    status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
+
+    assert reader.document_roots == [workspace.doc_root("alpha")]
+    assert status.v2_succeeded is True
+    assert status.v2_execution == {"schema": "docs.build/v2"}
+    assert status.v2_provenance == {"run_id": "run-1"}
+
+
+def test_v2_status_reader_loads_manifest_and_matching_provenance_from_document_root(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("artifact", encoding="utf-8")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), "a" * 64, ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-001",
+    )
+    artifact.with_suffix(".docx.manifest.json").write_text(manifest.to_json(), encoding="utf-8")
+    source = doc_root / "source.md"
+    source.write_text("source", encoding="utf-8")
+    provenance = ProvenanceLedgerV2(doc_root / "runs" / "v2-provenance.json")
+    expected_provenance = provenance.record_run("build-001", inputs=(source,), outputs=(artifact,))
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.manifest == manifest
+    assert snapshot.provenance == expected_provenance
+
+
+def test_v2_status_reader_fails_open_for_invalid_manifest(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    manifest_path = doc_root / "output" / "v2" / "alpha.docx.manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("not-json", encoding="utf-8")
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.manifest is None
+    assert snapshot.provenance is None

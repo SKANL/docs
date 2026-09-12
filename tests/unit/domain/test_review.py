@@ -16,6 +16,7 @@ def test_review_dimension_exposes_the_supported_categories():
         "structural",
         "accessibility",
         "visual",
+        "reproducibility",
     ]
 
 
@@ -43,6 +44,33 @@ def test_issue_to_dict():
         "message": "Cuidado.",
         "code": "some.code",
         "dimension": "editorial",
+    }
+
+
+def test_issue_serializes_optional_review_contract_metadata_when_provided():
+    issue = Issue(
+        severity="error",
+        message="Build output changed.",
+        dimension=ReviewDimension.REPRODUCIBILITY,
+        evidence="SHA-256 mismatch between equivalent builds.",
+        resolution_condition="Rebuild produces matching bytes.",
+        section="methodology",
+        file="output/draft/report.docx",
+        page=4,
+        stage_originator="reproducibility-check",
+    )
+
+    assert issue.to_dict() == {
+        "severity": "error",
+        "message": "Build output changed.",
+        "code": "",
+        "dimension": "reproducibility",
+        "evidence": "SHA-256 mismatch between equivalent builds.",
+        "resolution_condition": "Rebuild produces matching bytes.",
+        "section": "methodology",
+        "file": "output/draft/report.docx",
+        "page": 4,
+        "stage_originator": "reproducibility-check",
     }
 
 
@@ -102,3 +130,35 @@ def test_filter_dimensions_returns_only_requested_dimensions():
 
     assert filtered.issues == [Issue("error", "Estructura.", dimension=ReviewDimension.STRUCTURAL)]
     assert filtered.passed is False
+
+
+def test_filter_dimensions_supports_reproducibility_issues_with_contract_metadata():
+    reproducibility_issue = Issue(
+        "error",
+        "Output changed.",
+        dimension=ReviewDimension.REPRODUCIBILITY,
+        evidence="SHA-256 mismatch.",
+        stage_originator="reproducibility-check",
+    )
+    result = ReviewResult(
+        issues=[
+            Issue("warning", "Prosa.", dimension=ReviewDimension.EDITORIAL),
+            reproducibility_issue,
+        ]
+    )
+
+    filtered = result.filter_dimensions({ReviewDimension.REPRODUCIBILITY})
+
+    assert filtered.to_dict() == {
+        "passed": False,
+        "issues": [
+            {
+                "severity": "error",
+                "message": "Output changed.",
+                "code": "",
+                "dimension": "reproducibility",
+                "evidence": "SHA-256 mismatch.",
+                "stage_originator": "reproducibility-check",
+            }
+        ],
+    }

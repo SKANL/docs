@@ -9,6 +9,7 @@ from docs.application.context import ContextService
 from docs.application.ingest_names import CLASSIFICATION_QUEUE_NAME, DETECTION_REPORT_NAME
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.review import ReviewService
+from docs.application.v2_status import V2StatusReader
 from docs.domain.cover import cover_provenance
 from docs.domain.document_status import DocumentStatus
 from docs.domain.models.template import Template
@@ -32,11 +33,13 @@ class StatusService:
         context_service: ContextService,
         review_service: ReviewService,
         document_repository: DocumentRepository,
+        v2_status_reader: V2StatusReader | None = None,
     ) -> None:
         self.section_repository = section_repository
         self.context_service = context_service
         self.review_service = review_service
         self.document_repository = document_repository
+        self.v2_status_reader = v2_status_reader or V2StatusReader()
 
     def status_summary(
         self,
@@ -91,6 +94,7 @@ class StatusService:
         sections_dir = Path(paths.get("sections_dir", ""))
         output_draft_dir = Path(paths.get("output_draft_dir", ""))
         output_final_dir = Path(paths.get("output_final_dir", ""))
+        v2 = self.v2_status_reader.read(self._document_root(paths, output_draft_dir))
 
         return DocumentStatus(
             doc_id=doc_id,
@@ -110,7 +114,18 @@ class StatusService:
             lifecycle=self.document_repository.read_document(doc_id).lifecycle,
             build_version=self._latest_build_version(paths),
             cover=cover_provenance(config),
+            v2_capabilities=v2.capabilities,
+            v2_execution=v2.execution,
+            v2_provenance=v2.provenance,
+            v2_succeeded=v2.succeeded,
         )
+
+    @staticmethod
+    def _document_root(paths: dict[str, Any], output_draft_dir: Path) -> Path:
+        runs_dir_value = paths.get("runs_dir")
+        if runs_dir_value:
+            return Path(runs_dir_value).parent
+        return output_draft_dir.parent.parent
 
     def _latest_build_version(self, paths: dict[str, Any]) -> int | None:
         """Reads the highest `build_version` already logged under `runs/`

@@ -1,0 +1,168 @@
+from docs.application.pipeline_executor_v2 import PipelineExecutor
+from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
+
+
+def test_executes_in_definition_plan_and_reports_results_deterministically():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("a"), ArtifactContract("b")),
+        stages=(
+            StageSpec("second", requires=("a",), produces=("b",)),
+            StageSpec("first", produces=("a",)),
+        ),
+    )
+    calls = []
+    handlers = {
+        "first": lambda: (calls.append("first") or StageResult("first", True)),
+        "second": lambda: (calls.append("second") or StageResult("second", True)),
+    }
+
+    report = PipelineExecutor(definition, handlers).run()
+
+    assert calls == ["first", "second"]
+    assert [result.stage for result in report.results] == ["first", "second"]
+    assert report.to_json() == '{"results":[{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"first","warnings":[]},{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"second","warnings":[]}]}'
+
+
+def test_non_optional_failure_stops_remaining_stages():
+    definition = PipelineDefinition(stages=(StageSpec("fail"), StageSpec("later")))
+    calls = []
+    handlers = {
+        "fail": lambda: (calls.append("fail") or StageResult("fail", False, errors=("boom",))),
+        "later": lambda: (calls.append("later") or StageResult("later", True)),
+    }
+
+    report = PipelineExecutor(definition, handlers).run()
+
+    assert calls == ["fail"]
+    assert report.results[-1].errors == ("boom",)
+
+
+def test_failed_producer_does_not_execute_dependent_stage_even_when_not_fail_fast():
+    definition = PipelineDefinition(artifacts=(ArtifactContract("optional-output"),), stages=(StageSpec("optional", produces=("optional-output",), fail_fast=False), StageSpec("later", requires=("optional-output",))))
+    calls = []
+    handlers = {
+        "optional": lambda: (calls.append("optional") or StageResult("optional", False, errors=("skip",))),
+        "later": lambda: (calls.append("later") or StageResult("later", True)),
+    }
+
+    report = PipelineExecutor(definition, handlers).run()
+
+    assert calls == ["optional"]
+    assert [result.stage for result in report.results] == ["optional", "later"]
+    assert report.results[-1].ok is False
+    assert report.results[-1].errors == ("required dependency unavailable: optional-output",)
+
+
+def test_unsupported_stage_result_is_deterministic_and_keeps_pipeline_running_in_draft():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("migration-output"), ArtifactContract("output")),
+        stages=(
+            StageSpec("migration-gap", produces=("migration-output",), optional=True),
+            StageSpec("legacy", requires=("migration-output",), produces=("output",)),
+        ),
+    )
+    calls = []
+    handlers = {
+        "legacy": lambda: (calls.append("legacy") or StageResult("legacy", True)),
+    }
+
+    report = PipelineExecutor(definition, handlers).run()
+
+    assert calls == ["legacy"]
+    assert report.results[0].outcome == "unsupported"
+    assert report.results[0].warnings == ("stage unsupported: migration-gap",)
+    assert report.to_json() == (
+        '{"results":[{"artifacts":[],"errors":[],"ok":true,"outcome":"unsupported",'
+        '"stage":"migration-gap","warnings":["stage unsupported: migration-gap"]},'
+        '{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded",'
+        '"stage":"legacy","warnings":[]}]}'
+    )
+
+
+def test_excluded_stage_with_produced_artifact_blocks_downstream_stage():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("draft"), ArtifactContract("verified")),
+        stages=(
+            StageSpec("build", produces=("draft",)),
+            StageSpec("verify", requires=("draft",), produces=("verified",)),
+        ),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {"verify": lambda: (calls.append("verify") or StageResult("verify", True))},
+    ).run(excluded_stages={"build"})
+
+    assert calls == []
+    assert len(report.results) == 1
+    assert report.results[0].stage == "verify"
+    assert report.results[0].ok is False
+    assert report.results[0].errors == ("required dependency unavailable: draft",)
+
+
+def test_handler_exception_is_reported_as_failed_stage_result():
+    definition = PipelineDefinition(stages=(StageSpec("explode"), StageSpec("later")))
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "explode": lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+            "later": lambda: StageResult("later", True),
+        },
+    ).run()
+
+    assert len(report.results) == 1
+    assert report.results[0].stage == "explode"
+    assert report.results[0].ok is False
+    assert report.results[0].errors == ("stage handler failed: boom",)
+
+
+def test_required_dependency_skip_is_reported_as_blocking_result():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("built"), ArtifactContract("checked")),
+        stages=(
+            StageSpec("build", produces=("built",), fail_fast=False),
+            StageSpec("check", requires=("built",), produces=("checked",)),
+        ),
+    )
+    report = PipelineExecutor(
+        definition,
+        {"build": lambda: StageResult("build", False, errors=("broken",))},
+    ).run()
+
+    assert [result.stage for result in report.results] == ["build", "check"]
+    assert report.results[-1].ok is False
+    assert report.results[-1].errors == ("required dependency unavailable: built",)
+
+
+def test_unsupported_optional_stage_blocks_a_required_output_dependency():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("generated", required=True), ArtifactContract("published")),
+        stages=(
+            StageSpec("optional-render", produces=("generated",), optional=True),
+            StageSpec("publish", requires=("generated",), produces=("published",)),
+        ),
+    )
+    report = PipelineExecutor(definition, {}).run()
+    assert report.results[0].outcome == "unsupported"
+    assert report.results[1].errors == ("required dependency unavailable: generated",)
+
+
+def test_stage_report_rejects_artifacts_outside_declared_outputs():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered"), ArtifactContract("other")),
+        stages=(StageSpec("render", produces=("rendered",)),),
+    )
+
+    report = PipelineExecutor(
+        definition,
+        {"render": lambda: StageResult("render", True, artifacts=(
+            __import__("docs.domain.pipeline_kernel", fromlist=["ArtifactRecord"]).ArtifactRecord(
+                "other", "other.bin", "abc"
+            ),
+        ))},
+    ).run()
+
+    assert report.results[0].ok is False
+    assert report.results[0].errors == ("undeclared artifact produced: other",)

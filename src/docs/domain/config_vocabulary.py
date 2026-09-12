@@ -33,6 +33,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "citation_style": {},
     },
     "collect_facts_seed": {},
+    "context": {},
     "cover": {},
     "cross_consistency": {
         "contested_stack_terms": {},

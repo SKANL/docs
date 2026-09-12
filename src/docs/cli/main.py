@@ -15,6 +15,7 @@ from docs.cli.commands.docx_app import docx_app
 from docs.cli.commands.section_app import section_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
+from docs.cli.commands.v2_app import v2_app
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
@@ -38,6 +39,8 @@ app.add_typer(template_app, name="template")
 app.add_typer(doc_app, name="doc")
 app.add_typer(asset_app, name="asset")
 app.add_typer(context_app, name="context")
+app.add_typer(v2_app, name="v2")
+app.add_typer(v2_app, name="document")
 
 
 def main(argv: list[str] | None = None) -> int:

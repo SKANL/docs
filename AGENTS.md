@@ -230,6 +230,21 @@ reach in this phase: base-14 fonts have no coverage for them.
 
 ### Pipeline stage sets
 
+#### Contract-driven pipeline v2
+
+The v2 runtime exposes `docs document build --json` and
+`docs document verify --json`. The former opt-in alias remains available for
+existing callers. These commands resolve the active document, execute
+the contract-driven stage DAG, run DOCX audit/visual QA adapters, record
+provenance only after successful verification, and publish verified copies
+under `output/v2/`. They never promote to `output/final/` and never silently
+fall back to the legacy pipeline. See `docs/architecture-v2.md` and
+`docs/pipeline-v2.md` for the migration contract.
+
+The same surface provides `docs document inspect`, `docs document diff`,
+`docs document package`, and `docs document publish`. Inspection and diff are
+read-only; packaging and publication use temporary files plus atomic replacement.
+
 `docs pipeline <stage_set>` accepts `prep | ingest | assemble | all`.
 **`ingest` must run before `assemble`/`all` whenever sources exist in
 `inbox/`** — `all` does NOT include the ingest stages by design (ingest is
@@ -667,3 +682,15 @@ bytes (read from the installed package's copy, or this file directly in a
 source checkout). There is exactly one place this guidance is written;
 editing this file is the only edit needed, and a packaging test in the
 harness's own suite asserts the installed copy never drifts from it.
+
+### Current v2 public contract
+
+The public v2 command set is `document create`, `document status`, `document build`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` (`v2` is the compatibility alias). Build publishes verified requested formats under `output/v2/`; verify runs without publication. V2 does not fall back to the legacy pipeline or promote to `output/final/`.
+
+`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete legacy migration.
+
+Policies are `draft`, `strict`, and `release`. Draft may warn for permitted optional capability gaps and cannot publish. Strict and release promote warnings and missing required capabilities to errors and permit publication only after verification. Capabilities are local executable checks injected through the composition root; plugins are not runtime dependencies.
+
+Publication requires a matching v2 manifest and verifiable v2 ledger attestation for the exact artifact bytes. The manifest must include SHA-256 identities for source/template/config/context, assets, and outputs, renderer versions, passed verification, and a provenance run. HTML and PDF have independent structural checks; non-DOCX verification is not a DOCX fallback. PDF is a derived, toolchain-dependent artifact and is not byte-deterministic.
+
+Current source inputs are `document.json`, section Markdown, resolved context, template/configuration, and assets. Rendered outputs, manifests, QA reports, packages, and published copies are derived artifacts. The separate v2 ledger records provenance only after successful stages.

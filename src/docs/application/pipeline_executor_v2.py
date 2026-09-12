@@ -1,0 +1,119 @@
+"""Execution engine for the pipeline kernel contracts."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from typing import Protocol
+
+from docs.domain.pipeline_kernel import PipelineDefinition, StageResult, deterministic_json
+
+
+class StageHandler(Protocol):
+    """Callable implementation for one planned pipeline stage."""
+
+    def __call__(self) -> StageResult: ...
+
+
+class PipelineReport:
+    """Immutable-in-practice, ordered execution results."""
+
+    def __init__(self, results: tuple[StageResult, ...] = ()) -> None:
+        self.results = results
+
+    def to_dict(self) -> dict[str, object]:
+        return {"results": [result.to_dict() for result in self.results]}
+
+    def to_json(self) -> str:
+        return deterministic_json(self.to_dict())
+
+
+class PipelineExecutor:
+    def __init__(
+        self,
+        definition: PipelineDefinition,
+        handlers: Mapping[str, StageHandler],
+    ) -> None:
+        self.definition = definition
+        self.handlers = handlers
+
+    def run(
+        self,
+        *,
+        excluded_stages: set[str] | frozenset[str] = frozenset(),
+        result_mapper: Callable[[StageResult], StageResult] | None = None,
+        fail_on_unsupported: bool = False,
+    ) -> PipelineReport:
+        stages = {stage.name: stage for stage in self.definition.stages}
+        producers = {
+            artifact: stage.name
+            for stage in self.definition.stages
+            for artifact in stage.produces
+        }
+        required_artifacts = {
+            contract.name for contract in self.definition.artifacts if contract.required
+        }
+        results: list[StageResult] = []
+        unavailable_artifacts: set[str] = set()
+        for stage_name in self.definition.plan():
+            if stage_name in excluded_stages:
+                unavailable_artifacts.update(stages[stage_name].produces)
+                continue
+            stage = stages[stage_name]
+            unavailable_dependencies = tuple(
+                artifact for artifact in stage.requires if artifact in unavailable_artifacts
+            )
+            if unavailable_dependencies:
+                unavailable_artifacts.update(stage.produces)
+                results.append(
+                    StageResult(
+                        stage_name,
+                        False,
+                        errors=(
+                            "required dependency unavailable: "
+                            + ", ".join(unavailable_dependencies),
+                        ),
+                    )
+                )
+                continue
+            handler = self.handlers.get(stage_name)
+            try:
+                result = StageResult.unsupported(stage_name) if handler is None else handler()
+            except Exception as exc:
+                result = StageResult(stage_name, False, errors=(f"stage handler failed: {exc}",))
+            if (
+                result.outcome == "unsupported"
+                and fail_on_unsupported
+                and not stage.optional
+            ):
+                result = StageResult(stage_name, False, errors=(f"stage unsupported: {stage_name}",))
+            if result.stage != stage_name:
+                raise ValueError(
+                    f"Handler for stage {stage_name!r} returned result for {result.stage!r}"
+                )
+            if result_mapper is not None:
+                result = result_mapper(result)
+            declared = set(stage.produces)
+            reported = {artifact.contract for artifact in result.artifacts}
+            undeclared = sorted(reported - declared)
+            if result.ok and undeclared:
+                result = StageResult(
+                    stage_name,
+                    False,
+                    result.artifacts,
+                    result.warnings,
+                    tuple(result.errors) + tuple(
+                        f"undeclared artifact produced: {artifact}" for artifact in undeclared
+                    ),
+                )
+            results.append(result)
+            unavailable = not result.ok or (
+                result.outcome == "unsupported"
+                and (not stage.optional or bool(required_artifacts.intersection(stage.produces)))
+            )
+            if unavailable:
+                unavailable_artifacts.update(
+                    artifact for artifact, producer in producers.items() if producer == stage_name
+                )
+            if not result.ok and stage.fail_fast:
+                break
+        return PipelineReport(tuple(results))
