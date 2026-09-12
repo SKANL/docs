@@ -91,7 +91,7 @@ class PipelineRuntime:
             stage_specs = {stage.name: stage for stage in self._executor.definition.stages}
             stage = stage_specs.get(result.stage)
             draft_degradable = stage is not None and (
-                stage.optional
+                (stage.optional and result.stage != "package-release")
                 or result.stage in {"accessibility-review", "reproducibility-check"}
             )
             if result.errors and draft_degradable and self._policy.mode == PipelineMode.draft:
@@ -133,6 +133,25 @@ class PipelineRuntime:
         )
         if self._policy is not None:
             results = list(execution.results)
+            package_failed = any(
+                result.stage == "package-release" and not result.ok
+                for result in results
+            )
+            if package_failed and self._policy.mode in {PipelineMode.strict, PipelineMode.release}:
+                results = [
+                    (
+                        StageResult(
+                            result.stage,
+                            False,
+                            result.artifacts,
+                            result.warnings,
+                            (*result.errors, "package-release failed; publication blocked"),
+                        )
+                        if result.stage == "publish-draft" and result.ok
+                        else result
+                    )
+                    for result in results
+                ]
             if missing_required:
                 results.insert(
                     0,

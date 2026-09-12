@@ -15,6 +15,7 @@ from defusedxml.ElementTree import parse as safe_parse
 from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 from docs.infrastructure.docx.cover_compositor import compose_generated_cover
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
@@ -660,7 +661,11 @@ class PythonDocxAssemblyAdapter:
         # Normalize immediately after the subprocess succeeds so the body
         # .docx is deterministic like every other artifact this adapter
         # produces.
-        subprocess.run([pandoc_path, *map(str, inputs), "-o", str(output)], check=True)
+        subprocess.run(
+            [pandoc_path, *map(str, inputs), "-o", str(output)],
+            check=True,
+            timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+        )
         normalize_docx_zip_timestamps(output)
 
     def insert_toc_field(self, docx_path: Path, placeholder: str = "[[TOC]]", levels: str = "1-3") -> bool:

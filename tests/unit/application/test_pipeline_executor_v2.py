@@ -166,3 +166,44 @@ def test_stage_report_rejects_artifacts_outside_declared_outputs():
 
     assert report.results[0].ok is False
     assert report.results[0].errors == ("undeclared artifact produced: other",)
+
+
+def test_failed_optional_stage_with_fail_fast_does_not_stop_required_unrelated_stage():
+    definition = PipelineDefinition(
+        stages=(StageSpec("optional", optional=True, fail_fast=True), StageSpec("required"))
+    )
+    calls = []
+    report = PipelineExecutor(definition, {
+        "optional": lambda: (calls.append("optional") or StageResult("optional", False, errors=("degraded",))),
+        "required": lambda: (calls.append("required") or StageResult("required", True)),
+    }).run()
+
+    assert calls == ["optional", "required"]
+    assert report.results[-1].ok is True
+
+
+def test_failed_optional_producer_blocks_only_its_downstream_consumers():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("optional-output"), ArtifactContract("published")),
+        stages=(
+            StageSpec("optional", produces=("optional-output",), optional=True, fail_fast=True),
+            StageSpec("consumer", requires=("optional-output",)),
+            StageSpec("unrelated", produces=("published",)),
+        ),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "optional": lambda: (
+                calls.append("optional") or StageResult("optional", False, errors=("degraded",))
+            ),
+            "consumer": lambda: (calls.append("consumer") or StageResult("consumer", True)),
+            "unrelated": lambda: (calls.append("unrelated") or StageResult("unrelated", True)),
+        },
+    ).run()
+
+    assert calls == ["optional", "unrelated"]
+    assert report.results[1].errors == ("required dependency unavailable: optional-output",)
+    assert report.results[2].ok is True

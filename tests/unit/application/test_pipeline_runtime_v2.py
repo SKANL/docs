@@ -239,6 +239,36 @@ def test_strict_policy_keeps_optional_stage_failure_blocking(tmp_path: Path) -> 
     assert report.execution.results[0].errors == ("offline",)
 
 
+def test_strict_and_release_package_failure_blocks_publish_draft(tmp_path: Path) -> None:
+    for mode in (PipelineMode.strict, PipelineMode.release):
+        calls: list[str] = []
+        runtime = PipelineRuntime(
+                PipelineDefinition(
+                    artifacts=(ArtifactContract("package-release-complete"),),
+                    stages=(
+                        StageSpec("package-release", produces=("package-release-complete",), optional=True),
+                        StageSpec("publish-draft", requires=("package-release-complete",)),
+                ),
+            ),
+            {
+                "package-release": lambda calls=calls: (calls.append("package") or StageResult("package-release", False, errors=("package unavailable",))),
+                "publish-draft": lambda calls=calls: (calls.append("publish") or StageResult("publish-draft", True)),
+            },
+            ToolCapabilityRegistry(()),
+            ProvenanceLedgerV2(tmp_path / f"{mode.value}-provenance.json"),
+            PipelinePolicy(mode),
+        )
+
+        report = runtime.run(f"{mode.value}-package-failure", outputs=(tmp_path / f"{mode.value}.txt",))
+
+        assert calls == ["package"]
+        assert report.succeeded is False
+        assert any(
+            result.stage == "publish-draft" and "package-release" in " ".join(result.errors)
+            for result in report.execution.results
+        )
+
+
 def test_required_unsupported_stage_blocks_publication_before_publish_handler(tmp_path: Path) -> None:
     calls: list[str] = []
     runtime = PipelineRuntime(

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
 
-from docs.cli.commands.v2_app import _verify_html_artifact
+from docs.cli.commands.v2_app import _package_files, _verify_html_artifact, _write_package_archive
 from docs.cli.main import app
+from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.review import Issue, ReviewDimension, ReviewResult
 
 
@@ -185,8 +187,11 @@ def test_v2_build_records_rendered_artifact_as_output_before_attestation(monkeyp
     outputs = record["outputs"]
     assert len(outputs) == 1
     rendered_path, rendered_hash = next(iter(outputs.items()))
-    assert Path(rendered_path).is_file()
-    assert "output\\draft" not in rendered_path
+    ledger_dir = tmp_path / "documents" / "active" / "runs"
+    assert (ledger_dir / rendered_path).is_file()
+    assert rendered_path.startswith("v2-artifacts/")
+    assert rendered_path.endswith(".active.docx")
+    assert not list(ledger_dir.glob(".v2-render-*"))
     assert rendered_hash == hashlib.sha256(b"DOCX:active").hexdigest()
 
 
@@ -201,8 +206,9 @@ def test_v2_publication_spec_includes_manifest_sidecar(monkeypatch, tmp_path):
     assert service._dependencies.publication.expected_outputs == (
         "primary.docx",
         "primary.docx.manifest.json",
+        "active.zip",
     )
-    assert service._dependencies.publication.destinations[-1].name == "active.docx.manifest.json"
+    assert service._dependencies.publication.destinations[-1].name == "active.zip"
 
 
 def test_v2_manifest_renderer_identity_changes_with_declared_version(monkeypatch, tmp_path):
@@ -275,6 +281,19 @@ def test_v2_build_runs_native_review_and_package_handlers_when_legacy_hooks_are_
     deps.pipeline.evidence_review = None
     deps.pipeline.consistency_review = None
     deps.pipeline.visual_review = None
+    attestation_checks: list[str] = []
+    original_verify_attestation = __import__(
+        "docs.application.provenance_v2", fromlist=["ProvenanceLedgerV2"]
+    ).ProvenanceLedgerV2.verify_attestation
+
+    def verify_attestation(self, run_id, manifest):
+        attestation_checks.append(run_id)
+        return original_verify_attestation(self, run_id, manifest)
+
+    monkeypatch.setattr(
+        "docs.application.provenance_v2.ProvenanceLedgerV2.verify_attestation",
+        verify_attestation,
+    )
     monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
 
     result = CliRunner().invoke(app, ["v2", "build", "--json"])
@@ -287,6 +306,7 @@ def test_v2_build_runs_native_review_and_package_handlers_when_legacy_hooks_are_
         for stage in ("evidence-review", "consistency-review", "visual-review", "package-release")
     )
     assert deps.review.calls
+    assert attestation_checks == ["cli-build-docx"]
     release = tmp_path / "documents" / "active" / "output" / "release" / "active.zip"
     assert release.is_file()
     import zipfile
@@ -452,6 +472,22 @@ def test_v2_build_draft_policy_never_publishes(monkeypatch, tmp_path):
     assert not (tmp_path / "documents" / "active" / "output" / "v2" / "active.docx").exists()
 
 
+@pytest.mark.parametrize("mode", ("strict", "release"))
+def test_v2_failed_optional_package_gate_never_publishes(monkeypatch, tmp_path, mode):
+    deps = _deps(tmp_path)
+    deps.pipeline.package_release = lambda: (False, "package unavailable")
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--policy", mode, "--json"])
+
+    assert result.exit_code == 1, result.stdout
+    assert not (tmp_path / "documents" / "active" / "output" / "draft").exists()
+    payload = json.loads(result.stdout)
+    stages = {item["stage"]: item for item in payload["report"]["execution"]["results"]}
+    assert stages["package-release"]["ok"] is False
+    assert stages["publish-draft"]["ok"] is False
+
+
 def test_v2_verify_uses_document_selected_on_cli_context(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     active = deps.resolve_context()
@@ -492,6 +528,102 @@ def test_v2_build_accepts_repeatable_formats_and_publishes_each_artifact(monkeyp
         assert (tmp_path / "documents" / "active" / "output" / "v2" / f"active.{fmt}").exists()
         manifest = tmp_path / "documents" / "active" / "output" / "v2" / f"active.{fmt}.manifest.json"
         assert json.loads(manifest.read_text(encoding="utf-8"))["schema"] == "docs.build/v2"
+
+    package = tmp_path / "documents" / "active" / "output" / "release" / "active.zip"
+    with zipfile.ZipFile(package) as archive:
+        assert archive.namelist() == [
+            "active.docx",
+            "active.docx.manifest.json",
+            "active.html",
+            "active.html.manifest.json",
+            "active.pdf",
+            "active.pdf.manifest.json",
+        ]
+
+
+def test_v2_multi_format_build_restores_all_outputs_when_later_format_fails(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    root = tmp_path / "documents" / "active"
+    v2 = root / "output" / "v2"
+    release = root / "output" / "release"
+    v2.mkdir(parents=True)
+    release.mkdir(parents=True)
+    (v2 / "sentinel.docx").write_bytes(b"old-docx")
+    (release / "active.zip").write_bytes(b"old-release")
+
+    def fail_pdf(*args, **kwargs):
+        raise RuntimeError("pdf renderer failed")
+
+    deps.renderers["pdf"].build = fail_pdf
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(
+        app,
+        ["v2", "build", "--format", "docx", "--format", "pdf", "--json"],
+    )
+
+    assert result.exit_code == 1
+    assert (v2 / "sentinel.docx").read_bytes() == b"old-docx"
+    assert not (v2 / "active.docx").exists()
+    assert (release / "active.zip").read_bytes() == b"old-release"
+
+
+def test_v2_package_post_publication_failure_restores_previous_archive(monkeypatch, tmp_path):
+    source = tmp_path / "output" / "v2"
+    source.mkdir(parents=True)
+    artifact = source / "active.docx"
+    artifact.write_bytes(b"artifact")
+    manifest = BuildManifest(
+        document_id="active",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        artifacts=(ArtifactRef(str(artifact), hashlib.sha256(b"artifact").hexdigest(), ArtifactState.READY),),
+        verification={"passed": True},
+        renderer_versions={"docx": "test"},
+        provenance_run="run-1",
+    )
+    (source / "active.docx.manifest.json").write_text(manifest.to_json() + "\n", encoding="utf-8")
+    output = tmp_path / "output" / "release.zip"
+    output.write_bytes(b"previous")
+    original = __import__("docs.cli.commands.v2_app", fromlist=["_assert_directory_identity"])._assert_directory_identity
+    calls = 0
+
+    def fail_after_replace(path, expected, *, operation):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("post-publication check")
+        return original(path, expected, operation=operation)
+
+    monkeypatch.setattr("docs.cli.commands.v2_app._assert_directory_identity", fail_after_replace)
+    with pytest.raises(RuntimeError, match="post-publication check"):
+        _write_package_archive(output, source, _verify_attestation=False)
+    assert output.read_bytes() == b"previous"
+
+
+def test_v2_package_rejects_mixed_source_generations(tmp_path):
+    source = tmp_path / "output" / "v2"
+    source.mkdir(parents=True)
+    for fmt, source_hash in (("docx", "a" * 64), ("html", "b" * 64)):
+        artifact = source / f"active.{fmt}"
+        payload = fmt.encode()
+        artifact.write_bytes(payload)
+        manifest = BuildManifest(
+            document_id="active",
+            source_hash=source_hash,
+            template_hash="b" * 64,
+            config_hash="c" * 64,
+            context_hash="d" * 64,
+            artifacts=(ArtifactRef(str(artifact), hashlib.sha256(payload).hexdigest(), ArtifactState.READY),),
+            verification={"passed": True},
+            renderer_versions={fmt: "test"},
+            provenance_run=f"run-{fmt}",
+        )
+        (source / f"active.{fmt}.manifest.json").write_text(manifest.to_json() + "\n", encoding="utf-8")
+    with pytest.raises(Exception, match="source generation"):
+        _package_files(source, _verify_attestation=False)
 
 
 def test_v2_pdf_draft_reports_missing_soffice_without_blocking_render(monkeypatch, tmp_path):

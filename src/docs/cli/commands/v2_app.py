@@ -10,8 +10,10 @@ import os
 import shutil
 import stat
 import tempfile
+import uuid
 import zipfile
 from collections.abc import Mapping
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from difflib import unified_diff
 from html.parser import HTMLParser
@@ -36,6 +38,7 @@ from docs.domain.pipeline_kernel import StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 v2_app = typer.Typer(help="Workspace-backed v2 pipeline commands.")
 
@@ -181,12 +184,19 @@ def _current_input_identities(
     assets = _available_files(root, "assets")
     template = getattr(resolved, "template", None)
     context = getattr(resolved, "context", config.get("context", {}))
+    config_identity = deepcopy(config)
+    output_identity = config_identity.get("output")
+    if isinstance(output_identity, dict):
+        output_identity.pop("format", None)
     return {
         "source_hash": sha256_content(
             {path.relative_to(root).as_posix(): sha256_file(path) for path in inputs}
         ),
         "template_hash": sha256_content(getattr(template, "__dict__", template)),
-        "config_hash": sha256_content(config),
+        # The selected output format is a renderer choice, not a source
+        # generation identity; this keeps one build generation packageable
+        # across DOCX/HTML/PDF.
+        "config_hash": sha256_content(config_identity),
         "context_hash": sha256_content(context),
         "asset_hashes": {
             path.relative_to(root).as_posix(): sha256_file(path) for path in assets
@@ -320,8 +330,9 @@ def create_v2_service(
     initial_root.mkdir(parents=True, exist_ok=True)
     capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
     destination = initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
-    ledger = ProvenanceLedgerV2(initial_root / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedgerV2(initial_root / "runs" / "v2-provenance.json", trusted_root=initial_root)
     state["run_id"] = f"cli-build-{output_format}"
+    build_token = uuid.uuid4().hex
 
     legacy_pipeline = getattr(deps, "pipeline", None)
     source_pipeline = (
@@ -473,17 +484,33 @@ def create_v2_service(
         manifest = state.get("manifest")
         if not isinstance(artifact, Path) or not isinstance(manifest, BuildManifest):
             return False, "package-release requires a verified artifact and manifest"
+        destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
         source_dir = initial_root / "output" / "v2"
         source_dir.mkdir(parents=True, exist_ok=True)
-        staged_artifact = source_dir / artifact.name
-        staged_manifest = source_dir / f"{artifact.name}.manifest.json"
-        shutil.copyfile(artifact, staged_artifact)
-        staged_manifest.write_text(
-            manifest.to_json() + "\n", encoding="utf-8"
-        )
-        destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-        _write_package_archive(destination, source_dir)
-        return successful("package-release", str(destination))
+        candidate = destination.with_name(f".{destination.name}.candidate")
+        # A package stage runs before this format reaches output/v2.  Stage a
+        # complete snapshot of the already-published formats plus this run's
+        # attested artifact, so repeatable --format builds accumulate one
+        # release archive instead of replacing it format by format.
+        with _package_lock(destination):
+            staging = Path(tempfile.mkdtemp(prefix=".v2-package-", dir=source_dir.parent))
+            try:
+                for existing in source_dir.iterdir():
+                    if existing.is_file() and not existing.is_symlink():
+                        shutil.copyfile(existing, staging / existing.name)
+                package_name = f"{initial.doc_id}.{output_format}"
+                shutil.copyfile(artifact, staging / package_name)
+                (staging / f"{package_name}.manifest.json").write_text(
+                    manifest.to_json() + "\n", encoding="utf-8"
+                )
+                # Staging changes only the pathname. Its content hash maps to
+                # the manifest artifact while the attestation remains verified
+                # against the original provenance run.
+                _write_package_archive(candidate, staging, _allow_staging=True, _lock_held=True)
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+        state["package_candidate"] = candidate
+        return successful("package-release", str(candidate))
 
     def successful(name: str, detail: str = "") -> tuple[bool, str]:
         return True, detail or f"{name} completed"
@@ -519,13 +546,28 @@ def create_v2_service(
 
     def render() -> tuple[bool, str]:
         resolved = state["resolved"]
-        scratch_dir = Path(tempfile.mkdtemp(prefix=".v2-render-", dir=initial_root))
+        # The attested render is retained at one deterministic path per
+        # document/format. This avoids unbounded random runs directories
+        # while leaving the source available through package-release and
+        # later provenance verification.
+        runs_dir = initial_root / "runs"
+        retained_dir = runs_dir / "v2-artifacts"
+        retained_dir.mkdir(parents=True, exist_ok=True)
+        scratch_dir = Path(tempfile.mkdtemp(prefix=".v2-render-", dir=runs_dir))
         scratch_dirs.append(scratch_dir)
         scratch_rendered = scratch_dir / f"{resolved.doc_id}.{output_format}"
         artifact = state["renderer"].build(resolved.doc_id, state["config"], output=scratch_rendered)
         if artifact is None:
             return False, "DOCX renderer produced no artifact"
-        state["artifact"] = Path(artifact)
+        rendered = Path(artifact)
+        if rendered != scratch_rendered:
+            return False, "renderer wrote outside the v2 render scratch directory"
+        if not rendered.is_file() or rendered.stat().st_size == 0:
+            return False, "renderer produced an empty artifact"
+        retained = retained_dir / f"{build_token}.{scratch_rendered.name}"
+        with directory_handle_guard(retained_dir):
+            os.replace(rendered, retained)
+        state["artifact"] = retained
         return successful("render", str(state["artifact"]))
 
     def audit() -> tuple[bool, str]:
@@ -597,7 +639,6 @@ def create_v2_service(
             state["run_id"],
             inputs=_build_inputs(initial_root),
             outputs=(state["artifact"],),
-            output_identities={state["artifact"]: destination},
         )
         ledger.record_attestation(state["run_id"], manifest.attestation())
         return successful("provenance")
@@ -605,12 +646,17 @@ def create_v2_service(
     def publish(scratch: Path) -> None:
         staged = scratch / f"primary.{output_format}"
         staged_manifest = scratch / f"primary.{output_format}.manifest.json"
+        staged_package = scratch / f"{initial.doc_id}.zip"
         staged.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(state["artifact"], staged)
         staged_manifest.write_text(state["manifest"].to_json() + "\n", encoding="utf-8")
+        package_candidate = state.get("package_candidate")
+        if not isinstance(package_candidate, Path) or not package_candidate.is_file():
+            raise RuntimeError("package-release completed without a safe release candidate")
+        shutil.copyfile(package_candidate, staged_package)
 
     manifest_destination = destination.with_suffix(destination.suffix + ".manifest.json")
-
+    release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
     return PipelineServiceV2(
         dependencies=LegacyPipelineDependencies(
             resolve_config=resolve_config,
@@ -631,8 +677,8 @@ def create_v2_service(
             or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
             package_release=_callable_stage("package_release") or _native_package_release,
             publication=PublicationSpec(
-                (f"primary.{output_format}", f"primary.{output_format}.manifest.json"),
-                (destination, manifest_destination),
+                (f"primary.{output_format}", f"primary.{output_format}.manifest.json", f"{initial.doc_id}.zip"),
+                (destination, manifest_destination, release_destination),
                 publish,
             ),
             **explicit_stages,
@@ -652,6 +698,22 @@ def create_v2_service(
 def _cleanup_scratch_dirs(scratch_dirs: list[Path]) -> None:
     for path in scratch_dirs:
         shutil.rmtree(path, ignore_errors=True)
+
+
+def _promote_release_candidate(document_root: Path, document_id: str) -> None:
+    """Commit the package only after its format publication has succeeded."""
+    release_dir = document_root / "output" / "release"
+    candidate = release_dir / f".{document_id}.zip.candidate"
+    destination = release_dir / f"{document_id}.zip"
+    if not candidate.is_file() or candidate.is_symlink():
+        raise RuntimeError("package-release completed without a safe release candidate")
+    if any(path.is_symlink() for path in (release_dir, *release_dir.parents)):
+        raise RuntimeError("release directory must not be symlinked")
+    parent_identity = _directory_identity(release_dir)
+    _assert_directory_identity(release_dir, parent_identity, operation="release publication")
+    with directory_handle_guard(release_dir):
+        os.replace(candidate, destination)
+    _assert_directory_identity(release_dir, parent_identity, operation="release publication")
 
 
 def _run(
@@ -675,36 +737,71 @@ def _run(
     else:
         requested = formats
     reports: list[dict[str, Any]] = []
-    for output_format in requested:
-        selected_policy = PipelinePolicy(policy) if policy is not None else None
-        service = create_v2_service(
-            ctx.obj["deps"], output_format, selected_policy, document=selected_document
-        )
-        report = service.run(f"cli-{command}-{output_format}", publish=command == "build")
-        report_payload = report.to_dict()
-        item: dict[str, Any] = {
-            "command": command,
-            "integration": "workspace",
-            "format": output_format,
-            "report": report_payload,
-        }
-        if command == "build" and bool(report_payload.get("succeeded")):
-            resolved = ctx.obj["deps"].resolve_context(selected_document)
-            draft_dir = resolved.config.get("paths", {}).get("output_draft_dir")
-            resolved_root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-            if isinstance(draft_dir, str):
-                artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
-                if artifact.is_file():
-                    ledger = ProvenanceLedgerV2(resolved_root / "runs" / "v2-provenance.json")
-                    recorded = ledger.load_attestation(f"cli-build-{output_format}")
-                    if recorded is None:
-                        raise RuntimeError("missing pre-publication build attestation")
-                    BuildManifest.from_dict(recorded.get("manifest", recorded))
-                    manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
-                    if not manifest_path.is_file():
-                        raise RuntimeError("missing atomic build manifest sidecar")
-                    item["manifest"] = str(manifest_path)
-        reports.append(item)
+    batch_backup: Path | None = None
+    batch_root: Path | None = None
+    if command == "build":
+        resolved_for_backup = ctx.obj["deps"].resolve_context(selected_document)
+        batch_root = ctx.obj["deps"].workspace.doc_root(resolved_for_backup.doc_id)
+        batch_root.mkdir(parents=True, exist_ok=True)
+        batch_backup = Path(tempfile.mkdtemp(prefix=".v2-batch-", dir=batch_root))
+        for relative in (Path("output") / "v2", Path("output") / "release"):
+            current = batch_root / relative
+            if current.exists() and not current.is_symlink():
+                shutil.copytree(current, batch_backup / relative)
+    def restore_batch() -> None:
+        if batch_backup is None or batch_root is None:
+            return
+        for relative in (Path("output") / "v2", Path("output") / "release"):
+            current = batch_root / relative
+            saved = batch_backup / relative
+            if current.exists() and not current.is_symlink():
+                shutil.rmtree(current) if current.is_dir() else current.unlink()
+            if saved.exists():
+                shutil.copytree(saved, current)
+    try:
+        for output_format in requested:
+            selected_policy = PipelinePolicy(policy) if policy is not None else None
+            service = create_v2_service(
+                ctx.obj["deps"], output_format, selected_policy, document=selected_document
+            )
+            report = service.run(f"cli-{command}-{output_format}", publish=command == "build")
+            report_payload = report.to_dict()
+            item: dict[str, Any] = {
+                "command": command,
+                "integration": "workspace",
+                "format": output_format,
+                "report": report_payload,
+            }
+            if command == "build" and bool(report_payload.get("succeeded")):
+                resolved = ctx.obj["deps"].resolve_context(selected_document)
+                _promote_release_candidate(
+                    ctx.obj["deps"].workspace.doc_root(resolved.doc_id), resolved.doc_id
+                )
+                draft_dir = resolved.config.get("paths", {}).get("output_draft_dir")
+                resolved_root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
+                if isinstance(draft_dir, str):
+                    artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
+                    if artifact.is_file():
+                        ledger = ProvenanceLedgerV2(resolved_root / "runs" / "v2-provenance.json", trusted_root=resolved_root)
+                        recorded = ledger.load_attestation(f"cli-build-{output_format}")
+                        if recorded is None:
+                            raise RuntimeError("missing pre-publication build attestation")
+                        BuildManifest.from_dict(recorded.get("manifest", recorded))
+                        manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
+                        if not manifest_path.is_file():
+                            raise RuntimeError("missing atomic build manifest sidecar")
+                        item["manifest"] = str(manifest_path)
+            reports.append(item)
+    except Exception:
+        restore_batch()
+        raise
+    finally:
+        if batch_backup is not None and reports and not all(
+            item["report"].get("succeeded", False) for item in reports
+        ):
+            restore_batch()
+        if batch_backup is not None:
+            shutil.rmtree(batch_backup, ignore_errors=True)
     payload = reports[0] if len(reports) == 1 else reports
     if json_output:
         typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
@@ -834,7 +931,7 @@ def _artifact_payload(path: Path) -> dict[str, object]:
 
 
 def _require_contained(path: Path, root: Path, label: str) -> None:
-    if path.is_symlink():
+    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
         raise typer.BadParameter(f"publish refuses symlinked {label}: {path.name}")
     try:
         path.resolve(strict=False).relative_to(root.resolve(strict=False))
@@ -842,10 +939,20 @@ def _require_contained(path: Path, root: Path, label: str) -> None:
         raise typer.BadParameter(f"publish {label} path escapes its intended root") from exc
 
 
-def _package_files(source_dir: Path) -> tuple[tuple[str, bytes], ...]:
+def _package_files(
+    source_dir: Path, *, _allow_staging: bool = False, _verify_attestation: bool = True
+) -> tuple[tuple[str, bytes], ...]:
     """Validate the complete v2 artifact set before creating a package."""
-    if source_dir.name != "v2" or source_dir.parent.name != "output":
+    valid_source = source_dir.name == "v2" and source_dir.parent.name == "output"
+    valid_staging = (
+        _allow_staging
+        and source_dir.name.startswith(".v2-package-")
+        and source_dir.parent.name == "output"
+    )
+    if not (valid_source or valid_staging):
         raise typer.BadParameter("package requires an output/v2 source directory")
+    if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):
+        raise typer.BadParameter("package refuses a symlinked source boundary")
     candidates = tuple(sorted(source_dir.rglob("*"), key=lambda path: path.relative_to(source_dir).as_posix()))
     unsafe = next((path for path in candidates if path.is_symlink()), None)
     if unsafe is not None:
@@ -855,9 +962,10 @@ def _package_files(source_dir: Path) -> tuple[tuple[str, bytes], ...]:
     if not artifacts:
         raise typer.BadParameter("package requires at least one v2 artifact")
     document_root = source_dir.parent.parent
-    ledger = ProvenanceLedgerV2(document_root / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedgerV2(document_root / "runs" / "v2-provenance.json", trusted_root=document_root)
     expected_manifests: set[Path] = set()
     snapshots: dict[str, bytes] = {}
+    generation_identity: tuple[tuple[object, ...], dict[str, tuple[tuple[str, str], ...]]] | None = None
     for artifact in artifacts:
         manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
         if not manifest_path.is_file():
@@ -869,11 +977,41 @@ def _package_files(source_dir: Path) -> tuple[tuple[str, bytes], ...]:
             manifest.validate_for_publication()
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             raise typer.BadParameter(f"package requires a valid manifest for {artifact.name}: {exc}") from exc
-        matching = [entry for entry in manifest.artifacts if entry.path == str(artifact.resolve())]
-        if len(matching) != 1 or matching[0].sha256 != hashlib.sha256(artifact_bytes).hexdigest():
+        artifact_digest = hashlib.sha256(artifact_bytes).hexdigest()
+        matching = [
+            entry
+            for entry in manifest.artifacts
+            if (
+                entry.path == str(artifact.resolve())
+                or (_allow_staging and entry.sha256 == artifact_digest)
+            )
+        ]
+        if len(matching) != 1 or matching[0].sha256 != artifact_digest:
             raise typer.BadParameter(f"package requires the manifest artifact hash to match {artifact.name}")
-        if not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
+        if _verify_attestation and not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
             raise typer.BadParameter(f"package requires a verifiable provenance attestation for {artifact.name}")
+        shared_identity = (
+            manifest.document_id,
+            manifest.source_hash,
+            manifest.template_hash,
+            manifest.config_hash,
+            manifest.context_hash,
+            tuple(sorted(manifest.asset_hashes.items())),
+        )
+        format_name = artifact.suffix.lstrip(".")
+        renderer_identity = tuple(sorted(manifest.renderer_versions.items()))
+        if generation_identity is None:
+            generation_identity = (shared_identity, {format_name: renderer_identity})
+        elif shared_identity != generation_identity[0]:
+            raise typer.BadParameter(
+                f"package refuses mixed source generation for {artifact.name}"
+            )
+        elif format_name in generation_identity[1] and renderer_identity != generation_identity[1][format_name]:
+            raise typer.BadParameter(
+                f"package refuses mixed renderer generation for {artifact.name}"
+            )
+        else:
+            generation_identity[1][format_name] = renderer_identity
         expected_manifests.add(manifest_path)
         snapshots[artifact.relative_to(source_dir).as_posix()] = artifact_bytes
         snapshots[manifest_path.relative_to(source_dir).as_posix()] = manifest_bytes
@@ -889,8 +1027,14 @@ def _read_package_file(path: Path, document_root: Path) -> bytes:
         path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
     except (OSError, ValueError) as exc:
         raise typer.BadParameter(f"package file escapes document root: {path.name}") from exc
-    if path.is_symlink():
+    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
         raise typer.BadParameter(f"package refuses symlinked path: {path.name}")
+    resolved = path.resolve(strict=True)
+    ancestors = tuple(
+        (ancestor, (os.stat(ancestor, follow_symlinks=False).st_dev, os.stat(ancestor, follow_symlinks=False).st_ino))
+        for ancestor in (document_root, *path.parents)
+        if ancestor.exists()
+    )
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
@@ -899,6 +1043,15 @@ def _read_package_file(path: Path, document_root: Path) -> bytes:
     try:
         if not stat.S_ISREG(os.fstat(descriptor).st_mode) or path.is_symlink():
             raise typer.BadParameter(f"package requires a regular non-symlink file: {path.name}")
+        if any(
+            (os.stat(ancestor, follow_symlinks=False).st_dev, os.stat(ancestor, follow_symlinks=False).st_ino) != identity
+            for ancestor, identity in ancestors
+        ):
+            raise typer.BadParameter(f"package path boundary changed while reading: {path.name}")
+        opened = os.fstat(descriptor)
+        expected = os.stat(resolved, follow_symlinks=False)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            raise typer.BadParameter(f"package input changed while reading: {path.name}")
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = -1
             return handle.read()
@@ -921,23 +1074,109 @@ def _write_deterministic_zip(
             archive.writestr(info, content, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 
 
-def _write_package_archive(output: Path, source_dir: Path) -> None:
+def _directory_identity(path: Path) -> tuple[int, int]:
+    identity = os.stat(path, follow_symlinks=False)
+    return identity.st_dev, identity.st_ino
+
+
+def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operation: str) -> None:
+    if _directory_identity(path) != expected or path.is_symlink() or not path.is_dir():
+        raise typer.BadParameter(f"package output parent changed during {operation}: {path}")
+
+
+def _package_output_snapshot(output: Path) -> tuple[tuple[int, int] | None, bytes | None]:
+    if not output.exists():
+        return None, None
+    if output.is_symlink() or not output.is_file():
+        raise typer.BadParameter(f"package refuses unsafe output: {output.name}")
+    content = output.read_bytes()
+    identity = os.stat(output, follow_symlinks=False)
+    return (identity.st_dev, identity.st_ino), content
+
+
+@contextmanager
+def _package_lock(output: Path):
+    """Serialize package read/merge/write transactions across processes."""
+    with owned_directory_lock(output.with_name(output.name + ".lock")):
+        yield
+
+
+def _assert_package_output_unchanged(
+    output: Path, expected: tuple[int, int] | None, expected_content: bytes | None
+) -> None:
+    if expected is None:
+        if output.exists():
+            raise typer.BadParameter(f"package output changed before publication: {output.name}")
+        return
+    if output.is_symlink() or not output.is_file() or expected_content is None:
+        raise typer.BadParameter(f"package output changed before publication: {output.name}")
+    current = os.stat(output, follow_symlinks=False)
+    if (current.st_dev, current.st_ino) != expected or output.read_bytes() != expected_content:
+        raise typer.BadParameter(f"package output changed before publication: {output.name}")
+
+
+def _write_package_archive(
+    output: Path,
+    source_dir: Path,
+    *,
+    _allow_staging: bool = False,
+    _verify_attestation: bool = True,
+    _lock_held: bool = False,
+) -> None:
     """Validate and atomically write one deterministic v2 package archive."""
-    files = _package_files(source_dir)
     output.parent.mkdir(parents=True, exist_ok=True)
-    if output.parent.is_symlink() or not output.parent.is_dir():
-        raise typer.BadParameter(f"package refuses unsafe output parent: {output.parent}")
-    if output.is_symlink():
-        raise typer.BadParameter(f"package refuses symlinked output: {output.name}")
-    with tempfile.NamedTemporaryFile(
-        prefix=f".{output.name}.", suffix=".tmp", dir=output.parent, delete=False
-    ) as handle:
-        scratch = Path(handle.name)
-    try:
-        _write_deterministic_zip(scratch, source_dir, files)
-        scratch.replace(output)
-    finally:
-        scratch.unlink(missing_ok=True)
+    with nullcontext() if _lock_held else _package_lock(output):
+        files = _package_files(
+            source_dir,
+            _allow_staging=_allow_staging,
+            _verify_attestation=_verify_attestation,
+        )
+        if any(candidate.is_symlink() for candidate in (output.parent, *output.parent.parents)) or not output.parent.is_dir():
+            raise typer.BadParameter(f"package refuses unsafe output parent: {output.parent}")
+        parent_identity = _directory_identity(output.parent)
+        previous_identity, previous_content = _package_output_snapshot(output)
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{output.name}.", suffix=".tmp", dir=output.parent, delete=False
+        ) as handle:
+            scratch = Path(handle.name)
+        published = False
+        try:
+            _write_deterministic_zip(scratch, source_dir, files)
+            expected_digest = hashlib.sha256(scratch.read_bytes()).digest()
+            _assert_directory_identity(output.parent, parent_identity, operation="publication")
+            _assert_package_output_unchanged(output, previous_identity, previous_content)
+            with directory_handle_guard(output.parent):
+                os.replace(scratch, output)
+            published = True
+            published_identity = os.stat(output, follow_symlinks=False)
+            _assert_directory_identity(output.parent, parent_identity, operation="publication")
+            if (
+                not output.is_file()
+                or output.is_symlink()
+                or hashlib.sha256(output.read_bytes()).digest() != expected_digest
+            ):
+                raise typer.BadParameter("package post-publication verification failed")
+        except Exception:
+            if published:
+                _assert_directory_identity(output.parent, parent_identity, operation="rollback")
+                current_identity = os.stat(output, follow_symlinks=False) if output.is_file() else None
+                if (
+                    output.is_symlink()
+                    or current_identity is None
+                    or (current_identity.st_dev, current_identity.st_ino)
+                    != (published_identity.st_dev, published_identity.st_ino)
+                ):
+                    raise
+                if previous_content is None:
+                    output.unlink(missing_ok=True)
+                else:
+                    rollback = output.with_name(f".{output.name}.rollback")
+                    rollback.write_bytes(previous_content)
+                    with directory_handle_guard(output.parent):
+                        os.replace(rollback, output)
+            raise
+        finally:
+            scratch.unlink(missing_ok=True)
 
 
 @v2_app.command("inspect")
@@ -1004,13 +1243,15 @@ def publish(
         raise typer.BadParameter("publish requires a v2 artifact with its matching manifest")
     _require_contained(destination, document_root, "destination")
     try:
-        manifest_bytes = manifest_path.read_bytes()
+        manifest_bytes = _read_package_file(manifest_path, document_root)
         manifest = BuildManifest.from_dict(json.loads(manifest_bytes.decode(encoding="utf-8")))
         manifest.validate_for_publication()
     except (ValueError, json.JSONDecodeError) as exc:
         raise typer.BadParameter(f"publish requires a valid manifest: {exc}") from exc
     source_identity = str(source.resolve())
-    source_bytes = source.read_bytes()
+    source_bytes = _read_package_file(source, document_root)
+    _require_contained(source, document_root / "output" / "v2", "source")
+    _require_contained(manifest_path, document_root / "output" / "v2", "manifest")
     matching = [artifact for artifact in manifest.artifacts if artifact.path == source_identity]
     if len(matching) != 1 or matching[0].sha256 != hashlib.sha256(source_bytes).hexdigest():
         raise typer.BadParameter("publish requires the manifest artifact hash to match the source")
@@ -1036,7 +1277,7 @@ def publish(
     ):
         if current[field] != getattr(manifest, field):
             raise typer.BadParameter(f"publish requires unchanged {label} identity")
-    ledger = ProvenanceLedgerV2(document_root / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedgerV2(document_root / "runs" / "v2-provenance.json", trusted_root=document_root)
     if not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
         raise typer.BadParameter("publish requires a present, verifiable provenance attestation")
     destination_manifest = destination.with_suffix(destination.suffix + ".manifest.json")

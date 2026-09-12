@@ -203,14 +203,16 @@ class PipelineServiceV2:
         artifacts = tuple(
             ArtifactContract(f"{stage_name}-complete") for stage_name in stage_ids
         )
+        optional_stages = {"generate-visuals", "compose-cover", "package-release"}
         stages = tuple(
             StageSpec(
                 stage_name,
-                requires=()
-                if index == 0
-                else (f"{stage_ids[index - 1]}-complete",),
+                requires=(f"{stage_ids[index - 1]}-complete",)
+                if index and stage_ids[index - 1] not in optional_stages
+                else (),
                 produces=(f"{stage_name}-complete",),
-                optional=stage_name in {"generate-visuals", "compose-cover", "package-release"},
+                after=() if index == 0 else (stage_ids[index - 1],),
+                optional=stage_name in optional_stages,
             )
             for index, stage_name in enumerate(stage_ids)
         )

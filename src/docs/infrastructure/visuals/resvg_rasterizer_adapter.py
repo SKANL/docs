@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 
 
 class ResvgRasterizerAdapter:
@@ -39,7 +41,20 @@ class ResvgRasterizerAdapter:
                 "resvg no está disponible en PATH. Instálalo desde "
                 "https://github.com/linebender/resvg para rasterizar diagramas SVG a PNG."
             )
-        args = [resvg, str(svg_path), str(png_path)]
-        if self.font_dir is not None:
-            args += ["--use-fonts-dir", str(self.font_dir)]
-        subprocess.run(args, check=True)
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{png_path.stem}-", suffix=png_path.suffix, dir=png_path.parent
+        )
+        temporary_path = Path(temporary_name)
+        try:
+            with open(descriptor, "wb", closefd=True):
+                pass
+            args = [resvg, str(svg_path), str(temporary_path)]
+            if self.font_dir is not None:
+                args += ["--use-fonts-dir", str(self.font_dir)]
+            subprocess.run(args, check=True, timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS)
+            if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
+                raise RuntimeError("resvg produced an empty PNG")
+            temporary_path.replace(png_path)
+        finally:
+            temporary_path.unlink(missing_ok=True)

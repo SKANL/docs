@@ -167,10 +167,13 @@ def test_exposes_the_full_declarative_stage_plan_with_serial_dependencies(tmp_pa
 
     assert service.definition.plan() == STAGE_IDS
     assert tuple(stage.name for stage in service.definition.stages) == STAGE_IDS
+    optional_stages = {"generate-visuals", "compose-cover", "package-release"}
     for previous, current in pairwise(STAGE_IDS):
         previous_output = f"{previous}-complete"
         assert stages[previous].produces == (previous_output,)
-        assert stages[current].requires == (previous_output,)
+        assert stages[current].after == (previous,)
+        expected_requires = (previous_output,) if previous not in optional_stages else ()
+        assert stages[current].requires == expected_requires
 
 
 def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: Path) -> None:
@@ -209,7 +212,8 @@ def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_chan
     unsupported = [result for result in report.execution.results if result.outcome == "unsupported"]
     assert [result.stage for result in unsupported] == ["generate-visuals", "compose-cover", "package-release"]
     assert report.succeeded is True
-    assert calls[-1] == "publish"
+    assert "publish" in calls
+    assert any(result.stage == "publish-draft" and result.ok for result in report.execution.results)
 
 
 def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp_path: Path) -> None:
@@ -230,6 +234,24 @@ def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp
         assert first_failure.errors == ("stage unsupported: ingest-sources",)
         assert "render" not in calls
         assert "publish" not in calls
+
+
+def test_strict_and_release_package_failure_never_runs_publish_side_effect(tmp_path: Path) -> None:
+    for mode in (PipelineMode.strict, PipelineMode.release):
+        calls: list[str] = []
+        dependencies = replace(
+            _dependencies(tmp_path / mode.value, calls),
+            package_release=_stage("package-release", calls, ok=False),
+        )
+
+        report = _service(tmp_path / mode.value, dependencies, PipelinePolicy(mode)).run(
+            f"{mode.value}-package-failure"
+        )
+
+        assert not report.succeeded
+        assert "package-release" in calls
+        assert "publish" not in calls
+        assert not (tmp_path / mode.value / "published" / "document.txt").exists()
 
 
 def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) -> None:
@@ -272,3 +294,19 @@ def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) ->
         "reproducibility-check",
         "provenance",
     ]
+
+
+def test_optional_stage_failure_does_not_block_later_serial_stages(tmp_path: Path) -> None:
+    calls: list[str] = []
+    dependencies = replace(
+        _dependencies(tmp_path, calls),
+        generate_visuals=_stage("generate-visuals", calls, ok=False),
+        compose_cover=_stage("compose-cover", calls),
+    )
+
+    report = _service(tmp_path, dependencies).run("optional-stage-failure", publish=False)
+
+    assert not report.succeeded
+    assert "render" in calls
+    assert "provenance" in calls
+    assert next(result for result in report.execution.results if result.stage == "generate-visuals").ok is False

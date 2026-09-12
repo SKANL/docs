@@ -85,11 +85,16 @@ class StageSpec:
     produces: tuple[str, ...] = ()
     fail_fast: bool = True
     optional: bool = False
+    after: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _check_identifier(self.name, "stage")
         for artifact in (*self.requires, *self.produces):
             _check_identifier(artifact, "artifact")
+        for predecessor in self.after:
+            _check_identifier(predecessor, "stage")
+        if self.name in self.after or len(set(self.after)) != len(self.after):
+            raise ValueError(f"Stage {self.name!r} contains invalid ordering dependencies")
         if len(set(self.requires)) != len(self.requires) or len(set(self.produces)) != len(self.produces):
             raise ValueError(f"Stage {self.name!r} contains duplicate artifact references")
 
@@ -160,7 +165,14 @@ class PipelineDefinition:
         if unknown_external:
             raise ValueError(f"Unknown external artifacts: {', '.join(sorted(unknown_external))}")
         produced: dict[str, str] = {}
+        stage_names = {stage.name for stage in self.stages}
         for stage in self.stages:
+            unknown_predecessors = set(stage.after) - stage_names
+            if unknown_predecessors:
+                raise ValueError(
+                    f"Stage {stage.name!r} orders after unknown stage(s): "
+                    + ", ".join(sorted(unknown_predecessors))
+                )
             for artifact in stage.produces:
                 if artifact not in contracts:
                     raise ValueError(f"Stage {stage.name!r} produces unknown artifact {artifact!r}")
@@ -190,6 +202,9 @@ class PipelineDefinition:
         dependencies: dict[str, set[str]] = {stage.name: set() for stage in self.stages}
         dependents: dict[str, set[str]] = {stage.name: set() for stage in self.stages}
         for stage in self.stages:
+            for predecessor in stage.after:
+                dependencies[stage.name].add(predecessor)
+                dependents[predecessor].add(stage.name)
             for artifact in stage.requires:
                 producer = producers.get(artifact)
                 if producer and producer != stage.name:

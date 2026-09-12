@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -442,7 +443,7 @@ def test_recovery_rejects_journal_paths_outside_intended_roots(tmp_path: Path):
     assert outside.read_text(encoding="utf-8") == "do not touch"
 
 
-def test_committed_journal_write_failure_does_not_roll_back_published_output(
+def test_committed_journal_write_failure_rolls_back_published_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     destination = tmp_path / "result.txt"
@@ -463,16 +464,10 @@ def test_committed_journal_write_failure_does_not_roll_back_published_output(
         spec, lambda scratch: (scratch / "result").write_text("new", encoding="utf-8")
     )
     assert calls == 2
-    assert result.ok is True
-    assert result.error is None
-    assert result.warnings == (
-        "atomic transform journal commit failed after publication: journal commit unavailable",
-    )
-    assert destination.read_text(encoding="utf-8") == "new"
-
-    monkeypatch.setattr(atomic_module.AtomicTransform, "_write_journal", real_write)
-    atomic_module.AtomicTransform._recover_pending(spec.destinations)
+    assert result.ok is False
     assert destination.read_text(encoding="utf-8") == "old"
+    assert result.error == "journal commit failed after publication: journal commit unavailable"
+    assert result.warnings == ()
 
 
 def test_transform_rejects_symlinked_publication_destination(tmp_path: Path) -> None:
@@ -491,3 +486,189 @@ def test_transform_rejects_symlinked_publication_destination(tmp_path: Path) -> 
         )
 
     assert outside.read_text(encoding="utf-8") == "outside"
+
+
+def test_recovery_rejects_journal_target_not_bound_to_requested_destination(tmp_path: Path) -> None:
+    destination = tmp_path / "result.txt"
+    other = tmp_path / "other.txt"
+    backup_dir = tmp_path / ".atomic-transform-backups-test"
+    backup_dir.mkdir()
+    (backup_dir / "0").write_text("old", encoding="utf-8")
+    journal = tmp_path / ".atomic-transform-journal.json"
+    journal.write_text(json.dumps({
+        "state": "prepared",
+        "backup_dir": str(backup_dir),
+        "entries": [{"target": str(other), "backup": str(backup_dir / "0"), "existed": True}],
+    }), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="target binding"):
+        atomic_module.AtomicTransform._recover_pending((destination,))
+
+    assert not other.exists()
+    assert journal.exists()
+
+
+def test_post_publication_verification_rejects_destination_changed_after_replace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    destination = tmp_path / "result.txt"
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    real_replace = atomic_module.os.replace
+
+    def replace_then_tamper(source: str | Path, target: str | Path) -> None:
+        real_replace(source, target)
+        if Path(target) == destination:
+            destination.write_text("tampered", encoding="utf-8")
+
+    monkeypatch.setattr(atomic_module.os, "replace", replace_then_tamper)
+    result = AtomicTransform().run(
+        spec, lambda scratch: (scratch / "result").write_text("expected", encoding="utf-8")
+    )
+
+    assert result.ok is False
+    assert "post-publication" in (result.error or "")
+
+
+def test_journal_commit_failure_rolls_back_and_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    destination = tmp_path / "result.txt"
+    destination.write_text("old", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    original = atomic_module.AtomicTransform._write_journal
+
+    def fail_commit(path, payload):
+        if payload.get("state") == "committed":
+            raise OSError("journal commit unavailable")
+        return original(path, payload)
+
+    monkeypatch.setattr(atomic_module.AtomicTransform, "_write_journal", fail_commit)
+    result = atomic_module.AtomicTransform().run(spec, lambda scratch: (scratch / "result").write_text("new", encoding="utf-8"))
+
+    assert result.ok is False
+    assert "journal commit unavailable" in (result.error or "")
+    assert destination.read_text(encoding="utf-8") == "old"
+
+
+@pytest.mark.parametrize("destination_names", [("result.txt",), ("first.txt", "second.txt")])
+def test_journal_finalization_commits_and_cleans_single_and_multi_output_journals(
+    tmp_path: Path, destination_names: tuple[str, ...]
+) -> None:
+    destinations = tuple(tmp_path / name for name in destination_names)
+    journal = tmp_path / ".atomic-transform-journal.json"
+    backup_dir = tmp_path / ".atomic-transform-backups-test"
+    backup_dir.mkdir()
+    entries = [
+        {"target": str(destination), "backup": str(backup_dir / str(index)), "existed": False}
+        for index, destination in enumerate(destinations)
+    ]
+    (backup_dir / "sentinel").write_text("backup", encoding="utf-8")
+    atomic_module.AtomicTransform._write_journal(
+        journal, {"state": "prepared", "backup_dir": str(backup_dir), "entries": entries}
+    )
+
+    atomic_module.AtomicTransform._finalize_journal(destinations, journal, backup_dir, entries)
+
+    assert not journal.exists()
+    assert not backup_dir.exists()
+
+
+def test_post_publication_verification_preserves_concurrently_changed_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    destination = tmp_path / "result.txt"
+    destination.write_text("old", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    real_replace = atomic_module.os.replace
+
+    def replace_then_tamper(source, target):
+        real_replace(source, target)
+        if Path(target) == destination and Path(source).name == "result":
+            destination.write_text("tampered", encoding="utf-8")
+
+    monkeypatch.setattr(atomic_module.os, "replace", replace_then_tamper)
+    result = atomic_module.AtomicTransform().run(
+        spec, lambda scratch: (scratch / "result").write_text("new", encoding="utf-8")
+    )
+
+    assert result.ok is False
+    assert destination.read_text(encoding="utf-8") == "tampered"
+
+
+def test_recovery_rejects_backup_root_equal_to_journal_root(tmp_path: Path):
+    destination = tmp_path / "result.txt"
+    journal = tmp_path / ".atomic-transform-journal.json"
+    journal.write_text(json.dumps({
+        "state": "prepared",
+        "backup_dir": str(tmp_path),
+        "entries": [{"target": str(destination), "backup": str(tmp_path / "0"), "existed": False}],
+    }), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="outside intended"):
+        atomic_module.AtomicTransform._recover_pending((destination,))
+
+
+def test_pre_publication_failure_does_not_restore_a_concurrent_destination_update(tmp_path: Path) -> None:
+    destination = tmp_path / "result.txt"
+    destination.write_text("old", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+
+    def fail_before_publish(_scratch: Path) -> None:
+        destination.write_text("concurrent", encoding="utf-8")
+        raise RuntimeError("renderer failed")
+
+    result = AtomicTransform().run(spec, fail_before_publish)
+
+    assert result.ok is False
+    assert destination.read_text(encoding="utf-8") == "concurrent"
+
+
+def test_post_publication_rollback_preserves_concurrent_replacement_with_same_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "result.txt"
+    destination.write_text("old", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    real_verify = atomic_module.AtomicTransform._verify_published_outputs
+
+    def verify_then_replace(specification, expected_hashes):
+        real_verify(specification, expected_hashes)
+        replacement = destination.with_name("replacement.txt")
+        replacement.write_text("new", encoding="utf-8")
+        os.replace(replacement, destination)
+        raise RuntimeError("verification failed after concurrent replacement")
+
+    monkeypatch.setattr(atomic_module.AtomicTransform, "_verify_published_outputs", verify_then_replace)
+
+    result = AtomicTransform().run(
+        spec, lambda scratch: (scratch / "result").write_text("new", encoding="utf-8")
+    )
+
+    assert not result.ok
+    assert destination.read_text(encoding="utf-8") == "new"
+
+
+def test_post_publication_rollback_failure_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    destination = tmp_path / "result.txt"
+    destination.write_text("old", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+
+    monkeypatch.setattr(
+        atomic_module.AtomicTransform,
+        "_verify_published_outputs",
+        staticmethod(lambda _spec, _hashes: (_ for _ in ()).throw(RuntimeError("verification failed"))),
+    )
+    original_recover = atomic_module.AtomicTransform._recover_pending
+    calls = 0
+
+    def fail_rollback(destinations):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("rollback storage unavailable")
+        return original_recover(destinations)
+
+    monkeypatch.setattr(atomic_module.AtomicTransform, "_recover_pending", staticmethod(fail_rollback))
+
+    result = AtomicTransform().run(spec, lambda scratch: (scratch / "result").write_text("new", encoding="utf-8"))
+
+    assert result.ok is False
+    assert "rollback failed" in (result.error or "")

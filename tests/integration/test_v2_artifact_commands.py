@@ -93,6 +93,29 @@ def test_document_package_rejects_unverified_or_mismatched_v2_artifacts_without_
     assert package_path.read_bytes() == b"previous package"
 
 
+def test_package_preserves_concurrent_archive_after_post_publication_verification_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_dir = tmp_path / "documents" / "active" / "output" / "v2"
+    source_dir.mkdir(parents=True)
+    _create_verified_v2_artifact(source_dir, "draft.docx", b"document")
+    package_path = tmp_path / "release.zip"
+    package_path.write_bytes(b"previous package")
+    real_replace = v2_app_module.os.replace
+
+    def replace_then_publish_concurrently(source: str | Path, target: str | Path) -> None:
+        real_replace(source, target)
+        if Path(target) == package_path:
+            package_path.write_bytes(b"concurrent package")
+
+    monkeypatch.setattr(v2_app_module.os, "replace", replace_then_publish_concurrently)
+
+    with pytest.raises(typer.BadParameter, match="post-publication"):
+        v2_app_module._write_package_archive(package_path, source_dir)
+
+    assert package_path.read_bytes() == b"concurrent package"
+
+
 def test_document_package_uses_validated_artifact_snapshot_when_source_changes_during_write(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -113,7 +136,6 @@ def test_document_package_uses_validated_artifact_snapshot_when_source_changes_d
     assert result.exit_code == 0, result.stdout
     with zipfile.ZipFile(package_path) as archive:
         assert archive.read("draft.docx") == b"original"
-
 
 def test_document_package_rejects_symlinked_files(tmp_path: Path) -> None:
     source_dir = tmp_path / "documents" / "active" / "output" / "v2"
@@ -365,7 +387,7 @@ def test_current_input_identities_change_for_each_publish_input_drift(tmp_path: 
         (root / "template.json").write_text('{"name":"technical"}', encoding="utf-8")
         resolved.template.name = "technical"
     elif component == "config":
-        config["output"]["format"] = "html"
+        config["render_quality"] = "high"
     elif component == "context":
         resolved.context["author"] = "Grace"
     elif component == "asset":
@@ -434,3 +456,19 @@ def test_document_publish_rejects_every_input_identity_drift(monkeypatch, tmp_pa
     assert result.exit_code != 0
     assert component in result.output.lower()
     assert not destination.exists()
+
+
+def test_staging_package_keeps_attestation_verification_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    source_dir = tmp_path / "documents" / "active" / "output" / "v2" / ".v2-package-test"
+    source_dir.mkdir(parents=True)
+    output = tmp_path / "release.zip"
+    seen = {}
+
+    def package_files(source, *, _allow_staging=False, _verify_attestation=True):
+        seen["verify"] = _verify_attestation
+        return (("artifact.txt", b"artifact"),)
+
+    monkeypatch.setattr(v2_app_module, "_package_files", package_files)
+    v2_app_module._write_package_archive(output, source_dir, _allow_staging=True)
+
+    assert seen["verify"] is True

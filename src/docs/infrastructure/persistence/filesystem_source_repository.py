@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from docs.domain.context_index_files import is_context_content_filename
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,15 @@ def _run_captured(args: list[str], cwd: Path | None = None) -> subprocess.Comple
     the return type from the type checker at all four call sites; naming
     them once here keeps the single source of truth AND the typing.
     """
-    return subprocess.run(args, cwd=cwd, check=True, capture_output=True, text=True, encoding="utf-8")
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+    )
 
 
 

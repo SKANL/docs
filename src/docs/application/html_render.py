@@ -15,6 +15,7 @@ from docs.application.section_markdown import resolve_existing_section_paths, st
 from docs.domain.cover import CoverMode, render_cover_html, resolve_cover_spec
 from docs.domain.figure_binding import BoundFigure
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 
 
 def _prefer_sibling_svg(bound_figures: dict[str, BoundFigure]) -> dict[str, BoundFigure]:
@@ -137,5 +138,6 @@ class HtmlRendererAdapter:
                     str(output),
                 ],
                 check=True,
+                timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
             )
         return output

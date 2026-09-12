@@ -225,3 +225,31 @@ def test_lock_does_not_remove_a_stale_lock_already_claimed_by_another_recoverer(
 
     assert lock.exists()
     assert ProvenanceLedgerV2(log).load_run("must-not-steal") is None
+
+
+def test_verify_run_rejects_untrusted_external_path_from_tampered_ledger(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    linked = tmp_path / "linked.txt"
+    try:
+        linked.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        __import__("pytest").skip("symlinks unavailable")
+    log = tmp_path / "runs" / "v2-provenance.json"
+    log.parent.mkdir()
+    log.write_text(json.dumps({
+        "runs": {"tampered": {"run_id": "tampered", "inputs": {str(linked): hashlib.sha256(b"outside").hexdigest()}, "outputs": {}}},
+        "attestations": {},
+    }), encoding="utf-8")
+
+    assert ProvenanceLedgerV2(log).verify_run("tampered") is False
+
+
+def test_release_verification_rejects_absolute_paths_without_trusted_root(tmp_path: Path):
+    source = tmp_path / "source.md"
+    source.write_text("source", encoding="utf-8")
+    log = tmp_path / "provenance-v2.json"
+    ledger = ProvenanceLedgerV2(log)
+    ledger.record_run("build-001", inputs=(source,), outputs=())
+
+    assert ledger.verify_run("build-001", require_trusted_root=True) is False

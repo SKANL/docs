@@ -75,6 +75,19 @@ class PipelineExecutor:
                     )
                 )
                 continue
+            if stage_name == "publish-draft" and any(
+                result.stage == "package-release" and not result.ok
+                for result in results
+            ):
+                unavailable_artifacts.update(stage.produces)
+                results.append(
+                    StageResult(
+                        stage_name,
+                        False,
+                        errors=("required dependency unavailable: package-release",),
+                    )
+                )
+                continue
             handler = self.handlers.get(stage_name)
             try:
                 result = StageResult.unsupported(stage_name) if handler is None else handler()
@@ -108,12 +121,16 @@ class PipelineExecutor:
             results.append(result)
             unavailable = not result.ok or (
                 result.outcome == "unsupported"
-                and (not stage.optional or bool(required_artifacts.intersection(stage.produces)))
+                and (
+                    not stage.optional
+                    or bool(required_artifacts.intersection(stage.produces))
+                    or stage.name == "package-release"
+                )
             )
             if unavailable:
                 unavailable_artifacts.update(
                     artifact for artifact, producer in producers.items() if producer == stage_name
                 )
-            if not result.ok and stage.fail_fast:
+            if not result.ok and stage.fail_fast and not stage.optional:
                 break
         return PipelineReport(tuple(results))

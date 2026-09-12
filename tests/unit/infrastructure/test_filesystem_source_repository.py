@@ -79,7 +79,7 @@ def test_run_gh_issue_list_invokes_expected_subprocess_args(repo, monkeypatch):
     # the four call sites share one typed invocation instead of splatting an
     # untyped kwargs dict.
     assert captured["kwargs"] == {
-        "cwd": None, "check": True, "capture_output": True, "text": True, "encoding": "utf-8",
+        "cwd": None, "check": True, "capture_output": True, "text": True, "encoding": "utf-8", "timeout": 60,
     }
 
 
