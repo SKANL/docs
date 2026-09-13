@@ -164,3 +164,9 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     } <= functions
     assert '"package-release": _callable_stage("package_release") or _native_package_release' in source
     assert '"visual_review": _callable_stage("visual_review") or _native_visual_review' in source
+
+
+def test_v2_composition_does_not_reach_through_legacy_pipeline_aggregate():
+    source = (SRC_ROOT / "cli" / "commands" / "v2_app.py").read_text(encoding="utf-8")
+    assert "deps.pipeline" not in source
+    assert 'getattr(deps, "v2_compatibility", None)' in source
