@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import tempfile
 from contextlib import nullcontext
@@ -15,6 +14,7 @@ from docs.application.output_names import resolve_html_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
 from docs.domain.cover import CoverMode, render_cover_html, resolve_cover_spec
 from docs.domain.figure_binding import BoundFigure
+from docs.domain.ports.pandoc_runner_port import PandocRunnerPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 
@@ -49,8 +49,9 @@ class HtmlRendererAdapter:
 
     output_format = "html"
 
-    def __init__(self, tool_resolver: ToolResolverPort) -> None:
+    def __init__(self, tool_resolver: ToolResolverPort, pandoc_runner: PandocRunnerPort) -> None:
         self.tool_resolver = tool_resolver
+        self.pandoc_runner = pandoc_runner
 
     def stage_plan(self) -> list[tuple[str, bool]]:
         return [("build-html", True)]
@@ -131,7 +132,7 @@ class HtmlRendererAdapter:
             os.close(fd)
             temporary_path = Path(temporary_output)
             try:
-                subprocess.run(
+                self.pandoc_runner.run(
                     [
                         pandoc,
                         "--from",

@@ -57,6 +57,7 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
 
@@ -128,7 +129,7 @@ class Deps:
         context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
         tool_resolver = SystemToolResolverAdapter()
         docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
-        html_renderer_service = HtmlRendererAdapter(tool_resolver)
+        html_renderer_service = HtmlRendererAdapter(tool_resolver, SubprocessPandocRunner())
         # Stateless (no instance state) -- one instance shared by QaService's
         # existing visual-QA PDF render and PdfRendererAdapter's `--format
         # pdf` conversion, never two separate adapter instances for the same

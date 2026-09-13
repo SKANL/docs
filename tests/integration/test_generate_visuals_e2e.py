@@ -28,6 +28,7 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAsse
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
+from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
 
 _HAS_PANDOC = shutil.which("pandoc") is not None
@@ -100,7 +101,7 @@ def test_chart_only_pipeline_e2e_docx_png_html_svg(tmp_path):
     asset_service = AssetService(FilesystemAssetRepository(), workspace)
     tool_resolver = SystemToolResolverAdapter()
     docx_renderer = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
-    html_renderer = HtmlRendererAdapter(tool_resolver)
+    html_renderer = HtmlRendererAdapter(tool_resolver, SubprocessPandocRunner())
     config = _build_config(sections_dir, assets_dir, draft_dir)
 
     docx_path = docx_renderer.build("doc1", config)
@@ -148,7 +149,7 @@ def test_mermaid_and_chart_pipeline_e2e_byte_identical(tmp_path):
         workspace = Workspace(documents_dir=root / "documents", templates_dir=root / "templates")
         asset_service = AssetService(FilesystemAssetRepository(), workspace)
         docx_renderer = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
-        html_renderer = HtmlRendererAdapter(tool_resolver)
+        html_renderer = HtmlRendererAdapter(tool_resolver, SubprocessPandocRunner())
         config = _build_config(sections_dir, assets_dir, draft_dir)
 
         docx_path = docx_renderer.build("doc1", config)

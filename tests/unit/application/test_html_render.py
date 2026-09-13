@@ -12,6 +12,7 @@ import pytest
 from docs.application.html_render import HtmlRendererAdapter
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 
 
 class _FakeToolResolver:
@@ -30,10 +31,16 @@ class _FakeToolResolver:
 
 @pytest.fixture
 def service() -> HtmlRendererAdapter:
-    return HtmlRendererAdapter(_FakeToolResolver(shutil.which("pandoc")))
+    return HtmlRendererAdapter(_FakeToolResolver(shutil.which("pandoc")), SubprocessPandocRunner())
 
 
 # --- DocumentRendererPort contract ----------------------------------------------
+
+
+def test_application_renderer_has_no_infrastructure_import():
+    source = Path("src/docs/application/html_render.py").read_text(encoding="utf-8")
+
+    assert "docs.infrastructure" not in source
 
 
 def test_html_renderer_adapter_declares_html_output_format(service):
@@ -57,7 +64,7 @@ def test_html_renderer_adapter_resolves_via_registry_by_format(service):
 
 
 def test_build_returns_none_and_warns_when_pandoc_unavailable(tmp_path, capsys):
-    service = HtmlRendererAdapter(_FakeToolResolver(None))
+    service = HtmlRendererAdapter(_FakeToolResolver(None), SubprocessPandocRunner())
     config = {"sections": [], "paths": {"sections_dir": str(tmp_path), "output_draft_dir": str(tmp_path)}}
 
     result = service.build("doc-1", config)
@@ -228,7 +235,7 @@ def test_build_creates_the_parent_of_a_custom_output_path(tmp_path, monkeypatch)
     }
     custom = tmp_path / "carpeta" / "que" / "no" / "existe" / "final.html"
 
-    result = HtmlRendererAdapter(SystemToolResolverAdapter()).build("doc-1", config, output=custom)
+    result = HtmlRendererAdapter(SystemToolResolverAdapter(), SubprocessPandocRunner()).build("doc-1", config, output=custom)
 
     assert result == custom
     assert seen["output"].parent.is_dir()
@@ -255,6 +262,28 @@ def test_build_preserves_previous_html_when_pandoc_fails(tmp_path, monkeypatch):
     }
 
     with pytest.raises(subprocess.CalledProcessError):
-        HtmlRendererAdapter(SystemToolResolverAdapter()).build("doc-1", config, output=output)
+        HtmlRendererAdapter(SystemToolResolverAdapter(), SubprocessPandocRunner()).build("doc-1", config, output=output)
 
     assert output.read_text(encoding="utf-8") == "old-build"
+
+
+def test_build_delegates_pandoc_execution_to_injected_runner(tmp_path):
+    calls = []
+
+    class FakePandocRunner:
+        def run(self, args, *, check, timeout):
+            calls.append((args, check, timeout))
+            Path(args[-1]).write_text("<html>delegated</html>", encoding="utf-8")
+
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nCuerpo.\n", encoding="utf-8")
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")},
+    }
+
+    result = HtmlRendererAdapter(_FakeToolResolver("pandoc"), pandoc_runner=FakePandocRunner()).build("doc-1", config)
+
+    assert result.read_text(encoding="utf-8") == "<html>delegated</html>"
+    assert calls and calls[0][1:] == (True, 60)
