@@ -42,6 +42,15 @@ A `failed` stage stops its downstream dependency chain. A visible optional `unsu
 
 ## Full stage plan
 
+`FULL_STAGE_IDS` is authoritative and ordered as follows. The public boundaries
+below are registered as validated sub-DAGs and reuse the same stage handlers;
+they are not separate format-specific implementations:
+
+```text
+source-ingest | document-prepare | document-build | document-verify
+| document-publish | document-package | document-diff | document-inspect
+```
+
 `FULL_STAGE_IDS` is authoritative and ordered as follows:
 
 ```text
@@ -51,7 +60,7 @@ resolve-config -> resolve-template -> resolve-context -> resolve-assets
 -> build-html -> build-pdf -> structural-audit -> editorial-review
 -> evidence-review -> consistency-review -> accessibility-review
 -> visual-review -> reproducibility-check -> record-provenance
--> publish-draft -> package-release
+-> package-release -> publish-draft
 ```
 
 `build` excludes no publication stages and writes successful formats to `output/v2/`. `verify` excludes `publish-draft` and `package-release`; its `cli-verify-*` run does not overwrite the build attestation. The workspace bridge may leave selected stages as explicit no-op contract stages until their adapter is migrated.

@@ -16,32 +16,140 @@
     "gap": "The public API exposes these operations as separate document commands; no single command composes create through publish. The acceptance test invokes the real commands in sequence against one temporary workspace and uses a deterministic in-test ingest adapter and DOCX renderer because optional external renderers are environment-dependent."
   },
   "pipeline_stages": [
-    {"stage": "resolve-config", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "resolve-template", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "resolve-context", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "resolve-assets", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "validate-contracts", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "ingest-sources", "representation": "document ingest command and acceptance journey", "evidence": "tests/integration/test_v2_end_to_end.py"},
-    {"stage": "normalize-sources", "representation": "document prepare command", "evidence": "tests/integration/test_v2_end_to_end.py"},
-    {"stage": "compile-structure", "representation": "document prepare command", "evidence": "tests/integration/test_v2_end_to_end.py"},
-    {"stage": "generate-visuals", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "compose-cover", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "build-docx", "representation": "document build command", "evidence": "tests/integration/test_v2_end_to_end.py"},
-    {"stage": "build-html", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "build-pdf", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "structural-audit", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "editorial-review", "representation": "document verify command", "evidence": "tests/integration/test_v2_end_to_end.py"},
-    {"stage": "evidence-review", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "consistency-review", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "accessibility-review", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "visual-review", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "reproducibility-check", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "record-provenance", "representation": "v2 runtime definition", "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"},
-    {"stage": "publish-draft", "representation": "v2 build publication", "evidence": "tests/integration/test_v2_end_to_end.py"},
-    {"stage": "package-release", "representation": "v2 build and standalone package command", "evidence": "tests/integration/test_v2_end_to_end.py"}
+    {
+      "stage": "resolve-config",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "resolve-template",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "resolve-context",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "resolve-assets",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "validate-contracts",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "ingest-sources",
+      "representation": "document ingest command and acceptance journey",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    },
+    {
+      "stage": "normalize-sources",
+      "representation": "document prepare command",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    },
+    {
+      "stage": "compile-structure",
+      "representation": "document prepare command",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    },
+    {
+      "stage": "generate-visuals",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "compose-cover",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "build-docx",
+      "representation": "document build command",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    },
+    {
+      "stage": "build-html",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "build-pdf",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "structural-audit",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "editorial-review",
+      "representation": "document verify command",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    },
+    {
+      "stage": "evidence-review",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "consistency-review",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "accessibility-review",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "visual-review",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "reproducibility-check",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "record-provenance",
+      "representation": "v2 runtime definition",
+      "evidence": "src/docs/application/pipeline_service_v2.py:FULL_STAGE_IDS"
+    },
+    {
+      "stage": "publish-draft",
+      "representation": "v2 build publication",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    },
+    {
+      "stage": "package-release",
+      "representation": "v2 build and standalone package command",
+      "evidence": "tests/integration/test_v2_end_to_end.py"
+    }
   ],
   "architecture": {
     "plugin_independence_test": "tests/architecture/test_v2_plugin_independence.py::test_v2_runtime_has_no_plugin_imports_or_plugin_dependencies",
     "constraint": "The runtime source tree and pyproject dependencies contain no plugin imports or plugin-named dependencies."
+  },
+  "public_pipelines": {
+    "status": "registered-subdags",
+    "catalog": "src/docs/application/pipeline_components_v2.py:PUBLIC_PIPELINES",
+    "registry": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__",
+    "ids": [
+      "source-ingest",
+      "document-prepare",
+      "document-build",
+      "document-verify",
+      "document-publish",
+      "document-package",
+      "document-diff",
+      "document-inspect"
+    ],
+    "gap": "CLI build/verify still execute the full document pipeline; public sub-DAG dispatch remains the next migration slice."
   }
 }
