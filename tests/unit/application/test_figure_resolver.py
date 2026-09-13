@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from PIL import Image
+
 from docs.application.figure_resolver import build_bound_figures_resolver
 from docs.domain.figure_binding import BoundFigure
 
@@ -196,3 +198,19 @@ def test_binding_with_unknown_catalog_id_is_excluded_and_warns(tmp_path, capsys)
     captured = capsys.readouterr()
     assert "WARN" in captured.err
     assert "organigrama" in captured.err
+
+
+def test_unknown_catalog_id_recovers_valid_legacy_png(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_catalog(sections_dir, [])
+    _write_bindings(sections_dir, {"assessment": "fig-custom-assessment"})
+    figures_dir = assets_dir / "figures"
+    figures_dir.mkdir(parents=True)
+    Image.new("RGB", (320, 180), "white").save(figures_dir / "custom-assessment.png")
+
+    resolver = build_bound_figures_resolver(sections_dir, assets_dir)
+
+    assert resolver["assessment"].catalog_id == "fig-custom-assessment"
+    assert resolver["assessment"].width_px == 320
+    assert resolver["assessment"].height_px == 180

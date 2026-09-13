@@ -445,6 +445,12 @@ def create_v2_service(
         return True, str(result.artifact)
 
     def _generate_visuals() -> tuple[bool, str] | StageResult:
+        # The ingest stage may recreate an empty derived catalog from an
+        # inbox that contains no images.  Recover legacy assets after ingest,
+        # immediately before any renderer resolves figure bindings.
+        assets_result = resolve_assets()
+        if not assets_result[0]:
+            return assets_result
         service = _legacy_service("generate_visuals_service")
         if service is None or not hasattr(service, "generate"):
             paths = state["config"].get("paths", {})
