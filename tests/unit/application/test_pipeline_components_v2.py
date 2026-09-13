@@ -33,7 +33,32 @@ def test_registry_resolves_a_validated_definition_with_its_handlers() -> None:
     assert registered.definition is definition
     assert registered.handlers["render"] is handler
     with pytest.raises(ValueError, match="already registered"):
-        registry.register("document", definition, {})
+        registry.register("document", definition, {"render": handler})
+
+
+def test_registry_rejects_handlers_for_stages_outside_the_definition() -> None:
+    registry = PipelineRegistry()
+
+    with pytest.raises(ValueError, match="handlers reference unknown stages: publish"):
+        registry.register(
+            "document",
+            PipelineDefinition(stages=(StageSpec("render"),)),
+            {"publish": lambda: StageResult("publish", True)},
+        )
+
+
+def test_registry_names_and_resolve_are_deterministic() -> None:
+    registry = PipelineRegistry()
+    alpha = PipelineDefinition(stages=(StageSpec("alpha"),))
+    beta = PipelineDefinition(stages=(StageSpec("beta"),))
+
+    registry.register("zeta", beta, {})
+    registry.register("alpha", alpha, {})
+
+    assert registry.names() == ("alpha", "zeta")
+    assert registry.resolve("alpha").definition is alpha
+    with pytest.raises(KeyError, match="pipeline is not registered: missing"):
+        registry.resolve("missing")
 
 
 def test_planner_returns_stage_specs_in_dependency_order() -> None:
@@ -48,6 +73,22 @@ def test_planner_returns_stage_specs_in_dependency_order() -> None:
     plan = PipelinePlanner().plan(definition)
 
     assert tuple(stage.name for stage in plan) == ("render", "publish")
+
+
+def test_planner_uses_stable_topological_order_for_artifact_and_explicit_dependencies() -> None:
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered"),),
+        stages=(
+            StageSpec("publish", requires=("rendered",), after=("validate",)),
+            StageSpec("validate", after=("render",)),
+            StageSpec("render", produces=("rendered",)),
+            StageSpec("collect"),
+        ),
+    )
+
+    plan = PipelinePlanner().plan(definition)
+
+    assert tuple(stage.name for stage in plan) == ("collect", "render", "validate", "publish")
 
 
 def test_artifact_store_writes_a_contract_bound_record(tmp_path: Path) -> None:
@@ -105,17 +146,35 @@ def test_public_pipeline_catalog_exposes_reusable_boundaries():
     assert "build-docx" in next(spec for spec in PUBLIC_PIPELINES if spec.pipeline_id == "document-build").stages
 
 
-def test_registry_can_register_catalog_boundaries_with_external_inputs():
+def test_registry_catalog_turns_cross_boundary_requirements_into_external_artifacts() -> None:
     definition = PipelineDefinition(
-        artifacts=(ArtifactContract("generate-visuals-complete"), ArtifactContract("build-docx-complete")),
+        artifacts=(
+            ArtifactContract("context"),
+            ArtifactContract("generate-visuals-complete"),
+            ArtifactContract("build-docx-complete"),
+        ),
         stages=(
-            StageSpec("generate-visuals", produces=("generate-visuals-complete",)),
-            StageSpec("build-docx", requires=("generate-visuals-complete",), produces=("build-docx-complete",), after=("generate-visuals",)),
+            StageSpec("resolve-context", produces=("context",)),
+            StageSpec("generate-visuals", requires=("context",), produces=("generate-visuals-complete",)),
+            StageSpec(
+                "build-docx",
+                requires=("generate-visuals-complete",),
+                produces=("build-docx-complete",),
+                after=("generate-visuals",),
+            ),
         ),
     )
-    handlers = {name: (lambda name=name: StageResult(name, True)) for name in ("generate-visuals", "build-docx")}
+    handlers = {
+        name: (lambda name=name: StageResult(name, True))
+        for name in ("resolve-context", "generate-visuals", "build-docx")
+    }
     registry = PipelineRegistry()
-    registry.register("document", definition, handlers)
+
     registry.register_catalog(definition, handlers)
-    assert "document-build" in registry.names()
-    assert registry.resolve("document-build").definition.plan() == ("generate-visuals", "build-docx")
+
+    build = registry.resolve("document-build")
+    assert build.definition.plan() == ("generate-visuals", "build-docx")
+    assert build.definition.external_artifacts == frozenset({"context"})
+    assert tuple(build.handlers) == ("generate-visuals", "build-docx")
+    assert build.handlers["generate-visuals"] is handlers["generate-visuals"]
+    assert build.handlers["build-docx"] is handlers["build-docx"]
