@@ -39,6 +39,7 @@ from docs.application.pipeline_service_v2 import (
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.application.source_pipeline_v2 import SourcePipelineV2
+from docs.application.stage_provider_v2 import StageProviderV2
 from docs.domain.artifacts import BuildManifest
 from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.identity import sha256_content, sha256_file
@@ -408,21 +409,18 @@ def create_v2_service(
     state["run_id"] = f"cli-build-{output_format}"
     build_token = uuid.uuid4().hex
 
-    legacy_pipeline = getattr(deps, "pipeline", None)
+    stage_provider = StageProviderV2(deps)
     source_pipeline = (
         SourcePipelineV2(deps.ingest)
         if getattr(deps, "ingest", None) is not None
         else None
     )
 
-    def _legacy_service(name: str) -> Any:
-        value = getattr(deps, name, None)
-        if value is not None:
-            return value
-        return getattr(legacy_pipeline, name, None)
+    def _stage_service(name: str) -> Any:
+        return stage_provider.get(name)
 
     def _callable_stage(name: str) -> Any:
-        operation = _legacy_service(name)
+        operation = _stage_service(name)
         return operation if callable(operation) else None
 
     def _build_with_format(format_name: str) -> tuple[bool, str]:
@@ -462,7 +460,7 @@ def create_v2_service(
         assets_result = resolve_assets()
         if not assets_result[0]:
             return assets_result
-        service = _legacy_service("generate_visuals_service")
+        service = _stage_service("generate_visuals_service")
         if service is None or not hasattr(service, "generate"):
             paths = state["config"].get("paths", {})
             sections_dir = paths.get("sections_dir") if isinstance(paths, Mapping) else None
@@ -492,7 +490,7 @@ def create_v2_service(
         return True, "cover composition delegated to native DOCX compositor"
 
     def _structural_audit() -> tuple[bool, str]:
-        service = _legacy_service("structural_audit_service")
+        service = _stage_service("structural_audit_service")
         if service is None or not hasattr(service, "audit"):
             return False, "structural-audit service is not configured"
         template = state["resolved"].template
@@ -522,7 +520,7 @@ def create_v2_service(
     ) -> tuple[bool, str]:
         """Reuse the document review service for one native review dimension."""
         review_service = getattr(deps, "review", None)
-        manifest_state = _legacy_service("rules_manifest_state")
+        manifest_state = _stage_service("rules_manifest_state")
         if review_service is None or not callable(manifest_state):
             return False, f"{name} service is not configured"
         manifest_exists, manifest_size = manifest_state(state["config"])
@@ -767,9 +765,9 @@ def create_v2_service(
         return successful("verify")
 
     explicit_stages: dict[str, Any] = {
-        "generate_visuals": _generate_visuals if _legacy_service("generate_visuals_service") is not None else _callable_stage("generate_visuals"),
+        "generate_visuals": _generate_visuals if _stage_service("generate_visuals_service") is not None else _callable_stage("generate_visuals"),
         "compose_cover": _compose_cover if _callable_stage("compose_cover") is None else _callable_stage("compose_cover"),
-        "structural_audit": _structural_audit if _legacy_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
+        "structural_audit": _structural_audit if _stage_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
         "accessibility_review": _callable_stage("accessibility_review") or _native_accessibility_review,
         "visual_review": _callable_stage("visual_review") or _native_visual_review,
         "reproducibility_check": _callable_stage("reproducibility_check") or _native_reproducibility_check,
