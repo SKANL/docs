@@ -39,6 +39,7 @@ from docs.application.pipeline_service_v2 import (
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.application.source_pipeline_v2 import SourcePipelineV2
 from docs.application.stage_provider_v2 import StageProviderV2
+from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
 from docs.domain.artifacts import BuildManifest
 from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.identity import sha256_content, sha256_file
@@ -1392,6 +1393,31 @@ def _write_package_archive(
             )
         except PackagePublicationError as exc:
             raise typer.BadParameter(str(exc)) from exc
+
+
+@v2_app.command("baseline")
+def baseline(
+    source_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True),
+    destination_dir: Path = typer.Option(..., "--destination", "-d", file_okay=False),
+    update: bool = typer.Option(False, "--update", help="Replace an existing baseline explicitly."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Explicitly snapshot rendered PNG previews as a visual baseline."""
+    try:
+        published = VisualBaselineService().update(source_dir, destination_dir, overwrite=update)
+    except VisualBaselineError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = {
+        "source": str(source_dir.resolve()),
+        "destination": str(destination_dir.resolve()),
+        "updated": update,
+        "pages": [str(path.resolve()) for path in published],
+    }
+    typer.echo(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        if json_output
+        else json.dumps(payload, indent=2, sort_keys=True)
+    )
 
 
 @v2_app.command("inspect")

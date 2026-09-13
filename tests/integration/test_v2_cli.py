@@ -960,3 +960,20 @@ def test_v2_document_status_serializes_domain_status_with_v2_provenance(monkeypa
         },
     }
     assert calls and calls[0][0] == "active"
+
+
+def test_document_baseline_updates_only_when_explicit(tmp_path: Path):
+    source = tmp_path / "previews"
+    source.mkdir()
+    from PIL import Image
+    Image.new("RGB", (10, 10), "white").save(source / "page-01.png")
+    destination = tmp_path / "baseline"
+
+    result = CliRunner().invoke(
+        app, ["document", "baseline", str(source), "--destination", str(destination), "--json"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["updated"] is False
+    assert (destination / "page-01.png").is_file()

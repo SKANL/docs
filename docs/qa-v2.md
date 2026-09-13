@@ -52,3 +52,19 @@ Draft mode may preserve permitted optional gaps as warnings and never publishes.
 ## CI evidence
 
 The repository workflow runs lint, type checks, tests, architecture invariants, and a full optional-toolchain job. The toolchain job is important because the normal check job intentionally exercises degradation without every optional tool. See [ci-v2.md](ci-v2.md) for the exact workflow.
+
+## Visual baseline snapshots
+
+QA compares rendered previews against `visual_qa.baseline_dir` when configured.
+Updating a baseline is an explicit authoring operation and never happens during
+`build` or `verify`:
+
+```text
+docs document baseline <preview-dir> --destination <baseline-dir>
+docs document baseline <preview-dir> --destination <baseline-dir> --update
+```
+
+The command validates every PNG, stages the complete set in a scratch directory,
+and publishes the directory atomically. An existing baseline is preserved unless
+`--update` is supplied; incomplete or corrupt previews are never published.
+
