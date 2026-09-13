@@ -22,6 +22,7 @@ from typing import Any
 import typer
 
 from docs.application.atomic_transform_v2 import AtomicTransform, TransformSpec
+from docs.application.build_manifest_service_v2 import BuildManifestServiceV2
 from docs.application.package_service_v2 import (
     PackageFileV2,
     PackagePublicationError,
@@ -34,7 +35,7 @@ from docs.application.pipeline_service_v2 import (
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.application.source_pipeline_v2 import SourcePipelineV2
-from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
+from docs.domain.artifacts import BuildManifest
 from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.normative import resolve_normative_settings
@@ -46,6 +47,10 @@ from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timest
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 v2_app = typer.Typer(help="Workspace-backed v2 pipeline commands.")
+
+
+def _write_manifest_text(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
 
 
 class _HtmlDocumentVerifier(HTMLParser):
@@ -152,26 +157,34 @@ def _build_inputs(root: Path) -> tuple[Path, ...]:
 
 
 def _manifest_for(
-    *, resolved: Any, config: dict[str, Any], renderer: Any, root: Path, artifact: Path, destination: Path, output_format: str, run_id: str, verification: dict[str, Any] | None = None
+    *,
+    resolved: Any,
+    config: dict[str, Any],
+    renderer: Any,
+    root: Path,
+    artifact: Path,
+    destination: Path,
+    output_format: str,
+    run_id: str,
+    verification: dict[str, Any] | None = None,
 ) -> BuildManifest:
-    identities = _current_input_identities(
+    """Compatibility seam for callers that construct a v2 manifest directly."""
+    service = BuildManifestServiceV2(
+        input_identities=_current_input_identities,
+        build_inputs=_build_inputs,
+        artifact_hash=sha256_file,
+        write_text=_write_manifest_text,
+    )
+    return service.create_manifest(
         resolved=resolved,
         config=config,
         renderer=renderer,
         root=root,
+        artifact=artifact,
+        destination=destination,
         output_format=output_format,
-    )
-    return BuildManifest(
-        document_id=resolved.doc_id,
-        source_hash=identities["source_hash"],
-        template_hash=identities["template_hash"],
-        config_hash=identities["config_hash"],
-        context_hash=identities["context_hash"],
-        asset_hashes=identities["asset_hashes"],
-        renderer_versions=identities["renderer_versions"],
-        artifacts=(ArtifactRef(str(destination.resolve()), sha256_file(artifact), ArtifactState.READY),),
-        verification=verification or {"passed": True, "format": output_format},
-        provenance_run=run_id,
+        run_id=run_id,
+        verification=verification,
     )
 
 
@@ -336,6 +349,12 @@ def create_v2_service(
     capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
     destination = initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
     ledger = ProvenanceLedgerV2(initial_root / "runs" / "v2-provenance.json", trusted_root=initial_root)
+    manifest_service = BuildManifestServiceV2(
+        input_identities=_current_input_identities,
+        build_inputs=_build_inputs,
+        artifact_hash=sha256_file,
+        write_text=_write_manifest_text,
+    )
     state["run_id"] = f"cli-build-{output_format}"
     build_token = uuid.uuid4().hex
 
@@ -637,7 +656,7 @@ def create_v2_service(
 
     def provenance() -> tuple[bool, str]:
         resolved = state["resolved"]
-        manifest = _manifest_for(
+        manifest = manifest_service.create_manifest(
             resolved=resolved,
             config=state["config"],
             renderer=state["renderer"],
@@ -650,12 +669,13 @@ def create_v2_service(
         )
         manifest.validate_for_publication()
         state["manifest"] = manifest
-        ledger.record_run(
+        manifest_service.record_provenance(
+            ledger,
             state["run_id"],
-            inputs=_build_inputs(initial_root),
-            outputs=(state["artifact"],),
+            initial_root,
+            state["artifact"],
+            manifest,
         )
-        ledger.record_attestation(state["run_id"], manifest.attestation())
         return successful("provenance")
 
     def publish(scratch: Path) -> None:
@@ -664,7 +684,7 @@ def create_v2_service(
         staged_package = scratch / f"{initial.doc_id}.zip"
         staged.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(state["artifact"], staged)
-        staged_manifest.write_text(state["manifest"].to_json() + "\n", encoding="utf-8")
+        manifest_service.write_manifest(state["manifest"], staged_manifest)
         package_candidate = state.get("package_candidate")
         if not isinstance(package_candidate, Path) or not package_candidate.is_file():
             raise RuntimeError("package-release completed without a safe release candidate")
