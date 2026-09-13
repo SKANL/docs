@@ -1160,6 +1160,24 @@ def create(
         typer.echo(f"Document `{payload['document_id']}` created from `{payload['template']}` and marked active.")
 
 
+@v2_app.command("release")
+def release(
+    ctx: typer.Context,
+    formats: list[str] | None = typer.Option(None, "--format"),
+    policy: PipelineMode = typer.Option(PipelineMode.release, "--policy"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Execute the complete verified release pipeline for the active document."""
+    _run(
+        ctx,
+        "build",
+        json_output,
+        formats,
+        policy,
+        pipeline_id="document",
+    )
+
+
 def _run_source_command(ctx: typer.Context, command: str, json_output: bool) -> None:
     deps = ctx.obj["deps"]
     resolved = deps.resolve_context(ctx.obj.get("doc", ""))

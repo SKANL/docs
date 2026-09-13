@@ -13,7 +13,7 @@
       "deterministic package",
       "policy-gated publish"
     ],
-    "gap": "The public API exposes these operations as separate document commands; no single command composes create through publish. The acceptance test invokes the real commands in sequence against one temporary workspace and uses a deterministic in-test ingest adapter and DOCX renderer because optional external renderers are environment-dependent."
+    "gap": "Creation remains an explicit user action; `document release` composes the complete verified build, package, and publication pipeline for the active document. The acceptance test invokes the real commands in sequence against one temporary workspace and uses a deterministic in-test ingest adapter and DOCX renderer because optional external renderers are environment-dependent."
   },
   "pipeline_stages": [
     {
@@ -158,6 +158,7 @@
     "source_ingest": "src/docs/cli/commands/source_app.py::source_ingest",
     "template_create": "src/docs/cli/commands/template_app.py::template_create",
     "pipeline_plan": "src/docs/cli/commands/v2_app.py::plan",
-    "pipeline_selection": "src/docs/cli/commands/v2_app.py::_run"
+    "pipeline_selection": "src/docs/cli/commands/v2_app.py::_run",
+    "document_release": "src/docs/cli/commands/v2_app.py::release"
   }
 }

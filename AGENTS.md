@@ -685,7 +685,7 @@ harness's own suite asserts the installed copy never drifts from it.
 
 ### Current v2 public contract
 
-The public v2 command set is `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` (`v2` is the compatibility alias). Build publishes verified requested formats under `output/v2/`; verify runs without publication. V2 does not fall back to the legacy pipeline or promote to `output/final/`.
+The public v2 command set is `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` (`v2` is the compatibility alias). `document release` runs the complete verified build/package/publication pipeline for the active document. Build publishes verified requested formats under `output/v2`; verify runs without publication. V2 does not fall back to the legacy pipeline or promote to `output/final`.
 
 `FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete legacy migration.
 

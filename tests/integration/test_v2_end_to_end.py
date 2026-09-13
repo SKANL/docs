@@ -196,6 +196,37 @@ def test_v2_public_journey_creates_prepares_builds_verifies_packages_and_publish
     }
 
 
+def test_v2_release_command_composes_creation_and_verified_build(monkeypatch, tmp_path: Path) -> None:
+    deps = _journey_deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+    created = runner.invoke(
+        app,
+        ["document", "create", "one-shot", "--template", "journey", "--title", "One-shot", "--json"],
+    )
+    assert created.exit_code == 0, created.stdout
+    (deps.workspace.doc_root("one-shot") / "inbox" / "source.md").write_text(
+        "A source claim.\n", encoding="utf-8"
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "document",
+            "release",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["report"]["succeeded"] is True
+    root = deps.workspace.doc_root("one-shot")
+    assert (root / "document.json").is_file()
+    assert (root / "output" / "v2" / "one-shot.docx").is_file()
+    assert (root / "output" / "release" / "one-shot.zip").is_file()
+
+
 def test_v2_builtin_template_journey_produces_artifacts_and_provenance(
     monkeypatch, tmp_path: Path
 ) -> None:
