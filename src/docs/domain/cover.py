@@ -1,6 +1,7 @@
 """Native declarative cover specification and deterministic slot resolution."""
 from __future__ import annotations
 
+import re
 from enum import Enum
 from html import escape
 from typing import Any
@@ -86,11 +87,14 @@ def cover_findings(spec: CoverSpec, config: dict[str, Any]) -> list[str]:
 
 def render_cover_html(spec: CoverSpec, config: dict[str, Any]) -> str:
     """Render the same resolved slots as a self-contained HTML cover fragment."""
-    lines = [f'<section class="docs-cover docs-cover--{spec.variant.value}">']
+    variant = spec.variant.value
+    lines = [f'<header class="cover cover--{variant}" role="banner">']
     for name, value in resolve_cover_slots(spec, config).items():
         if value:
-            lines.append(f'  <p class="docs-cover__{escape(name, quote=True)}">{escape(value)}</p>')
-    lines.append("</section>")
+            safe_name = re.sub(r"[^a-z0-9_-]+", "-", name.lower()).strip("-") or "slot"
+            tag = "h1" if name.lower() == "title" else "p"
+            lines.append(f'  <{tag} class="cover__slot cover__{safe_name}">{escape(value)}</{tag}>')
+    lines.append("</header>")
     return "\n".join(lines)
 
 

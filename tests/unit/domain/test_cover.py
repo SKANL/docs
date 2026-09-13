@@ -34,7 +34,8 @@ def test_generated_cover_html_escapes_slots_and_exposes_variant():
         {"title": "A < B"},
     )
 
-    assert 'class="docs-cover docs-cover--academic"' in html
+    assert '<header class="cover cover--academic" role="banner">' in html
+    assert 'class="cover__slot cover__title"' in html
     assert "A &lt; B" in html
 
 
