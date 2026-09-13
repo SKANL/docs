@@ -10,6 +10,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+import docs.application.package_service_v2 as package_service_module
 import docs.cli.commands.v2_app as v2_app_module
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.cli.commands.v2_app import _current_input_identities, _manifest_for
@@ -101,14 +102,14 @@ def test_package_preserves_concurrent_archive_after_post_publication_verificatio
     _create_verified_v2_artifact(source_dir, "draft.docx", b"document")
     package_path = tmp_path / "release.zip"
     package_path.write_bytes(b"previous package")
-    real_replace = v2_app_module.os.replace
+    real_replace = package_service_module.os.replace
 
     def replace_then_publish_concurrently(source: str | Path, target: str | Path) -> None:
         real_replace(source, target)
         if Path(target) == package_path:
             package_path.write_bytes(b"concurrent package")
 
-    monkeypatch.setattr(v2_app_module.os, "replace", replace_then_publish_concurrently)
+    monkeypatch.setattr(package_service_module.os, "replace", replace_then_publish_concurrently)
 
     with pytest.raises(typer.BadParameter, match="post-publication"):
         v2_app_module._write_package_archive(package_path, source_dir)
@@ -123,12 +124,12 @@ def test_document_package_uses_validated_artifact_snapshot_when_source_changes_d
     source_dir.mkdir(parents=True)
     artifact = _create_verified_v2_artifact(source_dir, "draft.docx", b"original")
     package_path = tmp_path / "release.zip"
-    module = __import__("docs.cli.commands.v2_app", fromlist=["_write_deterministic_zip"])
+    module = package_service_module
     original_writer = module._write_deterministic_zip
 
-    def mutate_before_write(archive_path, root, files):
+    def mutate_before_write(archive_path, files):
         artifact.write_bytes(b"tampered")
-        return original_writer(archive_path, root, files)
+        return original_writer(archive_path, files)
 
     monkeypatch.setattr(module, "_write_deterministic_zip", mutate_before_write)
     result = CliRunner().invoke(app, ["document", "package", str(source_dir), str(package_path)])

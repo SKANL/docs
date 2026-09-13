@@ -11,7 +11,6 @@ import shutil
 import stat
 import tempfile
 import uuid
-import zipfile
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
@@ -23,6 +22,11 @@ from typing import Any
 import typer
 
 from docs.application.atomic_transform_v2 import AtomicTransform, TransformSpec
+from docs.application.package_service_v2 import (
+    PackageFileV2,
+    PackagePublicationError,
+    PackageServiceV2,
+)
 from docs.application.pipeline_service_v2 import (
     LegacyPipelineDependencies,
     PipelineServiceV2,
@@ -1131,20 +1135,6 @@ def _read_package_file(path: Path, document_root: Path) -> bytes:
             os.close(descriptor)
 
 
-def _write_deterministic_zip(
-    archive_path: Path, source_dir: Path, files: tuple[tuple[str, bytes], ...]
-) -> None:
-    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED, strict_timestamps=True) as archive:
-        for relative, content in files:
-            info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
-            info.create_system = 3
-            info.create_version = 20
-            info.extract_version = 20
-            info.external_attr = 0o100644 << 16
-            info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, content, compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
-
-
 def _directory_identity(path: Path) -> tuple[int, int]:
     identity = os.stat(path, follow_symlinks=False)
     return identity.st_dev, identity.st_ino
@@ -1155,35 +1145,11 @@ def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operati
         raise typer.BadParameter(f"package output parent changed during {operation}: {path}")
 
 
-def _package_output_snapshot(output: Path) -> tuple[tuple[int, int] | None, bytes | None]:
-    if not output.exists():
-        return None, None
-    if output.is_symlink() or not output.is_file():
-        raise typer.BadParameter(f"package refuses unsafe output: {output.name}")
-    content = output.read_bytes()
-    identity = os.stat(output, follow_symlinks=False)
-    return (identity.st_dev, identity.st_ino), content
-
-
 @contextmanager
 def _package_lock(output: Path):
     """Serialize package read/merge/write transactions across processes."""
     with owned_directory_lock(output.with_name(output.name + ".lock")):
         yield
-
-
-def _assert_package_output_unchanged(
-    output: Path, expected: tuple[int, int] | None, expected_content: bytes | None
-) -> None:
-    if expected is None:
-        if output.exists():
-            raise typer.BadParameter(f"package output changed before publication: {output.name}")
-        return
-    if output.is_symlink() or not output.is_file() or expected_content is None:
-        raise typer.BadParameter(f"package output changed before publication: {output.name}")
-    current = os.stat(output, follow_symlinks=False)
-    if (current.st_dev, current.st_ino) != expected or output.read_bytes() != expected_content:
-        raise typer.BadParameter(f"package output changed before publication: {output.name}")
 
 
 def _write_package_archive(
@@ -1194,61 +1160,24 @@ def _write_package_archive(
     _verify_attestation: bool = True,
     _lock_held: bool = False,
 ) -> None:
-    """Validate and atomically write one deterministic v2 package archive."""
-    output.parent.mkdir(parents=True, exist_ok=True)
+    """Validate v2 package inputs and delegate atomic archive publication."""
     with nullcontext() if _lock_held else _package_lock(output):
         files = _package_files(
             source_dir,
             _allow_staging=_allow_staging,
             _verify_attestation=_verify_attestation,
         )
-        if any(candidate.is_symlink() for candidate in (output.parent, *output.parent.parents)) or not output.parent.is_dir():
-            raise typer.BadParameter(f"package refuses unsafe output parent: {output.parent}")
-        parent_identity = _directory_identity(output.parent)
-        previous_identity, previous_content = _package_output_snapshot(output)
-        with tempfile.NamedTemporaryFile(
-            prefix=f".{output.name}.", suffix=".tmp", dir=output.parent, delete=False
-        ) as handle:
-            scratch = Path(handle.name)
-        published = False
         try:
-            _write_deterministic_zip(scratch, source_dir, files)
-            expected_digest = hashlib.sha256(scratch.read_bytes()).digest()
-            _assert_directory_identity(output.parent, parent_identity, operation="publication")
-            _assert_package_output_unchanged(output, previous_identity, previous_content)
-            with directory_handle_guard(output.parent):
-                os.replace(scratch, output)
-            published = True
-            published_identity = os.stat(output, follow_symlinks=False)
-            _assert_directory_identity(output.parent, parent_identity, operation="publication")
-            if (
-                not output.is_file()
-                or output.is_symlink()
-                or hashlib.sha256(output.read_bytes()).digest() != expected_digest
-            ):
-                raise typer.BadParameter("package post-publication verification failed")
-        except Exception:
-            if published:
-                _assert_directory_identity(output.parent, parent_identity, operation="rollback")
-                current_identity = os.stat(output, follow_symlinks=False) if output.is_file() else None
-                if (
-                    output.is_symlink()
-                    or current_identity is None
-                    or (current_identity.st_dev, current_identity.st_ino)
-                    != (published_identity.st_dev, published_identity.st_ino)
-                    or hashlib.sha256(output.read_bytes()).digest() != expected_digest
-                ):
-                    raise
-                if previous_content is None:
-                    output.unlink(missing_ok=True)
-                else:
-                    rollback = output.with_name(f".{output.name}.rollback")
-                    rollback.write_bytes(previous_content)
-                    with directory_handle_guard(output.parent):
-                        os.replace(rollback, output)
-            raise
-        finally:
-            scratch.unlink(missing_ok=True)
+            PackageServiceV2(
+                lock=owned_directory_lock,
+                directory_guard=directory_handle_guard,
+            ).write(
+                output,
+                tuple(PackageFileV2(relative, content) for relative, content in files),
+                lock_held=True,
+            )
+        except PackagePublicationError as exc:
+            raise typer.BadParameter(str(exc)) from exc
 
 
 @v2_app.command("inspect")
