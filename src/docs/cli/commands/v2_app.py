@@ -34,7 +34,6 @@ from docs.application.package_service_v2 import (
 )
 from docs.application.pipeline_service_v2 import (
     PipelineServiceV2,
-    PipelineStageDependencies,
     PublicationSpec,
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
@@ -822,31 +821,34 @@ def create_v2_service(
 
     manifest_destination = destination.with_suffix(destination.suffix + ".manifest.json")
     release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
+    operations: dict[str, Any] = {
+        "resolve-config": resolve_config,
+        "resolve-template": resolve_template,
+        "resolve-context": resolve_context,
+        "resolve-assets": resolve_assets,
+        "validate-contracts": validate_contracts,
+        "ingest-sources": lambda: _source_stage("ingest-sources"),
+        "normalize-sources": lambda: _source_stage("normalize-sources"),
+        "compile-structure": lambda: _source_stage("compile-structure"),
+        "build-docx": render,
+        "structural-audit": audit,
+        "editorial-review": verify,
+        "record-provenance": provenance,
+        "evidence-review": _callable_stage("evidence_review")
+        or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),
+        "consistency-review": _callable_stage("consistency_review")
+        or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
+        "package-release": _callable_stage("package_release") or _native_package_release,
+    }
+    operations.update(
+        {name.replace("_", "-"): operation for name, operation in explicit_stages.items()}
+    )
     return PipelineServiceV2(
-        dependencies=PipelineStageDependencies(
-            resolve_config=resolve_config,
-            resolve_template=resolve_template,
-            resolve_context=resolve_context,
-            resolve_assets=resolve_assets,
-            validate_contracts=validate_contracts,
-            ingest_sources=lambda: _source_stage("ingest-sources"),
-            normalize_sources=lambda: _source_stage("normalize-sources"),
-            compile_structure=lambda: _source_stage("compile-structure"),
-            render=render,
-            audit=audit,
-            verify=verify,
-            provenance=provenance,
-            evidence_review=_callable_stage("evidence_review")
-            or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),
-            consistency_review=_callable_stage("consistency_review")
-            or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
-            package_release=_callable_stage("package_release") or _native_package_release,
-            publication=PublicationSpec(
-                (f"primary.{output_format}", f"primary.{output_format}.manifest.json", f"{initial.doc_id}.zip"),
-                (destination, manifest_destination, release_destination),
-                publish,
-            ),
-            **explicit_stages,
+        operations=operations,
+        publication=PublicationSpec(
+            (f"primary.{output_format}", f"primary.{output_format}.manifest.json", f"{initial.doc_id}.zip"),
+            (destination, manifest_destination, release_destination),
+            publish,
         ),
         capabilities=capabilities,
         ledger=ledger,

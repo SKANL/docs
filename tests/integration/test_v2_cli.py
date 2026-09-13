@@ -224,12 +224,12 @@ def test_v2_publication_spec_includes_manifest_sidecar(monkeypatch, tmp_path):
 
     service = create_v2_service(deps)
 
-    assert service._dependencies.publication.expected_outputs == (
+    assert service._publication.expected_outputs == (
         "primary.docx",
         "primary.docx.manifest.json",
         "active.zip",
     )
-    assert service._dependencies.publication.destinations[-1].name == "active.zip"
+    assert service._publication.destinations[-1].name == "active.zip"
 
 
 def test_v2_manifest_renderer_identity_changes_with_declared_version(monkeypatch, tmp_path):

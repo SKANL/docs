@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
+from types import SimpleNamespace
 
 from docs.application.atomic_transform_v2 import AtomicTransform
 from docs.application.pipeline_service_v2 import (
     FULL_STAGE_IDS,
     PipelineServiceV2,
-    PipelineStageDependencies,
     PublicationSpec,
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
@@ -51,14 +50,14 @@ def _stage(name: str, calls: list[str], ok: bool = True) -> Callable[[], tuple[b
     return run
 
 
-def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> PipelineStageDependencies:
+def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> SimpleNamespace:
     destination = tmp_path / "published" / "document.txt"
 
     def publish(scratch: Path) -> None:
         calls.append("publish")
         (scratch / "document.txt").write_text("published document", encoding="utf-8")
 
-    return PipelineStageDependencies(
+    return SimpleNamespace(
         resolve_config=_stage("resolve-config", calls),
         resolve_template=_stage("resolve-template", calls),
         resolve_context=_stage("resolve-context", calls),
@@ -87,15 +86,50 @@ def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = T
 
 
 def _service(
-    tmp_path: Path, dependencies: PipelineStageDependencies, policy: PipelinePolicy | None = None
+    tmp_path: Path, dependencies: SimpleNamespace, policy: PipelinePolicy | None = None
 ) -> PipelineServiceV2:
+    stage_names = {
+        "resolve_config": "resolve-config",
+        "resolve_template": "resolve-template",
+        "resolve_context": "resolve-context",
+        "resolve_assets": "resolve-assets",
+        "validate_contracts": "validate-contracts",
+        "ingest_sources": "ingest-sources",
+        "normalize_sources": "normalize-sources",
+        "compile_structure": "compile-structure",
+        "generate_visuals": "generate-visuals",
+        "compose_cover": "compose-cover",
+        "render": "build-docx",
+        "build_html": "build-html",
+        "build_pdf": "build-pdf",
+        "audit": "structural-audit",
+        "structural_audit": "structural-audit",
+        "verify": "editorial-review",
+        "evidence_review": "evidence-review",
+        "consistency_review": "consistency-review",
+        "accessibility_review": "accessibility-review",
+        "visual_review": "visual-review",
+        "reproducibility_check": "reproducibility-check",
+        "provenance": "record-provenance",
+        "package_release": "package-release",
+    }
+    operations = {
+        stage: getattr(dependencies, attribute)
+        for attribute, stage in stage_names.items()
+        if getattr(dependencies, attribute, None) is not None
+    }
     return PipelineServiceV2(
-        dependencies=dependencies,
+        operations=operations,
+        publication=dependencies.publication,
         capabilities=ToolCapabilityRegistry(()),
         ledger=ProvenanceLedgerV2(tmp_path / "provenance.json"),
         atomic_transform=AtomicTransform(),
         policy=policy,
     )
+
+
+def _replace_dependencies(dependencies: SimpleNamespace, **changes: object) -> SimpleNamespace:
+    return SimpleNamespace(**{**vars(dependencies), **changes})
 
 
 def test_runs_legacy_adapters_in_v2_order_and_publishes_atomically_after_verification(tmp_path: Path) -> None:
@@ -221,7 +255,7 @@ def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp
         calls: list[str] = []
         service = _service(
             tmp_path / mode.value,
-            replace(_dependencies(tmp_path / mode.value, calls), ingest_sources=None),
+                _replace_dependencies(_dependencies(tmp_path / mode.value, calls), ingest_sources=None),
             PipelinePolicy(mode),
         )
 
@@ -239,7 +273,7 @@ def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp
 def test_strict_and_release_package_failure_never_runs_publish_side_effect(tmp_path: Path) -> None:
     for mode in (PipelineMode.strict, PipelineMode.release):
         calls: list[str] = []
-        dependencies = replace(
+        dependencies = _replace_dependencies(
             _dependencies(tmp_path / mode.value, calls),
             package_release=_stage("package-release", calls, ok=False),
         )
@@ -256,7 +290,7 @@ def test_strict_and_release_package_failure_never_runs_publish_side_effect(tmp_p
 
 def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) -> None:
     calls: list[str] = []
-    dependencies = replace(
+    dependencies = _replace_dependencies(
         _dependencies(tmp_path, calls),
         generate_visuals=_stage("generate-visuals", calls),
         compose_cover=_stage("compose-cover", calls),
@@ -298,7 +332,7 @@ def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) ->
 
 def test_optional_stage_failure_does_not_block_later_serial_stages(tmp_path: Path) -> None:
     calls: list[str] = []
-    dependencies = replace(
+    dependencies = _replace_dependencies(
         _dependencies(tmp_path, calls),
         generate_visuals=_stage("generate-visuals", calls, ok=False),
         compose_cover=_stage("compose-cover", calls),

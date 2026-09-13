@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -54,34 +54,7 @@ class PublicationSpec:
     operation: PublicationOperation
 
 
-@dataclass(frozen=True)
-class PipelineStageDependencies:
-    """Typed stage services supplied by the composition root."""
-
-    resolve_config: StageOperation
-    resolve_template: StageOperation
-    resolve_context: StageOperation
-    resolve_assets: StageOperation
-    validate_contracts: StageOperation
-    render: StageOperation
-    audit: StageOperation
-    verify: StageOperation
-    provenance: StageOperation
-    publication: PublicationSpec
-    ingest_sources: StageOperation | None = None
-    normalize_sources: StageOperation | None = None
-    compile_structure: StageOperation | None = None
-    evidence_review: StageOperation | None = None
-    consistency_review: StageOperation | None = None
-    package_release: StageOperation | None = None
-    generate_visuals: StageOperation | None = None
-    compose_cover: StageOperation | None = None
-    build_html: StageOperation | None = None
-    build_pdf: StageOperation | None = None
-    structural_audit: StageOperation | None = None
-    accessibility_review: StageOperation | None = None
-    visual_review: StageOperation | None = None
-    reproducibility_check: StageOperation | None = None
+StageOperationMap = Mapping[str, StageOperation]
 
 
 class PipelineServiceV2:
@@ -90,7 +63,8 @@ class PipelineServiceV2:
     def __init__(
         self,
         *,
-        dependencies: PipelineStageDependencies,
+        operations: StageOperationMap,
+        publication: PublicationSpec,
         capabilities: ToolCapabilityRegistry,
         ledger: ProvenanceLedgerV2,
         atomic_transform: AtomicTransform,
@@ -99,7 +73,8 @@ class PipelineServiceV2:
         excluded_stages: frozenset[str] = frozenset(),
         cleanup: Callable[[], None] | None = None,
     ) -> None:
-        self._dependencies = dependencies
+        self._operations = operations
+        self._publication = publication
         self._atomic_transform = atomic_transform
         self.registry = PipelineRegistry()
         definition = self._definition(excluded_stages)
@@ -139,7 +114,7 @@ class PipelineServiceV2:
             return self._runtime.run(
                 run_id,
                 inputs=inputs,
-                outputs=self._dependencies.publication.destinations if publish else (),
+                outputs=self._publication.destinations if publish else (),
                 excluded_stages=excluded,
             )
         finally:
@@ -147,41 +122,9 @@ class PipelineServiceV2:
                 self._cleanup()
 
     def _handlers(self) -> dict[str, StageHandler]:
-        stages = self._dependencies
-        handlers: dict[str, StageHandler] = {
-            "resolve-config": self._adapt("resolve-config", stages.resolve_config),
-            "resolve-template": self._adapt("resolve-template", stages.resolve_template),
-            "resolve-context": self._adapt("resolve-context", stages.resolve_context),
-            "resolve-assets": self._adapt("resolve-assets", stages.resolve_assets),
-            "validate-contracts": self._adapt("validate-contracts", stages.validate_contracts),
-            "build-docx": self._adapt("build-docx", stages.render),
-            "structural-audit": self._adapt(
-                "structural-audit", stages.structural_audit or stages.audit
-            ),
-            "editorial-review": self._adapt("editorial-review", stages.verify),
-            "record-provenance": self._adapt("record-provenance", stages.provenance),
-            "publish-draft": self._publish,
-        }
-        for stage_name, operation in (
-            ("ingest-sources", stages.ingest_sources),
-            ("normalize-sources", stages.normalize_sources),
-            ("compile-structure", stages.compile_structure),
-            ("generate-visuals", stages.generate_visuals),
-            ("compose-cover", stages.compose_cover),
-            ("build-html", stages.build_html),
-            ("build-pdf", stages.build_pdf),
-            ("structural-audit", stages.structural_audit),
-            ("accessibility-review", stages.accessibility_review),
-            ("visual-review", stages.visual_review),
-            ("reproducibility-check", stages.reproducibility_check),
-            ("evidence-review", stages.evidence_review),
-            ("consistency-review", stages.consistency_review),
-            ("package-release", stages.package_release),
-        ):
-            if operation is not None:
-                handlers[stage_name] = self._adapt(stage_name, operation)
-            elif stage_name not in handlers:
-                handlers[stage_name] = lambda stage=stage_name: StageResult.unsupported(stage)
+        handlers: dict[str, StageHandler] = {"publish-draft": self._publish}
+        for stage_name, operation in self._operations.items():
+            handlers[stage_name] = self._adapt(stage_name, operation)
         return handlers
 
     @staticmethod
@@ -196,7 +139,7 @@ class PipelineServiceV2:
         return handler
 
     def _publish(self) -> StageResult:
-        publication = self._dependencies.publication
+        publication = self._publication
         result = self._atomic_transform.run(
             TransformSpec(
                 expected_outputs=publication.expected_outputs,
