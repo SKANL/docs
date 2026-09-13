@@ -109,3 +109,13 @@ def test_init_output_is_byte_identical_across_two_runs(workspace):
 
     assert first.exit_code == 0 and second.exit_code == 0
     assert first_bytes == second_bytes
+
+
+def test_template_create_alias_emits_the_same_declarative_skeleton(workspace):
+    runner = CliRunner()
+    result = runner.invoke(app, ["template", "create", "alias-type"])
+
+    assert result.exit_code == 0, result.stdout
+    assert (workspace / "alias-type.json").is_file()
+    assert "alias-type" in result.stdout
+

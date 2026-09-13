@@ -45,7 +45,7 @@ _EXPECTED_GROUPS = {
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
     # 1b/1c); `use` added PR3 of agent-agnostic-real-world-usability (item C,
     # built-in template provisioning) -- deliberate surface growth, not drift.
-    "template": {"list", "show", "init", "validate", "use"},
+    "template": {"list", "show", "init", "create", "validate", "use"},
     # `init` added PR2 of agent-agnostic-real-world-usability (item A,
     # workspace config + bootstrap); `status` added PR9 (item I, resumable
     # status summary); `revise` added PR4 of harness-generality-and-revision
@@ -92,7 +92,7 @@ def test_commands_package_splits_by_concern():
     assert _names(section_app) == {
         "build-section", "pack-context", "review-section", "review-document",
     }
-    assert _names(template_app) == {"list", "show", "init", "validate", "use"}
+    assert _names(template_app) == {"list", "show", "init", "create", "validate", "use"}
     assert _names(doc_app) == {
         "current", "delete", "init", "list", "mark-final", "new", "rename", "revise", "show", "status", "use",
     }

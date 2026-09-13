@@ -99,6 +99,15 @@ def template_init(ctx: typer.Context, doc_type: str = typer.Argument(..., help="
     print(f"Complete los TODO y ejecute `template validate {doc_type}` antes de usarla.")
 
 
+@template_app.command("create")
+def template_create(
+    ctx: typer.Context,
+    doc_type: str = typer.Argument(..., help="Type of document (template name)."),
+) -> None:
+    """Create a new declarative template skeleton."""
+    template_init(ctx, doc_type)
+
+
 @template_app.command("validate")
 def template_validate(
     ctx: typer.Context,
