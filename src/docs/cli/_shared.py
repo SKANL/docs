@@ -29,6 +29,7 @@ from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
+from docs.application.run_history import RunHistoryService
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
 from docs.cli.legacy_pipeline_bridge import LegacyPipelineBridge
@@ -339,6 +340,7 @@ class Deps:
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
+        self.history = RunHistoryService(self.workspace)
         def build_legacy_pipeline() -> LegacyPipelineBridge:
             return LegacyPipelineBridge(
                 doctor_service, evidence_service, evidence_repo, collection_service, source_repo,

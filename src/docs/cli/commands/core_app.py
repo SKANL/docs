@@ -187,7 +187,7 @@ def history(ctx: typer.Context, limit: int = typer.Option(20, "--limit"), as_jso
     """Lista las corridas registradas en `runs/`, de la más reciente a la más vieja."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    records = deps.pipeline.list_runs(resolved.doc_id, resolved.config, limit=limit)
+    records = deps.history.list_runs(resolved.doc_id, resolved.config, limit=limit)
     if as_json:
         print(json.dumps(records, ensure_ascii=False, indent=2))
         return
