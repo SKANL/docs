@@ -15,6 +15,7 @@ from docs.application.atomic_transform_v2 import (
 )
 from docs.application.pipeline_executor_v2 import PipelineReport, StageHandler
 from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
+from docs.domain.ports.atomic_file_port import AtomicFilePort
 
 
 @dataclass(frozen=True)
@@ -128,8 +129,9 @@ class PipelinePlanner:
 class ArtifactStore:
     """Write contract-bound artifacts below one explicit storage root."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, file_writer: AtomicFilePort) -> None:
         self._root = root.resolve()
+        self._file_writer = file_writer
 
     def write(
         self,
@@ -144,7 +146,10 @@ class ArtifactStore:
             raise ValueError(f"artifact path must be relative to the store root: {relative_path!r}")
         target = self._root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+        with self._file_writer.scratch_dir(target.parent) as scratch:
+            candidate = scratch / target.name
+            candidate.write_bytes(content)
+            self._file_writer.atomic_finalize(candidate, target)
         return ArtifactRecord(
             contract=contract.name,
             path=relative.as_posix(),

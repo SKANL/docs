@@ -15,6 +15,7 @@ from docs.application.pipeline_components_v2 import (
     RunReporter,
 )
 from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 
 
 def test_registry_resolves_a_validated_definition_with_its_handlers() -> None:
@@ -50,7 +51,7 @@ def test_planner_returns_stage_specs_in_dependency_order() -> None:
 
 
 def test_artifact_store_writes_a_contract_bound_record(tmp_path: Path) -> None:
-    store = ArtifactStore(tmp_path)
+    store = ArtifactStore(tmp_path, AtomicFileAdapter())
 
     record = store.write(
         ArtifactContract("report", "text/plain"),
