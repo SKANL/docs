@@ -10,7 +10,8 @@ from docs.application.render_verification import RenderVerificationService
 from docs.domain.artifacts import RenderProfile, VerificationReport
 from docs.domain.ports.qa_render_port import QaRenderPort
 from docs.domain.qa import ensure_child_path, render_qa_report
-from docs.domain.review import Issue
+from docs.domain.review import Issue, ReviewDimension
+from docs.domain.visual_baseline import compare_preview_baseline
 
 
 class QaService:
@@ -59,6 +60,24 @@ class QaService:
 
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)
+        baseline_dir, minimum_similarity = self._visual_baseline_config(config, docx_path)
+        if baseline_dir is not None:
+            for finding in compare_preview_baseline(
+                previews_dir,
+                baseline_dir,
+                minimum_similarity=minimum_similarity,
+                strict=strict,
+            ):
+                audit.issues.append(
+                    Issue(
+                        finding.severity,
+                        finding.message,
+                        code=finding.code,
+                        dimension=ReviewDimension.VISUAL,
+                        page=finding.page,
+                        stage_originator="visual-baseline",
+                    )
+                )
         strict_failures: list[str] = []
         if strict and render_verification is not None and not render_verification.passed:
             message = "Verificación de render falló."
@@ -81,3 +100,23 @@ class QaService:
         if strict and not audit.passed:
             raise RuntimeError(f"QA estricto falló; revisar {output_dir / 'qa-report.md'}")
         return output_dir
+
+    @staticmethod
+    def _visual_baseline_config(
+        config: dict[str, Any], docx_path: Path
+    ) -> tuple[Path | None, float]:
+        """Resolve the opt-in baseline without making it a build requirement."""
+        visual_qa = config.get("visual_qa")
+        paths = config.get("paths")
+        raw_dir: object = visual_qa.get("baseline_dir") if isinstance(visual_qa, dict) else None
+        if raw_dir is None and isinstance(paths, dict):
+            raw_dir = paths.get("visual_baseline_dir")
+        if not isinstance(raw_dir, str) or not raw_dir.strip():
+            return None, 0.75
+        baseline_dir = Path(raw_dir)
+        if not baseline_dir.is_absolute():
+            baseline_dir = docx_path.parent / baseline_dir
+        minimum = visual_qa.get("minimum_similarity", 0.75) if isinstance(visual_qa, dict) else 0.75
+        if not isinstance(minimum, (int, float)) or isinstance(minimum, bool):
+            raise ValueError("visual_qa.minimum_similarity must be a number")
+        return baseline_dir, float(minimum)

@@ -2,6 +2,27 @@
 
 QA is layered. A green command means the applicable runtime contracts passed; it does not mean every optional visual tool was available.
 
+## Visual baselines
+
+Visual snapshots are opt-in. Configure a baseline directory and an explicit
+similarity tolerance in the document configuration:
+
+```json
+{
+  "visual_qa": {
+    "baseline_dir": "qa/baselines",
+    "minimum_similarity": 0.75
+  }
+}
+```
+
+QA compares each rendered `*.png` page with the same-named baseline without
+rewriting either directory. It reports `visual.baseline_changed`,
+`visual.baseline_missing`, `visual.baseline_extra_page`, or
+`visual.baseline_unreadable` with the affected page. Draft mode reports these
+as warnings; strict and release mode make them blocking errors. Updating a
+baseline is an explicit authored operation outside verification.
+
 ## Local checks
 
 ```bash
