@@ -153,5 +153,11 @@
     "gap": "document-diff and document-inspect are read-only artifact operations; all stage-backed public boundaries are registered, inspectable with document plan, and dispatchable.",
     "dispatch": "src/docs/application/pipeline_service_v2.py::PipelineServiceV2.run(pipeline_id=...)",
     "cli": "src/docs/cli/commands/v2_app.py::plan,build,verify; src/docs/cli/commands/source_app.py::source_ingest"
+  },
+  "public_commands": {
+    "source_ingest": "src/docs/cli/commands/source_app.py::source_ingest",
+    "template_create": "src/docs/cli/commands/template_app.py::template_create",
+    "pipeline_plan": "src/docs/cli/commands/v2_app.py::plan",
+    "pipeline_selection": "src/docs/cli/commands/v2_app.py::_run"
   }
 }
