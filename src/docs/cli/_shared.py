@@ -44,6 +44,7 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAsse
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.ingest.content_probe_adapter import FilesystemContentProbeAdapter
 from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
 from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
@@ -159,6 +160,8 @@ class Deps:
         pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
         pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
         md_ingest_adapter = MdNormalizeAdapter()
+        self.markdown_normalizer = md_ingest_adapter
+        self.atomic_file_writer = AtomicFileAdapter()
         ingest_handlers: dict[str, SourceIngestPort] = {
             "docx": pandoc_ingest_adapter,
             "odt": pandoc_ingest_adapter,

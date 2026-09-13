@@ -13,6 +13,8 @@ from docs.application.pipeline_service_v2 import FULL_STAGE_IDS
 from docs.cli.main import app
 from docs.domain.models.template import Template
 from docs.domain.workspace import Workspace
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 
 
@@ -125,6 +127,8 @@ def _journey_deps(tmp_path: Path):
         document_repository=repository,
         documents=documents,
         ingest=_JourneyIngest(),
+        markdown_normalizer=MdNormalizeAdapter(),
+        atomic_file_writer=AtomicFileAdapter(),
         resolve_context=resolve_context,
         resolve_renderer=lambda config: renderer,
         renderers={"docx": renderer},

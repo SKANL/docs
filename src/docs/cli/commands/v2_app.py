@@ -50,9 +50,21 @@ from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 v2_app = typer.Typer(help="Workspace-backed v2 pipeline commands.")
+
+
+def _source_pipeline(deps: Any) -> SourcePipelineV2 | None:
+    """Compose the source pipeline while tolerating older dependency fixtures."""
+    ingest = getattr(deps, "ingest", None)
+    if ingest is None:
+        return None
+    normalizer = getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter()
+    file_writer = getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter()
+    return SourcePipelineV2(ingest, normalizer, file_writer)
 
 
 def _write_manifest_text(path: Path, content: str) -> None:
@@ -455,11 +467,7 @@ def create_v2_service(
         if service is not None:
             stage_services[name] = service
     stage_provider = StageProviderV2(stage_services)
-    source_pipeline = (
-        SourcePipelineV2(deps.ingest)
-        if getattr(deps, "ingest", None) is not None
-        else None
-    )
+    source_pipeline = _source_pipeline(deps)
 
     def _stage_service(name: str) -> Any:
         return stage_provider.get(name)
@@ -1182,7 +1190,9 @@ def _run_source_command(ctx: typer.Context, command: str, json_output: bool) -> 
     deps = ctx.obj["deps"]
     resolved = deps.resolve_context(ctx.obj.get("doc", ""))
     root = deps.workspace.doc_root(resolved.doc_id)
-    service = SourcePipelineV2(deps.ingest)
+    service = _source_pipeline(deps)
+    if service is None:
+        raise typer.BadParameter("source ingest dependencies are unavailable")
     report = (
         service.ingest(resolved.doc_id, root, resolved.config)
         if command == "ingest"

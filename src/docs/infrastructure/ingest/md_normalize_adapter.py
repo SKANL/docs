@@ -50,3 +50,7 @@ class MdNormalizeAdapter:
             return body
         canonical = json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2)
         return f"---\n{canonical}\n---\n{body}"
+
+    def normalize(self, source: str) -> str:
+        """Expose normalization through the application-facing port."""
+        return self._normalize(source)

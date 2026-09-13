@@ -3,27 +3,26 @@
 from __future__ import annotations
 
 import json
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 from docs.domain.docx_structure import structure_parts
-
-
-def _ingest_writer() -> Any:
-    return import_module("docs.infrastructure.ingest.atomic_ingest_write")
-
-
-def _default_normalizer() -> Any:
-    return import_module("docs.infrastructure.ingest.md_normalize_adapter").MdNormalizeAdapter()
+from docs.domain.ports.atomic_file_port import AtomicFilePort
+from docs.domain.ports.markdown_normalizer_port import MarkdownNormalizerPort
 
 
 class SourcePipelineV2:
     """Coordinate source stages without changing the legacy pipeline."""
 
-    def __init__(self, ingest_service: Any, normalizer: Any | None = None) -> None:
+    def __init__(
+        self,
+        ingest_service: Any,
+        normalizer: MarkdownNormalizerPort,
+        file_writer: AtomicFilePort,
+    ) -> None:
         self.ingest_service = ingest_service
-        self.normalizer = normalizer or _default_normalizer()
+        self.normalizer = normalizer
+        self.file_writer = file_writer
 
     def ingest(self, document_id: str, document_root: Path, config: dict[str, Any]) -> dict[str, Any]:
         root = Path(document_root)
@@ -44,13 +43,12 @@ class SourcePipelineV2:
         try:
             for source in sorted((paths["sections"] / "ingested").glob("*.md"), key=lambda p: p.name):
                 original = source.read_text(encoding="utf-8")
-                content = self.normalizer._normalize(original)
+                content = self.normalizer.normalize(original)
                 if content != original:
-                    writer = _ingest_writer()
-                    with writer.scratch_dir(source.parent) as scratch:
+                    with self.file_writer.scratch_dir(source.parent) as scratch:
                         candidate = scratch / source.name
                         candidate.write_text(content, encoding="utf-8")
-                        writer.atomic_finalize(candidate, source)
+                        self.file_writer.atomic_finalize(candidate, source)
                 normalized.append(source.relative_to(root).as_posix())
             result = {"normalized": normalized, "count": len(normalized)}
         except Exception as exc:
@@ -149,20 +147,17 @@ class SourcePipelineV2:
             for item in files
         ))
 
-    @classmethod
-    def _persist_report(cls, root: Path, name: str, report: dict[str, Any]) -> dict[str, Any]:
+    def _persist_report(self, root: Path, name: str, report: dict[str, Any]) -> dict[str, Any]:
         destination = root / "runs" / f"v2-{name}.json"
-        cls._atomic_json(destination, report)
+        self._atomic_json(destination, report)
         return report
 
-    @staticmethod
-    def _atomic_json(destination: Path, payload: dict[str, Any]) -> None:
+    def _atomic_json(self, destination: Path, payload: dict[str, Any]) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        writer = _ingest_writer()
-        with writer.scratch_dir(destination.parent) as scratch:
+        with self.file_writer.scratch_dir(destination.parent) as scratch:
             candidate = scratch / destination.name
             candidate.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            writer.atomic_finalize(candidate, destination)
+            self.file_writer.atomic_finalize(candidate, destination)

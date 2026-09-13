@@ -146,6 +146,24 @@ def test_application_provenance_v2_is_a_thin_reexport_without_persistence_import
     )
 
 
+def test_source_pipeline_v2_uses_ports_instead_of_dynamic_infrastructure_imports() -> None:
+    """Source orchestration must depend on ports, not import adapters at runtime."""
+    path = SRC_ROOT / "application" / "source_pipeline_v2.py"
+    source = path.read_text(encoding="utf-8")
+    tree = _parse(path)
+    dynamic_imports = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"import_module", "__import__"}
+    ]
+    assert not dynamic_imports, "source pipeline must receive infrastructure adapters through ports"
+    assert "docs.infrastructure" not in source
+    assert "AtomicFilePort" in source
+    assert "MarkdownNormalizerPort" in source
+
+
 def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     """The v2 workspace bridge must not regress these stages to implicit gaps."""
     path = SRC_ROOT / "cli" / "commands" / "v2_app.py"

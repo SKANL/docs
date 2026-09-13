@@ -8,6 +8,8 @@ from typer.testing import CliRunner
 
 from docs.application.source_pipeline_v2 import SourcePipelineV2
 from docs.cli.main import app
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 
 
 class _Ingest:
@@ -47,6 +49,8 @@ def _deps(tmp_path: Path):
     )
     return SimpleNamespace(
         ingest=_Ingest(),
+        markdown_normalizer=MdNormalizeAdapter(),
+        atomic_file_writer=AtomicFileAdapter(),
         resolve_context=lambda doc="": context,
         workspace=SimpleNamespace(doc_root=lambda doc_id: root),
     )
@@ -55,7 +59,7 @@ def _deps(tmp_path: Path):
 def test_source_prepare_normalizes_and_compiles_atomic_outputs(tmp_path: Path) -> None:
     root = tmp_path / "document"
     config = {"structure": [{"type": "sections"}]}
-    service = SourcePipelineV2(_Ingest())
+    service = SourcePipelineV2(_Ingest(), MdNormalizeAdapter(), AtomicFileAdapter())
 
     report = service.prepare("brief", root, config)
 
@@ -97,7 +101,7 @@ def test_document_prepare_wires_all_source_handlers(monkeypatch, tmp_path: Path)
 
 
 def test_source_prepare_propagates_degraded_ingest_without_claiming_success(tmp_path: Path) -> None:
-    report = SourcePipelineV2(_FailedIngest()).prepare("brief", tmp_path / "document", {})
+    report = SourcePipelineV2(_FailedIngest(), MdNormalizeAdapter(), AtomicFileAdapter()).prepare("brief", tmp_path / "document", {})
 
     assert report["succeeded"] is False
     assert report["stages"][0]["succeeded"] is False
@@ -105,7 +109,7 @@ def test_source_prepare_propagates_degraded_ingest_without_claiming_success(tmp_
 
 
 def test_source_ingest_converts_adapter_exception_to_failed_stage_report(tmp_path: Path) -> None:
-    report = SourcePipelineV2(_ExplodingIngest()).ingest("brief", tmp_path / "document", {})
+    report = SourcePipelineV2(_ExplodingIngest(), MdNormalizeAdapter(), AtomicFileAdapter()).ingest("brief", tmp_path / "document", {})
 
     assert report["succeeded"] is False
     assert report["stages"][0]["result"]["status"] == "failed"
@@ -114,11 +118,11 @@ def test_source_ingest_converts_adapter_exception_to_failed_stage_report(tmp_pat
 
 def test_source_prepare_propagates_normalization_failure(tmp_path: Path) -> None:
     class _BrokenNormalizer:
-        def _normalize(self, original: str) -> str:
+        def normalize(self, original: str) -> str:
             del original
             raise RuntimeError("normalizer crashed")
 
-    report = SourcePipelineV2(_Ingest(), _BrokenNormalizer()).prepare("brief", tmp_path / "document", {})
+    report = SourcePipelineV2(_Ingest(), _BrokenNormalizer(), AtomicFileAdapter()).prepare("brief", tmp_path / "document", {})
 
     assert report["succeeded"] is False
     assert report["stages"][1]["succeeded"] is False
