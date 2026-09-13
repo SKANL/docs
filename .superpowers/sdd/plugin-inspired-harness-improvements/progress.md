@@ -152,3 +152,11 @@ source-only by design.
   the v2 contract surface without changing compatibility behavior.
 - Focused verification: pipeline-service-v2 plus v2 CLI tests (52 passed),
   ruff and mypy passed.
+
+## V2 operation injection: complete
+- Replaced the v2 service's named compatibility dependency aggregate with a
+  stage-ID-to-operation mapping and an independent publication contract.
+- The composition root now normalizes all operations to declarative stage IDs;
+  PipelineServiceV2 no longer knows legacy field names or container shape.
+- Focused verification: pipeline-service-v2 plus v2 CLI tests (52 passed),
+  ruff and mypy passed.
