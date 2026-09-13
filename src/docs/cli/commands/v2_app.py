@@ -896,12 +896,19 @@ def _cleanup_scratch_dirs(scratch_dirs: list[Path]) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
-def _promote_release_candidate(document_root: Path, document_id: str) -> None:
+def _promote_release_candidate(
+    document_root: Path, document_id: str, *, allow_consumed_candidate: bool = False
+) -> None:
     """Commit the package only after its format publication has succeeded."""
     release_dir = document_root / "output" / "release"
     candidate = release_dir / f".{document_id}.zip.candidate"
     destination = release_dir / f"{document_id}.zip"
     if not candidate.is_file() or candidate.is_symlink():
+        if allow_consumed_candidate and destination.is_file() and not destination.is_symlink():
+            # The publication transaction already committed this exact destination.
+            # A concurrent/older final ZIP is never accepted because this path is only
+            # used after the transaction has reported success.
+            return
         raise RuntimeError("package-release completed without a safe release candidate")
     if any(path.is_symlink() for path in (release_dir, *release_dir.parents)):
         raise RuntimeError("release directory must not be symlinked")
@@ -1019,7 +1026,9 @@ def _run(
             if command == "build" and bool(report_payload.get("succeeded")):
                 resolved = ctx.obj["deps"].resolve_context(selected_document)
                 _promote_release_candidate(
-                    ctx.obj["deps"].workspace.doc_root(resolved.doc_id), resolved.doc_id
+                    ctx.obj["deps"].workspace.doc_root(resolved.doc_id),
+                    resolved.doc_id,
+                    allow_consumed_candidate=True,
                 )
                 draft_dir = resolved.config.get("paths", {}).get("output_draft_dir")
                 resolved_root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
