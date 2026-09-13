@@ -65,6 +65,19 @@ def test_set_field_topic_merges_single_field(setup):
     assert statuses[0].missing == []
 
 
+def test_confirmed_lines_excludes_sensitive_fields_and_formats_topics(setup):
+    service, template = setup
+    template.context_schema.topics[0].fields[1].sensitive = True
+    service.set("alpha", template, "alumno", "Ana", field="nombre")
+    service.set("alpha", template, "alumno", "secret", field="legajo")
+    service.set("alpha", template, "intro", "Contexto aprobado", field="ignored")
+
+    assert service.confirmed_lines("alpha", template) == [
+        "Nombre: Ana",
+        "Introducción: Contexto aprobado",
+    ]
+
+
 def test_set_unknown_topic_raises(setup):
     service, template = setup
     with pytest.raises(ValueError):

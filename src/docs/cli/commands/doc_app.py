@@ -186,7 +186,7 @@ def doc_revise(
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
-    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
+    manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
     new_content = Path(body_file).read_text(encoding="utf-8")
     now = datetime.now().isoformat(timespec="seconds")
 

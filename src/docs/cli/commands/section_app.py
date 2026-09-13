@@ -39,7 +39,7 @@ def pack_context(ctx: typer.Context, section_id: str = typer.Argument(..., help=
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
-    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
+    manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
 
     def pack_one(sid: str) -> Path:
         return deps.context_pack.pack_context(resolved.doc_id, resolved.template, sid, resolved.config, normative=normative)
@@ -99,7 +99,7 @@ def review_document(
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
-    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
+    manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
     result = deps.review.review_document(
         resolved.doc_id, resolved.template, strict=strict,
         manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,

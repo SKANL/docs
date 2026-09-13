@@ -138,24 +138,8 @@ class PipelineService:
         return exists, size
 
     def context_confirmed_lines(self, doc_id: str, template: Template) -> list[str]:
-        # Legacy also routes sensitive topic fields into a separate
-        # "dato_sensible" ledger bucket. EvidenceService.render_fact_ledger
-        # (Slice 8) only accepts one confirmado-scoped list, so sensitive
-        # fields are skipped here rather than mis-classified. See the plan's
-        # "Risks and open judgment calls" (Judgment call 4).
-        lines: list[str] = []
-        for topic in template.context_schema.topics:
-            values = self.context_repository.read_topic(doc_id, topic)
-            if isinstance(values, dict):
-                for field in topic.fields:
-                    value = values.get(field.key, "")
-                    if not value or field.sensitive:
-                        continue
-                    lines.append(f"{field.label}: {value}")
-            elif isinstance(values, str) and values.strip():
-                snippet = values.strip()[:160]
-                lines.append(f"{topic.title or topic.id}: {snippet}")
-        return lines
+        """Compatibility projection delegated to the named context service."""
+        return self.context_service.confirmed_lines(doc_id, template)
 
     def build_section(self, doc_id: str, template: Template, section_id: str, config: dict[str, Any]) -> Path:
         section = next((s for s in template.sections if s.id == section_id), None)
