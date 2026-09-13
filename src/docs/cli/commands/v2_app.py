@@ -583,12 +583,34 @@ def create_v2_service(
         with _package_lock(destination):
             staging = Path(tempfile.mkdtemp(prefix=".v2-package-", dir=source_dir.parent))
             try:
-                for existing in source_dir.iterdir():
+                for existing in sorted(source_dir.iterdir(), key=lambda path: path.name):
                     if existing.is_symlink() or not existing.is_file():
                         raise RuntimeError(
                             f"package refuses unsafe source entry: {existing.name}"
                         )
+                    if existing.name.endswith(".manifest.json"):
+                        continue
+                    manifest_path = existing.with_name(existing.name + ".manifest.json")
+                    if not manifest_path.is_file() or manifest_path.is_symlink():
+                        continue
+                    try:
+                        previous_manifest = BuildManifest.from_dict(
+                            json.loads(manifest_path.read_text(encoding="utf-8"))
+                        )
+                        previous_manifest.validate_for_publication()
+                        if previous_manifest.document_id != initial.doc_id or not ledger.verify_attestation(
+                            previous_manifest.provenance_run, previous_manifest.attestation()
+                        ):
+                            continue
+                        if sha256_file(existing) != previous_manifest.artifacts[0].sha256:
+                            continue
+                    except (OSError, TypeError, ValueError, KeyError, IndexError):
+                        # A stale or malformed derived artifact must not poison
+                        # a new package. It is replaced only when its format is
+                        # rebuilt in the current invocation.
+                        continue
                     shutil.copyfile(existing, staging / existing.name)
+                    shutil.copyfile(manifest_path, staging / manifest_path.name)
                 package_name = f"{initial.doc_id}.{output_format}"
                 shutil.copyfile(artifact, staging / package_name)
                 (staging / f"{package_name}.manifest.json").write_text(
