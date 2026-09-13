@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
+from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.cli.commands.v2_app import (
     _batch_journal_path,
     _package_files,
@@ -834,6 +835,107 @@ def test_v2_package_post_publication_failure_restores_previous_archive(monkeypat
     with pytest.raises(RuntimeError, match="post-publication check"):
         _write_package_archive(output, source, _verify_attestation=False)
     assert output.read_bytes() == b"previous"
+
+
+def test_v2_package_rejects_arbitrary_unverified_source_without_creating_archive(tmp_path: Path):
+    source = tmp_path / "arbitrary"
+    source.mkdir()
+    (source / "report.docx").write_bytes(b"unverified")
+    output = tmp_path / "release.zip"
+
+    result = CliRunner().invoke(app, ["v2", "package", str(source), str(output)])
+
+    assert result.exit_code != 0
+    assert not output.exists()
+
+
+def test_v2_package_rejects_in_boundary_unverified_source_without_creating_archive(
+    tmp_path: Path,
+):
+    source = tmp_path / "documents" / "active" / "output" / "v2"
+    source.mkdir(parents=True)
+    artifact = source / "report.docx"
+    artifact.write_bytes(b"unverified")
+    manifest = BuildManifest(
+        document_id="active",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"docx": "test"},
+        artifacts=(ArtifactRef(str(artifact.resolve()), hashlib.sha256(b"unverified").hexdigest(), ArtifactState.READY),),
+        verification={"passed": False},
+        provenance_run="unverified-build",
+    )
+    (source / "report.docx.manifest.json").write_text(manifest.to_json(), encoding="utf-8")
+    output = tmp_path / "release.zip"
+
+    result = CliRunner().invoke(app, ["v2", "package", str(source), str(output)])
+
+    assert result.exit_code != 0
+    assert "verification" in result.output.lower()
+    assert not output.exists()
+
+
+def test_v2_package_accepts_verified_artifact_manifest_and_provenance(tmp_path: Path):
+    source = tmp_path / "documents" / "active" / "output" / "v2"
+    source.mkdir(parents=True)
+    artifact = source / "active.docx"
+    artifact.write_bytes(b"verified")
+    manifest = BuildManifest(
+        document_id="active",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"docx": "test"},
+        artifacts=(ArtifactRef(str(artifact.resolve()), hashlib.sha256(b"verified").hexdigest(), ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-active",
+    )
+    (source / "active.docx.manifest.json").write_text(manifest.to_json(), encoding="utf-8")
+    ledger = ProvenanceLedgerV2(source.parent.parent / "runs" / "v2-provenance.json")
+    ledger.record_run("build-active", inputs=(artifact,), outputs=())
+    ledger.record_attestation("build-active", manifest.attestation())
+    first_output = tmp_path / "release-first.zip"
+    second_output = tmp_path / "release-second.zip"
+
+    runner = CliRunner()
+    first_result = runner.invoke(app, ["v2", "package", str(source), str(first_output), "--json"])
+    second_result = runner.invoke(app, ["v2", "package", str(source), str(second_output), "--json"])
+
+    assert first_result.exit_code == 0, first_result.stdout
+    assert second_result.exit_code == 0, second_result.stdout
+    assert first_output.is_file()
+    assert second_output.is_file()
+    assert first_output.read_bytes() == second_output.read_bytes()
+
+    def entry_metadata(path: Path) -> list[tuple[object, ...]]:
+        with zipfile.ZipFile(path) as archive:
+            return [
+                (
+                    info.filename,
+                    info.date_time,
+                    info.compress_type,
+                    info.create_system,
+                    info.create_version,
+                    info.extract_version,
+                    info.flag_bits,
+                    info.external_attr,
+                    info.extra,
+                    info.comment,
+                    info.CRC,
+                    info.file_size,
+                    info.compress_size,
+                )
+                for info in archive.infolist()
+            ]
+
+    assert entry_metadata(first_output) == entry_metadata(second_output)
+    assert [item[0] for item in entry_metadata(first_output)] == [
+        "active.docx",
+        "active.docx.manifest.json",
+    ]
 
 
 def test_v2_package_rejects_mixed_source_generations(tmp_path):
