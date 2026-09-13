@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
+from time import perf_counter
 from typing import Protocol
 
 from docs.domain.pipeline_kernel import PipelineDefinition, StageResult, deterministic_json
@@ -21,7 +23,15 @@ class PipelineReport:
         self.results = results
 
     def to_dict(self) -> dict[str, object]:
-        return {"results": [result.to_dict() for result in self.results]}
+        # Timing is execution metadata, not part of the stable report schema.
+        # Keep the report byte-stable while exposing duration_ms on each result
+        # for callers that need runtime telemetry.
+        return {
+            "results": [
+                {key: value for key, value in result.to_dict().items() if key != "duration_ms"}
+                for result in self.results
+            ]
+        }
 
     def to_json(self) -> str:
         return deterministic_json(self.to_dict())
@@ -91,10 +101,12 @@ class PipelineExecutor:
                 )
                 continue
             handler = self.handlers.get(stage_name)
+            started = perf_counter()
             try:
                 result = StageResult.unsupported(stage_name) if handler is None else handler()
             except Exception as exc:
                 result = StageResult(stage_name, False, errors=(f"stage handler failed: {exc}",))
+            result = replace(result, duration_ms=max(0, round((perf_counter() - started) * 1000)))
             if (
                 result.outcome == "unsupported"
                 and fail_on_unsupported

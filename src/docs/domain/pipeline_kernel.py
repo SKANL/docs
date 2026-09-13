@@ -33,6 +33,8 @@ def _stable(value: Any) -> Any:
 
 def deterministic_json(value: Any) -> str:
     """Serialize supported domain values with a stable, compact JSON shape."""
+    if isinstance(value, StageResult):
+        return json.dumps(value.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return json.dumps(_stable(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
@@ -110,6 +112,7 @@ class StageResult:
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
     outcome: str = "succeeded"
+    duration_ms: int | None = None
 
     def __post_init__(self) -> None:
         _check_identifier(self.stage, "stage")
@@ -136,7 +139,10 @@ class StageResult:
         return cls(stage, True, warnings=(f"stage unsupported: {stage}",), outcome="unsupported")
 
     def to_dict(self) -> dict[str, Any]:
-        return _stable(asdict(self))
+        payload = asdict(self)
+        if self.duration_ms is None:
+            payload.pop("duration_ms", None)
+        return _stable(payload)
 
     def to_json(self) -> str:
         return deterministic_json(self)

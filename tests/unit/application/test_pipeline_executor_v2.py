@@ -37,6 +37,14 @@ def test_non_optional_failure_stops_remaining_stages():
     assert report.results[-1].errors == ("boom",)
 
 
+def test_executor_records_non_negative_stage_duration():
+    definition = PipelineDefinition(stages=(StageSpec("render"),))
+    report = PipelineExecutor(definition, {"render": lambda: StageResult("render", True)}).run()
+
+    assert report.results[0].duration_ms is not None
+    assert report.results[0].duration_ms >= 0
+
+
 def test_failed_producer_does_not_execute_dependent_stage_even_when_not_fail_fast():
     definition = PipelineDefinition(artifacts=(ArtifactContract("optional-output"),), stages=(StageSpec("optional", produces=("optional-output",), fail_fast=False), StageSpec("later", requires=("optional-output",))))
     calls = []
