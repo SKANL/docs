@@ -3,20 +3,27 @@
 from __future__ import annotations
 
 import json
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 from docs.domain.docx_structure import structure_parts
-from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
-from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
+
+
+def _ingest_writer() -> Any:
+    return import_module("docs.infrastructure.ingest.atomic_ingest_write")
+
+
+def _default_normalizer() -> Any:
+    return import_module("docs.infrastructure.ingest.md_normalize_adapter").MdNormalizeAdapter()
 
 
 class SourcePipelineV2:
     """Coordinate source stages without changing the legacy pipeline."""
 
-    def __init__(self, ingest_service: Any, normalizer: MdNormalizeAdapter | None = None) -> None:
+    def __init__(self, ingest_service: Any, normalizer: Any | None = None) -> None:
         self.ingest_service = ingest_service
-        self.normalizer = normalizer or MdNormalizeAdapter()
+        self.normalizer = normalizer or _default_normalizer()
 
     def ingest(self, document_id: str, document_root: Path, config: dict[str, Any]) -> dict[str, Any]:
         root = Path(document_root)
@@ -39,10 +46,11 @@ class SourcePipelineV2:
                 original = source.read_text(encoding="utf-8")
                 content = self.normalizer._normalize(original)
                 if content != original:
-                    with scratch_dir(source.parent) as scratch:
+                    writer = _ingest_writer()
+                    with writer.scratch_dir(source.parent) as scratch:
                         candidate = scratch / source.name
                         candidate.write_text(content, encoding="utf-8")
-                        atomic_finalize(candidate, source)
+                        writer.atomic_finalize(candidate, source)
                 normalized.append(source.relative_to(root).as_posix())
             result = {"normalized": normalized, "count": len(normalized)}
         except Exception as exc:
@@ -150,10 +158,11 @@ class SourcePipelineV2:
     @staticmethod
     def _atomic_json(destination: Path, payload: dict[str, Any]) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with scratch_dir(destination.parent) as scratch:
+        writer = _ingest_writer()
+        with writer.scratch_dir(destination.parent) as scratch:
             candidate = scratch / destination.name
             candidate.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-            atomic_finalize(candidate, destination)
+            writer.atomic_finalize(candidate, destination)

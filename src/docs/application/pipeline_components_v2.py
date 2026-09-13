@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from docs.application.pipeline_executor_v2 import PipelineReport, StageHandler
-from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
-from docs.infrastructure.transform.v2_atomic_transform import (
+from docs.application.atomic_transform_v2 import (
     AtomicTransform,
     TransformResult,
     TransformSpec,
 )
+from docs.application.pipeline_executor_v2 import PipelineReport, StageHandler
+from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
 
 
 @dataclass(frozen=True)

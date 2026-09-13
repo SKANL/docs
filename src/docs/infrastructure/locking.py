@@ -92,7 +92,7 @@ def directory_handle_guard(path: Path) -> Iterator[None]:
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel32.CreateFileW.argtypes = [
         wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
         wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
@@ -104,7 +104,9 @@ def directory_handle_guard(path: Path) -> Iterator[None]:
     )
     invalid = wintypes.HANDLE(-1).value
     if handle == invalid:
-        raise OSError(ctypes.get_last_error(), f"unable to pin publication directory: {path}")
+        raise OSError(  # type: ignore[attr-defined]
+            ctypes.get_last_error(), f"unable to pin publication directory: {path}"
+        )
     try:
         yield
     finally:
