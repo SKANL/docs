@@ -19,6 +19,7 @@ from docs.application.ingest import IngestService
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.application.run_history import RunRecorderService
 from docs.application.section import SectionService
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.cover import cover_provenance
@@ -54,6 +55,7 @@ class PipelineService:
         generate_visuals_service: GenerateVisualsService | None = None,
         structural_audit_service: StructuralAuditService | None = None,
         section_service: SectionService | None = None,
+        run_recorder: RunRecorderService | None = None,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -72,29 +74,12 @@ class PipelineService:
         self.generate_visuals_service = generate_visuals_service
         self.structural_audit_service = structural_audit_service
         self.section_service = section_service or SectionService(review_service, evidence_service, context_repository)
+        self.run_recorder = run_recorder or RunRecorderService(workspace, source_repository)
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
     ) -> Path:
-        runs_dir = self._runs_dir(doc_id, config)
-        runs_dir.mkdir(parents=True, exist_ok=True)
-        # ponytail: naive local time, not aware UTC. Run logs are metadata,
-        # explicitly outside the byte-determinism boundary (AGENTS.md §7), and
-        # this string is both the record's `timestamp` and its filename --
-        # existing `runs/` directories already hold it in this shape. Upgrade
-        # path if runs are ever compared across timezones: switch to
-        # `datetime.now(UTC)` AND migrate the filenames, together.
-        timestamp = datetime.now().isoformat(timespec="microseconds")
-        record = {
-            "timestamp": timestamp,
-            "command": command,
-            "git_commit": self.source_repository.run_git_rev_parse_head(repo_root),
-            **payload,
-        }
-        safe_name = timestamp.replace(":", "-")
-        path = runs_dir / f"{safe_name}-{command}.json"
-        path.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-        return path
+        return self.run_recorder.record(doc_id, config, repo_root, command, payload)
 
     def list_runs(self, doc_id: str, config: dict[str, Any], limit: int = 20) -> list[dict[str, Any]]:
         runs_dir = self._runs_dir(doc_id, config)

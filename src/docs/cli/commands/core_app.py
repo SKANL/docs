@@ -171,7 +171,7 @@ def verify(
         resolved.doc_id, resolved.template, resolved.config, docx_path=docx_path, strict=strict
     )
     result = _filter_review_dimensions(result, dimensions)
-    deps.pipeline.log_run(
+    deps.run_recorder.record(
         resolved.doc_id, resolved.config, repo_root, "verify",
         {
             "strict": strict,

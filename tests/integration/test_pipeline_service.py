@@ -19,6 +19,7 @@ from docs.application.ingest import IngestService
 from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.application.run_history import RunRecorderService
 from docs.domain.artifacts import ArtifactRef, VerificationFinding, VerificationReport
 from docs.domain.context import TopicStatus
 from docs.domain.models.template import ContextSchema, Template, Topic
@@ -84,6 +85,18 @@ def _service(
         generate_visuals_service=generate_visuals_service,
     )
     return service, workspace
+
+
+def test_run_recorder_writes_the_legacy_record_shape(tmp_path):
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    recorder = RunRecorderService(workspace, FilesystemSourceRepository())
+    path = recorder.record("doc1", {"paths": {}}, tmp_path, "verify", {"passed": True})
+    record = json.loads(path.read_text(encoding="utf-8"))
+    assert path.parent == workspace.doc_root("doc1") / "runs"
+    assert record["command"] == "verify"
+    assert record["passed"] is True
+    assert "timestamp" in record
+    assert "git_commit" in record
 
 
 def test_build_section_renders_scaffold_gathers_six_hashes_and_writes_section_file(tmp_path: Path):

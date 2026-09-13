@@ -30,7 +30,7 @@ from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
-from docs.application.run_history import RunHistoryService
+from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
@@ -344,6 +344,7 @@ class Deps:
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
         self.history = RunHistoryService(self.workspace)
+        self.run_recorder = RunRecorderService(self.workspace, source_repo)
         self.verification = DocumentVerificationService(
             review_service, evidence_repo, format_audit_service, qa_service
         )
