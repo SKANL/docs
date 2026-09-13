@@ -900,6 +900,7 @@ def _run(
     json_output: bool,
     formats: list[str] | None,
     policy: PipelineMode | None,
+    dimensions: list[ReviewDimension] | None = None,
 ) -> None:
     selected_document = ctx.obj.get("doc", "")
     if formats is None:
@@ -949,6 +950,31 @@ def _run(
             )
             report = service.run(f"cli-{command}-{output_format}", publish=command == "build")
             report_payload = report.to_dict()
+            if dimensions:
+                stage_dimensions = {
+                    "editorial-review": ReviewDimension.EDITORIAL,
+                    "evidence-review": ReviewDimension.EVIDENCE,
+                    "consistency-review": ReviewDimension.CONSISTENCY,
+                    "structural-audit": ReviewDimension.STRUCTURAL,
+                    "accessibility-review": ReviewDimension.ACCESSIBILITY,
+                    "visual-review": ReviewDimension.VISUAL,
+                    "reproducibility-check": ReviewDimension.REPRODUCIBILITY,
+                }
+                selected = set(dimensions)
+                execution = report_payload.get("execution")
+                if isinstance(execution, dict):
+                    results = execution.get("results", [])
+                    if isinstance(results, list):
+                        execution["results"] = [
+                            item
+                            for item in results
+                            if isinstance(item, dict)
+                            and stage_dimensions.get(item.get("stage")) in selected
+                        ]
+                        report_payload["succeeded"] = all(
+                            item.get("ok", False) for item in execution["results"]
+                        )
+                report_payload["dimensions"] = [dimension.value for dimension in dimensions]
             item: dict[str, Any] = {
                 "command": command,
                 "integration": "workspace",
@@ -1147,9 +1173,10 @@ def verify(
     json_output: bool = typer.Option(False, "--json"),
     formats: list[str] | None = typer.Option(None, "--format"),
     policy: PipelineMode | None = typer.Option(None, "--policy"),
+    dimensions: list[ReviewDimension] | None = typer.Option(None, "--dimension"),
 ) -> None:
     """Verify v2 artifacts without publishing them."""
-    _run(ctx, "verify", json_output, formats, policy)
+    _run(ctx, "verify", json_output, formats, policy, dimensions)
 
 
 def _artifact_payload(path: Path) -> dict[str, object]:

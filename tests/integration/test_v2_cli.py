@@ -488,6 +488,20 @@ def test_v2_strict_verify_passes_strict_policy_into_qa(monkeypatch, tmp_path):
     assert deps.qa.strict_calls == [True]
 
 
+def test_v2_verify_can_filter_execution_results_by_dimension(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "verify", "--dimension", "visual", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["report"]["dimensions"] == ["visual"]
+    assert {
+        item["stage"] for item in payload["report"]["execution"]["results"]
+    } == {"visual-review"}
+
+
 def test_v2_native_accessibility_review_degrades_findings_in_draft(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     deps.pipeline.accessibility_review = None
