@@ -1302,3 +1302,81 @@ def test_document_baseline_updates_only_when_explicit(tmp_path: Path):
     payload = json.loads(result.output)
     assert payload["updated"] is False
     assert (destination / "page-01.png").is_file()
+
+
+def test_v2_inspect_returns_stable_json_for_artifact_and_manifest(tmp_path: Path) -> None:
+    artifact = tmp_path / "report.html"
+    artifact.write_text("<html><body>report</body></html>\n", encoding="utf-8")
+    manifest = tmp_path / "report.html.manifest.json"
+    manifest.write_text('{"schema":"docs.build/v2"}\n', encoding="utf-8")
+
+    runner = CliRunner()
+    artifact_first = runner.invoke(app, ["v2", "inspect", str(artifact), "--json"])
+    artifact_second = runner.invoke(app, ["v2", "inspect", str(artifact), "--json"])
+    manifest_result = runner.invoke(app, ["v2", "inspect", str(manifest), "--json"])
+
+    assert artifact_first.exit_code == 0, artifact_first.output
+    assert artifact_second.exit_code == 0, artifact_second.output
+    assert artifact_first.stdout == artifact_second.stdout
+    artifact_payload = json.loads(artifact_first.stdout)
+    assert artifact_payload == {
+        "media_type": "text/html",
+        "path": str(artifact.resolve()),
+        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        "size_bytes": artifact.stat().st_size,
+    }
+    assert manifest_result.exit_code == 0, manifest_result.output
+    assert json.loads(manifest_result.stdout) == {
+        "media_type": "application/json",
+        "path": str(manifest.resolve()),
+        "sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "size_bytes": manifest.stat().st_size,
+    }
+
+
+@pytest.mark.parametrize(
+    ("left_content", "right_content", "changed_key"),
+    [
+        (b"artifact-one\n", b"artifact-two\n", "sha256"),
+        (
+            b'{"config_hash":"a","source_hash":"same"}\n',
+            b'{"config_hash":"b","source_hash":"same"}\n',
+            "config_hash",
+        ),
+    ],
+)
+def test_v2_diff_reports_changed_artifact_identity_or_manifest_input(
+    tmp_path: Path, left_content: bytes, right_content: bytes, changed_key: str
+) -> None:
+    left = tmp_path / "left.manifest.json"
+    right = tmp_path / "right.manifest.json"
+    left.write_bytes(left_content)
+    right.write_bytes(right_content)
+
+    result = CliRunner().invoke(app, ["v2", "diff", str(left), str(right), "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["same"] is False
+    assert payload["left"]["sha256"] != payload["right"]["sha256"]
+    assert payload["left"]["path"] == str(left.resolve())
+    assert payload["right"]["path"] == str(right.resolve())
+    assert payload["text_diff"]
+    if changed_key == "config_hash":
+        assert any('"config_hash"' in line for line in payload["text_diff"])
+
+
+def test_v2_inspect_and_diff_reject_missing_inputs_without_creating_outputs(tmp_path: Path) -> None:
+    existing = tmp_path / "existing.txt"
+    existing.write_text("present\n", encoding="utf-8")
+    missing = tmp_path / "missing.txt"
+    output_dir = tmp_path / "output"
+    runner = CliRunner()
+
+    inspect_result = runner.invoke(app, ["v2", "inspect", str(missing), "--json"])
+    diff_result = runner.invoke(app, ["v2", "diff", str(existing), str(missing), "--json"])
+
+    assert inspect_result.exit_code != 0
+    assert diff_result.exit_code != 0
+    assert not output_dir.exists()
+    assert not missing.exists()
