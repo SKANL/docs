@@ -698,6 +698,28 @@ def test_v2_public_verify_boundary_reuses_the_published_artifact(monkeypatch, tm
     ]
 
 
+def test_v2_public_package_and_publish_boundaries_execute_from_existing_build(
+    monkeypatch, tmp_path: Path
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+
+    packaged = runner.invoke(
+        app, ["v2", "build", "--pipeline", "document-package", "--json"]
+    )
+    published = runner.invoke(
+        app, ["v2", "build", "--pipeline", "document-publish", "--json"]
+    )
+
+    assert packaged.exit_code == 0, packaged.stdout
+    assert published.exit_code == 0, published.stdout
+    assert (tmp_path / "documents" / "active" / "output" / "release" / "active.zip").is_file()
+
+
 def test_v2_verify_uses_document_selected_on_cli_context(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     active = deps.resolve_context()

@@ -401,8 +401,22 @@ def create_v2_service(
     initial_root.mkdir(parents=True, exist_ok=True)
     capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
     destination = initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
-    if pipeline_id == "document-verify" and destination.is_file():
-        state["artifact"] = destination
+    if pipeline_id in {"document-verify", "document-package", "document-publish"}:
+        if destination.is_file():
+            state["artifact"] = destination
+        manifest_path = destination.with_suffix(destination.suffix + ".manifest.json")
+        if manifest_path.is_file():
+            try:
+                state["manifest"] = BuildManifest.from_dict(
+                    json.loads(manifest_path.read_text(encoding="utf-8"))
+                )
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                # The stage that consumes this state emits the actionable
+                # contract error; service construction remains deterministic.
+                state["manifest"] = None
+        candidate = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
+        if candidate.is_file():
+            state["package_candidate"] = candidate
     ledger = ProvenanceLedgerV2(initial_root / "runs" / "v2-provenance.json", trusted_root=initial_root)
     manifest_service = BuildManifestServiceV2(
         input_identities=_current_input_identities,
@@ -994,7 +1008,8 @@ def _run(
             )
             report = service.run(
                 f"cli-{command}-{output_format}",
-                publish=command == "build" and pipeline_id == "document",
+                publish=command == "build"
+                and pipeline_id in {"document", "document-publish"},
                 pipeline_id=pipeline_id,
             )
             report_payload = report.to_dict()

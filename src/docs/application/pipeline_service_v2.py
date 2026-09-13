@@ -112,8 +112,10 @@ class PipelineServiceV2:
         """Run the v2 pipeline, optionally stopping before publication."""
         if pipeline_id not in self._runtimes:
             raise ValueError(f"pipeline is not registered: {pipeline_id}")
-        if publish and pipeline_id != "document":
-            raise ValueError("only the full document pipeline may publish")
+        if publish and pipeline_id not in {"document", "document-publish"}:
+            raise ValueError(
+                "only the full document pipeline or document-publish pipeline may publish"
+            )
         if self._run_id_sink is not None:
             self._run_id_sink(run_id)
         excluded: frozenset[str] = (
