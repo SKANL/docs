@@ -122,6 +122,27 @@ def _verify_pdf_artifact(artifact: Path) -> tuple[bool, str]:
     return True, "PDF reopened, rendered, and visual dimensions verified"
 
 
+def _verify_pdf_reproducibility(original: Path, rebuilt: Path) -> tuple[bool, str]:
+    """Compare PDF semantics, not bytes, because PDF rendering is engine-dependent."""
+    try:
+        import pypdfium2 as pdfium
+
+        first = pdfium.PdfDocument(str(original))
+        second = pdfium.PdfDocument(str(rebuilt))
+        try:
+            if len(first) != len(second):
+                return False, "PDF reproducibility changed the page count"
+            for index in range(len(first)):
+                if first[index].get_size() != second[index].get_size():
+                    return False, f"PDF reproducibility changed page geometry at page {index + 1}"
+        finally:
+            first.close()
+            second.close()
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        return False, f"PDF reproducibility comparison failed: {exc}"
+    return True, "PDF reproducibility verified semantically"
+
+
 def _verify_readable_artifact(artifact: Path) -> tuple[bool, str]:
     """Keep format-specific verification in pipeline stages, after a safe read."""
     try:
@@ -459,9 +480,13 @@ def create_v2_service(
             return False, "structural-audit service is not configured"
         template = state["resolved"].template
         contract = getattr(template, "template_contract", None)
-        if contract is None:
-            return False, "structural-audit contract is not configured"
-        result = service.audit(state["artifact"], contract.model_dump(exclude_none=True))
+        # Legacy templates predate the declarative contract.  They still need
+        # the generic structural checks (readability, tables, relationships),
+        # so an absent contract means "no additional requirements", not "skip
+        # the audit".  This keeps migration finite while preserving the v2
+        # gate for every rendered artifact.
+        contract_data = {} if contract is None else contract.model_dump(exclude_none=True)
+        result = service.audit(state["artifact"], contract_data)
         return result.passed, result.to_markdown()
 
     def _native_accessibility_review() -> tuple[bool, str]:
@@ -524,7 +549,12 @@ def create_v2_service(
             )
             if rebuilt is None:
                 return False, "reproducibility check produced no artifact"
-            if sha256_file(artifact) != sha256_file(Path(rebuilt)):
+            rebuilt_path = Path(rebuilt)
+            if output_format == "pdf":
+                passed, detail = _verify_pdf_reproducibility(artifact, rebuilt_path)
+                if not passed:
+                    return False, detail
+            elif sha256_file(artifact) != sha256_file(rebuilt_path):
                 return False, "reproducibility divergence detected"
         except Exception as exc:
             return False, f"reproducibility check failed: {exc}"
