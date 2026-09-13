@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from docx import Document
+from PIL import Image
 
 from docs.application.format_audit import FormatAuditService
 from docs.application.qa import QaService
@@ -185,3 +186,34 @@ def test_qa_docx_strict_includes_failed_render_verification_in_its_gate(tmp_path
 
     report = (tmp_path / "qa" / "doc" / "qa-report.md").read_text(encoding="utf-8")
     assert "- Resultado: FAIL" in report
+
+
+def test_qa_docx_compares_configured_visual_baseline(tmp_path):
+    class QaPort:
+        def render_docx_to_pdf(self, _config, docx_path, output_dir):
+            pdf_path = output_dir / f"{docx_path.stem}.pdf"
+            pdf_path.write_bytes(b"pdf")
+            previews = output_dir / "previews"
+            previews.mkdir()
+            Image.new("RGB", (120, 160), "white").save(previews / "page-01.png")
+            return pdf_path
+
+        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
+            return []
+
+    docx_path = _make_docx(tmp_path)
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    Image.new("RGB", (120, 160), "white").save(baseline / "page-01.png")
+    service = QaService(QaPort(), FormatAuditService(PythonDocxAuditAdapter()))
+
+    output_dir = service.qa_docx(
+        {
+            "paths": {"output_qa_dir": str(tmp_path / "qa")},
+            "visual_qa": {"baseline_dir": str(baseline), "minimum_similarity": 0.99},
+        },
+        docx_path,
+    )
+
+    report = (output_dir / "qa-report.md").read_text(encoding="utf-8")
+    assert "visual.baseline_changed" not in report
