@@ -160,3 +160,13 @@ source-only by design.
   PipelineServiceV2 no longer knows legacy field names or container shape.
 - Focused verification: pipeline-service-v2 plus v2 CLI tests (52 passed),
   ruff and mypy passed.
+
+## Legacy boundary isolation: complete
+- Moved the legacy `PipelineService` constructor behind the CLI-only
+  `LegacyPipelineBridge`; `Deps` keeps this bridge lazy so v2 commands do not
+  instantiate the legacy aggregate.
+- Documented the bridge as the single removable migration seam in
+  `docs/architecture-v2.md` and `docs/migration-v2.md`.
+- Regression coverage confirms creating `Deps` does not construct the bridge;
+  focused tests passed (10), full suite passed (2129 passed, 5 skipped), and
+  ruff/mypy/CodeGraph/CI passed.
