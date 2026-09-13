@@ -26,6 +26,17 @@ def _set_page_options(document: Any, page: dict[str, Any], *, cm: Any, inches: A
             setattr(section, attribute, cm(float(value)))
 
 
+def _set_page_background(document: Any, color: str) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    background = document._element.find(qn("w:background"))
+    if background is None:
+        background = OxmlElement("w:background")
+        document._element.insert(0, background)
+    background.set(qn("w:color"), color)
+
+
 def _valid_color(value: Any, fallback: str) -> str:
     color = str(value or fallback).lstrip("#").upper()
     return color if len(color) == 6 and all(char in "0123456789ABCDEF" for char in color) else fallback
@@ -81,18 +92,46 @@ def _add_banner(document: Any, value: str, color: str) -> None:
     run.font.color.rgb = RGBColor.from_string("FFFFFF")
 
 
-def _compose_academic(document: Any, slots: dict[str, str], alignment: Any, title_color: str, title_size: float, top_space: float) -> None:
+def _add_color_band(document: Any, color: str, height_pt: float) -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    table = document.add_table(rows=1, cols=1)
+    _shade(table.cell(0, 0), color)
+    height = OxmlElement("w:trHeight")
+    height.set(qn("w:val"), str(int(height_pt * 20)))
+    height.set(qn("w:hRule"), "exact")
+    table.rows[0]._tr.get_or_add_trPr().append(height)
+
+
+def _compose_academic(
+    document: Any,
+    slots: dict[str, str],
+    alignment: Any,
+    title_color: str,
+    body_color: str,
+    accent: str,
+    secondary_accent: str,
+    title_size: float,
+    top_space: float,
+    decorated: bool = True,
+) -> None:
+    if decorated:
+        _add_color_band(document, accent, 14)
+        _add_color_band(document, secondary_accent, 4)
+    if slots.get("eyebrow"):
+        _add_text(document, slots["eyebrow"], alignment=alignment, color=accent, size=11, bold=True, before=top_space, after=18)
     for index, (name, value) in enumerate(slots.items()):
-        if value:
+        if value and name != "eyebrow":
             _add_text(
                 document,
                 value,
                 alignment=alignment,
-                color=title_color if name == "title" else "000000",
+                color=title_color if name == "title" else body_color,
                 size=title_size if name == "title" else 12,
                 bold=name in {"institution", "title"},
-                before=top_space if index == 0 and name != "title" else 0,
-                after=28 if name == "title" else 12,
+                before=top_space if index == 0 and not slots.get("eyebrow") else 0,
+                after=32 if name == "title" else 12,
             )
 
 
@@ -178,7 +217,7 @@ def compose_generated_cover(document: Any, spec: CoverSpec, config: dict[str, An
     _clear_initial_paragraph(document)
     slots = resolve_cover_slots(spec, config)
     variant = spec.variant
-    alignment = WD_ALIGN_PARAGRAPH.CENTER
+    alignment = WD_ALIGN_PARAGRAPH.LEFT if variant is CoverVariant.ACADEMIC else WD_ALIGN_PARAGRAPH.CENTER
     title_color = "000000"
     title_size = 24.0 if variant is CoverVariant.CUSTOM else 20.0
     layout = spec.layout
@@ -189,7 +228,11 @@ def compose_generated_cover(document: Any, spec: CoverSpec, config: dict[str, An
             "center": WD_ALIGN_PARAGRAPH.CENTER,
         }.get(str(layout.get("alignment", "center")).lower(), WD_ALIGN_PARAGRAPH.CENTER)
         title_size = float(layout.get("title_size_pt", title_size))
-    accent = _valid_color(spec.visual.get("accent_color"), title_color)
+    accent = _valid_color(spec.visual.get("accent", spec.visual.get("accent_color")), "0F766E")
+    secondary_accent = _valid_color(spec.visual.get("secondary_accent"), "D97706")
+    title_color = _valid_color(spec.visual.get("title_color"), "0B1F33")
+    body_color = _valid_color(spec.visual.get("body_color"), "334155")
+    _set_page_background(document, _valid_color(spec.page.get("background"), "F4F7FA"))
     _set_page_options(document, spec.page, cm=Cm, inches=Inches)
 
     if variant is CoverVariant.INSTITUTIONAL:
@@ -206,6 +249,10 @@ def compose_generated_cover(document: Any, spec: CoverSpec, config: dict[str, An
             slots,
             alignment,
             _valid_color(spec.visual.get("title_color"), "404040") if variant is CoverVariant.CUSTOM else title_color,
+            body_color,
+            accent,
+            secondary_accent,
             title_size,
             float(layout.get("top_space_pt", 96)),
+            decorated=variant is not CoverVariant.CUSTOM,
         )

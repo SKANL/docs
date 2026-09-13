@@ -718,7 +718,13 @@ class PythonDocxAssemblyAdapter:
         body = Document(str(body_docx))
 
         self._configure_preliminary_pagination(cover, sections_part, config)
-        self._render_leading_parts(cover, config, leading)
+        effective_leading = leading
+        if generated_cover and generated_cover.mode in {CoverMode.GENERATED, CoverMode.NONE}:
+            # Explicit generated/none modes take precedence over a legacy
+            # cover_from_asset part; otherwise the old cover is appended after
+            # the generated one and silently wins the first-page visual QA.
+            effective_leading = [part for part in leading if part.get("type") != "cover_from_asset"]
+        self._render_leading_parts(cover, config, effective_leading)
         self._transfer_body_content(cover, body, sections_part, config)
 
         return cover

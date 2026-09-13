@@ -35,8 +35,8 @@ def test_declared_variants_compose_distinct_semantic_layouts():
     visual = _composed_cover(CoverVariant.VISUAL)
     custom = _composed_cover(CoverVariant.CUSTOM)
 
-    assert len(academic.tables) == 0
-    assert _paragraph(academic, "Native Cover Report").alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert len(academic.tables) == 2
+    assert _paragraph(academic, "Native Cover Report").alignment == WD_ALIGN_PARAGRAPH.LEFT
 
     assert len(institutional.tables) == 1
     assert institutional.tables[0].cell(0, 0).text == "Analytical Academy"

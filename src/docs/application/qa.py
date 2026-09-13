@@ -51,12 +51,11 @@ class QaService:
                 expected_pdf, RenderProfile(format="pdf"), output_dir / "previews"
             )
 
-        # PNG-per-page rendering is permanently out of scope (user decision,
-        # 2026-06-21) — will be reimplemented differently later. Verbatim
-        # strict-mode consequence preserved: strict QA still requires PNG
-        # evidence and therefore always raises here until that capability
-        # lands under a future, differently-shaped slice.
-        pngs: list[Path] = []
+        # The PDF verifier renders one deterministic PNG per page when a
+        # preview directory is supplied. Reuse those previews as the QA
+        # evidence instead of maintaining a second renderer.
+        previews_dir = output_dir / "previews"
+        pngs = sorted(previews_dir.glob("*.png")) if previews_dir.is_dir() else []
 
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)

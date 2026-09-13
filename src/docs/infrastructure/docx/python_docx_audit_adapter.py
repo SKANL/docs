@@ -73,17 +73,19 @@ class PythonDocxAuditAdapter:
             issues.extend(self._check_non_cover_margins(document, config))
 
         issues.extend(self._check_heading_style(headings))
-        issues.extend(self._check_table_borders(document))
 
-        body_start = 0
-        for i, paragraph in enumerate(document.paragraphs):
-            if paragraph.style and paragraph.style.name == "Heading 1":
-                body_start = i
-                break
+        heading1_indices = [
+            i for i, paragraph in enumerate(document.paragraphs)
+            if paragraph.style and paragraph.style.name == "Heading 1"
+        ]
+        # The first Heading 1 may belong to the generated cover/contents
+        # section. Strict paragraph rules apply to authored body content.
+        body_start = heading1_indices[1] if len(heading1_indices) > 1 else (heading1_indices[0] if heading1_indices else 0)
+        issues.extend(self._check_table_borders(document, body_start))
         issues.extend(self._check_figure_captions(document, body_start))
 
         if strict:
-            issues.extend(self._check_strict_paragraph_formatting(document, body_start))
+            issues.extend(self._check_strict_paragraph_formatting(document, body_start, config))
 
         return issues
 
@@ -155,9 +157,14 @@ class PythonDocxAuditAdapter:
                 issues.append(Issue("warning", f"Título de primer orden parece numerado manualmente: `{text}`.", dimension=ReviewDimension.VISUAL))
         return issues
 
-    def _check_table_borders(self, document: Any) -> list[Issue]:
+    def _check_table_borders(self, document: Any, body_start: int = 0) -> list[Issue]:
         issues: list[Issue] = []
+        body = document.element.body
+        body_heading = document.paragraphs[body_start]._p if document.paragraphs else None
+        body_heading_index = body.index(body_heading) if body_heading is not None else -1
         for idx, table in enumerate(document.tables, start=1):
+            if body_heading_index >= 0 and body.index(table._tbl) < body_heading_index:
+                continue
             if table_has_vertical_borders_or_shading(table):
                 issues.append(
                     Issue("error", f"Tabla {idx} contiene bordes verticales o sombreado; el manual exige sólo líneas horizontales sin colores.", dimension=ReviewDimension.VISUAL)
@@ -179,21 +186,33 @@ class PythonDocxAuditAdapter:
                 issues.append(Issue("warning", "Figura detectada sin caption inferior con patrón `Figura N.`.", dimension=ReviewDimension.ACCESSIBILITY))
         return issues
 
-    def _check_strict_paragraph_formatting(self, document: Any, body_start: int) -> list[Issue]:
+    def _check_strict_paragraph_formatting(
+        self, document: Any, body_start: int, config: dict[str, Any] | None = None
+    ) -> list[Issue]:
         from docx.shared import Cm, Pt
 
         issues: list[Issue] = []
+        visual_theme = (config or {}).get("format", {}).get("visual_theme", {})
+        spacing = visual_theme.get("spacing", {}) if isinstance(visual_theme, dict) else {}
+        expected_line_spacing = float(spacing.get("body_line_spacing", 1.5))
+        expected_after_pt = float(spacing.get("body_after_pt", 18))
         for paragraph in document.paragraphs[body_start:]:
             text = paragraph.text.strip()
             style_name = paragraph.style.name if paragraph.style else ""
-            if not text or style_name == "Heading 1":
+            if (
+                not text
+                or style_name.startswith("Heading")
+                or re.match(r"^(Figura|Tabla|Gr[aá]fico|Gr[aá]fica)\s+\d+\.", text, re.IGNORECASE)
+                or "<w:drawing" in paragraph._p.xml
+                or "<w:pict" in paragraph._p.xml
+            ):
                 continue
             paragraph_format = paragraph.paragraph_format
-            if paragraph_format.line_spacing != 1.5:
-                issues.append(Issue("error", f"Párrafo sin interlineado 1.5: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
+            if paragraph_format.line_spacing != expected_line_spacing:
+                issues.append(Issue("error", f"Párrafo sin interlineado {expected_line_spacing}: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
                 break
-            if paragraph_format.space_after != Pt(18):
-                issues.append(Issue("error", f"Párrafo sin espacio posterior de 18 pt: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
+            if paragraph_format.space_after != Pt(expected_after_pt):
+                issues.append(Issue("error", f"Párrafo sin espacio posterior de {expected_after_pt:g} pt: `{text[:60]}`.", dimension=ReviewDimension.VISUAL))
                 break
             if style_name.startswith("List") or paragraph_has_numbering(paragraph):
                 if paragraph_format.first_line_indent not in {None, 0}:
