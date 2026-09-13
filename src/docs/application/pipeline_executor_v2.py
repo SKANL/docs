@@ -110,14 +110,18 @@ class PipelineExecutor:
             declared = set(stage.produces)
             reported = {artifact.contract for artifact in result.artifacts}
             undeclared = sorted(reported - declared)
-            if result.ok and undeclared:
+            missing_required = sorted(required_artifacts.intersection(declared) - reported)
+            if result.ok and result.outcome == "succeeded" and (undeclared or missing_required):
                 result = StageResult(
                     stage_name,
                     False,
                     result.artifacts,
                     result.warnings,
-                    tuple(result.errors) + tuple(
-                        f"undeclared artifact produced: {artifact}" for artifact in undeclared
+                    tuple(result.errors)
+                    + tuple(f"undeclared artifact produced: {artifact}" for artifact in undeclared)
+                    + tuple(
+                        f"required declared artifact missing: {artifact}"
+                        for artifact in missing_required
                     ),
                 )
             results.append(result)

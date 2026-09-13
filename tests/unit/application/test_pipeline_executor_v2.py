@@ -207,3 +207,33 @@ def test_failed_optional_producer_blocks_only_its_downstream_consumers():
     assert calls == ["optional", "unrelated"]
     assert report.results[1].errors == ("required dependency unavailable: optional-output",)
     assert report.results[2].ok is True
+
+
+def test_missing_required_declared_output_fails_producer_and_blocks_consumer():
+    definition = PipelineDefinition(
+        artifacts=(
+            ArtifactContract("built", required=True),
+            ArtifactContract("published"),
+        ),
+        stages=(
+            StageSpec("build", produces=("built",), fail_fast=False),
+            StageSpec("publish", requires=("built",), produces=("published",)),
+        ),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "build": lambda: (calls.append("build") or StageResult("build", True)),
+            "publish": lambda: (calls.append("publish") or StageResult("publish", True)),
+        },
+    ).run()
+
+    assert calls == ["build"]
+    assert report.results[0].stage == "build"
+    assert report.results[0].ok is False
+    assert report.results[0].errors == ("required declared artifact missing: built",)
+    assert report.results[1].stage == "publish"
+    assert report.results[1].ok is False
+    assert report.results[1].errors == ("required dependency unavailable: built",)
