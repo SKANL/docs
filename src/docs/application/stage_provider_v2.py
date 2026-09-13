@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
 class StageProviderV2:
     """Resolve a stage service without leaking composition details to stages."""
 
-    def __init__(self, dependencies: Any) -> None:
-        self._dependencies = dependencies
+    def __init__(self, services: Mapping[str, Any]) -> None:
+        self._services = dict(services)
 
     def get(self, name: str) -> Any:
         """Return the explicitly registered service for ``name`` if callable."""
-        direct = getattr(self._dependencies, name, None)
-        if direct is not None:
-            return direct
-        services = getattr(self._dependencies, "pipeline", None)
-        return getattr(services, name, None)
+        return self._services.get(name)

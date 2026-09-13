@@ -408,7 +408,34 @@ def create_v2_service(
     state["run_id"] = f"cli-build-{output_format}"
     build_token = uuid.uuid4().hex
 
-    stage_provider = StageProviderV2(deps)
+    stage_services: dict[str, Any] = {}
+    compatibility_services = getattr(deps, "pipeline", None)
+    service_names = {
+        "generate_visuals_service",
+        "structural_audit_service",
+        "rules_manifest_state",
+        "generate_visuals",
+        "compose_cover",
+        "structural_audit",
+        "ingest_sources",
+        "normalize_sources",
+        "compile_structure",
+        "build_html",
+        "build_pdf",
+        "accessibility_review",
+        "visual_review",
+        "reproducibility_check",
+        "evidence_review",
+        "consistency_review",
+        "package_release",
+    }
+    for name in service_names:
+        service = getattr(deps, name, None)
+        if service is None and compatibility_services is not None:
+            service = getattr(compatibility_services, name, None)
+        if service is not None:
+            stage_services[name] = service
+    stage_provider = StageProviderV2(stage_services)
     source_pipeline = (
         SourcePipelineV2(deps.ingest)
         if getattr(deps, "ingest", None) is not None
