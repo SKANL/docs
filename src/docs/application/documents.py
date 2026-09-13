@@ -13,6 +13,7 @@ from typing import Protocol
 
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.artifacts import BuildManifest
+from docs.domain.identity import sha256_content
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentRepository
 from docs.domain.ports.registry_repository import RegistryRepository
@@ -162,9 +163,7 @@ class DocumentService:
                     or len(matching) != 1
                     or matching[0].sha256
                     != hashlib.sha256(artifact.read_bytes()).hexdigest()
-                    or not ledger.verify_attestation(
-                        manifest.provenance_run, manifest.attestation()
-                    )
+                    or not self._verify_v2_attestation(ledger, manifest)
                 ):
                     raise ValueError("manifest, artifact, or provenance does not match")
             except (OSError, TypeError, ValueError, KeyError, IndexError) as exc:
@@ -196,6 +195,31 @@ class DocumentService:
             raise
         finally:
             shutil.rmtree(staging, ignore_errors=True)
+
+    @staticmethod
+    def _verify_v2_attestation(ledger: ProvenanceLedgerV2, manifest: BuildManifest) -> bool:
+        """Accept old v2 manifests that predate optional artifact metadata."""
+        if ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
+            return True
+        recorded = ledger.load_attestation(manifest.provenance_run or "")
+        if not isinstance(recorded, dict):
+            return False
+        recorded_manifest = recorded.get("manifest")
+        if not isinstance(recorded_manifest, dict):
+            return False
+        if recorded.get("sha256") != sha256_content(recorded_manifest):
+            return False
+        current = manifest.to_dict()
+        recorded_artifacts = recorded_manifest.get("artifacts", [])
+        current_artifacts = current.get("artifacts", [])
+        if not isinstance(recorded_artifacts, list) or not isinstance(current_artifacts, list):
+            return False
+        for item in (recorded_artifacts, current_artifacts):
+            for artifact in item:
+                if isinstance(artifact, dict):
+                    artifact.pop("media_type", None)
+                    artifact.pop("size_bytes", None)
+        return recorded_manifest == current
 
     def _promote_draft_to_final(self, doc_id: str) -> None:
         doc_root = self.workspace.doc_root(doc_id)
