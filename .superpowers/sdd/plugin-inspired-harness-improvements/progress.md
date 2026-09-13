@@ -16,7 +16,15 @@ Task 1-3: complete
 Task 4-5: complete
 Task 6-7: complete
 Task 8: complete
-Task 9-10: pending
+Task 9: complete
+Task 10: complete in external CISSP workspace; the harness repository remains
+source-only by design.
+- Rebuilt `cissp-dominio-6-interno` and `cissp-dominio-6-entrega` through the
+  native v2 pipeline for DOCX, HTML, and PDF with release policy.
+- Verified matching v2 manifests/provenance sidecars and PDF rendering:
+  internal 15 pages / 0 blank pages; delivery 11 pages / 0 blank pages.
+- Preserved the separate internal/delivery source workspaces and labeled
+  SVG/PNG visual assets; no authored CISSP sources were copied into this repo.
 
 ## Atomic publication fix
 - Root cause: replacing a non-empty directory needs two renames on Windows; termination between them can leave no published target.
