@@ -199,6 +199,29 @@ def test_registers_public_pipeline_boundaries():
 
 
 
+def test_runs_a_registered_public_subdag_without_running_unrelated_stages(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run("public-build", pipeline_id="document-build", publish=False)
+
+    assert report.succeeded
+    assert calls == ["render", "build-html", "build-pdf"]
+    assert [result.stage for result in report.execution.results] == [
+        "generate-visuals", "compose-cover", "build-docx", "build-html", "build-pdf"
+    ]
+
+
+def test_rejects_public_pipeline_publication_request(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    try:
+        service.run("invalid-public-publication", pipeline_id="document-build", publish=True)
+    except ValueError as exc:
+        assert "only the full document pipeline" in str(exc)
+    else:
+        raise AssertionError("expected public pipeline publication to be rejected")
+
 def test_exposes_the_full_declarative_stage_plan_with_serial_dependencies(tmp_path: Path) -> None:
     service = _service(tmp_path, _dependencies(tmp_path, []))
 
@@ -349,3 +372,4 @@ def test_optional_stage_failure_does_not_block_later_serial_stages(tmp_path: Pat
     assert "render" in calls
     assert "provenance" in calls
     assert next(result for result in report.execution.results if result.stage == "generate-visuals").ok is False
+

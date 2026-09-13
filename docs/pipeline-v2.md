@@ -43,7 +43,7 @@ A `failed` stage stops its downstream dependency chain. A visible optional `unsu
 ## Full stage plan
 
 `FULL_STAGE_IDS` is authoritative and ordered as follows. The public boundaries
-below are registered as validated sub-DAGs and reuse the same stage handlers;
+below are registered as validated sub-DAGs, reuse the same stage handlers, and are selectable with `--pipeline`;
 they are not separate format-specific implementations:
 
 ```text
@@ -63,7 +63,7 @@ resolve-config -> resolve-template -> resolve-context -> resolve-assets
 -> package-release -> publish-draft
 ```
 
-`build` excludes no publication stages and writes successful formats to `output/v2/`. `verify` excludes `publish-draft` and `package-release`; its `cli-verify-*` run does not overwrite the build attestation. The workspace bridge may leave selected stages as explicit no-op contract stages until their adapter is migrated.
+`build` runs the full `document` pipeline by default and writes successful formats to `output/v2/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The workspace bridge may leave selected stages as explicit no-op contract stages until their adapter is migrated.
 
 ## Format selection
 

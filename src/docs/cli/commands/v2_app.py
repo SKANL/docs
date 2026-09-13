@@ -930,6 +930,7 @@ def _run(
     formats: list[str] | None,
     policy: PipelineMode | None,
     dimensions: list[ReviewDimension] | None = None,
+    pipeline_id: str = "document",
 ) -> None:
     selected_document = ctx.obj.get("doc", "")
     if formats is None:
@@ -977,7 +978,11 @@ def _run(
             service = create_v2_service(
                 ctx.obj["deps"], output_format, selected_policy, document=selected_document
             )
-            report = service.run(f"cli-{command}-{output_format}", publish=command == "build")
+            report = service.run(
+                f"cli-{command}-{output_format}",
+                publish=command == "build" and pipeline_id == "document",
+                pipeline_id=pipeline_id,
+            )
             report_payload = report.to_dict()
             if dimensions:
                 stage_dimensions = {
@@ -1193,9 +1198,10 @@ def build(
     json_output: bool = typer.Option(False, "--json"),
     formats: list[str] | None = typer.Option(None, "--format"),
     policy: PipelineMode | None = typer.Option(None, "--policy"),
+    pipeline_id: str = typer.Option("document", "--pipeline", help="Registered pipeline boundary to execute."),
 ) -> None:
     """Build verified v2 artifacts in one or more requested formats."""
-    _run(ctx, "build", json_output, formats, policy)
+    _run(ctx, "build", json_output, formats, policy, pipeline_id=pipeline_id)
 
 
 @v2_app.command("verify")
@@ -1205,9 +1211,10 @@ def verify(
     formats: list[str] | None = typer.Option(None, "--format"),
     policy: PipelineMode | None = typer.Option(None, "--policy"),
     dimensions: list[ReviewDimension] | None = typer.Option(None, "--dimension"),
+    pipeline_id: str = typer.Option("document", "--pipeline", help="Registered pipeline boundary to execute."),
 ) -> None:
     """Verify v2 artifacts without publishing them."""
-    _run(ctx, "verify", json_output, formats, policy, dimensions)
+    _run(ctx, "verify", json_output, formats, policy, dimensions, pipeline_id)
 
 
 def _artifact_payload(path: Path) -> dict[str, object]:

@@ -90,9 +90,14 @@ class PipelineServiceV2:
         self.planner = PipelinePlanner()
         self.definition = registered.definition
         self.stage_plan = self.planner.plan(self.definition)
-        self._runtime = PipelineRuntime(
-            self.definition, registered.handlers, capabilities, ledger, policy
-        )
+        self._runtimes = {
+            name: PipelineRuntime(entry.definition, entry.handlers, capabilities, ledger, policy)
+            for name, entry in (
+                (pipeline, self.registry.resolve(pipeline))
+                for pipeline in self.registry.names()
+            )
+        }
+        self._runtime = self._runtimes["document"]
         self._run_id_sink = run_id_sink
         self._cleanup = cleanup
 
@@ -102,8 +107,13 @@ class PipelineServiceV2:
         *,
         inputs: Iterable[Path] = (),
         publish: bool = True,
+        pipeline_id: str = "document",
     ) -> PipelineRuntimeReport:
         """Run the v2 pipeline, optionally stopping before publication."""
+        if pipeline_id not in self._runtimes:
+            raise ValueError(f"pipeline is not registered: {pipeline_id}")
+        if publish and pipeline_id != "document":
+            raise ValueError("only the full document pipeline may publish")
         if self._run_id_sink is not None:
             self._run_id_sink(run_id)
         excluded: frozenset[str] = (
@@ -112,7 +122,7 @@ class PipelineServiceV2:
         if not publish and run_id.startswith("cli-verify-"):
             excluded = excluded | frozenset({"record-provenance"})
         try:
-            return self._runtime.run(
+            return self._runtimes[pipeline_id].run(
                 run_id,
                 inputs=inputs,
                 outputs=self._publication.destinations if publish else (),

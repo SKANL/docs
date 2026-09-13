@@ -137,7 +137,7 @@
     "constraint": "The runtime source tree and pyproject dependencies contain no plugin imports or plugin-named dependencies."
   },
   "public_pipelines": {
-    "status": "registered-subdags",
+    "status": "registered-and-dispatchable",
     "catalog": "src/docs/application/pipeline_components_v2.py:PUBLIC_PIPELINES",
     "registry": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__",
     "ids": [
@@ -150,6 +150,7 @@
       "document-diff",
       "document-inspect"
     ],
-    "gap": "CLI build/verify still execute the full document pipeline; public sub-DAG dispatch remains the next migration slice."
+    "gap": "The document command accepts --pipeline and dispatches registered stage boundaries; document-diff and document-inspect remain read-only artifact operations.",
+    "dispatch": "src/docs/application/pipeline_service_v2.py::PipelineServiceV2.run(pipeline_id=...)"
   }
 }
