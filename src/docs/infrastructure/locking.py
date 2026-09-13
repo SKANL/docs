@@ -104,8 +104,9 @@ def directory_handle_guard(path: Path) -> Iterator[None]:
     )
     invalid = wintypes.HANDLE(-1).value
     if handle == invalid:
-        raise OSError(  # type: ignore[attr-defined]
-            ctypes.get_last_error(), f"unable to pin publication directory: {path}"
+        get_last_error = ctypes.get_last_error  # type: ignore[attr-defined]
+        raise OSError(
+            get_last_error(), f"unable to pin publication directory: {path}"
         )
     try:
         yield
