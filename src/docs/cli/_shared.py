@@ -25,13 +25,13 @@ from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
-from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
+from docs.cli.legacy_pipeline_bridge import LegacyPipelineBridge
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
@@ -339,8 +339,8 @@ class Deps:
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
-        def build_legacy_pipeline() -> PipelineService:
-            return PipelineService(
+        def build_legacy_pipeline() -> LegacyPipelineBridge:
+            return LegacyPipelineBridge(
                 doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
                 review_service, context_pack_service, context_repo, docx_assembly_service,
                 format_audit_service, qa_service, self.workspace, self.ingest,

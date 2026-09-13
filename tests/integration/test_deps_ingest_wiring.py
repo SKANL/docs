@@ -59,7 +59,7 @@ def test_deps_does_not_construct_legacy_pipeline_until_requested(monkeypatch, tm
     """V2 composition must not eagerly instantiate the legacy aggregate."""
     monkeypatch.setattr(
         shared,
-        "PipelineService",
+        "LegacyPipelineBridge",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy pipeline was eager")),
     )
 

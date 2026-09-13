@@ -26,7 +26,7 @@ Run from the harness checkout or use the installed `docs` entry point. The `docu
 
 Durable source inputs are `document.json`, section Markdown, resolved context, template/configuration, and workspace assets. Rendered DOCX/HTML/PDF files, manifests, QA reports, ZIP packages, and published copies are derived artifacts. Derived artifacts never replace source Markdown.
 
-V2 does not silently fall back to the legacy pipeline and never writes legacy `output/final/`. Its composition root does not construct the legacy aggregate unless a legacy command actually requests it. The legacy CLI and `docs pipeline` remain available during migration. V2 source preparation is native but intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
+V2 does not silently fall back to the legacy pipeline and never writes legacy `output/final/`. Its composition root does not construct the legacy aggregate unless a legacy command actually requests it. The only remaining compatibility seam is the CLI-only `docs.cli.legacy_pipeline_bridge.LegacyPipelineBridge`; it is lazy, isolated from v2 orchestration, and removable once the legacy command inventory is empty. The legacy CLI and `docs pipeline` remain available during migration. V2 source preparation is native but intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
 
 ## Pipeline kernel
 
