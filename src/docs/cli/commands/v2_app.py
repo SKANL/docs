@@ -157,6 +157,15 @@ def _verify_pdf_reproducibility(original: Path, rebuilt: Path) -> tuple[bool, st
     return True, "PDF reproducibility verified semantically"
 
 
+def _verify_non_docx_artifact(output_format: str, artifact: Path) -> tuple[bool, str]:
+    """Reopen a rendered non-DOCX artifact using its existing verifier."""
+    if output_format == "html":
+        return _verify_html_artifact(artifact)
+    if output_format == "pdf":
+        return _verify_pdf_artifact(artifact)
+    return False, f"no format verifier is registered for {output_format}"
+
+
 def _verify_readable_artifact(artifact: Path) -> tuple[bool, str]:
     """Keep format-specific verification in pipeline stages, after a safe read."""
     try:
@@ -798,11 +807,11 @@ def create_v2_service(
                 return False, "; ".join(issue.message for issue in result.issues)
             return successful("audit")
         if output_format == "html":
-            passed, detail = _verify_html_artifact(state["artifact"])
+            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
             state["verification"] = {"passed": passed, "format": output_format, "reopened": True, "rendered": passed, "detail": detail}
             return passed, detail
         if output_format == "pdf":
-            passed, detail = _verify_pdf_artifact(state["artifact"])
+            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
             state["verification"] = {"passed": passed, "format": output_format, "reopened": True, "rendered": passed, "detail": detail}
             return passed, detail
         return False, f"no format verifier is registered for {output_format}"
@@ -815,6 +824,20 @@ def create_v2_service(
                 return False, "strict verification requires durable QA evidence"
             if strict and Path(qa_path).is_dir() and not (Path(qa_path) / "qa-report.md").is_file():
                 return False, "strict verification requires qa-report.md evidence"
+        else:
+            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
+            verification = dict(state.get("verification", {}))
+            verification.update(
+                {
+                    "passed": passed,
+                    "format": output_format,
+                    "reopened": True,
+                    "readable": passed,
+                    "detail": detail,
+                }
+            )
+            state["verification"] = verification
+            return passed, detail
         return successful("verify")
 
     explicit_stages: dict[str, Any] = {

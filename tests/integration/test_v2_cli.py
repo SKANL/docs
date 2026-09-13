@@ -15,6 +15,7 @@ from docs.cli.commands.v2_app import (
     _promote_release_candidate,
     _recover_batch_transaction,
     _verify_html_artifact,
+    _verify_pdf_artifact,
     _verify_pdf_reproducibility,
     _write_batch_journal,
     _write_package_archive,
@@ -955,6 +956,62 @@ def test_v2_build_rejects_malformed_non_docx_artifacts_before_publication(
     assert result.exit_code == 1
     assert expected_detail in result.stdout
     assert not (tmp_path / "documents" / "active" / "output" / "v2" / f"active.{output_format}").exists()
+
+
+@pytest.mark.parametrize("output_format", ("html", "pdf"))
+def test_v2_non_docx_verify_records_readable_artifact_evidence(
+    monkeypatch, tmp_path, output_format
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: f"{name}.test")
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--format", output_format, "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    manifest_path = (
+        tmp_path / "documents" / "active" / "output" / "v2" / f"active.{output_format}.manifest.json"
+    )
+    verification = json.loads(manifest_path.read_text(encoding="utf-8"))["verification"]
+    assert verification["passed"] is True
+    assert verification["readable"] is True
+    assert verification["detail"]
+
+
+@pytest.mark.parametrize("output_format", ("html", "pdf"))
+def test_v2_non_docx_verify_fails_when_reopened_artifact_is_invalid(
+    monkeypatch, tmp_path, output_format
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    verifier = _verify_html_artifact if output_format == "html" else _verify_pdf_artifact
+    original_verifier = verifier
+    calls = 0
+
+    def fail_on_verify(artifact: Path) -> tuple[bool, str]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            artifact.write_bytes(
+                b"invalid HTML output" if output_format == "html" else b"invalid PDF output"
+            )
+            return True, "audit accepted fixture"
+        return original_verifier(artifact)
+
+    monkeypatch.setattr("docs.cli.commands.v2_app." + verifier.__name__, fail_on_verify)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(
+        app, ["v2", "verify", "--format", output_format, "--json"]
+    )
+
+    assert result.exit_code == 1, result.stdout
+    payload = json.loads(result.stdout)
+    verification = next(
+        item for item in payload["report"]["execution"]["results"] if item["stage"] == "editorial-review"
+    )
+    assert verification["errors"]
+    assert output_format.upper() in verification["errors"][0]
 
 
 def test_v2_document_create_delegates_to_existing_document_services(monkeypatch, tmp_path):
