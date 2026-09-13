@@ -124,3 +124,14 @@ source-only by design.
 - Added focused AGENTS.md assertions for the QA path and the boundary that Documents, PDF, and Template Creator plugins assist authoring/inspection but are not runtime dependencies.
 - Scope intentionally excludes CISSP documents.
 - Focused: `uv run pytest tests/unit/test_agents_md_content.py -q` — 12 passed.
+
+## V2 observability follow-up: complete
+- Added lazy capability diagnostics with module versions, capability kind,
+  requirement text, and draft degradation guidance; the compact capability
+  report remains backward compatible.
+- Added optional `duration_ms` telemetry to every executed `StageResult` while
+  keeping deterministic pipeline JSON free of wall-clock values.
+- Added repeatable `--dimension` filtering to `document verify`, aligned with
+  the existing legacy verification filter.
+- Focused verification: capability tests (7 passed), v2 CLI tests (42 passed),
+  pipeline executor/kernel/runtime tests (39 passed), ruff and mypy passed.
