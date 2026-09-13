@@ -145,3 +145,10 @@ source-only by design.
   toward native stage implementations.
 - Focused verification: stage-provider plus v2 CLI tests (44 passed), ruff and
   mypy passed.
+
+## V2 contract naming cleanup: complete
+- Renamed the v2 operation contract to `StageOperation` and the dependency
+  aggregate to `PipelineStageDependencies`; removed legacy terminology from
+  the v2 contract surface without changing compatibility behavior.
+- Focused verification: pipeline-service-v2 plus v2 CLI tests (52 passed),
+  ruff and mypy passed.
