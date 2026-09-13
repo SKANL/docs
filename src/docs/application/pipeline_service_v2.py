@@ -8,6 +8,7 @@ from pathlib import Path
 
 from docs.application.atomic_transform_v2 import AtomicTransform, TransformSpec
 from docs.application.pipeline_executor_v2 import StageHandler
+from docs.application.pipeline_registry_v2 import PipelinePlannerV2, PipelineRegistryV2
 from docs.application.pipeline_runtime_v2 import PipelineRuntime, PipelineRuntimeReport
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
@@ -100,7 +101,10 @@ class PipelineServiceV2:
     ) -> None:
         self._dependencies = dependencies
         self._atomic_transform = atomic_transform
-        self.definition = self._definition(excluded_stages)
+        self.registry = PipelineRegistryV2()
+        self.registry.register("document", self._definition(excluded_stages))
+        self.planner = PipelinePlannerV2()
+        self.definition = self.registry.get("document")
         self._runtime = PipelineRuntime(self.definition, self._handlers(), capabilities, ledger, policy)
         self._run_id_sink = run_id_sink
         self._cleanup = cleanup
