@@ -59,7 +59,12 @@ package-release
 
 The kernel validates stage names, artifact contracts, dependency availability, duplicate producers, and cycles before execution. Each stage produces a named `<stage>-complete` contract in the current bridge. Execution is fail-fast for a failed required stage. Optional stages can report visible `skipped` or `unsupported` outcomes; policy decides whether those warnings are acceptable.
 
-The current workspace bridge wires the supported adapters. Declared stages without a bridge handler are explicit no-op contract stages and are reported as `unsupported`; they are not silently claimed as fully implemented. This is the current runtime boundary.
+The current workspace bridge wires the supported adapters through
+`StageProviderV2`, the single composition-root boundary for resolving stage
+services. Declared stages without a bridge handler are explicit no-op contract
+stages and are reported as `unsupported`; they are not silently claimed as
+fully implemented. This is the current runtime boundary and the migration
+seam for replacing compatibility services with native stage implementations.
 
 ## Policies and capabilities
 

@@ -135,3 +135,13 @@ source-only by design.
   the existing legacy verification filter.
 - Focused verification: capability tests (7 passed), v2 CLI tests (42 passed),
   pipeline executor/kernel/runtime tests (39 passed), ruff and mypy passed.
+
+## V2 stage boundary follow-up: complete
+- Added `StageProviderV2` so v2 composition resolves stage services through a
+  single adapter boundary instead of reaching into compatibility containers
+  from the CLI orchestration code.
+- Added unit coverage for direct-service precedence and missing services.
+- Updated architecture documentation to identify this as the migration seam
+  toward native stage implementations.
+- Focused verification: stage-provider plus v2 CLI tests (44 passed), ruff and
+  mypy passed.
