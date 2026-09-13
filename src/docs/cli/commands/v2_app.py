@@ -411,7 +411,7 @@ def create_v2_service(
     build_token = uuid.uuid4().hex
 
     stage_services: dict[str, Any] = {}
-    compatibility_services = getattr(deps, "pipeline", None)
+    compatibility_services = getattr(deps, "v2_compatibility", None)
     service_names = {
         "generate_visuals_service",
         "structural_audit_service",

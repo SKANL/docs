@@ -311,6 +311,10 @@ class Deps:
             generate_visuals_service=self.generate_visuals_service,
             structural_audit_service=structural_audit_service,
         )
+        # V2 consumes these named services directly. The legacy aggregate above
+        # remains available only to the legacy CLI and is not a V2 dependency.
+        self.structural_audit_service = structural_audit_service
+        self.rules_manifest_state = self.pipeline.rules_manifest_state
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:
         """Build a `TranslateService` bound to this run's memory and slot file.

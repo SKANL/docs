@@ -138,7 +138,7 @@ def _deps(tmp_path: Path):
         },
         template=SimpleNamespace(type="test-template"),
     )
-    return SimpleNamespace(
+    fixture = SimpleNamespace(
         workspace=SimpleNamespace(
             documents_dir=tmp_path / "documents",
             doc_root=lambda doc_id: tmp_path / "documents" / doc_id,
@@ -164,6 +164,8 @@ def _deps(tmp_path: Path):
             rules_manifest_state=lambda config: (True, 1),
         ),
     )
+    fixture.v2_compatibility = fixture.pipeline
+    return fixture
 
 
 def test_v2_build_resolves_renders_audits_qa_and_publishes_verified_docx(monkeypatch, tmp_path):

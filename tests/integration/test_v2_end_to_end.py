@@ -133,6 +133,7 @@ def _journey_deps(tmp_path: Path):
         qa=qa,
         review=review,
         pipeline=pipeline,
+        v2_compatibility=pipeline,
     )
 
 
