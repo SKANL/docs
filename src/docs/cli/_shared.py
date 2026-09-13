@@ -108,6 +108,39 @@ def build_workspace() -> Workspace:
 logger = logging.getLogger(__name__)
 
 
+def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
+    """Read the rules manifest without constructing the legacy pipeline."""
+    try:
+        path = Path(config["paths"]["rules_manifest"])
+        return (True, path.stat().st_size) if path.is_file() else (False, 0)
+    except (KeyError, OSError, TypeError):
+        return False, 0
+
+
+class _LazyPipelineService:
+    """Defer the legacy aggregate until a legacy command actually needs it."""
+
+    def __init__(self, factory: Any) -> None:
+        object.__setattr__(self, "_factory", factory)
+        object.__setattr__(self, "_instance", None)
+
+    def _resolve(self) -> Any:
+        instance = self._instance
+        if instance is None:
+            instance = self._factory()
+            object.__setattr__(self, "_instance", instance)
+        return instance
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"_factory", "_instance"}:
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._resolve(), name, value)
+
+
 class Deps:
     """Composition root — builds every adapter + service exactly as the
     integration-test _service() helpers do, plus config assembly."""
@@ -306,18 +339,21 @@ class Deps:
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
-        self.pipeline = PipelineService(
-            doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
-            review_service, context_pack_service, context_repo, docx_assembly_service,
-            format_audit_service, qa_service, self.workspace, self.ingest,
-            context_service=self.context,
-            generate_visuals_service=self.generate_visuals_service,
-            structural_audit_service=structural_audit_service,
-        )
+        def build_legacy_pipeline() -> PipelineService:
+            return PipelineService(
+                doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
+                review_service, context_pack_service, context_repo, docx_assembly_service,
+                format_audit_service, qa_service, self.workspace, self.ingest,
+                context_service=self.context,
+                generate_visuals_service=self.generate_visuals_service,
+                structural_audit_service=structural_audit_service,
+            )
+
+        self.pipeline = _LazyPipelineService(build_legacy_pipeline)
         # V2 consumes these named services directly. The legacy aggregate above
         # remains available only to the legacy CLI and is not a V2 dependency.
         self.structural_audit_service = structural_audit_service
-        self.rules_manifest_state = self.pipeline.rules_manifest_state
+        self.rules_manifest_state = _rules_manifest_state
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:
         """Build a `TranslateService` bound to this run's memory and slot file.
