@@ -27,7 +27,11 @@ class RenderVerificationAdapter:
                 findings.extend(self._verify_image(path, profile, preview_dir))
         except (OSError, RuntimeError, UnidentifiedImageError, ValueError) as exc:
             findings.append(VerificationFinding("render.open", f"No se pudo abrir {path.name}: {exc}"))
-        return VerificationReport(artifact=artifact, findings=findings)
+        return VerificationReport(
+            artifact=artifact,
+            findings=findings,
+            checked_artifacts=[artifact],
+        )
 
     def _verify_pdf(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         import pypdfium2 as pdfium

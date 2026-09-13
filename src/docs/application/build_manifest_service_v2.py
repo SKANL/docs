@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
@@ -74,6 +75,9 @@ class BuildManifestServiceV2:
                     str(destination.resolve()),
                     self._artifact_hash(artifact),
                     ArtifactState.READY,
+                    media_type=mimetypes.guess_type(destination.name)[0]
+                    or "application/octet-stream",
+                    size_bytes=artifact.stat().st_size,
                 ),
             ),
             verification=verification or {"passed": True, "format": output_format},

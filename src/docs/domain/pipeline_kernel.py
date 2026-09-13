@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field, is_dataclass
+from pathlib import Path
 from typing import Any, cast
 
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
@@ -21,6 +22,8 @@ def _check_identifier(value: str, kind: str) -> str:
 
 
 def _stable(value: Any) -> Any:
+    if isinstance(value, Path):
+        return value.as_posix()
     if is_dataclass(value):
         return _stable(asdict(cast(Any, value)))
     if isinstance(value, dict):
@@ -46,11 +49,19 @@ class ArtifactContract:
     name: str
     media_type: str = "application/octet-stream"
     required: bool = False
+    source_inputs: tuple[str, ...] = ()
+    expected_path: Path | None = None
+    deterministic: bool = True
+    reopen_check: str | None = None
 
     def __post_init__(self) -> None:
         _check_identifier(self.name, "artifact")
         if not self.media_type:
             raise ValueError("Artifact media_type must not be empty")
+        if any(not input_name for input_name in self.source_inputs):
+            raise ValueError("Artifact source_inputs must not contain empty names")
+        if self.expected_path is not None and self.expected_path.is_absolute():
+            raise ValueError("Artifact expected_path must be relative to the artifact store")
 
     def to_dict(self) -> dict[str, Any]:
         return _stable(asdict(self))
@@ -65,6 +76,11 @@ class ArtifactRecord:
     path: str
     sha256: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    media_type: str | None = None
+    size_bytes: int | None = None
+    state: str | None = None
+    producer_stage: str | None = None
+    run_id: str | None = None
 
     def __post_init__(self) -> None:
         _check_identifier(self.contract, "artifact")
@@ -72,9 +88,25 @@ class ArtifactRecord:
             raise ValueError("Artifact path must not be empty")
         if not re.fullmatch(r"[0-9a-f]{64}|[0-9a-f]+", self.sha256):
             raise ValueError("Artifact sha256 must be a lowercase hexadecimal digest")
+        if self.size_bytes is not None and self.size_bytes < 0:
+            raise ValueError("Artifact size_bytes must not be negative")
+        if self.media_type == "":
+            raise ValueError("Artifact media_type must not be empty")
 
     def to_dict(self) -> dict[str, Any]:
-        return _stable(asdict(self))
+        payload = asdict(self)
+        # Keep the original compact record shape for legacy stage reports;
+        # richer contract fields are emitted only when the producer supplied
+        # them.  This lets v2 add provenance without invalidating old logs.
+        for key in ("media_type", "size_bytes", "state", "producer_stage", "run_id"):
+            if payload[key] is None:
+                payload.pop(key)
+        return _stable(payload)
+
+    @property
+    def artifact_id(self) -> str:
+        """Stable identifier used by callers that do not need the old name."""
+        return self.contract
 
     def to_json(self) -> str:
         return deterministic_json(self)
@@ -140,6 +172,7 @@ class StageResult:
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
+        payload["artifacts"] = [artifact.to_dict() for artifact in self.artifacts]
         if self.duration_ms is None:
             payload.pop("duration_ms", None)
         return _stable(payload)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 from pathlib import Path
 
 from docs.domain.artifacts import ArtifactRef, ArtifactState, RenderProfile, VerificationFinding, VerificationReport
@@ -24,6 +25,9 @@ class RenderVerificationService:
             path=artifact_path.resolve().as_posix(),
             sha256=digest,
             state=ArtifactState.READY,
+            media_type=mimetypes.guess_type(artifact_path.name)[0]
+            or "application/octet-stream",
+            size_bytes=artifact_path.stat().st_size,
         )
         report = self.port.verify(artifact, profile, preview_dir)
         if self._sha256(artifact_path) != digest:

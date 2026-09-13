@@ -150,6 +150,9 @@ class ArtifactStore:
             path=relative.as_posix(),
             sha256=hashlib.sha256(content).hexdigest(),
             metadata=dict(metadata or {}),
+            media_type=contract.media_type,
+            size_bytes=len(content),
+            state="generated",
         )
 
 

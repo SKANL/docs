@@ -27,3 +27,27 @@ def test_verification_report_passes_when_it_has_no_error_findings():
     )
 
     assert report.passed is True
+
+
+def test_artifact_verification_can_record_media_size_page_and_evidence():
+    artifact = ArtifactRef(
+        path="output/report.pdf",
+        sha256="b" * 64,
+        media_type="application/pdf",
+        size_bytes=2048,
+    )
+    finding = VerificationFinding(
+        code="layout.overflow",
+        message="Content exceeds page bounds",
+        severity="error",
+        path="output/report.pdf",
+        page=3,
+        evidence={"right": 612, "page_width": 612},
+    )
+    report = VerificationReport(artifact=artifact, findings=[finding])
+
+    payload = report.to_dict()
+
+    assert payload["artifact"]["media_type"] == "application/pdf"
+    assert payload["artifact"]["size_bytes"] == 2048
+    assert payload["findings"][0]["page"] == 3

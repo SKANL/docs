@@ -9,6 +9,9 @@ from docs.domain.identity import canonical_json, sha256_content
 
 
 class ArtifactState(str, Enum):
+    PLANNED = "planned"
+    GENERATED = "generated"
+    VERIFIED = "verified"
     DRAFT = "draft"
     READY = "ready"
     PUBLISHED = "published"
@@ -35,9 +38,28 @@ class ArtifactRef:
     path: str
     sha256: str
     state: ArtifactState = ArtifactState.READY
+    media_type: str | None = None
+    size_bytes: int | None = None
 
-    def to_dict(self) -> dict[str, str]:
-        return {"path": self.path, "sha256": self.sha256, "state": self.state.value}
+    def __post_init__(self) -> None:
+        if not self.path:
+            raise ValueError("artifact path must not be empty")
+        if self.media_type == "":
+            raise ValueError("artifact media_type must not be empty")
+        if self.size_bytes is not None and self.size_bytes < 0:
+            raise ValueError("artifact size_bytes must not be negative")
+
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "path": self.path,
+            "sha256": self.sha256,
+            "state": self.state.value,
+        }
+        if self.media_type is not None:
+            payload["media_type"] = self.media_type
+        if self.size_bytes is not None:
+            payload["size_bytes"] = self.size_bytes
+        return payload
 
 
 @dataclass(frozen=True)
@@ -45,26 +67,50 @@ class VerificationFinding:
     code: str
     message: str
     severity: str = "error"
+    path: str | None = None
+    page: int | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)
+    dimension: str | None = None
+    resolution: str | None = None
+    section: str | None = None
+    stage: str | None = None
 
-    def to_dict(self) -> dict[str, str]:
-        return {"code": self.code, "message": self.message, "severity": self.severity}
+    def to_dict(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "code": self.code,
+            "message": self.message,
+            "severity": self.severity,
+        }
+        for key in ("path", "page", "dimension", "resolution", "section", "stage"):
+            value = getattr(self, key)
+            if value is not None:
+                payload[key] = value
+        if self.evidence:
+            payload["evidence"] = dict(sorted(self.evidence.items()))
+        return payload
 
 
 @dataclass(frozen=True)
 class VerificationReport:
     artifact: ArtifactRef
     findings: list[VerificationFinding] = field(default_factory=list)
+    checked_artifacts: list[ArtifactRef] = field(default_factory=list)
 
     @property
     def passed(self) -> bool:
         return not any(finding.severity == "error" for finding in self.findings)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "artifact": self.artifact.to_dict(),
             "findings": [finding.to_dict() for finding in self.findings],
             "passed": self.passed,
         }
+        if self.checked_artifacts:
+            payload["checked_artifacts"] = [
+                artifact.to_dict() for artifact in self.checked_artifacts
+            ]
+        return payload
 
 
 @dataclass(frozen=True)
@@ -139,8 +185,8 @@ class BuildManifest:
         if not self.artifacts:
             raise ValueError("at least one artifact is required")
         for artifact in self.artifacts:
-            if artifact.state not in {ArtifactState.READY, ArtifactState.PUBLISHED} or not re.fullmatch(r"[0-9a-f]{64}", artifact.sha256):
-                raise ValueError("artifacts must have ready/published SHA-256 identities")
+            if artifact.state not in {ArtifactState.READY, ArtifactState.VERIFIED, ArtifactState.PUBLISHED} or not re.fullmatch(r"[0-9a-f]{64}", artifact.sha256):
+                raise ValueError("artifacts must have verified/ready/published SHA-256 identities")
         if self.verification.get("passed") is not True:
             raise ValueError("publication requires passed verification")
         if any(not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in self.asset_hashes.values()):

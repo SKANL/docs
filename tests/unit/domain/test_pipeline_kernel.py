@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -82,3 +83,32 @@ def test_failed_stage_result_serializes_a_failed_outcome():
     result = StageResult("ingest", ok=False, errors=("ingest failed",))
 
     assert json.loads(result.to_json())["outcome"] == "failed"
+
+
+def test_artifact_contract_and_record_expose_reproducible_contract_metadata():
+    contract = ArtifactContract(
+        "rendered",
+        "application/pdf",
+        required=True,
+        source_inputs=("sections/001.md",),
+        expected_path=Path("output/rendered.pdf"),
+        deterministic=False,
+        reopen_check="pdfium",
+    )
+    record = ArtifactRecord(
+        "rendered",
+        "output/rendered.pdf",
+        "a" * 64,
+        media_type="application/pdf",
+        size_bytes=42,
+        state="verified",
+        producer_stage="build-pdf",
+        run_id="run-1",
+    )
+
+    payload = json.loads(deterministic_json({"contract": contract, "record": record}))
+
+    assert payload["contract"]["expected_path"] == "output/rendered.pdf"
+    assert payload["contract"]["source_inputs"] == ["sections/001.md"]
+    assert record.artifact_id == "rendered"
+    assert payload["record"]["producer_stage"] == "build-pdf"
