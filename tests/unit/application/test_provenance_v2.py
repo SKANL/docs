@@ -5,6 +5,7 @@ from pathlib import Path
 
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
+from docs.domain.identity import sha256_content
 
 
 def test_record_run_writes_deterministic_hashes_and_load_run_returns_them(tmp_path: Path) -> None:
@@ -126,6 +127,45 @@ def test_verify_attestation_requires_a_matching_verifiable_run(tmp_path: Path) -
     assert ledger.verify_attestation("build-001", manifest) is True
     source.write_text("changed", encoding="utf-8")
     assert ledger.verify_attestation("build-001", manifest) is False
+
+
+def test_verify_attestation_accepts_optional_artifact_metadata_from_older_v2_build(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("source", encoding="utf-8")
+    artifact = tmp_path / "output.docx"
+    artifact.write_bytes(b"output")
+    ledger = ProvenanceLedgerV2(tmp_path / "provenance-v2.json")
+    ledger.record_run("build-001", inputs=(source,), outputs=(artifact,))
+    current = BuildManifest(
+        document_id="example",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"renderer": "test"},
+        artifacts=(
+            ArtifactRef(
+                str(artifact.resolve()),
+                hashlib.sha256(b"output").hexdigest(),
+                ArtifactState.READY,
+            ),
+        ),
+        verification={"passed": True},
+        provenance_run="build-001",
+    )
+    recorded_manifest = current.to_dict()
+    recorded_manifest["artifacts"][0]["media_type"] = "application/octet-stream"
+    recorded_manifest["artifacts"][0]["size_bytes"] = artifact.stat().st_size
+    recorded = {
+        "schema": "docs.attestation/v2",
+        "manifest": recorded_manifest,
+        "sha256": sha256_content(recorded_manifest),
+    }
+    ledger.record_attestation("build-001", recorded)
+
+    assert ledger.verify_attestation("build-001", current.attestation()) is True
 
 
 def test_build_manifest_attestation_is_the_persisted_verification_payload(tmp_path: Path) -> None:

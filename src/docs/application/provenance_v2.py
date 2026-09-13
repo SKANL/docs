@@ -3,6 +3,8 @@
 from functools import lru_cache
 from typing import Any
 
+from docs.domain.identity import sha256_content
+
 
 @lru_cache(maxsize=1)
 def _provenance_class() -> type[Any]:
@@ -19,9 +21,35 @@ def _provenance_class() -> type[Any]:
                 return False
             left = recorded.get("manifest", recorded)
             right = manifest.get("manifest", manifest)
+            if left == right:
+                return True
+            if not isinstance(recorded, dict) or not isinstance(left, dict) or not isinstance(right, dict):
+                return False
+            if recorded.get("sha256") != sha256_content(left):
+                return False
+            left = _without_optional_artifact_metadata(left)
+            right = _without_optional_artifact_metadata(right)
             return left == right
 
     return ProvenanceLedgerV2
+
+
+def _without_optional_artifact_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize only fields added after the initial v2 attestation schema."""
+    normalized = dict(payload)
+    artifacts = normalized.get("artifacts")
+    if isinstance(artifacts, list):
+        normalized["artifacts"] = [
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"media_type", "size_bytes"}
+            }
+            if isinstance(item, dict)
+            else item
+            for item in artifacts
+        ]
+    return normalized
 
 
 def __getattr__(name: str) -> Any:
