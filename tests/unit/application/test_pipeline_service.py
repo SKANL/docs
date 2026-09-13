@@ -63,6 +63,20 @@ def test_rules_manifest_state_skips_size_lookup_when_manifest_absent():
     assert (exists, size) == (False, 0)
 
 
+def test_build_section_delegates_to_section_service():
+    service = _service(_FakeEvidenceRepository())
+    expected = Path("section.md")
+
+    class SectionService:
+        def build_section(self, doc_id, template, section_id, config):
+            assert (doc_id, template, section_id, config) == ("doc", "template", "intro", {"paths": {}})
+            return expected
+
+    service.section_service = SectionService()
+
+    assert service.build_section("doc", "template", "intro", {"paths": {}}) == expected
+
+
 def test_run_pipeline_records_generated_cover_provenance(tmp_path, monkeypatch):
     class SourceRepository:
         def run_git_rev_parse_head(self, repo_root):

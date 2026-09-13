@@ -30,6 +30,7 @@ from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
 from docs.application.run_history import RunHistoryService
+from docs.application.section import SectionService
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
 from docs.cli.legacy_pipeline_bridge import LegacyPipelineBridge
@@ -338,6 +339,7 @@ class Deps:
         self.documents = DocumentService(document_repo, self.workspace)
         self.corrections = CorrectionsService(section_repo, evidence_repo)
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
+        self.section = SectionService(review_service, evidence_service, context_repo)
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
         self.history = RunHistoryService(self.workspace)
@@ -349,6 +351,7 @@ class Deps:
                 context_service=self.context,
                 generate_visuals_service=self.generate_visuals_service,
                 structural_audit_service=structural_audit_service,
+                section_service=self.section,
             )
 
         self.pipeline = _LazyPipelineService(build_legacy_pipeline)

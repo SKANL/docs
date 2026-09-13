@@ -27,7 +27,7 @@ def build_section(ctx: typer.Context, section_id: str = typer.Argument(...)) -> 
     mano después."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    print(deps.pipeline.build_section(resolved.doc_id, resolved.template, section_id, resolved.config))
+    print(deps.section.build_section(resolved.doc_id, resolved.template, section_id, resolved.config))
 
 
 @section_app.command("pack-context")

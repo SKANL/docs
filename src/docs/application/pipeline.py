@@ -19,9 +19,10 @@ from docs.application.ingest import IngestService
 from docs.application.output_names import resolve_draft_docx_name
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
+from docs.application.section import SectionService
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.cover import cover_provenance
-from docs.domain.models.template import SectionContract, Template
+from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
@@ -30,7 +31,6 @@ from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.source_repository import SourceRepository
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.rules import review_rules
-from docs.domain.section_rendering import render_section_draft
 from docs.domain.workspace import Workspace
 
 
@@ -53,6 +53,7 @@ class PipelineService:
         context_service: ContextService,
         generate_visuals_service: GenerateVisualsService | None = None,
         structural_audit_service: StructuralAuditService | None = None,
+        section_service: SectionService | None = None,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -70,6 +71,7 @@ class PipelineService:
         self.context_service = context_service
         self.generate_visuals_service = generate_visuals_service
         self.structural_audit_service = structural_audit_service
+        self.section_service = section_service or SectionService(review_service, evidence_service, context_repository)
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -142,30 +144,7 @@ class PipelineService:
         return self.context_service.confirmed_lines(doc_id, template)
 
     def build_section(self, doc_id: str, template: Template, section_id: str, config: dict[str, Any]) -> Path:
-        section = next((s for s in template.sections if s.id == section_id), None)
-        if section is None:
-            raise FileNotFoundError(f"No existe sección: {section_id}")
-        contract = template.section_contracts.get(section_id, SectionContract())
-        context: dict[str, str] = {}
-        for topic in template.context_schema.topics:
-            if section_id not in topic.consumed_by:
-                continue
-            if self.context_repository.topic_exists(doc_id, topic.id):
-                context[topic.id] = self.context_repository.read_topic_raw(doc_id, topic.id)
-        keyword_bold_terms = config.get("format", {}).get("keyword_bold_terms", {}).get(section_id, [])
-        citation_style = resolve_normative_settings(config).citation_style
-        body = render_section_draft(section_id, section.title, contract, context, keyword_bold_terms, citation_style)
-        return self.review_service.build_section(
-            doc_id, template, section_id, body,
-            source_hash=self.evidence_service.source_hash(config),
-            source_manifest_hash=self.evidence_service.manifest_hash(config["paths"].get("source_manifest")),
-            code_evidence_manifest_hash=self.evidence_service.manifest_hash(
-                config["paths"].get("code_evidence_manifest")
-            ),
-            rules_hash=self.evidence_service.rules_hash(config),
-            contract_hash=self.evidence_service.contract_hash(config, section_id),
-            prompt_hash=self.evidence_service.prompt_hash(config),
-        )
+        return self.section_service.build_section(doc_id, template, section_id, config)
 
     def _resolve_draft_docx_name(self, doc_id: str, config: dict[str, Any]) -> str:
         return resolve_draft_docx_name(doc_id, config)
