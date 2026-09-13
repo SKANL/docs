@@ -167,7 +167,9 @@ def verify(
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     docx_path = Path(docx) if docx else None
-    result = deps.pipeline.verify_all(resolved.doc_id, resolved.template, resolved.config, docx_path=docx_path, strict=strict)
+    result = deps.verification.verify_all(
+        resolved.doc_id, resolved.template, resolved.config, docx_path=docx_path, strict=strict
+    )
     result = _filter_review_dimensions(result, dimensions)
     deps.pipeline.log_run(
         resolved.doc_id, resolved.config, repo_root, "verify",

@@ -17,6 +17,7 @@ from docs.application.context import ContextService
 from docs.application.context_pack import ContextPackService
 from docs.application.corrections import CorrectionsService
 from docs.application.doctor import DoctorService
+from docs.application.document_verification import DocumentVerificationService
 from docs.application.documents import DocumentService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
@@ -343,6 +344,9 @@ class Deps:
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
         self.history = RunHistoryService(self.workspace)
+        self.verification = DocumentVerificationService(
+            review_service, evidence_repo, format_audit_service, qa_service
+        )
         def build_legacy_pipeline() -> LegacyPipelineBridge:
             return LegacyPipelineBridge(
                 doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
