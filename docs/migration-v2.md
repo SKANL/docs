@@ -18,8 +18,8 @@ the migration checklist for every workspace and consumer is green.
 | Ad hoc ZIP creation | `docs document package ...` | Atomic, deterministic package operation over the supplied directory. |
 
 The legacy `docs pipeline` commands remain supported during the migration
-window. V2 does not silently invoke them, and every new integration must use
-the v2 commands. The bridge can be retired once the document/workspace
+window. V2 does not silently invoke them or eagerly construct their aggregate,
+and every new integration must use the v2 commands. The bridge can be retired once the document/workspace
 inventory has no remaining legacy consumers.
 
 ## Safe sequence
