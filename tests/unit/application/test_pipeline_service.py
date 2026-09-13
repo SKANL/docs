@@ -235,3 +235,17 @@ def test_run_pipeline_records_generated_cover_provenance(tmp_path, monkeypatch):
     )
 
     assert summary["cover"] == {"mode": "generated", "variant": "minimal", "missing_slots": []}
+
+
+def test_list_runs_delegates_to_run_history_service():
+    service = _service(_FakeEvidenceRepository())
+    expected = [{"command": "verify"}]
+
+    class _RunHistory:
+        def list_runs(self, doc_id, config, limit=20):
+            assert (doc_id, config, limit) == ("doc1", {"paths": {}}, 3)
+            return expected
+
+    service.run_history = _RunHistory()
+
+    assert service.list_runs("doc1", {"paths": {}}, limit=3) is expected

@@ -1,7 +1,6 @@
 # src/docs/application/pipeline.py
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,7 +18,7 @@ from docs.application.legacy_stage_planner import LegacyStagePlanner
 from docs.application.pipeline_metadata import PipelineMetadataService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
-from docs.application.run_history import RunRecorderService
+from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.models.template import Template
@@ -76,6 +75,7 @@ class PipelineService:
         self.structural_audit_service = structural_audit_service
         self.section_service = section_service or SectionService(review_service, evidence_service, context_repository)
         self.run_recorder = run_recorder or RunRecorderService(workspace, source_repository)
+        self.run_history = RunHistoryService(workspace)
         self.metadata_service = metadata_service or PipelineMetadataService(workspace)
         self.stage_planner = stage_planner or LegacyStagePlanner()
         self.legacy_pipeline_executor = LegacyPipelineExecutor()
@@ -89,19 +89,7 @@ class PipelineService:
         return self.run_recorder.record(doc_id, config, repo_root, command, payload)
 
     def list_runs(self, doc_id: str, config: dict[str, Any], limit: int = 20) -> list[dict[str, Any]]:
-        runs_dir = self._runs_dir(doc_id, config)
-        if not runs_dir.exists():
-            return []
-        records: list[dict[str, Any]] = []
-        for path in sorted(runs_dir.glob("*.json"), reverse=True)[:limit]:
-            try:
-                records.append(json.loads(path.read_text(encoding="utf-8")))
-            except json.JSONDecodeError:
-                continue
-        return records
-
-    def _runs_dir(self, doc_id: str, config: dict[str, Any]) -> Path:
-        return self.metadata_service.runs_dir(doc_id, config)
+        return self.run_history.list_runs(doc_id, config, limit)
 
     def _next_build_version(self, doc_id: str, config: dict[str, Any]) -> int:
         return self.metadata_service.next_build_version(doc_id, config)
