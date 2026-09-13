@@ -1014,6 +1014,43 @@ def test_v2_non_docx_verify_fails_when_reopened_artifact_is_invalid(
     assert output_format.upper() in verification["errors"][0]
 
 
+@pytest.mark.parametrize("output_format", ("html", "pdf"))
+def test_v2_publishing_build_blocks_after_second_non_docx_reopen(
+    monkeypatch, tmp_path, output_format
+):
+    deps = _deps(tmp_path)
+    verifier = _verify_html_artifact if output_format == "html" else _verify_pdf_artifact
+    original_verifier = verifier
+    calls = 0
+
+    def fail_on_second_reopen(artifact: Path) -> tuple[bool, str]:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            return False, f"{output_format.upper()} reopen failed"
+        return original_verifier(artifact)
+
+    monkeypatch.setattr("docs.cli.commands.v2_app." + verifier.__name__, fail_on_second_reopen)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--format", output_format, "--json"])
+
+    assert result.exit_code == 1, result.stdout
+    assert calls == 2
+    payload = json.loads(result.stdout)
+    execution = payload["report"]["execution"]
+    stages = execution["results"]
+    names = [item["stage"] for item in stages]
+    assert names.index("build-" + output_format) < names.index("structural-audit")
+    assert names.index("structural-audit") < names.index("editorial-review")
+    assert next(item for item in stages if item["stage"] == "editorial-review")["ok"] is False
+    assert all(item["stage"] not in {"record-provenance", "package-release", "publish-draft"} for item in stages)
+
+    root = tmp_path / "documents" / "active"
+    assert not (root / "output" / "v2" / f"active.{output_format}.manifest.json").exists()
+    assert not (root / "output" / "release" / "active.zip").exists()
+
+
 def test_v2_document_create_delegates_to_existing_document_services(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     calls: list[tuple[str, str, str]] = []
