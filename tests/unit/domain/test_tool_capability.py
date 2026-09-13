@@ -1,3 +1,4 @@
+from docs.cli.commands.v2_app import _renderer_capabilities
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 
 
@@ -79,3 +80,12 @@ def test_registry_can_detect_python_module_capabilities_lazily(monkeypatch):
         "pillow": {"available": True, "path": "python:PIL"},
     }
     assert calls == ["pypdfium2", "PIL"]
+
+
+def test_renderer_capability_adapter_preserves_module_probe():
+    class Renderer:
+        required_capabilities = (ToolCapability("pdfium", "", module="pypdfium2"),)
+
+    capabilities = _renderer_capabilities(Renderer())
+
+    assert capabilities[0].module == "pypdfium2"

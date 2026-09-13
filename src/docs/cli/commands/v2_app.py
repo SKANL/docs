@@ -324,7 +324,12 @@ def _renderer_capabilities(renderer: Any) -> tuple[ToolCapability, ...]:
         for value in values:
             if isinstance(value, ToolCapability):
                 declared.append(
-                    ToolCapability(value.name, value.executable, required or value.required)
+                    ToolCapability(
+                        value.name,
+                        value.executable,
+                        required or value.required,
+                        module=value.module,
+                    )
                 )
             elif isinstance(value, str) and value:
                 declared.append(ToolCapability(value, value, required))
