@@ -33,8 +33,8 @@ from docs.application.package_service_v2 import (
     PackageServiceV2,
 )
 from docs.application.pipeline_service_v2 import (
-    LegacyPipelineDependencies,
     PipelineServiceV2,
+    PipelineStageDependencies,
     PublicationSpec,
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
@@ -823,7 +823,7 @@ def create_v2_service(
     manifest_destination = destination.with_suffix(destination.suffix + ".manifest.json")
     release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
     return PipelineServiceV2(
-        dependencies=LegacyPipelineDependencies(
+        dependencies=PipelineStageDependencies(
             resolve_config=resolve_config,
             resolve_template=resolve_template,
             resolve_context=resolve_context,

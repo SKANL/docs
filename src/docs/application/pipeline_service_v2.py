@@ -1,4 +1,4 @@
-"""Bridge legacy pipeline callables into the v2 runtime contracts."""
+"""Adapt composition-root stage services into the v2 runtime contracts."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, St
 from docs.domain.pipeline_policy import PipelinePolicy
 from docs.domain.tool_capability import ToolCapabilityRegistry
 
-LegacyStage = Callable[[], tuple[bool, str] | StageResult]
+StageOperation = Callable[[], tuple[bool, str] | StageResult]
 PublicationOperation = Callable[[Path], None]
 
 FULL_STAGE_IDS = (
@@ -47,7 +47,7 @@ FULL_STAGE_IDS = (
 
 @dataclass(frozen=True)
 class PublicationSpec:
-    """The staged output contract for a legacy publish operation."""
+    """The staged output contract for a publication operation."""
 
     expected_outputs: tuple[str, ...]
     destinations: tuple[Path, ...]
@@ -55,42 +55,42 @@ class PublicationSpec:
 
 
 @dataclass(frozen=True)
-class LegacyPipelineDependencies:
-    """Callable seams that adapt the legacy pipeline's existing dependencies."""
+class PipelineStageDependencies:
+    """Typed stage services supplied by the composition root."""
 
-    resolve_config: LegacyStage
-    resolve_template: LegacyStage
-    resolve_context: LegacyStage
-    resolve_assets: LegacyStage
-    validate_contracts: LegacyStage
-    render: LegacyStage
-    audit: LegacyStage
-    verify: LegacyStage
-    provenance: LegacyStage
+    resolve_config: StageOperation
+    resolve_template: StageOperation
+    resolve_context: StageOperation
+    resolve_assets: StageOperation
+    validate_contracts: StageOperation
+    render: StageOperation
+    audit: StageOperation
+    verify: StageOperation
+    provenance: StageOperation
     publication: PublicationSpec
-    ingest_sources: LegacyStage | None = None
-    normalize_sources: LegacyStage | None = None
-    compile_structure: LegacyStage | None = None
-    evidence_review: LegacyStage | None = None
-    consistency_review: LegacyStage | None = None
-    package_release: LegacyStage | None = None
-    generate_visuals: LegacyStage | None = None
-    compose_cover: LegacyStage | None = None
-    build_html: LegacyStage | None = None
-    build_pdf: LegacyStage | None = None
-    structural_audit: LegacyStage | None = None
-    accessibility_review: LegacyStage | None = None
-    visual_review: LegacyStage | None = None
-    reproducibility_check: LegacyStage | None = None
+    ingest_sources: StageOperation | None = None
+    normalize_sources: StageOperation | None = None
+    compile_structure: StageOperation | None = None
+    evidence_review: StageOperation | None = None
+    consistency_review: StageOperation | None = None
+    package_release: StageOperation | None = None
+    generate_visuals: StageOperation | None = None
+    compose_cover: StageOperation | None = None
+    build_html: StageOperation | None = None
+    build_pdf: StageOperation | None = None
+    structural_audit: StageOperation | None = None
+    accessibility_review: StageOperation | None = None
+    visual_review: StageOperation | None = None
+    reproducibility_check: StageOperation | None = None
 
 
 class PipelineServiceV2:
-    """Execute legacy operations through a reusable v2 pipeline definition."""
+    """Execute stage services through a reusable v2 pipeline definition."""
 
     def __init__(
         self,
         *,
-        dependencies: LegacyPipelineDependencies,
+        dependencies: PipelineStageDependencies,
         capabilities: ToolCapabilityRegistry,
         ledger: ProvenanceLedgerV2,
         atomic_transform: AtomicTransform,
@@ -185,7 +185,7 @@ class PipelineServiceV2:
         return handlers
 
     @staticmethod
-    def _adapt(name: str, operation: LegacyStage) -> StageHandler:
+    def _adapt(name: str, operation: StageOperation) -> StageHandler:
         def handler() -> StageResult:
             result = operation()
             if isinstance(result, StageResult):

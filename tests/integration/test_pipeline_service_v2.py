@@ -8,8 +8,8 @@ from pathlib import Path
 from docs.application.atomic_transform_v2 import AtomicTransform
 from docs.application.pipeline_service_v2 import (
     FULL_STAGE_IDS,
-    LegacyPipelineDependencies,
     PipelineServiceV2,
+    PipelineStageDependencies,
     PublicationSpec,
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
@@ -51,14 +51,14 @@ def _stage(name: str, calls: list[str], ok: bool = True) -> Callable[[], tuple[b
     return run
 
 
-def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> LegacyPipelineDependencies:
+def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> PipelineStageDependencies:
     destination = tmp_path / "published" / "document.txt"
 
     def publish(scratch: Path) -> None:
         calls.append("publish")
         (scratch / "document.txt").write_text("published document", encoding="utf-8")
 
-    return LegacyPipelineDependencies(
+    return PipelineStageDependencies(
         resolve_config=_stage("resolve-config", calls),
         resolve_template=_stage("resolve-template", calls),
         resolve_context=_stage("resolve-context", calls),
@@ -87,7 +87,7 @@ def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = T
 
 
 def _service(
-    tmp_path: Path, dependencies: LegacyPipelineDependencies, policy: PipelinePolicy | None = None
+    tmp_path: Path, dependencies: PipelineStageDependencies, policy: PipelinePolicy | None = None
 ) -> PipelineServiceV2:
     return PipelineServiceV2(
         dependencies=dependencies,
