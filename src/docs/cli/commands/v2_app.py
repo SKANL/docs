@@ -352,9 +352,9 @@ def _visual_capabilities(document_root: Path) -> tuple[ToolCapability, ...]:
     }
     capabilities: list[ToolCapability] = []
     if visual_types:
-        capabilities.append(ToolCapability("resvg", "resvg"))
+        capabilities.append(ToolCapability("resvg", "resvg", degradation="skip vector visual generation"))
     if "mermaid" in visual_types:
-        capabilities.append(ToolCapability("mmdc", "mmdc"))
+        capabilities.append(ToolCapability("mmdc", "mmdc", degradation="skip Mermaid visual generation"))
     return tuple(capabilities)
 
 
@@ -362,12 +362,12 @@ def _capabilities_for(renderer: Any, output_format: str, document_root: Path) ->
     capabilities = list(_renderer_capabilities(renderer))
     capabilities.extend(
         (
-            ToolCapability("pillow", "", module="PIL"),
-            ToolCapability("pypdfium2", "", module="pypdfium2", required=output_format == "pdf"),
+            ToolCapability("pillow", "", module="PIL", requirement="required for image inspection", degradation="skip image-specific checks"),
+            ToolCapability("pypdfium2", "", module="pypdfium2", required=output_format == "pdf", requirement="required for PDF page rendering", degradation="skip PDF rendering"),
         )
     )
     if output_format == "pdf":
-        capabilities.append(ToolCapability("soffice", "soffice", required=True))
+        capabilities.append(ToolCapability("soffice", "soffice", required=True, requirement="required to derive PDF from DOCX", degradation="skip PDF derivation in draft mode"))
     capabilities.extend(_visual_capabilities(document_root))
     return ToolCapabilityRegistry(capabilities)
 
@@ -1111,11 +1111,15 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     output = resolved.config.get("output", {})
     output_format = output.get("format", "docx") if isinstance(output, Mapping) else "docx"
     renderer = deps.resolve_renderer(resolved.config)
+    capability_registry = _capabilities_for(
+        renderer, output_format, deps.workspace.doc_root(resolved.doc_id)
+    )
     v2_status = payload.get("v2", {})
     current_v2 = dict(v2_status) if isinstance(v2_status, Mapping) else {}
     payload["v2"] = {
         **current_v2,
-        "capabilities": _capabilities_for(renderer, output_format, deps.workspace.doc_root(resolved.doc_id)).report(),
+        "capabilities": capability_registry.report(),
+        "capability_diagnostics": capability_registry.diagnostics(),
         "unsupported_stages": current_v2.get("unsupported_stages", []),
         "publication_blockers": current_v2.get("publication_blockers", []),
     }

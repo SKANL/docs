@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import shutil
 from dataclasses import dataclass, field
+from importlib import metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +16,8 @@ class ToolCapability:
     executable: str
     required: bool = False
     module: str | None = None
+    requirement: str | None = None
+    degradation: str | None = None
 
 
 @dataclass(slots=True)
@@ -36,6 +39,8 @@ class ToolCapabilityRegistry:
                     executable=existing.executable,
                     required=existing.required or capability.required,
                     module=existing.module or capability.module,
+                    requirement=existing.requirement or capability.requirement,
+                    degradation=existing.degradation or capability.degradation,
                 )
             )
         self.capabilities = tuple(merged.values())
@@ -61,6 +66,38 @@ class ToolCapabilityRegistry:
             }
             for capability in self.capabilities
         }
+
+    def diagnostics(self) -> dict[str, dict[str, str | bool | None]]:
+        """Return stable capability details for doctor/status consumers.
+
+        Resolution remains lazy and local.  The compact ``report`` contract is
+        intentionally unchanged for existing callers; this richer view adds
+        enough policy context for CI to explain why a missing capability
+        matters and how draft mode degrades.
+        """
+        return {
+            capability.name: {
+                "available": (path := self._resolve(capability)) is not None,
+                "path": path,
+                "required": capability.required,
+                "kind": "module" if capability.module else "executable",
+                "version": self._module_version(capability.module),
+                "requirement": capability.requirement,
+                "degradation": capability.degradation,
+            }
+            for capability in self.capabilities
+        }
+
+    @staticmethod
+    def _module_version(module: str | None) -> str | None:
+        """Resolve a Python capability version without importing or executing it."""
+        if not module:
+            return None
+        try:
+            distributions = metadata.packages_distributions().get(module, ())
+            return metadata.version(distributions[0]) if distributions else None
+        except metadata.PackageNotFoundError:
+            return None
 
     def missing_required(self) -> tuple[str, ...]:
         """Return required capabilities that cannot be resolved locally."""

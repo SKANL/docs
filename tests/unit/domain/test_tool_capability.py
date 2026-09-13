@@ -89,3 +89,29 @@ def test_renderer_capability_adapter_preserves_module_probe():
     capabilities = _renderer_capabilities(Renderer())
 
     assert capabilities[0].module == "pypdfium2"
+
+
+def test_capability_diagnostics_exposes_policy_metadata_without_changing_report(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: "C:/bin/soffice.exe")
+    registry = ToolCapabilityRegistry((
+        ToolCapability(
+            "soffice",
+            "soffice",
+            required=True,
+            requirement="required for PDF release builds",
+            degradation="skip PDF in draft mode",
+        ),
+    ))
+
+    assert registry.report() == {"soffice": {"available": True, "path": "C:/bin/soffice.exe"}}
+    assert registry.diagnostics() == {
+        "soffice": {
+            "available": True,
+            "path": "C:/bin/soffice.exe",
+            "required": True,
+            "kind": "executable",
+            "version": None,
+            "requirement": "required for PDF release builds",
+            "degradation": "skip PDF in draft mode",
+        }
+    }
