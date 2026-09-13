@@ -722,6 +722,80 @@ def test_v2_public_package_and_publish_boundaries_execute_from_existing_build(
     assert (tmp_path / "documents" / "active" / "output" / "release" / "active.zip").is_file()
 
 
+def test_v2_publish_atomically_promotes_a_verified_current_artifact(
+    monkeypatch, tmp_path: Path
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    source = tmp_path / "documents" / "active" / "output" / "v2" / "active.docx"
+    destination = tmp_path / "documents" / "active" / "published" / "active.docx"
+    published = runner.invoke(app, ["v2", "publish", str(source), str(destination), "--json"])
+
+    assert built.exit_code == 0, built.stdout
+    assert published.exit_code == 0, published.stdout
+    assert json.loads(published.stdout)["published"] is True
+    assert destination.read_bytes() == source.read_bytes()
+    assert destination.with_suffix(".docx.manifest.json").read_bytes() == source.with_suffix(
+        ".docx.manifest.json"
+    ).read_bytes()
+
+
+@pytest.mark.parametrize("tamper_target", ("source", "manifest"))
+def test_v2_publish_rejects_tampered_artifact_or_manifest_without_replacing_destination(
+    monkeypatch, tmp_path: Path, tamper_target: str
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    source = tmp_path / "documents" / "active" / "output" / "v2" / "active.docx"
+    manifest_path = source.with_suffix(".docx.manifest.json")
+    destination = tmp_path / "documents" / "active" / "published" / "active.docx"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"previous artifact")
+    destination_manifest = destination.with_suffix(".docx.manifest.json")
+    destination_manifest.write_bytes(b"previous manifest")
+    if tamper_target == "source":
+        source.write_bytes(b"tampered artifact")
+    else:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["source_hash"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    published = runner.invoke(app, ["v2", "publish", str(source), str(destination), "--json"])
+
+    assert built.exit_code == 0, built.stdout
+    assert published.exit_code != 0
+    assert destination.read_bytes() == b"previous artifact"
+    assert destination_manifest.read_bytes() == b"previous manifest"
+
+
+def test_v2_publish_rejects_draft_policy_without_replacing_destination(
+    monkeypatch, tmp_path: Path
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    source = tmp_path / "documents" / "active" / "output" / "v2" / "active.docx"
+    destination = tmp_path / "documents" / "active" / "published" / "active.docx"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"previous artifact")
+
+    published = runner.invoke(
+        app, ["v2", "publish", str(source), str(destination), "--policy", "draft", "--json"]
+    )
+
+    assert built.exit_code == 0, built.stdout
+    assert published.exit_code != 0
+    assert destination.read_bytes() == b"previous artifact"
+
+
 def test_v2_verify_uses_document_selected_on_cli_context(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     active = deps.resolve_context()
