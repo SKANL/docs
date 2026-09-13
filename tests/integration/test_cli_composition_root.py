@@ -41,6 +41,7 @@ _EXPECTED_FLAT_COMMANDS = {
 }
 _EXPECTED_GROUPS = {
     "v2": {"create", "status", "build", "verify", "inspect", "diff", "package", "publish", "ingest", "prepare", "baseline"},
+    "source": {"ingest"},
     "document": {"create", "status", "build", "verify", "inspect", "diff", "package", "publish", "ingest", "prepare", "baseline"},
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
     # 1b/1c); `use` added PR3 of agent-agnostic-real-world-usability (item C,

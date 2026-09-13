@@ -25,6 +25,7 @@ from docs.cli.commands.core_app import core_app
 from docs.cli.commands.doc_app import doc_app
 from docs.cli.commands.docx_app import docx_app
 from docs.cli.commands.section_app import section_app
+from docs.cli.commands.source_app import source_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
 from docs.cli.commands.v2_app import v2_app
@@ -43,6 +44,7 @@ def _root(ctx: typer.Context, doc: str = typer.Option("", "--doc", help="ID del 
 app.add_typer(core_app)
 app.add_typer(collection_app)
 app.add_typer(section_app)
+app.add_typer(source_app, name="source")
 app.add_typer(docx_app)
 app.add_typer(translate_app)
 

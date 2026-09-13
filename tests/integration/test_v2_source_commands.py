@@ -123,3 +123,12 @@ def test_source_prepare_propagates_normalization_failure(tmp_path: Path) -> None
     assert report["succeeded"] is False
     assert report["stages"][1]["succeeded"] is False
     assert report["stages"][1]["result"]["errors"] == ["normalizer crashed"]
+
+
+def test_source_ingest_alias_uses_the_same_native_stage(tmp_path, monkeypatch):
+    # The source namespace is a public spelling of the v2 ingest boundary.
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    result = CliRunner().invoke(app, ["source", "ingest", "--json"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)["succeeded"] is True

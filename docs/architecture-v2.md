@@ -4,7 +4,7 @@ V2 is the contract-driven public surface for preparing sources, building, checki
 
 ## Public surface
 
-Run from the harness checkout or use the installed `docs` entry point. The `document` group is canonical; `v2` is a compatibility alias with the same commands.
+Run from the harness checkout or use the installed `docs` entry point. The `document` group is canonical; `source ingest` is the source-specific public boundary; `v2` is a compatibility alias with the same document commands.
 
 | Command | Purpose | Writes |
 |---|---|---|
@@ -83,3 +83,4 @@ A publishable artifact must be under `output/v2/`, have a matching `<artifact>.<
 ## Format boundaries
 
 DOCX uses the existing format audit and QA adapters. HTML is decoded as UTF-8 and must contain exactly one HTML root and one body root. PDF must start with `%PDF-` and reopen with the available PDF reader with at least one page and valid render dimensions. Non-DOCX formats are not silently treated as DOCX. PDF is derived and therefore not byte-deterministic.
+
