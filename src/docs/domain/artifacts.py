@@ -209,7 +209,17 @@ class BuildManifest:
             asset_hashes={str(key): str(value) for key, value in payload.get("asset_hashes", {}).items()},
             renderer_versions={str(key): str(value) for key, value in payload.get("renderer_versions", {}).items()},
             artifacts=tuple(
-                ArtifactRef(str(item["path"]), str(item["sha256"]), ArtifactState(item.get("state", "ready")))
+                ArtifactRef(
+                    str(item["path"]),
+                    str(item["sha256"]),
+                    ArtifactState(item.get("state", "ready")),
+                    media_type=item.get("media_type"),
+                    size_bytes=(
+                        int(item["size_bytes"])
+                        if item.get("size_bytes") is not None
+                        else None
+                    ),
+                )
                 for item in payload.get("artifacts", [])
             ),
             verification=dict(payload.get("verification", {})),

@@ -1,6 +1,12 @@
 import json
 
-from docs.domain.artifacts import ArtifactRef, ArtifactState, VerificationFinding, VerificationReport
+from docs.domain.artifacts import (
+    ArtifactRef,
+    ArtifactState,
+    BuildManifest,
+    VerificationFinding,
+    VerificationReport,
+)
 
 
 def test_artifact_models_serialize_to_a_stable_json_payload():
@@ -51,3 +57,29 @@ def test_artifact_verification_can_record_media_size_page_and_evidence():
     assert payload["artifact"]["media_type"] == "application/pdf"
     assert payload["artifact"]["size_bytes"] == 2048
     assert payload["findings"][0]["page"] == 3
+
+
+def test_build_manifest_round_trips_rich_artifact_identity_fields():
+    manifest = BuildManifest(
+        document_id="report",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"renderer": "1"},
+        artifacts=(
+            ArtifactRef(
+                "output/report.pdf",
+                "e" * 64,
+                ArtifactState.VERIFIED,
+                media_type="application/pdf",
+                size_bytes=12,
+            ),
+        ),
+        verification={"passed": True},
+        provenance_run="run-1",
+    )
+
+    restored = BuildManifest.from_dict(manifest.to_dict())
+
+    assert restored.artifacts[0] == manifest.artifacts[0]
