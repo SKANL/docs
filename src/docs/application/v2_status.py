@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,8 @@ class V2Status:
     execution: dict[str, Any] | None = None
     provenance: dict[str, Any] | None = None
     succeeded: bool | None = None
+    unsupported_stages: list[str] = field(default_factory=list)
+    publication_blockers: list[str] = field(default_factory=list)
 
 
 class V2StatusReader:
@@ -69,10 +71,40 @@ class V2StatusReader:
             provenance = ProvenanceLedgerV2(document_root / "runs" / "v2-provenance.json").load_run(
                 manifest.provenance_run
             )
+        unsupported_stages, publication_blockers = _runtime_status_details(execution)
         return V2Status(
             manifest=manifest,
             capabilities=capabilities,
             execution=execution,
             provenance=provenance,
             succeeded=succeeded,
+            unsupported_stages=unsupported_stages,
+            publication_blockers=publication_blockers,
         )
+
+
+def _runtime_status_details(execution: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Expose runtime facts without reinterpreting the pipeline policy."""
+    results = execution.get("results")
+    if not isinstance(results, list):
+        return [], []
+
+    unsupported_stages: list[str] = []
+    publication_blockers: list[str] = []
+    for result in results:
+        if not isinstance(result, Mapping):
+            continue
+        stage = result.get("stage")
+        if not isinstance(stage, str):
+            continue
+        if result.get("outcome") == "unsupported" and stage not in unsupported_stages:
+            unsupported_stages.append(stage)
+        if stage not in {"publish", "publish-draft", "package-release"}:
+            continue
+        errors = result.get("errors")
+        if not isinstance(errors, list):
+            continue
+        for error in errors:
+            if isinstance(error, str) and error not in publication_blockers:
+                publication_blockers.append(error)
+    return unsupported_stages, publication_blockers

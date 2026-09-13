@@ -118,6 +118,8 @@ class StatusService:
             v2_execution=v2.execution,
             v2_provenance=v2.provenance,
             v2_succeeded=v2.succeeded,
+            unsupported_stages=v2.unsupported_stages,
+            publication_blockers=v2.publication_blockers,
         )
 
     @staticmethod

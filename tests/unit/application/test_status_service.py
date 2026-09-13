@@ -114,6 +114,7 @@ def test_status_summary_reports_fresh_document(tmp_path, service):
     assert status.output_final_exists is False
     assert status.lifecycle == "draft"
     assert status.build_version is None
+    assert "v2" not in status.to_dict()
 
 
 def test_status_summary_reports_partially_completed_document(tmp_path, workspace, service):
@@ -270,6 +271,8 @@ def test_document_status_serializes_optional_v2_observability() -> None:
         v2_execution={"results": []},
         v2_provenance={"run_id": "run-1"},
         v2_succeeded=True,
+        unsupported_stages=["accessibility-review"],
+        publication_blockers=["publish disallowed by pipeline policy"],
     )
 
     assert status.to_dict()["v2"] == {
@@ -277,6 +280,8 @@ def test_document_status_serializes_optional_v2_observability() -> None:
         "execution": {"results": []},
         "provenance": {"run_id": "run-1"},
         "succeeded": True,
+        "unsupported_stages": ["accessibility-review"],
+        "publication_blockers": ["publish disallowed by pipeline policy"],
     }
 
 
@@ -286,6 +291,8 @@ def test_status_summary_reads_v2_observability_through_reader(tmp_path, service,
             execution={"schema": "docs.build/v2"},
             provenance={"run_id": "run-1"},
             succeeded=True,
+            unsupported_stages=["accessibility-review"],
+            publication_blockers=["required capability unavailable: soffice"],
         )
     )
     service.v2_status_reader = reader
@@ -296,6 +303,8 @@ def test_status_summary_reads_v2_observability_through_reader(tmp_path, service,
     assert status.v2_succeeded is True
     assert status.v2_execution == {"schema": "docs.build/v2"}
     assert status.v2_provenance == {"run_id": "run-1"}
+    assert status.unsupported_stages == ["accessibility-review"]
+    assert status.publication_blockers == ["required capability unavailable: soffice"]
 
 
 def test_v2_status_reader_loads_manifest_and_matching_provenance_from_document_root(tmp_path: Path) -> None:
@@ -319,6 +328,39 @@ def test_v2_status_reader_loads_manifest_and_matching_provenance_from_document_r
 
     assert snapshot.manifest == manifest
     assert snapshot.provenance == expected_provenance
+
+
+def test_v2_status_reader_derives_unsupported_stages_and_publication_blockers_from_runtime_results(
+    tmp_path: Path,
+) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("artifact", encoding="utf-8")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), "a" * 64, ArtifactState.READY),),
+        verification={"passed": False},
+    )
+    payload = manifest.to_dict()
+    payload["report"] = {
+        "execution": {
+            "results": [
+                {"stage": "accessibility-review", "outcome": "unsupported", "errors": []},
+                {"stage": "publish-draft", "outcome": "failed", "errors": ["publish disallowed by pipeline policy"]},
+                {"stage": "package-release", "outcome": "failed", "errors": ["release packaging failed"]},
+            ]
+        }
+    }
+    artifact.with_suffix(".docx.manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.unsupported_stages == ["accessibility-review"]
+    assert snapshot.publication_blockers == [
+        "publish disallowed by pipeline policy",
+        "release packaging failed",
+    ]
 
 
 def test_v2_status_reader_fails_open_for_invalid_manifest(tmp_path: Path) -> None:

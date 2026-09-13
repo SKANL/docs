@@ -955,9 +955,12 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     output_format = output.get("format", "docx") if isinstance(output, Mapping) else "docx"
     renderer = deps.resolve_renderer(resolved.config)
     v2_status = payload.get("v2", {})
+    current_v2 = dict(v2_status) if isinstance(v2_status, Mapping) else {}
     payload["v2"] = {
-        **(dict(v2_status) if isinstance(v2_status, Mapping) else {}),
+        **current_v2,
         "capabilities": _capabilities_for(renderer, output_format, deps.workspace.doc_root(resolved.doc_id)).report(),
+        "unsupported_stages": current_v2.get("unsupported_stages", []),
+        "publication_blockers": current_v2.get("publication_blockers", []),
     }
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

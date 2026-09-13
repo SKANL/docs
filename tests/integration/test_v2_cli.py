@@ -858,6 +858,8 @@ def test_v2_document_status_serializes_domain_status_with_v2_provenance(monkeypa
         "v2": {
             **payload["v2"],
             "capabilities": {"pandoc": {"available": False, "path": None}},
+            "unsupported_stages": [],
+            "publication_blockers": [],
         },
     }
     assert calls and calls[0][0] == "active"

@@ -35,6 +35,8 @@ class DocumentStatus:
     v2_execution: dict[str, Any] | None = None
     v2_provenance: dict[str, Any] | None = None
     v2_succeeded: bool | None = None
+    unsupported_stages: list[str] = field(default_factory=list)
+    publication_blockers: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -70,8 +72,17 @@ class DocumentStatus:
             "execution": self.v2_execution,
             "provenance": self.v2_provenance,
             "succeeded": self.v2_succeeded,
+            "unsupported_stages": self.unsupported_stages,
+            "publication_blockers": self.publication_blockers,
         }
-        if any(value is not None for value in v2.values()):
+        if (
+            any(
+                value is not None
+                for value in (self.v2_capabilities, self.v2_execution, self.v2_provenance, self.v2_succeeded)
+            )
+            or self.unsupported_stages
+            or self.publication_blockers
+        ):
             result["v2"] = v2
         return result
 
