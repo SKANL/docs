@@ -1208,6 +1208,36 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     )
 
 
+@v2_app.command("plan")
+def plan(
+    ctx: typer.Context,
+    pipeline_id: str = typer.Option("document", "--pipeline", help="Registered pipeline boundary to inspect."),
+    output_format: str = typer.Option("docx", "--format"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show the ordered stages and external contracts of a registered pipeline."""
+    deps = ctx.obj["deps"]
+    service = create_v2_service(
+        deps, output_format, document=ctx.obj.get("doc", ""), pipeline_id=pipeline_id
+    )
+    try:
+        registered = service.registry.resolve(pipeline_id)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    definition = registered.definition
+    payload = {
+        "pipeline_id": pipeline_id,
+        "stages": list(definition.plan()),
+        "external_artifacts": sorted(definition.external_artifacts),
+        "contracts": [contract.to_dict() for contract in definition.artifacts],
+    }
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
+
+
 @v2_app.command("build")
 def build(
     ctx: typer.Context,

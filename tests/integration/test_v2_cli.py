@@ -168,6 +168,20 @@ def _deps(tmp_path: Path):
     return fixture
 
 
+def test_v2_plan_reports_registered_pipeline_contracts(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "plan", "--pipeline", "document-build", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["pipeline_id"] == "document-build"
+    assert payload["stages"] == [
+        "generate-visuals", "compose-cover", "build-docx"
+    ]
+
+
 def test_v2_build_resolves_renders_audits_qa_and_publishes_verified_docx(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)

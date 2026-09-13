@@ -150,7 +150,8 @@
       "document-diff",
       "document-inspect"
     ],
-    "gap": "The document command accepts --pipeline and dispatches registered stage boundaries; document-diff and document-inspect remain read-only artifact operations.",
-    "dispatch": "src/docs/application/pipeline_service_v2.py::PipelineServiceV2.run(pipeline_id=...)"
+    "gap": "document-diff and document-inspect are read-only artifact operations; all stage-backed public boundaries are registered, inspectable with document plan, and dispatchable.",
+    "dispatch": "src/docs/application/pipeline_service_v2.py::PipelineServiceV2.run(pipeline_id=...)",
+    "cli": "src/docs/cli/commands/v2_app.py::plan,build,verify; src/docs/cli/commands/source_app.py::source_ingest"
   }
 }

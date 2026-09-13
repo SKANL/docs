@@ -78,3 +78,7 @@ Only requested renderers are executed. A missing optional PDF/visual capability 
 ## Read-only artifact operations
 
 `inspect` computes an identity report without modifying the artifact. `diff` compares SHA-256 and adds a UTF-8 unified diff when both inputs are text-readable. `package` and `publish` validate and snapshot source bytes before writing through temporary paths; they do not follow symlinked or escaped paths.
+
+## Inspecting pipeline contracts
+
+Use `docs document plan --pipeline document-build --json` to inspect the ordered stages, external artifacts, and contracts without executing or publishing a build. The command uses the same registered DAG that `build` and `verify --pipeline` execute.
