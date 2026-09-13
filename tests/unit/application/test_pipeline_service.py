@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from docs.application.legacy_stage_planner import LegacyStagePlanner
 from docs.application.pipeline import PipelineService
 from docs.application.pipeline_metadata import PipelineMetadataService
 
@@ -115,6 +116,54 @@ def test_build_section_delegates_to_section_service():
     service.section_service = SectionService()
 
     assert service.build_section("doc", "template", "intro", {"paths": {}}) == expected
+
+
+def test_stage_callables_delegates_to_legacy_stage_planner():
+    service = _service(_FakeEvidenceRepository())
+    expected = {"doctor": lambda: (True, "ok")}
+
+    class StagePlanner:
+        def plan(self, pipeline, doc_id, template, config, repo_root, strict, renderer):
+            assert pipeline is service
+            assert (doc_id, template, config, repo_root, strict, renderer) == (
+                "doc", "template", {"paths": {}}, Path("repo"), True, "renderer"
+            )
+            return expected
+
+    service.stage_planner = StagePlanner()
+
+    assert service._stage_callables("doc", "template", {"paths": {}}, Path("repo"), True, "renderer") is expected
+
+
+def test_legacy_stage_planner_preserves_stage_callable_order():
+    service = _service(_FakeEvidenceRepository())
+    template = type("Template", (), {"sections": []})()
+    renderer = type("Renderer", (), {})()
+
+    callables = LegacyStagePlanner().plan(service, "doc", template, {}, Path("repo"), False, renderer)
+
+    assert list(callables) == [
+        "doctor",
+        "build-rules",
+        "review-rules",
+        "collect-sources",
+        "collect-code-evidence",
+        "collect-issues",
+        "build-ledger",
+        "build-sections",
+        "gap-report",
+        "pack-context",
+        "review-document",
+        "build-docx",
+        "build-html",
+        "build-pdf",
+        "format-audit-docx",
+        "ingest",
+        "generate-visuals",
+        "build-context-files",
+        "build-context-index",
+        "qa-docx",
+    ]
 
 
 def test_run_pipeline_records_generated_cover_provenance(tmp_path, monkeypatch):
