@@ -63,16 +63,10 @@ class PipelineRuntime:
         output_paths = tuple(outputs)
         capabilities = self._capabilities.report()
         missing_required = self._capabilities.missing_required()
-        blocks_required_capabilities = (
-            self._policy is not None
-            and self._policy.mode in {PipelineMode.strict, PipelineMode.release}
-        )
-        if missing_required and blocks_required_capabilities:
+        capability_evaluation = self._capabilities.evaluate(self._policy) if self._policy is not None else None
+        if capability_evaluation is not None and capability_evaluation.blocking:
             execution = PipelineReport(
-                tuple(
-                    StageResult("capabilities", False, errors=(f"required capability unavailable: {name}",))
-                    for name in missing_required
-                )
+                (StageResult("capabilities", False, errors=capability_evaluation.errors),)
             )
             return PipelineRuntimeReport(capabilities=capabilities, execution=execution, provenance=None, succeeded=False)
 
@@ -164,15 +158,13 @@ class PipelineRuntime:
                     )
                     for result in results
                 ]
-            if missing_required:
+            if capability_evaluation is not None and capability_evaluation.warnings:
                 results.insert(
                     0,
                     StageResult(
                         stage="capabilities",
                         ok=True,
-                        warnings=tuple(
-                            f"required capability unavailable: {name}" for name in missing_required
-                        ),
+                        warnings=capability_evaluation.warnings,
                     ),
                 )
             if publish_disallowed or capability_blocks_publication:

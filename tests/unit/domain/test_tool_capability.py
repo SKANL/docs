@@ -1,5 +1,6 @@
 from docs.cli.commands.v2_app import _renderer_capabilities
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
 
 def test_registry_checks_tools_lazily_and_reports_stable_sorted_capabilities(monkeypatch):
@@ -10,10 +11,13 @@ def test_registry_checks_tools_lazily_and_reports_stable_sorted_capabilities(mon
         return f"/bin/{name}" if name == "pandoc" else None
 
     monkeypatch.setattr("shutil.which", which)
-    registry = ToolCapabilityRegistry([
-        ToolCapability(name="zeta", executable="zeta"),
-        ToolCapability(name="pandoc", executable="pandoc"),
-    ])
+    registry = ToolCapabilityRegistry(
+        [
+            ToolCapability(name="zeta", executable="zeta"),
+            ToolCapability(name="pandoc", executable="pandoc"),
+        ],
+        NativeToolCapabilityDetector(),
+    )
 
     assert calls == []
     assert registry.report() == {
@@ -71,7 +75,8 @@ def test_registry_can_detect_python_module_capabilities_lazily(monkeypatch):
 
     monkeypatch.setattr("importlib.util.find_spec", find_spec)
     registry = ToolCapabilityRegistry(
-        (ToolCapability("pillow", "", module="PIL"), ToolCapability("pdfium", "", module="pypdfium2"))
+        (ToolCapability("pillow", "", module="PIL"), ToolCapability("pdfium", "", module="pypdfium2")),
+        NativeToolCapabilityDetector(),
     )
 
     assert calls == []
@@ -93,15 +98,18 @@ def test_renderer_capability_adapter_preserves_module_probe():
 
 def test_capability_diagnostics_exposes_policy_metadata_without_changing_report(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "C:/bin/soffice.exe")
-    registry = ToolCapabilityRegistry((
-        ToolCapability(
-            "soffice",
-            "soffice",
-            required=True,
-            requirement="required for PDF release builds",
-            degradation="skip PDF in draft mode",
+    registry = ToolCapabilityRegistry(
+        (
+            ToolCapability(
+                "soffice",
+                "soffice",
+                required=True,
+                requirement="required for PDF release builds",
+                degradation="skip PDF in draft mode",
+            ),
         ),
-    ))
+        NativeToolCapabilityDetector(),
+    )
 
     assert registry.report() == {"soffice": {"available": True, "path": "C:/bin/soffice.exe"}}
     assert registry.diagnostics() == {
@@ -109,8 +117,10 @@ def test_capability_diagnostics_exposes_policy_metadata_without_changing_report(
             "available": True,
             "path": "C:/bin/soffice.exe",
             "required": True,
+            "policy": "required",
             "kind": "executable",
             "version": None,
+            "diagnostic": None,
             "requirement": "required for PDF release builds",
             "degradation": "skip PDF in draft mode",
         }

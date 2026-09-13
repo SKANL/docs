@@ -1,16 +1,28 @@
-"""Deterministic, local-only checks for optional external tool capabilities."""
+"""Pure capability declarations, policy evaluation, and stable reports."""
 
 from __future__ import annotations
 
-import importlib.util
-import shutil
+import json
 from dataclasses import dataclass, field
-from importlib import metadata
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+from docs.domain.ports.tool_capability_detector_port import ToolCapabilityDetectorPort
+
+if TYPE_CHECKING:
+    from docs.domain.pipeline_policy import PipelinePolicy
+
+
+class CapabilityPolicyState(StrEnum):
+    """Whether a declared capability is optional or required by a pipeline."""
+
+    optional = "optional"
+    required = "required"
 
 
 @dataclass(frozen=True, slots=True)
 class ToolCapability:
-    """A named executable capability that can be resolved on demand."""
+    """Typed declaration for one local executable or Python module capability."""
 
     name: str
     executable: str
@@ -18,87 +30,142 @@ class ToolCapability:
     module: str | None = None
     requirement: str | None = None
     degradation: str | None = None
+    policy: CapabilityPolicyState = CapabilityPolicyState.optional
+
+    def __post_init__(self) -> None:
+        policy = CapabilityPolicyState(self.policy)
+        if self.required:
+            policy = CapabilityPolicyState.required
+        object.__setattr__(self, "policy", policy)
+        object.__setattr__(self, "required", policy is CapabilityPolicyState.required)
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityDetection:
+    """Infrastructure-supplied observation of one capability without policy."""
+
+    available: bool
+    path: str | None = None
+    version: str | None = None
+    diagnostic: str | None = None
+
+    @classmethod
+    def available_at(cls, path: str, *, version: str | None = None) -> CapabilityDetection:
+        return cls(True, path=path, version=version)
+
+    @classmethod
+    def unavailable(cls, diagnostic: str | None = None) -> CapabilityDetection:
+        return cls(False, diagnostic=diagnostic)
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityPolicyEvaluation:
+    """Stable policy decision for the capabilities observed in one run."""
+
+    mode: str
+    warnings: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+
+    @property
+    def blocking(self) -> bool:
+        return bool(self.errors)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "blocking": self.blocking,
+            "errors": list(self.errors),
+            "mode": self.mode,
+            "warnings": list(self.warnings),
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+@dataclass(frozen=True, slots=True)
+class _UnavailableCapabilityDetector:
+    """Safe default for unit callers that did not compose native infrastructure."""
+
+    def detect(self, capability: ToolCapability) -> CapabilityDetection:
+        return CapabilityDetection.unavailable(f"Capability detector not configured: {capability.name}")
 
 
 @dataclass(slots=True)
 class ToolCapabilityRegistry:
-    """Lazily resolve registered tools and expose a stable capability report."""
+    """Lazily evaluate declared capabilities through an injected detector port."""
 
     capabilities: tuple[ToolCapability, ...] | list[ToolCapability]
-    _resolved: dict[str, str | None] = field(default_factory=dict, init=False)
+    detector: ToolCapabilityDetectorPort = field(default_factory=_UnavailableCapabilityDetector)
+    _resolved: dict[str, CapabilityDetection] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         merged: dict[str, ToolCapability] = {}
         for capability in sorted(self.capabilities, key=lambda item: item.name):
             existing = merged.get(capability.name)
-            merged[capability.name] = (
-                capability
-                if existing is None
-                else ToolCapability(
-                    name=existing.name,
-                    executable=existing.executable,
-                    required=existing.required or capability.required,
-                    module=existing.module or capability.module,
-                    requirement=existing.requirement or capability.requirement,
-                    degradation=existing.degradation or capability.degradation,
-                )
+            merged[capability.name] = capability if existing is None else ToolCapability(
+                name=existing.name,
+                executable=existing.executable,
+                required=existing.required or capability.required,
+                module=existing.module or capability.module,
+                requirement=existing.requirement or capability.requirement,
+                degradation=existing.degradation or capability.degradation,
+                policy=(
+                    CapabilityPolicyState.required
+                    if CapabilityPolicyState.required in {existing.policy, capability.policy}
+                    else CapabilityPolicyState.optional
+                ),
             )
         self.capabilities = tuple(merged.values())
 
-    def _resolve(self, capability: ToolCapability) -> str | None:
+    def _detect(self, capability: ToolCapability) -> CapabilityDetection:
         if capability.name not in self._resolved:
-            if capability.module:
-                self._resolved[capability.name] = (
-                    f"python:{capability.module}"
-                    if importlib.util.find_spec(capability.module) is not None
-                    else None
-                )
-            else:
-                self._resolved[capability.name] = shutil.which(capability.executable)
+            self._resolved[capability.name] = self.detector.detect(capability)
         return self._resolved[capability.name]
 
     def report(self) -> dict[str, dict[str, str | bool | None]]:
-        """Return capabilities sorted by name, resolving each at most once."""
+        """Return compact, name-sorted capability availability for existing consumers."""
         return {
             capability.name: {
-                "available": (path := self._resolve(capability)) is not None,
-                "path": path,
+                "available": (detection := self._detect(capability)).available,
+                "path": detection.path,
             }
             for capability in self.capabilities
         }
 
     def diagnostics(self) -> dict[str, dict[str, str | bool | None]]:
-        """Return stable capability details for doctor/status consumers.
-
-        Resolution remains lazy and local.  The compact ``report`` contract is
-        intentionally unchanged for existing callers; this richer view adds
-        enough policy context for CI to explain why a missing capability
-        matters and how draft mode degrades.
-        """
+        """Return deterministic policy and diagnostic details for humans and CI."""
         return {
             capability.name: {
-                "available": (path := self._resolve(capability)) is not None,
-                "path": path,
+                "available": (detection := self._detect(capability)).available,
+                "path": detection.path,
                 "required": capability.required,
+                "policy": capability.policy.value,
                 "kind": "module" if capability.module else "executable",
-                "version": self._module_version(capability.module),
+                "version": detection.version,
+                "diagnostic": detection.diagnostic,
                 "requirement": capability.requirement,
                 "degradation": capability.degradation,
             }
             for capability in self.capabilities
         }
 
-    @staticmethod
-    def _module_version(module: str | None) -> str | None:
-        """Resolve a Python capability version without importing or executing it."""
-        if not module:
-            return None
-        try:
-            distributions = metadata.packages_distributions().get(module, ())
-            return metadata.version(distributions[0]) if distributions else None
-        except metadata.PackageNotFoundError:
-            return None
-
     def missing_required(self) -> tuple[str, ...]:
-        """Return required capabilities that cannot be resolved locally."""
-        return tuple(capability.name for capability in self.capabilities if capability.required and self._resolve(capability) is None)
+        return tuple(
+            capability.name
+            for capability in self.capabilities
+            if capability.policy is CapabilityPolicyState.required and not self._detect(capability).available
+        )
+
+    def evaluate(self, policy: PipelinePolicy) -> CapabilityPolicyEvaluation:
+        """Evaluate all unavailable capabilities against draft/strict/release policy."""
+        warnings: list[str] = []
+        errors: list[str] = []
+        for capability in self.capabilities:
+            if self._detect(capability).available:
+                continue
+            message = f"{capability.policy.value} capability unavailable: {capability.name}"
+            target = warnings if policy.capability_failure(
+                optional=capability.policy is CapabilityPolicyState.optional
+            ) == "warning" else errors
+            target.append(message)
+        return CapabilityPolicyEvaluation(policy.mode.value, tuple(warnings), tuple(errors))

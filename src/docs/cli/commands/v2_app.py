@@ -50,9 +50,11 @@ from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
+from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
 v2_app = typer.Typer(help="Workspace-backed v2 pipeline commands.")
 
@@ -392,7 +394,10 @@ def _capabilities_for(renderer: Any, output_format: str, document_root: Path) ->
     if output_format == "pdf":
         capabilities.append(ToolCapability("soffice", "soffice", required=True, requirement="required to derive PDF from DOCX", degradation="skip PDF derivation in draft mode"))
     capabilities.extend(_visual_capabilities(document_root))
-    return ToolCapabilityRegistry(capabilities)
+    return ToolCapabilityRegistry(
+        capabilities,
+        NativeToolCapabilityDetector(SystemToolResolverAdapter().tool_version),
+    )
 
 
 def create_v2_service(

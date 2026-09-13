@@ -33,7 +33,7 @@ class PipelinePolicy:
         return severity
 
     def capability_failure(self, *, optional: bool) -> str:
-        if optional and self.mode == PipelineMode.draft:
+        if self.mode == PipelineMode.draft:
             return "warning"
         return "error"
 
