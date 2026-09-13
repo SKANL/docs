@@ -18,6 +18,26 @@ from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, Pipeli
 
 
 @dataclass(frozen=True)
+class PublicPipelineSpec:
+    """A user-facing pipeline name and its reusable stage boundary."""
+
+    pipeline_id: str
+    stages: tuple[str, ...]
+
+
+PUBLIC_PIPELINES: tuple[PublicPipelineSpec, ...] = (
+    PublicPipelineSpec("source-ingest", ("resolve-config", "resolve-context", "resolve-assets", "ingest-sources")),
+    PublicPipelineSpec("document-prepare", ("normalize-sources", "compile-structure")),
+    PublicPipelineSpec("document-build", ("generate-visuals", "compose-cover", "build-docx", "build-html", "build-pdf")),
+    PublicPipelineSpec("document-verify", ("structural-audit", "editorial-review", "evidence-review", "consistency-review", "accessibility-review", "visual-review", "reproducibility-check")),
+    PublicPipelineSpec("document-publish", ("record-provenance", "publish-draft")),
+    PublicPipelineSpec("document-package", ("package-release",)),
+    PublicPipelineSpec("document-diff", ()),
+    PublicPipelineSpec("document-inspect", ()),
+)
+
+
+@dataclass(frozen=True)
 class RegisteredPipeline:
     """A validated definition and its stage implementations."""
 
@@ -46,6 +66,10 @@ class PipelineRegistry:
         if unknown_handlers:
             raise ValueError(f"handlers reference unknown stages: {', '.join(sorted(unknown_handlers))}")
         self._pipelines[name] = RegisteredPipeline(definition, dict(handlers))
+
+    def names(self) -> tuple[str, ...]:
+        """Return registered pipeline names in deterministic order."""
+        return tuple(sorted(self._pipelines))
 
     def resolve(self, name: str) -> RegisteredPipeline:
         try:

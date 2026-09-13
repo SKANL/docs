@@ -32,6 +32,7 @@ from docs.application.package_service_v2 import (
     PackagePublicationError,
     PackageServiceV2,
 )
+from docs.application.pipeline_components_v2 import PUBLIC_PIPELINES
 from docs.application.pipeline_service_v2 import (
     PipelineServiceV2,
     PublicationSpec,
@@ -1177,6 +1178,7 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
         "capability_diagnostics": capability_registry.diagnostics(),
         "unsupported_stages": current_v2.get("unsupported_stages", []),
         "publication_blockers": current_v2.get("publication_blockers", []),
+        "public_pipelines": [spec.pipeline_id for spec in PUBLIC_PIPELINES],
     }
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

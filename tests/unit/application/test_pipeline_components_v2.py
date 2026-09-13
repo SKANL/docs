@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from docs.application.pipeline_components_v2 import (
+    PUBLIC_PIPELINES,
     ArtifactStore,
     PipelinePlanner,
     PipelineRegistry,
@@ -92,3 +93,12 @@ def test_run_reporter_preserves_ordered_stage_results_in_a_stable_report() -> No
         '"stage":"render","warnings":[]},{"artifacts":[],"errors":["blocked"],'
         '"ok":false,"outcome":"failed","stage":"publish","warnings":[]}]}'
     )
+
+
+def test_public_pipeline_catalog_exposes_reusable_boundaries():
+    ids = tuple(spec.pipeline_id for spec in PUBLIC_PIPELINES)
+    assert ids == (
+        "source-ingest", "document-prepare", "document-build", "document-verify",
+        "document-publish", "document-package", "document-diff", "document-inspect",
+    )
+    assert "build-docx" in next(spec for spec in PUBLIC_PIPELINES if spec.pipeline_id == "document-build").stages
