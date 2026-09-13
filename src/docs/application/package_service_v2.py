@@ -10,10 +10,17 @@ from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 
 class PackagePublicationError(ValueError):
     """Raised when a package archive cannot be safely published."""
+
+
+class DirectoryIdentityAssertion(Protocol):
+    """Verify that a publication directory still has its captured identity."""
+
+    def __call__(self, path: Path, expected: tuple[int, int], *, operation: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -32,9 +39,13 @@ class PackageServiceV2:
         *,
         lock: Callable[[Path], AbstractContextManager[None]],
         directory_guard: Callable[[Path], AbstractContextManager[None]],
+        normalize_docx_zip_timestamps: Callable[[Path], None],
+        assert_directory_identity: DirectoryIdentityAssertion,
     ) -> None:
         self._lock = lock
         self._directory_guard = directory_guard
+        self._normalize_docx_zip_timestamps = normalize_docx_zip_timestamps
+        self._assert_directory_identity = assert_directory_identity
 
     def write(
         self,
@@ -59,14 +70,15 @@ class PackageServiceV2:
         published = False
         try:
             _write_deterministic_zip(scratch, files)
+            self._normalize_docx_zip_timestamps(scratch)
             expected_digest = hashlib.sha256(scratch.read_bytes()).digest()
-            _assert_directory_identity(output.parent, parent_identity, operation="publication")
+            self._assert_directory_identity(output.parent, parent_identity, operation="publication")
             _assert_output_unchanged(output, previous_identity, previous_content)
             with self._directory_guard(output.parent):
                 os.replace(scratch, output)
             published = True
             published_identity = os.stat(output, follow_symlinks=False)
-            _assert_directory_identity(output.parent, parent_identity, operation="publication")
+            self._assert_directory_identity(output.parent, parent_identity, operation="publication")
             if (
                 not output.is_file()
                 or output.is_symlink()
@@ -82,6 +94,7 @@ class PackageServiceV2:
                     published_identity,
                     expected_digest,
                     directory_guard=self._directory_guard,
+                    assert_directory_identity=self._assert_directory_identity,
                 )
             raise
         finally:
@@ -142,8 +155,9 @@ def _rollback(
     expected_digest: bytes,
     *,
     directory_guard: Callable[[Path], AbstractContextManager[None]],
+    assert_directory_identity: DirectoryIdentityAssertion,
 ) -> None:
-    _assert_directory_identity(output.parent, parent_identity, operation="rollback")
+    assert_directory_identity(output.parent, parent_identity, operation="rollback")
     current_identity = os.stat(output, follow_symlinks=False) if output.is_file() else None
     if (
         output.is_symlink()

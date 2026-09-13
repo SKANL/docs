@@ -42,6 +42,7 @@ from docs.domain.pipeline_kernel import StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 v2_app = typer.Typer(help="Workspace-backed v2 pipeline commands.")
@@ -1171,6 +1172,8 @@ def _write_package_archive(
             PackageServiceV2(
                 lock=owned_directory_lock,
                 directory_guard=directory_handle_guard,
+                normalize_docx_zip_timestamps=normalize_docx_zip_timestamps,
+                assert_directory_identity=_assert_directory_identity,
             ).write(
                 output,
                 tuple(PackageFileV2(relative, content) for relative, content in files),
