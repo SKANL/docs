@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -191,6 +193,67 @@ def test_v2_public_journey_creates_prepares_builds_verifies_packages_and_publish
         "package-release",
         "publish-draft",
     }
+
+
+def test_v2_builtin_template_journey_produces_artifacts_and_provenance(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The public journey must work in an isolated workspace with a shipped template."""
+    deps = _journey_deps(tmp_path)
+    fixture = Path(__file__).parents[1] / "fixtures" / "templates" / "documento-generico.json"
+    (deps.workspace.templates_dir / "documento-generico.json").write_bytes(fixture.read_bytes())
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    created = invoke(
+        runner,
+        "create",
+        "canonical",
+        "--template",
+        "documento-generico",
+        "--title",
+        "Canonical journey",
+    )
+    root = deps.workspace.doc_root("canonical")
+    (root / "inbox" / "source.md").write_text("A source claim.\n", encoding="utf-8")
+
+    ingested = invoke(runner, "ingest")
+    prepared = invoke(runner, "prepare")
+    built = invoke(runner, "build")
+    verified = invoke(runner, "verify")
+
+    artifact = root / "output" / "v2" / "canonical.docx"
+    inspected = invoke(runner, "inspect", str(artifact))
+    package = root / "output" / "release" / "canonical.zip"
+    packaged = invoke(runner, "package", str(artifact.parent), str(package))
+    destination = root / "published" / "canonical.docx"
+    published = invoke(runner, "publish", str(artifact), str(destination))
+
+    assert created["document_id"] == "canonical"
+    assert ingested["stages"][0]["name"] == "ingest-sources"
+    assert [stage["name"] for stage in prepared["stages"]] == [
+        "ingest-sources",
+        "normalize-sources",
+        "compile-structure",
+    ]
+    assert built["report"]["succeeded"] is True
+    assert verified["report"]["succeeded"] is True
+    assert artifact.read_bytes() == b"DOCX:canonical:journey"
+    assert inspected["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    assert packaged["path"] == str(package.resolve())
+    with zipfile.ZipFile(package) as archive:
+        assert "canonical.docx" in archive.namelist()
+
+    manifest_path = artifact.with_suffix(".docx.manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["document_id"] == "canonical"
+    assert manifest["verification"]["passed"] is True
+    assert manifest["artifacts"][0]["sha256"] == inspected["sha256"]
+    assert manifest["provenance_run"] == "cli-build-docx"
+    assert "cli-build-docx" in (root / "runs" / "v2-provenance.json").read_text(encoding="utf-8")
+    assert published["published"] is True
+    assert destination.read_bytes() == artifact.read_bytes()
+    assert destination.with_suffix(".docx.manifest.json").read_bytes() == manifest_path.read_bytes()
 
 
 def test_v2_stage_traceability_declares_every_runtime_stage() -> None:
