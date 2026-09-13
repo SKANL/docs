@@ -16,7 +16,7 @@ from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.ingest import IngestService
-from docs.application.output_names import resolve_draft_docx_name
+from docs.application.pipeline_metadata import PipelineMetadataService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.application.run_history import RunRecorderService
@@ -56,6 +56,7 @@ class PipelineService:
         structural_audit_service: StructuralAuditService | None = None,
         section_service: SectionService | None = None,
         run_recorder: RunRecorderService | None = None,
+        metadata_service: PipelineMetadataService | None = None,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -75,6 +76,7 @@ class PipelineService:
         self.structural_audit_service = structural_audit_service
         self.section_service = section_service or SectionService(review_service, evidence_service, context_repository)
         self.run_recorder = run_recorder or RunRecorderService(workspace, source_repository)
+        self.metadata_service = metadata_service or PipelineMetadataService(workspace)
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -97,29 +99,10 @@ class PipelineService:
         return records
 
     def _runs_dir(self, doc_id: str, config: dict[str, Any]) -> Path:
-        configured = config.get("paths", {}).get("runs_dir")
-        if configured:
-            return Path(configured)
-        return self.workspace.doc_root(doc_id) / "runs"
+        return self.metadata_service.runs_dir(doc_id, config)
 
     def _next_build_version(self, doc_id: str, config: dict[str, Any]) -> int:
-        """Monotonic build version (design.md item F, spec: document-lifecycle
-        "Monotonic Build Version"): the highest `build_version` already
-        logged under `runs/`, plus one. No separate counter file -- `runs/`
-        is already the wall-clock build log, so it stays the single source."""
-        runs_dir = self._runs_dir(doc_id, config)
-        if not runs_dir.exists():
-            return 1
-        latest = 0
-        for path in runs_dir.glob("*.json"):
-            try:
-                record = json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                continue
-            version = record.get("build_version")
-            if isinstance(version, int) and version > latest:
-                latest = version
-        return latest + 1
+        return self.metadata_service.next_build_version(doc_id, config)
 
     def rules_manifest_state(self, config: dict[str, Any]) -> tuple[bool, int]:
         rules_path = Path(config["paths"]["rules_manifest"])
@@ -135,7 +118,7 @@ class PipelineService:
         return self.section_service.build_section(doc_id, template, section_id, config)
 
     def _resolve_draft_docx_name(self, doc_id: str, config: dict[str, Any]) -> str:
-        return resolve_draft_docx_name(doc_id, config)
+        return self.metadata_service.resolve_draft_docx_name(doc_id, config)
 
     def _stage_callables(
         self,

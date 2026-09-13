@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from docs.application.pipeline import PipelineService
+from docs.application.pipeline_metadata import PipelineMetadataService
 
 
 class _FakeEvidenceRepository:
@@ -61,6 +62,45 @@ def test_rules_manifest_state_skips_size_lookup_when_manifest_absent():
     exists, size = service.rules_manifest_state({"paths": {"rules_manifest": "missing.json"}})
 
     assert (exists, size) == (False, 0)
+
+
+def test_pipeline_metadata_calculates_next_monotonic_build_version(tmp_path):
+    workspace = type("Workspace", (), {"doc_root": lambda self, doc_id: tmp_path / doc_id})()
+    runs_dir = tmp_path / "alpha" / "runs"
+    runs_dir.mkdir(parents=True)
+    (runs_dir / "old.json").write_text('{"build_version": 2}', encoding="utf-8")
+    (runs_dir / "new.json").write_text('{"build_version": 7}', encoding="utf-8")
+    (runs_dir / "invalid.json").write_text("not json", encoding="utf-8")
+
+    service = PipelineMetadataService(workspace)
+
+    assert service.next_build_version("alpha", {}) == 8
+
+
+def test_pipeline_metadata_resolves_configured_draft_docx_name(tmp_path):
+    workspace = type("Workspace", (), {"doc_root": lambda self, doc_id: tmp_path / doc_id})()
+
+    assert PipelineMetadataService(workspace).resolve_draft_docx_name(
+        "alpha", {"output": {"draft_name": "custom.docx"}}
+    ) == "custom.docx"
+
+
+def test_pipeline_service_delegates_metadata_compatibility_methods():
+    service = _service(_FakeEvidenceRepository())
+
+    class MetadataService:
+        def next_build_version(self, doc_id, config):
+            assert (doc_id, config) == ("doc", {"paths": {}})
+            return 12
+
+        def resolve_draft_docx_name(self, doc_id, config):
+            assert (doc_id, config) == ("doc", {"paths": {}})
+            return "delegated.docx"
+
+    service.metadata_service = MetadataService()
+
+    assert service._next_build_version("doc", {"paths": {}}) == 12
+    assert service._resolve_draft_docx_name("doc", {"paths": {}}) == "delegated.docx"
 
 
 def test_build_section_delegates_to_section_service():
