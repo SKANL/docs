@@ -232,3 +232,29 @@ def test_build_creates_the_parent_of_a_custom_output_path(tmp_path, monkeypatch)
 
     assert result == custom
     assert seen["output"].parent.is_dir()
+
+
+def test_build_preserves_previous_html_when_pandoc_fails(tmp_path, monkeypatch):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nCuerpo.\n", encoding="utf-8")
+    output = tmp_path / "draft" / "document.html"
+    output.parent.mkdir()
+    output.write_text("old-build", encoding="utf-8")
+
+    def failing_run(*args, **kwargs):
+        output_argument = Path(args[0][-1])
+        output_argument.write_text("partial-build", encoding="utf-8")
+        raise subprocess.CalledProcessError(1, args[0])
+
+    monkeypatch.setattr("subprocess.run", failing_run)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/pandoc")
+    config = {
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(output.parent)},
+    }
+
+    with pytest.raises(subprocess.CalledProcessError):
+        HtmlRendererAdapter(SystemToolResolverAdapter()).build("doc-1", config, output=output)
+
+    assert output.read_text(encoding="utf-8") == "old-build"

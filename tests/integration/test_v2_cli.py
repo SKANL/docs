@@ -9,7 +9,15 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from docs.cli.commands.v2_app import _package_files, _verify_html_artifact, _write_package_archive
+from docs.cli.commands.v2_app import (
+    _batch_journal_path,
+    _package_files,
+    _promote_release_candidate,
+    _recover_batch_transaction,
+    _verify_html_artifact,
+    _write_batch_journal,
+    _write_package_archive,
+)
 from docs.cli.main import app
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.review import Issue, ReviewDimension, ReviewResult
@@ -330,6 +338,96 @@ def test_v2_build_only_executes_the_requested_renderer_and_cleans_renderer_scrat
     assert deps.renderers["pdf"].calls == []
     assert not list((tmp_path / "documents" / "active").glob(".v2-*") )
     assert not list((tmp_path / "documents" / "active").glob(".v2-render-*") )
+
+
+def test_v2_render_rejects_replaced_retained_artifact_directory(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    original_guard = __import__("docs.cli.commands.v2_app", fromlist=["directory_handle_guard"]).directory_handle_guard
+    replaced = False
+
+    def replace_retained_directory(path):
+        nonlocal replaced
+        if not replaced and path.name == "v2-artifacts":
+            moved = path.with_name("v2-artifacts-original")
+            path.rename(moved)
+            path.mkdir()
+            replaced = True
+        return original_guard(path)
+
+    monkeypatch.setattr("docs.cli.commands.v2_app.directory_handle_guard", replace_retained_directory)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "verify", "--json"])
+
+    assert result.exit_code == 1
+    assert "changed" in result.stdout.lower() or "boundary" in result.stdout.lower()
+
+
+def test_v2_release_candidate_promotion_requires_package_lock(monkeypatch, tmp_path):
+    root = tmp_path / "documents" / "active"
+    release = root / "output" / "release"
+    release.mkdir(parents=True)
+    candidate = release / ".active.zip.candidate"
+    candidate.write_bytes(b"verified-package")
+    entered = False
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def package_lock(path):
+        nonlocal entered
+        entered = True
+        yield
+
+    monkeypatch.setattr("docs.cli.commands.v2_app._package_lock", package_lock)
+
+    _promote_release_candidate(root, "active")
+
+    assert entered is True
+
+
+def test_v2_release_candidate_replacement_after_verification_cannot_publish(monkeypatch, tmp_path):
+    root = tmp_path / "documents" / "active"
+    release = root / "output" / "release"
+    release.mkdir(parents=True)
+    candidate = release / ".active.zip.candidate"
+    candidate.write_bytes(b"verified-package")
+    original = __import__("docs.cli.commands.v2_app", fromlist=["_assert_directory_identity"])._assert_directory_identity
+    calls = 0
+
+    def replace_candidate_after_check(path, expected, *, operation):
+        nonlocal calls
+        calls += 1
+        result = original(path, expected, operation=operation)
+        if calls == 1:
+            candidate.write_bytes(b"tampered-package")
+        return result
+
+    monkeypatch.setattr(
+        "docs.cli.commands.v2_app._assert_directory_identity",
+        replace_candidate_after_check,
+    )
+
+    with pytest.raises(Exception, match=r"candidate|package|identity|hash"):
+        _promote_release_candidate(root, "active")
+    assert not (release / "active.zip").exists()
+
+
+def test_v2_batch_recovery_restores_outputs_from_durable_journal(tmp_path: Path):
+    root = tmp_path / "document"
+    output = root / "output" / "v2"
+    output.mkdir(parents=True)
+    (output / "report.docx").write_text("partial", encoding="utf-8")
+    backup = root / ".v2-batch-crash"
+    (backup / "output" / "v2").mkdir(parents=True)
+    (backup / "output" / "v2" / "report.docx").write_text("previous", encoding="utf-8")
+    journal = _batch_journal_path(root)
+    _write_batch_journal(journal, root, backup, (Path("output") / "v2", Path("output") / "release"))
+
+    _recover_batch_transaction(journal)
+
+    assert (output / "report.docx").read_text(encoding="utf-8") == "previous"
+    assert not journal.exists()
 
 
 def test_v2_verify_uses_distinct_run_id_and_preserves_build_attestation(monkeypatch, tmp_path):

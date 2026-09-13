@@ -42,6 +42,7 @@ class PipelineExecutor:
         excluded_stages: set[str] | frozenset[str] = frozenset(),
         result_mapper: Callable[[StageResult], StageResult] | None = None,
         fail_on_unsupported: bool = False,
+        block_publication_on_package_failure: bool = False,
     ) -> PipelineReport:
         stages = {stage.name: stage for stage in self.definition.stages}
         producers = {
@@ -75,8 +76,9 @@ class PipelineExecutor:
                     )
                 )
                 continue
-            if stage_name == "publish-draft" and any(
-                result.stage == "package-release" and not result.ok
+            if block_publication_on_package_failure and stage_name == "publish-draft" and any(
+                result.stage == "package-release"
+                and (not result.ok or result.outcome != "succeeded")
                 for result in results
             ):
                 unavailable_artifacts.update(stage.produces)

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from docs.application.pipeline_runtime_v2 import PipelineRuntime
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
@@ -267,6 +269,44 @@ def test_strict_and_release_package_failure_blocks_publish_draft(tmp_path: Path)
             result.stage == "publish-draft" and "package-release" in " ".join(result.errors)
             for result in report.execution.results
         )
+
+
+@pytest.mark.parametrize("outcome", ("unsupported", "skipped"))
+@pytest.mark.parametrize("mode", (PipelineMode.strict, PipelineMode.release))
+def test_strict_and_release_package_gap_cannot_permit_publication(
+    tmp_path: Path, outcome: str, mode: PipelineMode
+) -> None:
+    calls: list[str] = []
+
+    def package_release() -> StageResult:
+        calls.append("package")
+        return getattr(StageResult, outcome)("package-release")
+
+    runtime = PipelineRuntime(
+        PipelineDefinition(
+            artifacts=(ArtifactContract("package-release-complete"),),
+            stages=(
+                StageSpec("package-release", produces=("package-release-complete",), optional=True),
+                StageSpec("publish-draft", requires=("package-release-complete",)),
+            ),
+        ),
+        {
+            "package-release": package_release,
+            "publish-draft": lambda: (calls.append("publish") or StageResult("publish-draft", True)),
+        },
+        ToolCapabilityRegistry(()),
+        ProvenanceLedgerV2(tmp_path / f"{mode.value}-{outcome}.json"),
+        PipelinePolicy(mode),
+    )
+
+    report = runtime.run(f"{mode.value}-{outcome}", outputs=(tmp_path / "published.txt",))
+
+    assert calls == ["package"]
+    assert report.succeeded is False
+    assert any(
+        result.stage == "publish-draft" and result.ok is False
+        for result in report.execution.results
+    )
 
 
 def test_required_unsupported_stage_blocks_publication_before_publish_handler(tmp_path: Path) -> None:

@@ -496,8 +496,11 @@ def create_v2_service(
             staging = Path(tempfile.mkdtemp(prefix=".v2-package-", dir=source_dir.parent))
             try:
                 for existing in source_dir.iterdir():
-                    if existing.is_file() and not existing.is_symlink():
-                        shutil.copyfile(existing, staging / existing.name)
+                    if existing.is_symlink() or not existing.is_file():
+                        raise RuntimeError(
+                            f"package refuses unsafe source entry: {existing.name}"
+                        )
+                    shutil.copyfile(existing, staging / existing.name)
                 package_name = f"{initial.doc_id}.{output_format}"
                 shutil.copyfile(artifact, staging / package_name)
                 (staging / f"{package_name}.manifest.json").write_text(
@@ -552,7 +555,10 @@ def create_v2_service(
         # later provenance verification.
         runs_dir = initial_root / "runs"
         retained_dir = runs_dir / "v2-artifacts"
+        if any(path.is_symlink() for path in (initial_root, runs_dir, retained_dir, *runs_dir.parents)):
+            return False, "render retention path must not contain symlinked directories"
         retained_dir.mkdir(parents=True, exist_ok=True)
+        retained_identity = _directory_identity(retained_dir)
         scratch_dir = Path(tempfile.mkdtemp(prefix=".v2-render-", dir=runs_dir))
         scratch_dirs.append(scratch_dir)
         scratch_rendered = scratch_dir / f"{resolved.doc_id}.{output_format}"
@@ -567,6 +573,10 @@ def create_v2_service(
         retained = retained_dir / f"{build_token}.{scratch_rendered.name}"
         with directory_handle_guard(retained_dir):
             os.replace(rendered, retained)
+        try:
+            _assert_directory_identity(retained_dir, retained_identity, operation="render retention")
+        except (OSError, RuntimeError) as exc:
+            return False, str(exc)
         state["artifact"] = retained
         return successful("render", str(state["artifact"]))
 
@@ -709,11 +719,22 @@ def _promote_release_candidate(document_root: Path, document_id: str) -> None:
         raise RuntimeError("package-release completed without a safe release candidate")
     if any(path.is_symlink() for path in (release_dir, *release_dir.parents)):
         raise RuntimeError("release directory must not be symlinked")
-    parent_identity = _directory_identity(release_dir)
-    _assert_directory_identity(release_dir, parent_identity, operation="release publication")
-    with directory_handle_guard(release_dir):
-        os.replace(candidate, destination)
-    _assert_directory_identity(release_dir, parent_identity, operation="release publication")
+    candidate_identity = os.stat(candidate, follow_symlinks=False)
+    candidate_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    with _package_lock(destination):
+        parent_identity = _directory_identity(release_dir)
+        _assert_directory_identity(release_dir, parent_identity, operation="release publication")
+        current = os.stat(candidate, follow_symlinks=False)
+        if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
+            candidate_identity.st_dev,
+            candidate_identity.st_ino,
+            candidate_identity.st_size,
+            candidate_identity.st_mtime_ns,
+        ) or hashlib.sha256(candidate.read_bytes()).hexdigest() != candidate_hash:
+            raise RuntimeError("release candidate changed before publication")
+        with directory_handle_guard(release_dir):
+            os.replace(candidate, destination)
+        _assert_directory_identity(release_dir, parent_identity, operation="release publication")
 
 
 def _run(
@@ -739,15 +760,20 @@ def _run(
     reports: list[dict[str, Any]] = []
     batch_backup: Path | None = None
     batch_root: Path | None = None
+    batch_journal: Path | None = None
     if command == "build":
         resolved_for_backup = ctx.obj["deps"].resolve_context(selected_document)
         batch_root = ctx.obj["deps"].workspace.doc_root(resolved_for_backup.doc_id)
         batch_root.mkdir(parents=True, exist_ok=True)
+        batch_journal = _batch_journal_path(batch_root)
+        _recover_batch_transaction(batch_journal)
         batch_backup = Path(tempfile.mkdtemp(prefix=".v2-batch-", dir=batch_root))
-        for relative in (Path("output") / "v2", Path("output") / "release"):
+        batch_paths = (Path("output") / "v2", Path("output") / "release")
+        for relative in batch_paths:
             current = batch_root / relative
             if current.exists() and not current.is_symlink():
                 shutil.copytree(current, batch_backup / relative)
+        _write_batch_journal(batch_journal, batch_root, batch_backup, batch_paths)
     def restore_batch() -> None:
         if batch_backup is None or batch_root is None:
             return
@@ -802,6 +828,8 @@ def _run(
             restore_batch()
         if batch_backup is not None:
             shutil.rmtree(batch_backup, ignore_errors=True)
+        if batch_journal is not None:
+            batch_journal.unlink(missing_ok=True)
     payload = reports[0] if len(reports) == 1 else reports
     if json_output:
         typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
@@ -811,6 +839,46 @@ def _run(
             typer.echo(json.dumps(item["report"], indent=2, sort_keys=True))
     if not all(item["report"].get("succeeded", False) for item in reports):
         raise typer.Exit(code=1)
+
+
+def _batch_journal_path(root: Path) -> Path:
+    return root / "runs" / "v2-batch-transaction.json"
+
+
+def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[Path, ...]) -> None:
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": "docs.batch/v1",
+        "root": str(root.resolve()),
+        "backup": str(backup.resolve()),
+        "paths": [path.as_posix() for path in paths],
+    }
+    temporary = journal.with_name(f".{journal.name}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    os.replace(temporary, journal)
+
+
+def _recover_batch_transaction(journal: Path) -> None:
+    if not journal.exists():
+        return
+    try:
+        payload = json.loads(journal.read_text(encoding="utf-8"))
+        root = Path(payload["root"]).resolve()
+        backup = Path(payload["backup"]).resolve()
+        if backup.parent != root.resolve():
+            raise RuntimeError("batch recovery backup escapes document root")
+        paths = tuple(Path(value) for value in payload["paths"])
+        for relative in paths:
+            current = root / relative
+            saved = backup / relative
+            if current.is_symlink():
+                raise RuntimeError("batch recovery refuses symlinked output")
+            if current.exists():
+                shutil.rmtree(current) if current.is_dir() else current.unlink()
+            if saved.exists():
+                shutil.copytree(saved, current)
+    finally:
+        journal.unlink(missing_ok=True)
 
 
 def _document_create_payload(deps: Any, doc_id: str, template: str, title: str) -> dict[str, str]:
@@ -1165,6 +1233,7 @@ def _write_package_archive(
                     or current_identity is None
                     or (current_identity.st_dev, current_identity.st_ino)
                     != (published_identity.st_dev, published_identity.st_ino)
+                    or hashlib.sha256(output.read_bytes()).digest() != expected_digest
                 ):
                     raise
                 if previous_content is None:

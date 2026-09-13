@@ -328,7 +328,7 @@ class AtomicTransform:
                 if AtomicTransform._publication_target_needs_rollback(target, raw_entry):
                     if backup.is_file():
                         AtomicTransform._replace_checked(backup, target, expected_parent, operation="rollback")
-                    elif not bool(raw_entry["existed"]):
+                    elif not bool(raw_entry["existed"]) and raw_entry.get("published_identity") is not None:
                         target.unlink(missing_ok=True)
                         AtomicTransform._assert_parent_identity(target, expected_parent, operation="rollback")
             except (OSError, RuntimeError) as exc:
@@ -405,7 +405,7 @@ class AtomicTransform:
                     raw_entry["parent_identity"],
                     operation="rollback",
                 )
-            elif not bool(raw_entry["existed"]):
+            elif not bool(raw_entry["existed"]) and raw_entry.get("published_identity") is not None:
                 target.unlink(missing_ok=True)
         shutil.rmtree(publication.backup_dir, ignore_errors=True)
         publication.journal_path.unlink(missing_ok=True)

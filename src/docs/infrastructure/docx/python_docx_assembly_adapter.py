@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -661,12 +662,24 @@ class PythonDocxAssemblyAdapter:
         # Normalize immediately after the subprocess succeeds so the body
         # .docx is deterministic like every other artifact this adapter
         # produces.
-        subprocess.run(
-            [pandoc_path, *map(str, inputs), "-o", str(output)],
-            check=True,
-            timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_output = tempfile.mkstemp(
+            prefix=f".{output.stem}.", suffix=output.suffix or ".docx", dir=output.parent
         )
-        normalize_docx_zip_timestamps(output)
+        os.close(fd)
+        temporary_path = Path(temporary_output)
+        try:
+            subprocess.run(
+                [pandoc_path, *map(str, inputs), "-o", str(temporary_path)],
+                check=True,
+                timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+            )
+            if not temporary_path.exists() or temporary_path.stat().st_size == 0:
+                raise RuntimeError("Pandoc produjo un DOCX vacío o inexistente")
+            normalize_docx_zip_timestamps(temporary_path)
+            os.replace(temporary_path, output)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     def insert_toc_field(self, docx_path: Path, placeholder: str = "[[TOC]]", levels: str = "1-3") -> bool:
         return insert_toc_field(docx_path, placeholder=placeholder, levels=levels)

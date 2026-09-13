@@ -44,23 +44,29 @@ class LibreOfficeQaAdapter:
         expected_pdf = output_dir / f"{docx_path.stem}.pdf"
         if expected_pdf.exists():
             expected_pdf.unlink()
-        with tempfile.TemporaryDirectory(prefix="docs_lo_profile_") as profile:
-            subprocess.run(
-                [
-                    libreoffice,
-                    f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
-                    "--headless",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    str(output_dir),
-                    str(docx_path),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=LIBREOFFICE_CONVERSION_TIMEOUT_SECONDS,
-            )
+        try:
+            with tempfile.TemporaryDirectory(prefix="docs_lo_profile_") as profile:
+                subprocess.run(
+                    [
+                        libreoffice,
+                        f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        "--outdir",
+                        str(output_dir),
+                        str(docx_path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=LIBREOFFICE_CONVERSION_TIMEOUT_SECONDS,
+                )
+        except Exception:
+            # LibreOffice may leave a non-empty partial PDF when it is
+            # interrupted.  Never let that file look like a valid QA result.
+            expected_pdf.unlink(missing_ok=True)
+            raise
         if not expected_pdf.exists() or expected_pdf.stat().st_size == 0:
             raise RuntimeError(f"LibreOffice no produjo el PDF esperado: {expected_pdf}")
         return expected_pdf

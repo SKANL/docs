@@ -149,6 +149,9 @@ class ProvenanceLedgerV2:
                 for ancestor, ino, dev in ancestors
             ):
                 raise ValueError(f"provenance path boundary changed while hashing: {path}")
+            current = os.stat(path, follow_symlinks=False)
+            if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+                raise ValueError(f"provenance file changed while hashing: {path}")
             return digest.hexdigest()
         finally:
             if descriptor != -1:

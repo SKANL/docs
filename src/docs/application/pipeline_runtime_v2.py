@@ -95,7 +95,14 @@ class PipelineRuntime:
                 or result.stage in {"accessibility-review", "reproducibility-check"}
             )
             if result.errors and draft_degradable and self._policy.mode == PipelineMode.draft:
-                return StageResult(result.stage, True, result.artifacts, (*result.warnings, *result.errors), ())
+                return StageResult(
+                    result.stage,
+                    True,
+                    result.artifacts,
+                    (*result.warnings, *result.errors),
+                    (),
+                    "succeeded",
+                )
             warnings = tuple(
                 warning
                 for warning in result.warnings
@@ -124,17 +131,22 @@ class PipelineRuntime:
                     and stage_specs[result.stage].optional
                 )
             )
-            return StageResult(result.stage, not errors, result.artifacts, warnings, errors)
+            return StageResult(result.stage, not errors, result.artifacts, warnings, errors, result.outcome)
 
         execution = self._executor.run(
             excluded_stages=policy_excluded_stages,
             result_mapper=apply_policy,
             fail_on_unsupported=bool(output_paths),
+            block_publication_on_package_failure=(
+                self._policy is not None
+                and self._policy.mode in {PipelineMode.strict, PipelineMode.release}
+            ),
         )
         if self._policy is not None:
             results = list(execution.results)
             package_failed = any(
-                result.stage == "package-release" and not result.ok
+                result.stage == "package-release"
+                and (not result.ok or result.outcome != "succeeded")
                 for result in results
             )
             if package_failed and self._policy.mode in {PipelineMode.strict, PipelineMode.release}:

@@ -1,6 +1,7 @@
 # src/docs/application/html_render.py
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -124,20 +125,31 @@ class HtmlRendererAdapter:
         # passed explicitly -- without it pandoc's standalone HTML falls back
         # to the first input filename (a section stem like "010-overview")
         # for <title>, which is not the document's title.
-            subprocess.run(
-                [
-                    pandoc,
-                    "--from",
-                    "markdown",
-                    *map(str, stripped_sections),
-                    "--standalone",
-                    "--embed-resources",
-                    "--metadata",
-                    f"title={self._title(doc_id, config)}",
-                    "-o",
-                    str(output),
-                ],
-                check=True,
-                timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+            fd, temporary_output = tempfile.mkstemp(
+                prefix=f".{Path(output).stem}.", suffix=Path(output).suffix or ".html", dir=Path(output).parent
             )
+            os.close(fd)
+            temporary_path = Path(temporary_output)
+            try:
+                subprocess.run(
+                    [
+                        pandoc,
+                        "--from",
+                        "markdown",
+                        *map(str, stripped_sections),
+                        "--standalone",
+                        "--embed-resources",
+                        "--metadata",
+                        f"title={self._title(doc_id, config)}",
+                        "-o",
+                        str(temporary_path),
+                    ],
+                    check=True,
+                    timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+                )
+                if not temporary_path.exists() or temporary_path.stat().st_size == 0:
+                    raise RuntimeError("Pandoc produjo un HTML vacío o inexistente")
+                os.replace(temporary_path, output)
+            finally:
+                temporary_path.unlink(missing_ok=True)
         return output
