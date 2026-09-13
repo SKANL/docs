@@ -1,6 +1,9 @@
 # Migrating to Docs Harness v2
 
-V2 is additive. Adopt it without deleting or overwriting legacy artifacts, and keep the legacy pipeline available until your documents and integrations have moved.
+V2 is the target runtime. During migration it is additive and keeps legacy
+artifacts isolated; the legacy pipeline is a finite compatibility bridge, not a
+second implementation path for new integrations. Remove that bridge only after
+the migration checklist for every workspace and consumer is green.
 
 ## Command mapping
 
@@ -14,7 +17,10 @@ V2 is additive. Adopt it without deleting or overwriting legacy artifacts, and k
 | Manual artifact copying | `docs document publish ... --policy strict|release` | Requires a matching manifest and verifiable attestation. |
 | Ad hoc ZIP creation | `docs document package ...` | Atomic, deterministic package operation over the supplied directory. |
 
-The legacy `docs pipeline` commands remain supported. V2 does not silently invoke them and does not claim that every legacy stage has a migrated adapter.
+The legacy `docs pipeline` commands remain supported during the migration
+window. V2 does not silently invoke them, and every new integration must use
+the v2 commands. The bridge can be retired once the document/workspace
+inventory has no remaining legacy consumers.
 
 ## Safe sequence
 
@@ -29,6 +35,6 @@ The legacy `docs pipeline` commands remain supported. V2 does not silently invok
 
 ## Compatibility boundary
 
-V2 uses the existing workspace and template data model but has a separate output and provenance boundary. The `v2` command alias is retained while callers migrate to `document`. There is no automatic promotion from `output/v2/` to `output/final/`; choose publication explicitly.
+V2 uses the existing workspace and template data model but has a separate output and provenance boundary. The `v2` command alias is retained while callers migrate to `document`. There is no automatic promotion from `output/v2/` to `output/final/`; choose publication explicitly. Public stage-backed boundaries can also be executed independently with `--pipeline`, for example `docs document build --pipeline document-package` and `docs document build --pipeline document-publish` after a verified build.
 
 Treat `unsupported` stages in the runtime report as migration inventory, not as proof that those stage behaviors exist. A rollout is complete only when the stages and capabilities required by the document's policy are implemented and verified.
