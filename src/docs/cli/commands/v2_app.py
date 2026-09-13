@@ -21,6 +21,10 @@ from typing import Any
 
 import typer
 
+from docs.application.artifact_build_service_v2 import (
+    ArtifactBuildErrorV2,
+    ArtifactBuildServiceV2,
+)
 from docs.application.atomic_transform_v2 import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service_v2 import BuildManifestServiceV2
 from docs.application.package_service_v2 import (
@@ -116,6 +120,20 @@ def _verify_pdf_artifact(artifact: Path) -> tuple[bool, str]:
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         return False, f"PDF artifact is unreadable: {exc}"
     return True, "PDF reopened, rendered, and visual dimensions verified"
+
+
+def _verify_readable_artifact(artifact: Path) -> tuple[bool, str]:
+    """Keep format-specific verification in pipeline stages, after a safe read."""
+    try:
+        with artifact.open("rb") as handle:
+            handle.read(1)
+    except OSError as exc:
+        return False, f"artifact is unreadable: {exc}"
+    return True, "artifact is readable"
+
+
+def _scratch_directory(prefix: str, parent: Path) -> Path:
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
 
 
 def _available_files(root: Path, directory: str) -> tuple[Path, ...]:
@@ -383,17 +401,27 @@ def create_v2_service(
             return False, f"renderer does not provide {format_name} output"
         config = deepcopy(state["config"])
         config.setdefault("output", {})["format"] = format_name
-        scratch_dir = Path(tempfile.mkdtemp(prefix=f".v2-{format_name}-", dir=initial_root))
-        scratch_dirs.append(scratch_dir)
-        artifact = renderer.build(
-            resolved.doc_id,
-            config,
-            output=scratch_dir / f"{resolved.doc_id}.{format_name}",
+        service = ArtifactBuildServiceV2(
+            build=lambda doc_id, build_config, output: renderer.build(
+                doc_id, build_config, output=output
+            ),
+            scratch_factory=_scratch_directory,
+            validator=_verify_readable_artifact,
         )
-        if artifact is None:
-            return True, f"omitted: {format_name} renderer produced no artifact"
-        state.setdefault("artifacts", {})[format_name] = Path(artifact)
-        return True, str(artifact)
+        try:
+            result = service.build(
+                document_id=resolved.doc_id,
+                config=config,
+                output_format=format_name,
+                scratch_parent=initial_root,
+            )
+        except ArtifactBuildErrorV2 as exc:
+            if exc.reason == "missing":
+                return True, f"omitted: {exc}"
+            return False, str(exc)
+        scratch_dirs.append(result.scratch_dir)
+        state.setdefault("artifacts", {})[format_name] = result.artifact
+        return True, str(result.artifact)
 
     def _generate_visuals() -> tuple[bool, str] | StageResult:
         service = _legacy_service("generate_visuals_service")
@@ -583,20 +611,24 @@ def create_v2_service(
             return False, "render retention path must not contain symlinked directories"
         retained_dir.mkdir(parents=True, exist_ok=True)
         retained_identity = _directory_identity(retained_dir)
-        scratch_dir = Path(tempfile.mkdtemp(prefix=".v2-render-", dir=runs_dir))
-        scratch_dirs.append(scratch_dir)
-        scratch_rendered = scratch_dir / f"{resolved.doc_id}.{output_format}"
-        artifact = state["renderer"].build(resolved.doc_id, state["config"], output=scratch_rendered)
-        if artifact is None:
-            return False, "DOCX renderer produced no artifact"
-        rendered = Path(artifact)
-        if rendered != scratch_rendered:
-            return False, "renderer wrote outside the v2 render scratch directory"
-        if not rendered.is_file() or rendered.stat().st_size == 0:
-            return False, "renderer produced an empty artifact"
-        retained = retained_dir / f"{build_token}.{scratch_rendered.name}"
+        service = ArtifactBuildServiceV2(
+            build=lambda doc_id, config, output: state["renderer"].build(doc_id, config, output=output),
+            scratch_factory=_scratch_directory,
+            validator=_verify_readable_artifact,
+        )
+        try:
+            result = service.build(
+                document_id=resolved.doc_id,
+                config=state["config"],
+                output_format=output_format,
+                scratch_parent=runs_dir,
+            )
+        except ArtifactBuildErrorV2 as exc:
+            return False, str(exc)
+        scratch_dirs.append(result.scratch_dir)
+        retained = retained_dir / f"{build_token}.{result.artifact.name}"
         with directory_handle_guard(retained_dir):
-            os.replace(rendered, retained)
+            os.replace(result.artifact, retained)
         try:
             _assert_directory_identity(retained_dir, retained_identity, operation="render retention")
         except (OSError, RuntimeError) as exc:
