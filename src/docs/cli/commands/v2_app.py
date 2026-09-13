@@ -613,6 +613,37 @@ def create_v2_service(
         return successful("resolve-context", f"document={resolved.doc_id}")
 
     def resolve_assets() -> tuple[bool, str]:
+        # A migrated workspace may already contain authored figure assets and
+        # bindings but no ingest-generated catalog.  Reconstruct that derived
+        # catalog from the existing assets once, without touching authored
+        # Markdown or replacing a non-empty curated catalog.
+        configured_paths = state["config"].get("paths", {})
+        sections_dir = Path(configured_paths.get("sections_dir", initial_root / "sections"))
+        catalog_path = sections_dir / "figure-catalog.json"
+        bindings_path = sections_dir / "figure-bindings.json"
+        figure_pipeline = getattr(getattr(deps, "ingest", None), "figures", None)
+        if figure_pipeline is not None and bindings_path.is_file():
+            try:
+                catalog = json.loads(catalog_path.read_text(encoding="utf-8")) if catalog_path.is_file() else {}
+                if not catalog.get("figures"):
+                    assets_dir = Path(configured_paths.get("assets_dir", initial_root / "assets")) / "figures"
+                    candidates = tuple(
+                        (path, path.relative_to(initial_root).as_posix())
+                        for path in sorted(assets_dir.iterdir(), key=lambda item: item.name)
+                        if path.is_file() and path.suffix.casefold() in {".png", ".jpg", ".jpeg", ".svg"}
+                    ) if assets_dir.is_dir() else ()
+                    if candidates:
+                        figure_pipeline.build_figure_catalog_for(
+                            Path(configured_paths.get("inbox_dir", initial_root / "inbox")),
+                            sections_dir,
+                            list(candidates),
+                            [],
+                            entries=[],
+                            assets_dir=None,
+                        )
+                        return successful("resolve-assets", f"catalogued {len(candidates)} existing figure assets")
+            except (OSError, TypeError, ValueError, AttributeError) as exc:
+                return False, f"could not resolve existing figure assets: {exc}"
         return successful("resolve-assets")
 
     def _source_stage(name: str) -> tuple[bool, str]:
