@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import shutil
 from dataclasses import dataclass, field
 
@@ -13,6 +14,7 @@ class ToolCapability:
     name: str
     executable: str
     required: bool = False
+    module: str | None = None
 
 
 @dataclass(slots=True)
@@ -33,13 +35,21 @@ class ToolCapabilityRegistry:
                     name=existing.name,
                     executable=existing.executable,
                     required=existing.required or capability.required,
+                    module=existing.module or capability.module,
                 )
             )
         self.capabilities = tuple(merged.values())
 
     def _resolve(self, capability: ToolCapability) -> str | None:
         if capability.name not in self._resolved:
-            self._resolved[capability.name] = shutil.which(capability.executable)
+            if capability.module:
+                self._resolved[capability.name] = (
+                    f"python:{capability.module}"
+                    if importlib.util.find_spec(capability.module) is not None
+                    else None
+                )
+            else:
+                self._resolved[capability.name] = shutil.which(capability.executable)
         return self._resolved[capability.name]
 
     def report(self) -> dict[str, dict[str, str | bool | None]]:

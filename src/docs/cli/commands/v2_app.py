@@ -355,6 +355,12 @@ def _visual_capabilities(document_root: Path) -> tuple[ToolCapability, ...]:
 
 def _capabilities_for(renderer: Any, output_format: str, document_root: Path) -> ToolCapabilityRegistry:
     capabilities = list(_renderer_capabilities(renderer))
+    capabilities.extend(
+        (
+            ToolCapability("pillow", "", module="PIL"),
+            ToolCapability("pypdfium2", "", module="pypdfium2", required=output_format == "pdf"),
+        )
+    )
     if output_format == "pdf":
         capabilities.append(ToolCapability("soffice", "soffice", required=True))
     capabilities.extend(_visual_capabilities(document_root))

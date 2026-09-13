@@ -798,7 +798,11 @@ def test_v2_pdf_draft_reports_missing_soffice_without_blocking_render(monkeypatc
 
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
-    assert payload["report"]["capabilities"] == {"soffice": {"available": False, "path": None}}
+    assert payload["report"]["capabilities"] == {
+        "pillow": {"available": True, "path": "python:PIL"},
+        "pypdfium2": {"available": True, "path": "python:pypdfium2"},
+        "soffice": {"available": False, "path": None},
+    }
     assert deps.renderers["pdf"].calls
 
 
@@ -812,7 +816,11 @@ def test_v2_pdf_strict_and_release_fail_before_render_when_soffice_is_missing(mo
 
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
-    assert payload["report"]["capabilities"] == {"soffice": {"available": False, "path": None}}
+    assert payload["report"]["capabilities"] == {
+        "pillow": {"available": True, "path": "python:PIL"},
+        "pypdfium2": {"available": True, "path": "python:pypdfium2"},
+        "soffice": {"available": False, "path": None},
+    }
     assert payload["report"]["execution"]["results"][0]["errors"] == ["required capability unavailable: soffice"]
     assert deps.renderers["pdf"].calls == []
 
@@ -827,7 +835,11 @@ def test_v2_html_uses_renderer_declared_required_capabilities(monkeypatch, tmp_p
 
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
-    assert payload["report"]["capabilities"] == {"pandoc": {"available": False, "path": None}}
+    assert payload["report"]["capabilities"] == {
+        "pandoc": {"available": False, "path": None},
+        "pillow": {"available": True, "path": "python:PIL"},
+        "pypdfium2": {"available": True, "path": "python:pypdfium2"},
+    }
     assert deps.renderers["html"].calls == []
 
 
@@ -848,6 +860,8 @@ def test_v2_visual_specs_report_optional_mermaid_capabilities(monkeypatch, tmp_p
     payload = json.loads(result.stdout)
     assert payload["report"]["capabilities"] == {
         "mmdc": {"available": False, "path": None},
+        "pillow": {"available": True, "path": "python:PIL"},
+        "pypdfium2": {"available": True, "path": "python:pypdfium2"},
         "resvg": {"available": False, "path": None},
     }
 
@@ -922,7 +936,11 @@ def test_v2_document_status_serializes_domain_status_with_v2_provenance(monkeypa
         **payload,
         "v2": {
             **payload["v2"],
-            "capabilities": {"pandoc": {"available": False, "path": None}},
+                "capabilities": {
+                    "pandoc": {"available": False, "path": None},
+                    "pillow": {"available": True, "path": "python:PIL"},
+                    "pypdfium2": {"available": True, "path": "python:pypdfium2"},
+                },
             "unsupported_stages": [],
             "publication_blockers": [],
         },

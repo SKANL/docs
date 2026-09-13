@@ -59,3 +59,23 @@ def test_registry_merges_duplicate_declarations_and_preserves_requiredness(monke
 
     assert registry.capabilities == (ToolCapability("resvg", "resvg", required=True),)
     assert registry.missing_required() == ("resvg",)
+
+
+def test_registry_can_detect_python_module_capabilities_lazily(monkeypatch):
+    calls = []
+
+    def find_spec(name):
+        calls.append(name)
+        return object() if name == "PIL" else None
+
+    monkeypatch.setattr("importlib.util.find_spec", find_spec)
+    registry = ToolCapabilityRegistry(
+        (ToolCapability("pillow", "", module="PIL"), ToolCapability("pdfium", "", module="pypdfium2"))
+    )
+
+    assert calls == []
+    assert registry.report() == {
+        "pdfium": {"available": False, "path": None},
+        "pillow": {"available": True, "path": "python:PIL"},
+    }
+    assert calls == ["pypdfium2", "PIL"]
