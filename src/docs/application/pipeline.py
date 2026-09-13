@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.ingest import IngestService
+from docs.application.legacy_pipeline_executor import LegacyPipelineExecutor
 from docs.application.legacy_stage_planner import LegacyStagePlanner
 from docs.application.pipeline_metadata import PipelineMetadataService
 from docs.application.qa import QaService
@@ -22,10 +22,9 @@ from docs.application.review import ReviewService
 from docs.application.run_history import RunRecorderService
 from docs.application.section import SectionService
 from docs.application.structural_audit import StructuralAuditService
-from docs.domain.cover import cover_provenance
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
-from docs.domain.pipeline import pipeline_stage_plan
+from docs.domain.pipeline import pipeline_stage_plan  # noqa: F401 - legacy patch/import compatibility
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.evidence_repository import EvidenceRepository
@@ -79,6 +78,7 @@ class PipelineService:
         self.run_recorder = run_recorder or RunRecorderService(workspace, source_repository)
         self.metadata_service = metadata_service or PipelineMetadataService(workspace)
         self.stage_planner = stage_planner or LegacyStagePlanner()
+        self.legacy_pipeline_executor = LegacyPipelineExecutor()
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -150,35 +150,9 @@ class PipelineService:
         # only preserves compatibility for callers that build PipelineService
         # directly without going through the CLI composition root.
         renderer = renderer or self.docx_assembly_service
-        stages = pipeline_stage_plan(stage_set, renderer.stage_plan())
-        callables = self._stage_callables(doc_id, template, config, repo_root, strict, renderer)
-        results: list[dict[str, Any]] = []
-        passed = True
-        for name, fail_fast in stages:
-            started = datetime.now()
-            try:
-                ok, detail = callables[name]()
-            except Exception as exc:
-                # `type(exc).__name__` is always present even when `str(exc)`
-                # is empty (e.g. `docx.image.exceptions.UnexpectedEndOfFileError`,
-                # raised with zero arguments) -- without it, a crashed stage's
-                # detail used to render as the literally uninformative
-                # "ERROR: ", which cannot tell an agent/user what to act on.
-                ok, detail = False, f"ERROR: {type(exc).__name__}: {exc}"
-            duration = (datetime.now() - started).total_seconds()
-            results.append({"stage": name, "ok": ok, "duration_s": round(duration, 3), "detail": detail})
-            if not ok:
-                passed = False
-                if fail_fast:
-                    break
-        summary = {"stage_set": stage_set, "strict": strict, "passed": passed, "stages": results}
-        cover = cover_provenance(config)
-        if cover is not None:
-            summary["cover"] = cover
-        if stage_set in ("assemble", "all"):
-            summary["build_version"] = self._next_build_version(doc_id, config)
-        self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)
-        return summary
+        return self.legacy_pipeline_executor.execute(
+            self, doc_id, template, config, stage_set, repo_root, strict, renderer
+        )
 
     def verify_all(
         self,

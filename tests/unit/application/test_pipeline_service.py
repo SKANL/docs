@@ -135,6 +135,52 @@ def test_stage_callables_delegates_to_legacy_stage_planner():
     assert service._stage_callables("doc", "template", {"paths": {}}, Path("repo"), True, "renderer") is expected
 
 
+def test_run_pipeline_delegates_to_legacy_pipeline_executor():
+    service = _service(_FakeEvidenceRepository())
+    expected = {"passed": True, "stages": []}
+
+    class Executor:
+        def execute(self, pipeline, doc_id, template, config, stage_set, repo_root, strict, renderer):
+            assert pipeline is service
+            assert (doc_id, template, config, stage_set, repo_root, strict, renderer) == (
+                "doc", "template", {"paths": {}}, "prep", Path("repo"), True, "renderer"
+            )
+            return expected
+
+    service.legacy_pipeline_executor = Executor()
+
+    result = service.run_pipeline(
+        "doc", "template", {"paths": {}}, "prep", Path("repo"), strict=True, renderer="renderer"
+    )
+
+    assert result is expected
+
+
+def test_run_pipeline_honors_application_pipeline_stage_plan_patch(tmp_path, monkeypatch):
+    class SourceRepository:
+        def run_git_rev_parse_head(self, repo_root):
+            return "abc123"
+
+    class Renderer:
+        def stage_plan(self):
+            return []
+
+    service = _service(_FakeEvidenceRepository())
+    service.source_repository = SourceRepository()
+    monkeypatch.setattr("docs.application.pipeline.pipeline_stage_plan", lambda stage_set, renderer_stages: [])
+
+    summary = service.run_pipeline(
+        "alpha",
+        object(),
+        {"paths": {"runs_dir": str(tmp_path / "runs")}},
+        "prep",
+        tmp_path,
+        renderer=Renderer(),
+    )
+
+    assert summary["stages"] == []
+
+
 def test_legacy_stage_planner_preserves_stage_callable_order():
     service = _service(_FakeEvidenceRepository())
     template = type("Template", (), {"sections": []})()
