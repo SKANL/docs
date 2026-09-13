@@ -79,6 +79,9 @@ class PipelineService:
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
     ) -> Path:
+        # Preserve the legacy mutability of ``source_repository`` for callers
+        # that replace it after construction (notably focused test doubles).
+        self.run_recorder.source_repository = self.source_repository
         return self.run_recorder.record(doc_id, config, repo_root, command, payload)
 
     def list_runs(self, doc_id: str, config: dict[str, Any], limit: int = 20) -> list[dict[str, Any]]:

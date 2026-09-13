@@ -74,6 +74,13 @@ def test_deps_registers_the_pdf_renderer(workspace):
     assert Deps().renderers["pdf"].output_format == "pdf"
 
 
+def test_deps_registers_named_legacy_pipeline_service(workspace):
+    deps = Deps()
+
+    assert deps.legacy_pipeline is not deps.pipeline
+    assert deps.legacy_pipeline._pipeline is deps.pipeline
+
+
 def test_pipeline_format_pdf_selects_the_pdf_renderer(workspace, monkeypatch):
     _new_doc()
     seen_formats: list[str] = []

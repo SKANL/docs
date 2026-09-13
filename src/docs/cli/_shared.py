@@ -25,6 +25,7 @@ from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
+from docs.application.legacy_pipeline import LegacyPipelineService
 from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
@@ -360,6 +361,7 @@ class Deps:
             )
 
         self.pipeline = _LazyPipelineService(build_legacy_pipeline)
+        self.legacy_pipeline = LegacyPipelineService(self.pipeline)
         # V2 consumes these named services directly. The legacy aggregate above
         # remains available only to the legacy CLI and is not a V2 dependency.
         self.structural_audit_service = structural_audit_service
