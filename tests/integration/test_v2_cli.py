@@ -324,6 +324,31 @@ def test_v2_build_runs_native_review_and_package_handlers_when_legacy_hooks_are_
         assert "active.docx.manifest.json" in archive.namelist()
 
 
+def test_v2_native_package_release_writes_the_release_archive_via_existing_writer(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    archive_writes: list[tuple[Path, Path]] = []
+    original_writer = _write_package_archive
+
+    def record_archive_write(output: Path, source_dir: Path, **kwargs: object) -> None:
+        archive_writes.append((output, source_dir))
+        original_writer(output, source_dir, **kwargs)
+
+    monkeypatch.setattr("docs.cli.commands.v2_app._write_package_archive", record_archive_write)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    root = tmp_path / "documents" / "active"
+    assert len(archive_writes) == 1
+    candidate, staging = archive_writes[0]
+    assert candidate == root / "output" / "release" / ".active.zip.candidate"
+    assert staging.parent == root / "output"
+    assert staging.name.startswith(".v2-package-")
+    with zipfile.ZipFile(root / "output" / "release" / "active.zip") as archive:
+        assert archive.namelist() == ["active.docx", "active.docx.manifest.json"]
+
+
 def test_v2_build_only_executes_the_requested_renderer_and_cleans_renderer_scratch(
     monkeypatch, tmp_path
 ):
@@ -584,6 +609,33 @@ def test_v2_failed_optional_package_gate_never_publishes(monkeypatch, tmp_path, 
     stages = {item["stage"]: item for item in payload["report"]["execution"]["results"]}
     assert stages["package-release"]["ok"] is False
     assert stages["publish-draft"]["ok"] is False
+
+
+@pytest.mark.parametrize("mode", ("strict", "release"))
+def test_v2_archive_writer_failure_blocks_publish_draft(monkeypatch, tmp_path, mode):
+    deps = _deps(tmp_path)
+    writer_attempts: list[Path] = []
+
+    def fail_archive_write(output: Path, source_dir: Path, **kwargs: object) -> None:
+        del source_dir, kwargs
+        writer_attempts.append(output)
+        raise OSError("archive writer unavailable")
+
+    monkeypatch.setattr("docs.cli.commands.v2_app._write_package_archive", fail_archive_write)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--policy", mode, "--json"])
+
+    assert result.exit_code == 1, result.stdout
+    root = tmp_path / "documents" / "active"
+    assert writer_attempts == [root / "output" / "release" / ".active.zip.candidate"]
+    payload = json.loads(result.stdout)
+    stages = {item["stage"]: item for item in payload["report"]["execution"]["results"]}
+    assert stages["package-release"]["ok"] is False
+    assert "archive writer unavailable" in stages["package-release"]["errors"][0]
+    assert stages["publish-draft"]["ok"] is False
+    assert not (root / "output" / "v2" / "active.docx").exists()
+    assert not (root / "output" / "release" / "active.zip").exists()
 
 
 def test_v2_verify_uses_document_selected_on_cli_context(monkeypatch, tmp_path):
