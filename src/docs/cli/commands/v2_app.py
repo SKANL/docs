@@ -969,7 +969,8 @@ def _run(
                             item
                             for item in results
                             if isinstance(item, dict)
-                            and stage_dimensions.get(item.get("stage")) in selected
+                            and isinstance(item.get("stage"), str)
+                            and stage_dimensions.get(item["stage"]) in selected
                         ]
                         report_payload["succeeded"] = all(
                             item.get("ok", False) for item in execution["results"]
