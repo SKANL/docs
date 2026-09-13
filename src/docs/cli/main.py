@@ -11,6 +11,12 @@ if not sys.stdout.isatty():
 
 import typer
 
+if not sys.stdout.isatty():
+    # Typer reads TYPER_USE_RICH during import; another imported command may
+    # have loaded Typer first, so also update its already-loaded switches.
+    typer.core.HAS_RICH = False
+    typer.main.HAS_RICH = False
+
 from docs.cli._shared import Deps
 from docs.cli.commands.asset_app import asset_app
 from docs.cli.commands.collection_app import collection_app
