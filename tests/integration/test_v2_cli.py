@@ -667,6 +667,23 @@ def test_v2_archive_writer_failure_blocks_publish_draft(monkeypatch, tmp_path, m
     assert not (root / "output" / "release" / "active.zip").exists()
 
 
+def test_v2_public_verify_boundary_reuses_the_published_artifact(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+    verified = runner.invoke(app, ["v2", "verify", "--pipeline", "document-verify", "--json"])
+
+    assert verified.exit_code == 0, verified.stdout
+    stages = [item["stage"] for item in json.loads(verified.stdout)["report"]["execution"]["results"]]
+    assert stages == [
+        "structural-audit", "editorial-review", "evidence-review", "consistency-review",
+        "accessibility-review", "visual-review", "reproducibility-check",
+    ]
+
+
 def test_v2_verify_uses_document_selected_on_cli_context(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     active = deps.resolve_context()

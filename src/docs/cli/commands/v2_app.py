@@ -379,6 +379,7 @@ def create_v2_service(
     output_format: str = "docx",
     policy: PipelinePolicy | None = None,
     document: str = "",
+    pipeline_id: str = "document",
 ) -> PipelineServiceV2:
     """Adapt the composition-root services to the v2 pipeline contracts."""
     state: dict[str, Any] = {"resolved": None, "renderer": None, "artifact": None}
@@ -400,6 +401,8 @@ def create_v2_service(
     initial_root.mkdir(parents=True, exist_ok=True)
     capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
     destination = initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
+    if pipeline_id == "document-verify" and destination.is_file():
+        state["artifact"] = destination
     ledger = ProvenanceLedgerV2(initial_root / "runs" / "v2-provenance.json", trusted_root=initial_root)
     manifest_service = BuildManifestServiceV2(
         input_identities=_current_input_identities,
@@ -983,7 +986,11 @@ def _run(
         for output_format in requested:
             selected_policy = PipelinePolicy(policy) if policy is not None else None
             service = create_v2_service(
-                ctx.obj["deps"], output_format, selected_policy, document=selected_document
+                ctx.obj["deps"],
+                output_format,
+                selected_policy,
+                document=selected_document,
+                pipeline_id=pipeline_id,
             )
             report = service.run(
                 f"cli-{command}-{output_format}",
