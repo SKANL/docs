@@ -102,3 +102,19 @@ def test_public_pipeline_catalog_exposes_reusable_boundaries():
         "document-publish", "document-package", "document-diff", "document-inspect",
     )
     assert "build-docx" in next(spec for spec in PUBLIC_PIPELINES if spec.pipeline_id == "document-build").stages
+
+
+def test_registry_can_register_catalog_boundaries_with_external_inputs():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("generate-visuals-complete"), ArtifactContract("build-docx-complete")),
+        stages=(
+            StageSpec("generate-visuals", produces=("generate-visuals-complete",)),
+            StageSpec("build-docx", requires=("generate-visuals-complete",), produces=("build-docx-complete",), after=("generate-visuals",)),
+        ),
+    )
+    handlers = {name: (lambda name=name: StageResult(name, True)) for name in ("generate-visuals", "build-docx")}
+    registry = PipelineRegistry()
+    registry.register("document", definition, handlers)
+    registry.register_catalog(definition, handlers)
+    assert "document-build" in registry.names()
+    assert registry.resolve("document-build").definition.plan() == ("generate-visuals", "build-docx")

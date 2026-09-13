@@ -71,6 +71,45 @@ class PipelineRegistry:
         """Return registered pipeline names in deterministic order."""
         return tuple(sorted(self._pipelines))
 
+    def register_catalog(
+        self, definition: PipelineDefinition, handlers: Mapping[str, StageHandler]
+    ) -> None:
+        """Register each public boundary as a real, independently valid DAG.
+
+        Requirements crossing a boundary become external artifacts. This keeps
+        a sub-pipeline honest: it can be planned and executed independently,
+        while the full document pipeline remains the composition used by the
+        workspace build command.
+        """
+        stage_by_name = {stage.name: stage for stage in definition.stages}
+        artifact_by_name = {artifact.name: artifact for artifact in definition.artifacts}
+        for public in PUBLIC_PIPELINES:
+            selected = tuple(name for name in public.stages if name in stage_by_name)
+            selected_set = set(selected)
+            stages: list[StageSpec] = []
+            required_external: set[str] = set()
+            produced = {artifact for name in selected for artifact in stage_by_name[name].produces}
+            for name in selected:
+                original = stage_by_name[name]
+                requires = tuple(original.requires)
+                required_external.update(artifact for artifact in requires if artifact not in produced)
+                stages.append(
+                    StageSpec(
+                        original.name,
+                        requires=requires,
+                        produces=original.produces,
+                        after=tuple(predecessor for predecessor in original.after if predecessor in selected_set),
+                        optional=original.optional,
+                    )
+                )
+            artifact_names = {artifact for stage in stages for artifact in (*stage.requires, *stage.produces)}
+            sub_definition = PipelineDefinition(
+                artifacts=tuple(artifact_by_name[name] for name in sorted(artifact_names) if name in artifact_by_name),
+                stages=tuple(stages),
+                external_artifacts=frozenset(required_external),
+            )
+            self.register(public.pipeline_id, sub_definition, {name: handlers[name] for name in selected if name in handlers})
+
     def resolve(self, name: str) -> RegisteredPipeline:
         try:
             return self._pipelines[name]

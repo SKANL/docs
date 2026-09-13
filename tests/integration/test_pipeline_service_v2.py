@@ -193,6 +193,11 @@ def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
 def test_exports_reusable_full_stage_ids() -> None:
     assert FULL_STAGE_IDS == STAGE_IDS
 
+def test_registers_public_pipeline_boundaries():
+    service = _service(Path("."), _dependencies(Path("."), []))
+    assert {"document-build", "document-verify", "document-package"} <= set(service.registry.names())
+
+
 
 def test_exposes_the_full_declarative_stage_plan_with_serial_dependencies(tmp_path: Path) -> None:
     service = _service(tmp_path, _dependencies(tmp_path, []))

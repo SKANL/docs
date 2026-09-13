@@ -85,6 +85,7 @@ class PipelineServiceV2:
             if name in stage_names
         }
         self.registry.register("document", definition, handlers)
+        self.registry.register_catalog(definition, handlers)
         registered = self.registry.resolve("document")
         self.planner = PipelinePlanner()
         self.definition = registered.definition
