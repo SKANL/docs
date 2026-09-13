@@ -87,6 +87,10 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "format": {},
         "html_name": {},
     },
+    "visual_qa": {
+        "baseline_dir": {},
+        "minimum_similarity": {},
+    },
     "paths": {
         "assets_dir": {},
         "code_evidence_manifest": {},
@@ -105,6 +109,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "output_draft_dir": {},
         "output_final_dir": {},
         "output_qa_dir": {},
+        "visual_baseline_dir": {},
         "prompts_dir": {},
         "rules_manifest": {},
         "runs_dir": {},
