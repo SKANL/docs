@@ -1,7 +1,13 @@
 # src/docs/cli/main.py
 from __future__ import annotations
 
+import os
 import sys
+
+# Keep captured/CI help output machine-readable when CI forces terminal styling.
+# Interactive terminals retain Typer's normal rich presentation.
+if not sys.stdout.isatty():
+    os.environ.setdefault("TYPER_USE_RICH", "0")
 
 import typer
 
