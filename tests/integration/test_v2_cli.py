@@ -15,6 +15,7 @@ from docs.cli.commands.v2_app import (
     _promote_release_candidate,
     _recover_batch_transaction,
     _verify_html_artifact,
+    _verify_pdf_reproducibility,
     _write_batch_journal,
     _write_package_archive,
 )
@@ -45,6 +46,18 @@ def test_html_verification_reopens_and_rejects_empty_visual_content(tmp_path: Pa
     passed, detail = _verify_html_artifact(artifact)
     assert passed is False
     assert "renderable" in detail
+
+
+def test_pdf_reproducibility_accepts_different_bytes_with_same_page_geometry(tmp_path: Path):
+    original = tmp_path / "original.pdf"
+    rebuilt = tmp_path / "rebuilt.pdf"
+    original.write_bytes(_minimal_pdf())
+    rebuilt.write_bytes(_minimal_pdf() + b"% renderer metadata differs\n")
+
+    passed, detail = _verify_pdf_reproducibility(original, rebuilt)
+
+    assert passed is True
+    assert "semantically" in detail
 
 
 class _Renderer:
