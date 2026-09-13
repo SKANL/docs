@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import shutil
 import sys
+import tempfile
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
+from docs.application.provenance_v2 import ProvenanceLedgerV2
+from docs.domain.artifacts import BuildManifest
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentRepository
 from docs.domain.ports.registry_repository import RegistryRepository
@@ -103,10 +110,92 @@ class DocumentService:
         reflects "draft" until finalized again."""
         validate_slug(doc_id)
         document = self.repository.read_document(doc_id)
+        if self._has_v2_build(doc_id):
+            self._promote_v2_to_final(doc_id)
         updated = document.model_copy(update={"lifecycle": "final"})
         self.repository.write_document(updated)
-        self._promote_draft_to_final(doc_id)
+        if not self._has_v2_build(doc_id):
+            self._promote_draft_to_final(doc_id)
         return updated
+
+    def _has_v2_build(self, doc_id: str) -> bool:
+        v2_dir = self.workspace.doc_root(doc_id) / "output" / "v2"
+        return v2_dir.is_dir() and any(
+            path.is_file() and not path.name.endswith(".manifest.json")
+            for path in v2_dir.iterdir()
+        )
+
+    def _promote_v2_to_final(self, doc_id: str) -> None:
+        """Promote only a complete, attested v2 artifact set atomically."""
+        root = self.workspace.doc_root(doc_id)
+        v2_dir = root / "output" / "v2"
+        artifacts = tuple(
+            sorted(
+                (
+                    path
+                    for path in v2_dir.iterdir()
+                    if path.is_file() and not path.name.endswith(".manifest.json")
+                ),
+                key=lambda path: path.name,
+            )
+        )
+        if not artifacts:
+            raise RuntimeError(f"v2 build for `{doc_id}` contains no artifacts")
+        ledger = ProvenanceLedgerV2(root / "runs" / "v2-provenance.json", trusted_root=root)
+        validated: list[tuple[Path, Path]] = []
+        for artifact in artifacts:
+            manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
+            if not manifest_path.is_file() or manifest_path.is_symlink():
+                raise RuntimeError(f"v2 artifact `{artifact.name}` has no manifest")
+            try:
+                manifest = BuildManifest.from_dict(
+                    json.loads(manifest_path.read_text(encoding="utf-8"))
+                )
+                manifest.validate_for_publication()
+                matching = [
+                    entry
+                    for entry in manifest.artifacts
+                    if entry.path == str(artifact.resolve())
+                ]
+                if (
+                    manifest.document_id != doc_id
+                    or len(matching) != 1
+                    or matching[0].sha256
+                    != hashlib.sha256(artifact.read_bytes()).hexdigest()
+                    or not ledger.verify_attestation(
+                        manifest.provenance_run, manifest.attestation()
+                    )
+                ):
+                    raise ValueError("manifest, artifact, or provenance does not match")
+            except (OSError, TypeError, ValueError, KeyError, IndexError) as exc:
+                raise RuntimeError(
+                    f"v2 artifact `{artifact.name}` failed publication validation: {exc}"
+                ) from exc
+            validated.append((artifact, manifest_path))
+
+        output_parent = root / "output"
+        final_dir = output_parent / "final"
+        staging = Path(tempfile.mkdtemp(prefix=".final-v2-", dir=output_parent))
+        backup = output_parent / f".final-backup-{os.getpid()}"
+        try:
+            for artifact, manifest_path in validated:
+                shutil.copyfile(artifact, staging / artifact.name)
+                shutil.copyfile(manifest_path, staging / manifest_path.name)
+            if final_dir.exists():
+                if final_dir.is_symlink():
+                    raise RuntimeError("output/final must not be a symlink")
+                os.replace(final_dir, backup)
+            os.replace(staging, final_dir)
+            if backup.exists():
+                shutil.rmtree(backup)
+        except Exception:
+            if final_dir.exists() and not backup.exists():
+                shutil.rmtree(final_dir)
+            if backup.exists() and not final_dir.exists():
+                os.replace(backup, final_dir)
+            raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
 
     def _promote_draft_to_final(self, doc_id: str) -> None:
         doc_root = self.workspace.doc_root(doc_id)
