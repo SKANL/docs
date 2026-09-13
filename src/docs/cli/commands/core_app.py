@@ -15,11 +15,21 @@ import typer
 
 from docs.cli._shared import _ctx, emit_result, resolve_renderer
 from docs.domain.issue_codes import ISSUE_CODES, explain_code
+from docs.domain.review import ReviewDimension, ReviewResult
 
 core_app = typer.Typer()
 
 _AGENTS_MD_PACKAGE = "docs.data"
 _AGENTS_MD_NAME = "AGENTS.md"
+
+
+def _filter_review_dimensions(
+    result: ReviewResult, dimensions: list[ReviewDimension] | None
+) -> ReviewResult:
+    """Limit verification output to requested artifact/review dimensions."""
+    if not dimensions:
+        return result
+    return result.filter_dimensions(set(dimensions))
 
 
 def _read_agents_guide() -> str:
@@ -143,6 +153,11 @@ def verify(
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
     repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
+    dimensions: list[ReviewDimension] | None = typer.Option(
+        None,
+        "--dimension",
+        help="Limita los hallazgos a una dimensión; se puede repetir.",
+    ),
 ) -> None:
     """Revalida el documento y su .docx sin reconstruirlo.
 
@@ -153,9 +168,15 @@ def verify(
     resolved = deps.resolve_context(doc)
     docx_path = Path(docx) if docx else None
     result = deps.pipeline.verify_all(resolved.doc_id, resolved.template, resolved.config, docx_path=docx_path, strict=strict)
+    result = _filter_review_dimensions(result, dimensions)
     deps.pipeline.log_run(
         resolved.doc_id, resolved.config, repo_root, "verify",
-        {"strict": strict, "passed": result.passed, "issues": [i.to_dict() for i in result.issues]},
+        {
+            "strict": strict,
+            "dimensions": [dimension.value for dimension in dimensions or []],
+            "passed": result.passed,
+            "issues": [i.to_dict() for i in result.issues],
+        },
     )
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
