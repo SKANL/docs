@@ -172,6 +172,37 @@ def test_doc_status_reports_fresh_document(status_ws):
     assert payload["output"]["draft_exists"] is False
 
 
+def test_doc_status_json_exposes_v2_capability_diagnostics(status_ws):
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    result = runner.invoke(app, ["doc", "status", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    diagnostics = payload["v2"]["capability_diagnostics"]
+    assert list(diagnostics) == sorted(diagnostics)
+    assert {"available", "path", "version", "diagnostic", "policy"} <= set(
+        diagnostics["pillow"]
+    )
+
+
+def test_doc_status_json_reports_unregistered_output_format_without_crashing(status_ws):
+    invalid_template = dict(_STATUS_TEMPLATE, output={"format": "epub"})
+    (status_ws / "templates" / "tesina.json").write_text(
+        json.dumps(invalid_template), encoding="utf-8"
+    )
+    runner.invoke(app, ["doc", "new", "alpha"])
+
+    result = runner.invoke(app, ["doc", "status", "--json"])
+
+    assert result.exception is None
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["v2"]["capability_diagnostics"]["output_format"]["diagnostic"] == (
+        "Formato de salida no registrado: 'epub'."
+    )
+
+
 def test_doc_status_markdown_output_mentions_document_id(status_ws):
     runner.invoke(app, ["doc", "new", "alpha"])
 

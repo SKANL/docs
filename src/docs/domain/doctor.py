@@ -69,6 +69,8 @@ class Check:
 @dataclass
 class DoctorResult:
     checks: list[Check]
+    capabilities: dict[str, dict[str, str | bool | None]] | None = None
+    capability_diagnostics: dict[str, dict[str, str | bool | None]] | None = None
 
     @property
     def passed(self) -> bool:
@@ -87,4 +89,9 @@ class DoctorResult:
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"passed": self.passed, "checks": [check.to_dict() for check in self.checks]}
+        result: dict[str, Any] = {"passed": self.passed, "checks": [check.to_dict() for check in self.checks]}
+        if self.capabilities is not None:
+            result["capabilities"] = self.capabilities
+        if self.capability_diagnostics is not None:
+            result["capability_diagnostics"] = self.capability_diagnostics
+        return result

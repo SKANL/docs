@@ -14,6 +14,7 @@ from pathlib import Path
 import typer
 
 from docs.cli._shared import _ctx, emit_result, resolve_renderer
+from docs.cli.commands.v2_app import _capabilities_for
 from docs.domain.issue_codes import ISSUE_CODES, explain_code
 from docs.domain.review import ReviewDimension, ReviewResult
 
@@ -82,6 +83,39 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     result = deps.doctor.run_doctor(resolved.doc_id, resolved.config, strict=strict)
+    output = resolved.config.get("output", {})
+    output_format = output.get("format", "docx") if isinstance(output, dict) else "docx"
+    invalid_format_diagnostic: dict[str, str | bool | None] | None = None
+    try:
+        renderer = deps.resolve_renderer(resolved.config)
+    except (AttributeError, TypeError, ValueError):
+        renderer = None
+        invalid_format_diagnostic = {
+            "available": False,
+            "path": None,
+            "required": True,
+            "policy": "required",
+            "kind": "format",
+            "version": None,
+            "diagnostic": f"Formato de salida no registrado: '{output_format}'.",
+            "requirement": "a registered output renderer",
+            "degradation": "diagnostics only; rendering remains unavailable",
+        }
+    registry = _capabilities_for(
+        renderer,
+        str(output_format),
+        deps.workspace.doc_root(resolved.doc_id),
+    )
+    result.capabilities = registry.report()
+    result.capability_diagnostics = registry.diagnostics()
+    if invalid_format_diagnostic is not None:
+        result.capabilities["output_format"] = {
+            "available": False,
+            "path": None,
+        }
+        result.capability_diagnostics["output_format"] = invalid_format_diagnostic
+    result.capabilities = dict(sorted(result.capabilities.items()))
+    result.capability_diagnostics = dict(sorted(result.capability_diagnostics.items()))
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 2)
 
