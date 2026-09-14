@@ -15,6 +15,27 @@
     ],
     "gap": "Creation remains an explicit user action; `document release` composes the complete verified build, package, and publication pipeline for the active document. The acceptance test invokes the real commands in sequence against one temporary workspace and uses a deterministic in-test ingest adapter and DOCX renderer because optional external renderers are environment-dependent."
   },
+  "real_toolchain_journey": {
+    "status": "proved-when-capable",
+    "test": "tests/integration/test_v2_real_toolchain_journey.py::test_v2_real_toolchain_journey",
+    "proved": [
+      "pandoc",
+      "libreoffice",
+      "poppler",
+      "mermaid",
+      "resvg"
+    ],
+    "adapters": {
+      "pandoc": "src/docs/infrastructure/ingest/pandoc_ingest_adapter.py::PandocIngestAdapter",
+      "libreoffice": "src/docs/infrastructure/docx/libreoffice_qa_adapter.py::LibreOfficeQaAdapter",
+      "mermaid": "src/docs/infrastructure/visuals/mermaid_svg_renderer.py::MermaidSvgRenderer",
+      "resvg": "src/docs/infrastructure/visuals/resvg_rasterizer_adapter.py::ResvgRasterizerAdapter",
+      "poppler": "pdfinfo and pdftoppm executables consumed by the acceptance fixture"
+    },
+    "availability": "CI installs pandoc, LibreOffice, Mermaid CLI, and resvg; Poppler is resolved from the runner PATH.",
+    "unavailable": "controlled skip with capability names in pytest output",
+    "scope": "This proves the external adapter chain independently of the deterministic v2 CLI journey; the latter remains the closest-real-journey test above."
+  },
   "pipeline_stages": [
     {
       "stage": "resolve-config",

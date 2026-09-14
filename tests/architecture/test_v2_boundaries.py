@@ -179,7 +179,7 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
         "_native_package_release",
         "_write_package_archive",
     } <= functions
-    assert '"package-release": _callable_stage("package_release") or _native_package_release' in source
+    assert '"package-release": stage_provider.operation("package_release") or _native_package_release' in source
     assert '"evidence-review": _review_stage_operation(' in source
     assert '"consistency-review": _review_stage_operation(' in source
     assert '"visual_review": _callable_stage("visual_review") or (' in source
