@@ -33,7 +33,7 @@ from docs.application.package_service_v2 import (
     PackagePublicationError,
     PackageServiceV2,
 )
-from docs.application.pipeline_components_v2 import PUBLIC_PIPELINES
+from docs.application.pipeline_components_v2 import PUBLIC_PIPELINES, ArtifactStore
 from docs.application.pipeline_service_v2 import (
     PipelineServiceV2,
     PublicationSpec,
@@ -463,6 +463,12 @@ def create_v2_service(
         if candidate.is_file():
             state["package_candidate"] = candidate
     ledger = ProvenanceLedgerV2(initial_root / "runs" / "v2-provenance.json", trusted_root=initial_root)
+    stage_artifact_root = initial_root / "runs" / "v2-stage-artifacts"
+    artifact_store = ArtifactStore(
+        stage_artifact_root,
+        getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
+    )
+    state["stage_artifacts"] = []
     manifest_service = BuildManifestServiceV2(
         input_identities=_current_input_identities,
         build_inputs=_build_inputs,
@@ -945,6 +951,7 @@ def create_v2_service(
             output_format=output_format,
             run_id=state["run_id"],
             verification=state.get("verification"),
+            stage_artifacts=tuple(state["stage_artifacts"]),
         )
         manifest.validate_for_publication()
         state["manifest"] = manifest
@@ -1015,6 +1022,9 @@ def create_v2_service(
             {"build-docx", "build-html", "build-pdf"} - {f"build-{output_format}"}
         ),
         cleanup=lambda: _cleanup_scratch_dirs(scratch_dirs),
+        artifact_store=artifact_store,
+        record_sink=state["stage_artifacts"].extend,
+        run_start=state["stage_artifacts"].clear,
     )
 
 

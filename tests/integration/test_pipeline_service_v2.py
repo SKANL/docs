@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from docs.application.atomic_transform_v2 import AtomicTransform
+from docs.application.pipeline_components_v2 import ArtifactStore
 from docs.application.pipeline_service_v2 import (
     FULL_STAGE_IDS,
     PipelineServiceV2,
@@ -14,6 +15,7 @@ from docs.application.pipeline_service_v2 import (
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 
 STAGE_IDS = (
     "resolve-config",
@@ -138,6 +140,7 @@ def _service(
     dependencies: SimpleNamespace,
     policy: PipelinePolicy | None = None,
     capabilities: ToolCapabilityRegistry | None = None,
+    artifact_store: ArtifactStore | None = None,
 ) -> PipelineServiceV2:
     stage_names = {
         "resolve_config": "resolve-config",
@@ -176,6 +179,7 @@ def _service(
         ledger=ProvenanceLedgerV2(tmp_path / "provenance.json"),
         atomic_transform=AtomicTransform(),
         policy=policy,
+        artifact_store=artifact_store,
     )
 
 
@@ -612,3 +616,26 @@ def test_required_pdf_capability_preflight_prevents_provenance_and_run_id_mutati
     assert report.execution.results[0].errors == ("required capability unavailable: soffice",)
     assert calls == ["cleanup"]
     assert run_ids == []
+
+
+def test_materializes_durable_records_for_successful_non_skipped_stages(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(
+        tmp_path,
+        _dependencies(tmp_path, calls),
+        artifact_store=ArtifactStore(tmp_path / "stage-records", AtomicFileAdapter()),
+    )
+
+    report = service.run("durable-stage-records")
+
+    succeeded = [
+        result
+        for result in report.execution.results
+        if result.ok and result.outcome == "succeeded"
+    ]
+    assert all(result.artifacts for result in succeeded)
+    records = [record for result in succeeded for record in result.artifacts]
+    assert all(
+        (Path(record.path) if Path(record.path).is_absolute() else tmp_path / "stage-records" / record.path).is_file()
+        for record in records
+    )

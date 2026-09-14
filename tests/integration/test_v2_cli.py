@@ -195,6 +195,32 @@ def test_v2_service_defers_audit_and_verify_fallbacks_until_stage_execution(tmp_
     assert deps.qa.calls == []
 
 
+def test_v2_service_clears_stage_artifacts_between_runs(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    from docs.application.build_manifest_service_v2 import BuildManifestServiceV2
+    from docs.cli.commands.v2_app import create_v2_service
+
+    captured: list[tuple[object, ...]] = []
+    original = BuildManifestServiceV2.create_manifest
+
+    def capture(self, **kwargs):
+        records = tuple(kwargs["stage_artifacts"])
+        captured.append(records)
+        return original(self, **{**kwargs, "stage_artifacts": records})
+
+    monkeypatch.setattr(BuildManifestServiceV2, "create_manifest", capture)
+    service = create_v2_service(deps)
+
+    first = service.run("first-run")
+    second = service.run("second-run")
+
+    assert first.succeeded
+    assert second.succeeded
+    assert len(captured) == 2
+    assert captured[0]
+    assert all(record.path.startswith("second-run/") for record in captured[1])
+
+
 def test_v2_build_resolves_renders_audits_qa_and_publishes_verified_docx(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
@@ -212,6 +238,12 @@ def test_v2_build_resolves_renders_audits_qa_and_publishes_verified_docx(monkeyp
     assert all(len(manifest[name]) == 64 for name in ("source_hash", "template_hash", "config_hash", "context_hash"))
     assert manifest["renderer_versions"]
     assert manifest["verification"]["passed"] is True
+    stage_artifacts = manifest["verification"]["stage_artifacts"]
+    assert stage_artifacts
+    assert {record["contract"] for record in stage_artifacts} >= {
+        "resolve-config-complete",
+        "editorial-review-complete",
+    }
     assert manifest["provenance_run"]
     assert deps.renderer.calls
     assert deps.audit.calls
@@ -235,6 +267,7 @@ def test_v2_build_records_rendered_artifact_as_output_before_attestation(monkeyp
     assert result.exit_code == 0, result.stdout
     record = observed["run"]
     outputs = record["outputs"]
+    assert all("v2-stage-artifacts" not in path for path in outputs)
     assert len(outputs) == 1
     rendered_path, rendered_hash = next(iter(outputs.items()))
     ledger_dir = tmp_path / "documents" / "active" / "runs"

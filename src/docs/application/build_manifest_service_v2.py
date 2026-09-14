@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
+from docs.domain.pipeline_kernel import ArtifactRecord
 
 
 class ProvenanceLedgerPort(Protocol):
@@ -54,6 +55,7 @@ class BuildManifestServiceV2:
         output_format: str,
         run_id: str,
         verification: dict[str, Any] | None = None,
+        stage_artifacts: Iterable[ArtifactRecord] = (),
     ) -> BuildManifest:
         identities = self._input_identities(
             resolved=resolved,
@@ -62,6 +64,13 @@ class BuildManifestServiceV2:
             root=root,
             output_format=output_format,
         )
+        verification_payload = dict(verification or {"passed": True, "format": output_format})
+        records = tuple(stage_artifacts)
+        if records:
+            verification_payload["stage_artifacts"] = [
+                record.to_dict()
+                for record in sorted(records, key=lambda item: (item.contract, item.path))
+            ]
         return BuildManifest(
             document_id=resolved.doc_id,
             source_hash=str(identities["source_hash"]),
@@ -80,7 +89,7 @@ class BuildManifestServiceV2:
                     size_bytes=artifact.stat().st_size,
                 ),
             ),
-            verification=verification or {"passed": True, "format": output_format},
+            verification=verification_payload,
             provenance_run=run_id,
         )
 
@@ -92,6 +101,7 @@ class BuildManifestServiceV2:
         artifact: Path,
         manifest: BuildManifest,
     ) -> None:
+        """Record the rendered artifact; stage receipts stay internal evidence."""
         ledger.record_run(run_id, inputs=self._build_inputs(root), outputs=(artifact,))
         ledger.record_attestation(run_id, manifest.attestation())
 

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from docs.application.atomic_transform_v2 import AtomicTransform, TransformSpec
-from docs.application.pipeline_components_v2 import PipelinePlanner, PipelineRegistry
+from docs.application.pipeline_components_v2 import ArtifactStore, PipelinePlanner, PipelineRegistry
 from docs.application.pipeline_executor_v2 import PipelineReport, StageHandler
 from docs.application.pipeline_runtime_v2 import PipelineRuntime, PipelineRuntimeReport
 from docs.application.provenance_v2 import ProvenanceLedgerV2
@@ -73,14 +73,21 @@ class PipelineServiceV2:
         run_id_sink: Callable[[str], None] | None = None,
         excluded_stages: frozenset[str] = frozenset(),
         cleanup: Callable[[], None] | None = None,
+        artifact_store: ArtifactStore | None = None,
+        record_sink: Callable[[tuple[ArtifactRecord, ...]], None] | None = None,
+        run_start: Callable[[], None] | None = None,
     ) -> None:
         self._operations = operations
         self._publication = publication
         self._atomic_transform = atomic_transform
         self._capabilities = capabilities
         self._policy = policy
+        self._artifact_store = artifact_store
+        self._record_sink = record_sink
+        self._run_start = run_start
         self.registry = PipelineRegistry()
         definition = self._definition(excluded_stages)
+        self._contracts = {contract.name: contract for contract in definition.artifacts}
         stage_names = {stage.name for stage in definition.stages}
         handlers = {
             name: handler
@@ -104,6 +111,7 @@ class PipelineServiceV2:
         self._run_id_sink = run_id_sink
         self._cleanup = cleanup
         self._completion_artifacts: dict[Path, bytes | None] | None = None
+        self._active_run_id = ""
 
     def run(
         self,
@@ -121,8 +129,11 @@ class PipelineServiceV2:
             raise ValueError(
                 "only the full document pipeline or document-publish pipeline may publish"
             )
+        if self._run_start is not None:
+            self._run_start()
         succeeded = False
         self._completion_artifacts = {}
+        self._active_run_id = run_id
         try:
             materialized_external = (
                 tuple(external_artifacts) if external_artifacts is not None else None
@@ -253,6 +264,7 @@ class PipelineServiceV2:
             if not succeeded:
                 self._rollback_completion_artifacts()
             self._completion_artifacts = None
+            self._active_run_id = ""
             if self._cleanup is not None:
                 self._cleanup()
 
@@ -269,6 +281,10 @@ class PipelineServiceV2:
                     else None
                 ),
                 artifact_writer=self._write_completion_artifact,
+                artifact_store=self._artifact_store,
+                contract=self._contracts.get(f"{stage_name}-complete"),
+                record_sink=self._record_sink,
+                receipt_directory=self._receipt_directory,
             )
         return handlers
 
@@ -280,35 +296,48 @@ class PipelineServiceV2:
         *,
         artifact_root: Path | None = None,
         artifact_writer: Callable[[str, str, str], ArtifactRecord] | None = None,
+        artifact_store: ArtifactStore | None = None,
+        contract: ArtifactContract | None = None,
+        record_sink: Callable[[tuple[ArtifactRecord, ...]], None] | None = None,
+        receipt_directory: Callable[[], str] | None = None,
     ) -> StageHandler:
         def handler() -> StageResult:
-            result = operation()
-            if isinstance(result, StageResult):
-                return result
-            ok, detail = result
-            artifacts: tuple[ArtifactRecord, ...] = ()
-            if ok and artifact_root is not None and output_contract in {
-                "accessibility-review-complete",
-                "reproducibility-check-complete",
-            }:
-                if artifact_writer is not None:
-                    artifacts = (artifact_writer(name, output_contract, detail),)
-                else:
-                    artifact_path = artifact_root / "stages" / f"{output_contract}.json"
-                    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-                    content = (detail + "\n").encode("utf-8")
-                    artifact_path.write_bytes(content)
-                    artifacts = (
-                        ArtifactRecord(
-                            output_contract,
-                            str(artifact_path),
-                            hashlib.sha256(content).hexdigest(),
-                            producer_stage=name,
-                        ),
+            raw = operation()
+            if isinstance(raw, StageResult):
+                result = raw
+                detail = raw.to_json()
+            else:
+                ok, detail = raw
+                result = StageResult(name, ok, errors=() if ok else (detail,))
+            if result.ok and result.outcome == "succeeded" and not result.artifacts:
+                if artifact_store is not None and contract is not None:
+                    receipt = artifact_store.write_stage_receipt(
+                        contract,
+                        name,
+                        detail,
+                        relative_dir=receipt_directory() if receipt_directory is not None else "stages",
                     )
-            return StageResult(name, ok, artifacts=artifacts, errors=() if ok else (detail,))
+                    result = replace(result, artifacts=(receipt,))
+                elif artifact_root is not None and output_contract in {
+                    "accessibility-review-complete",
+                    "reproducibility-check-complete",
+                } and artifact_writer is not None:
+                    result = replace(
+                        result, artifacts=(artifact_writer(name, output_contract, detail),)
+                    )
+            if (
+                result.ok
+                and result.outcome == "succeeded"
+                and result.artifacts
+                and record_sink is not None
+            ):
+                record_sink(result.artifacts)
+            return result
 
         return handler
+
+    def _receipt_directory(self) -> str:
+        return f"{self._active_run_id}/stages"
 
     def _write_completion_artifact(self, stage: str, contract: str, detail: str) -> ArtifactRecord:
         if not self._publication.destinations:
@@ -354,7 +383,7 @@ class PipelineServiceV2:
                 artifacts = (
                     ArtifactRecord(
                         "publish-draft-complete",
-                        publication.expected_outputs[0],
+                        str(destination),
                         hashlib.sha256(content).hexdigest(),
                         producer_stage="publish-draft",
                     ),

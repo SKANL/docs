@@ -108,6 +108,38 @@ def test_artifact_store_writes_a_contract_bound_record(tmp_path: Path) -> None:
     assert record.metadata == {"format": "txt"}
 
 
+def test_artifact_store_rejects_a_symlinked_parent_that_escapes_the_root(tmp_path: Path) -> None:
+    root = tmp_path / "store"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root.mkdir()
+    redirected = root / "redirected"
+    try:
+        redirected.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    store = ArtifactStore(root, AtomicFileAdapter())
+
+    with pytest.raises(ValueError, match="symlink"):
+        store.write(ArtifactContract("report", "text/plain"), "redirected/report.txt", b"body")
+
+    assert not (outside / "report.txt").exists()
+
+
+def test_artifact_store_rejects_a_symlinked_store_root(tmp_path: Path) -> None:
+    real_root = tmp_path / "real-store"
+    real_root.mkdir()
+    linked_root = tmp_path / "store"
+    try:
+        linked_root.symlink_to(real_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    with pytest.raises(ValueError, match="symlink"):
+        ArtifactStore(linked_root, AtomicFileAdapter())
+
+
 def test_publication_transaction_publishes_all_requested_artifacts(tmp_path: Path) -> None:
     report = tmp_path / "published" / "report.txt"
     manifest = tmp_path / "published" / "manifest.json"
@@ -197,3 +229,17 @@ def test_registry_catalog_preserves_external_artifacts_for_standalone_execution(
     build = registry.resolve("document-build")
 
     assert build.definition.external_artifacts == frozenset({"context"})
+
+
+def test_artifact_store_writes_deterministic_stage_receipts(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path, AtomicFileAdapter())
+    contract = ArtifactContract("resolve-config-complete")
+
+    record = store.write_stage_receipt(contract, "resolve-config", "resolved configuration")
+
+    assert record.contract == "resolve-config-complete"
+    assert record.path == "stages/resolve-config/resolve-config-complete.json"
+    assert record.producer_stage == "resolve-config"
+    assert (tmp_path / record.path).read_text(encoding="utf-8") == (
+        '{"detail":"resolved configuration","stage":"resolve-config"}\n'
+    )

@@ -430,3 +430,23 @@ def test_excluded_stage_blocks_explicit_after_dependent_without_artifact_require
     assert calls == ["independent"]
     assert [result.stage for result in report.results] == ["independent", "after-prepare"]
     assert report.results[1].errors == ("required dependency unavailable: prepare",)
+
+
+def test_executor_preserves_durable_contract_records_in_stage_reports() -> None:
+    record = ArtifactRecord(
+        "prepared",
+        "stages/prepare/prepared.json",
+        "0" * 64,
+        producer_stage="prepare",
+    )
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("prepared", require_full_sha256=True),),
+        stages=(StageSpec("prepare", produces=("prepared",)),),
+    )
+
+    report = PipelineExecutor(
+        definition,
+        {"prepare": lambda: StageResult("prepare", True, artifacts=(record,))},
+    ).run()
+
+    assert report.results[0].artifacts == (record,)

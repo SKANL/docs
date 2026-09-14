@@ -305,6 +305,9 @@ def test_v2_builtin_template_journey_produces_artifacts_and_provenance(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["document_id"] == "canonical"
     assert manifest["verification"]["passed"] is True
+    stage_artifacts = manifest["verification"]["stage_artifacts"]
+    assert stage_artifacts
+    assert all((root / "runs" / "v2-stage-artifacts" / record["path"]).is_file() for record in stage_artifacts)
     assert manifest["artifacts"][0]["sha256"] == inspected["sha256"]
     assert manifest["provenance_run"].startswith("cli-build-docx-")
     assert manifest["provenance_run"] in (root / "runs" / "v2-provenance.json").read_text(encoding="utf-8")
