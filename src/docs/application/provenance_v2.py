@@ -1,6 +1,7 @@
 """Application-facing provenance v2 compatibility port."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from docs.domain.identity import sha256_content
@@ -54,6 +55,13 @@ def _without_optional_artifact_metadata(payload: dict[str, Any]) -> dict[str, An
             else item
             for item in artifacts
         ]
+        for item in normalized["artifacts"]:
+            if isinstance(item, dict) and isinstance(item.get("path"), str):
+                # Early v2 manifests stored absolute workspace paths.  Path
+                # identity is now content-addressed by artifact name, so
+                # normalize only this legacy comparison field; publication
+                # still validates the live source path and digest separately.
+                item["path"] = Path(item["path"]).name
     return normalized
 
 
