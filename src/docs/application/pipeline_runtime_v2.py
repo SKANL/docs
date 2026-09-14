@@ -58,6 +58,7 @@ class PipelineRuntime:
         inputs: Iterable[Path] = (),
         outputs: Iterable[Path] = (),
         excluded_stages: set[str] | frozenset[str] = frozenset(),
+        external_artifacts: Iterable[str] | None = None,
     ) -> PipelineRuntimeReport:
         """Execute the pipeline and persist hashes only when every stage succeeds."""
         output_paths = tuple(outputs)
@@ -65,9 +66,22 @@ class PipelineRuntime:
         missing_required = self._capabilities.missing_required()
         capability_evaluation = self._capabilities.evaluate(self._policy) if self._policy is not None else None
         if capability_evaluation is not None and capability_evaluation.blocking:
-            execution = PipelineReport(
-                (StageResult("capabilities", False, errors=capability_evaluation.errors),)
-            )
+            results = [StageResult("capabilities", False, errors=capability_evaluation.errors)]
+            if output_paths:
+                stage_names = {stage.name for stage in self._executor.definition.stages}
+                for stage_name in ("record-provenance", "package-release", "publish-draft"):
+                    if stage_name in stage_names:
+                        results.append(
+                            StageResult(
+                                stage_name,
+                                False,
+                                errors=(
+                                    "required capability unavailable: "
+                                    + ", ".join(self._capabilities.missing_required()),
+                                ),
+                            )
+                        )
+            execution = PipelineReport(tuple(results))
             return PipelineRuntimeReport(capabilities=capabilities, execution=execution, provenance=None, succeeded=False)
 
         policy_excluded_stages = set(excluded_stages)
@@ -127,8 +141,10 @@ class PipelineRuntime:
             )
             return StageResult(result.stage, not errors, result.artifacts, warnings, errors, result.outcome)
 
+        executor_external_artifacts = set(external_artifacts or ())
         execution = self._executor.run(
             excluded_stages=policy_excluded_stages,
+            external_artifacts=executor_external_artifacts,
             result_mapper=apply_policy,
             fail_on_unsupported=bool(output_paths),
             block_publication_on_package_failure=(

@@ -178,3 +178,22 @@ def test_registry_catalog_turns_cross_boundary_requirements_into_external_artifa
     assert tuple(build.handlers) == ("generate-visuals", "build-docx")
     assert build.handlers["generate-visuals"] is handlers["generate-visuals"]
     assert build.handlers["build-docx"] is handlers["build-docx"]
+
+
+def test_registry_catalog_preserves_external_artifacts_for_standalone_execution() -> None:
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("context"), ArtifactContract("built")),
+        stages=(
+            StageSpec("resolve-context", produces=("context",)),
+            StageSpec("build-docx", requires=("context",), produces=("built",)),
+        ),
+    )
+    registry = PipelineRegistry()
+    registry.register_catalog(
+        definition,
+        {name: lambda name=name: StageResult(name, True) for name in ("resolve-context", "build-docx")},
+    )
+
+    build = registry.resolve("document-build")
+
+    assert build.definition.external_artifacts == frozenset({"context"})

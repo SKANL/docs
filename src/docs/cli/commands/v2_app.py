@@ -45,7 +45,7 @@ from docs.domain.artifacts import BuildManifest
 from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.normative import resolve_normative_settings
-from docs.domain.pipeline_kernel import StageResult
+from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
@@ -166,6 +166,23 @@ def _verify_non_docx_artifact(output_format: str, artifact: Path) -> tuple[bool,
     if output_format == "pdf":
         return _verify_pdf_artifact(artifact)
     return False, f"no format verifier is registered for {output_format}"
+
+
+def _successful_stage_result(name: str, artifact: Path) -> StageResult:
+    """Create the completion artifact required by a native v2 stage."""
+    record = ArtifactRecord(
+        f"{name}-complete",
+        str(artifact),
+        hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        producer_stage=name,
+    )
+    return StageResult(
+        name,
+        True,
+        artifacts=(
+            record,
+        ),
+    )
 
 
 def _verify_readable_artifact(artifact: Path) -> tuple[bool, str]:
@@ -571,7 +588,7 @@ def create_v2_service(
         result = service.audit(state["artifact"], contract_data)
         return result.passed, result.to_markdown()
 
-    def _native_accessibility_review() -> tuple[bool, str]:
+    def _native_accessibility_review() -> tuple[bool, str] | StageResult:
         """Run the existing format audit's accessibility checks as a V2 stage."""
         if output_format != "docx":
             return successful("accessibility-review", f"not applicable to {output_format}")
@@ -579,7 +596,7 @@ def create_v2_service(
         result: ReviewResult = deps.format_audit.audit_format(state["artifact"], state["config"], strict=strict)
         findings = result.filter_dimensions({ReviewDimension.ACCESSIBILITY}).issues
         if not findings:
-            return successful("accessibility-review")
+            return _successful_stage_result("accessibility-review", state["artifact"])
         return False, "; ".join(issue.message for issue in findings)
 
     def _native_document_review(
@@ -615,7 +632,7 @@ def create_v2_service(
             return successful("visual-review")
         return False, "; ".join(issue.message for issue in findings)
 
-    def _native_reproducibility_check() -> tuple[bool, str]:
+    def _native_reproducibility_check() -> tuple[bool, str] | StageResult:
         """Rebuild once and compare bytes with the artifact under review."""
         artifact = state.get("artifact")
         renderer = state.get("renderer")
@@ -640,7 +657,7 @@ def create_v2_service(
                 return False, "reproducibility divergence detected"
         except Exception as exc:
             return False, f"reproducibility check failed: {exc}"
-        return successful("reproducibility-check")
+        return _successful_stage_result("reproducibility-check", artifact)
 
     def _native_package_release() -> tuple[bool, str]:
         """Package the verified, attested v2 artifact before publication."""

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from itertools import pairwise
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +12,7 @@ from docs.application.pipeline_service_v2 import (
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
-from docs.domain.tool_capability import ToolCapabilityRegistry
+from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 
 STAGE_IDS = (
     "resolve-config",
@@ -39,6 +38,12 @@ STAGE_IDS = (
     "record-provenance",
     "package-release",
     "publish-draft",
+)
+EXPECTED_DAG_PLAN = (*STAGE_IDS[:8],
+    "build-docx", "build-html", "build-pdf", "compose-cover", "generate-visuals",
+    "structural-audit", "editorial-review", "evidence-review", "consistency-review",
+    "accessibility-review", "visual-review", "reproducibility-check", "record-provenance",
+    "package-release", "publish-draft",
 )
 
 
@@ -86,7 +91,10 @@ def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = T
 
 
 def _service(
-    tmp_path: Path, dependencies: SimpleNamespace, policy: PipelinePolicy | None = None
+    tmp_path: Path,
+    dependencies: SimpleNamespace,
+    policy: PipelinePolicy | None = None,
+    capabilities: ToolCapabilityRegistry | None = None,
 ) -> PipelineServiceV2:
     stage_names = {
         "resolve_config": "resolve-config",
@@ -121,7 +129,7 @@ def _service(
     return PipelineServiceV2(
         operations=operations,
         publication=dependencies.publication,
-        capabilities=ToolCapabilityRegistry(()),
+        capabilities=capabilities if capabilities is not None else ToolCapabilityRegistry(()),
         ledger=ProvenanceLedgerV2(tmp_path / "provenance.json"),
         atomic_transform=AtomicTransform(),
         policy=policy,
@@ -162,7 +170,7 @@ def test_runs_legacy_adapters_in_v2_order_and_publishes_atomically_after_verific
         "publish",
     ]
     assert (tmp_path / "published" / "document.txt").read_text(encoding="utf-8") == "published document"
-    assert service.definition.plan() == STAGE_IDS
+    assert service.definition.plan() == EXPECTED_DAG_PLAN
 
 
 def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
@@ -203,13 +211,51 @@ def test_runs_a_registered_public_subdag_without_running_unrelated_stages(tmp_pa
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    report = service.run("public-build", pipeline_id="document-build", publish=False)
+    report = service.run(
+        "public-build",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts={"compile-structure-complete"},
+    )
 
     assert report.succeeded
     assert calls == ["render", "build-html", "build-pdf"]
     assert [result.stage for result in report.execution.results] == [
-        "generate-visuals", "compose-cover", "build-docx", "build-html", "build-pdf"
+        "build-docx", "build-html", "build-pdf", "compose-cover", "generate-visuals"
     ]
+
+
+def test_omitted_external_artifacts_fail_closed_for_public_subdag(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run(
+        "public-build-with-omitted-prerequisites",
+        pipeline_id="document-build",
+        publish=False,
+    )
+
+    assert report.succeeded is False
+    assert calls == []
+    assert report.execution.results[0].errors == (
+        "required external artifact unavailable: compile-structure-complete",
+    )
+
+
+def test_explicit_empty_external_artifacts_fail_public_subdag_preflight(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    report = service.run(
+        "public-build-without-prerequisites",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts=set(),
+    )
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == (
+        "required external artifact unavailable: compile-structure-complete",
+    )
 
 
 def test_rejects_public_pipeline_publication_request(tmp_path: Path) -> None:
@@ -222,20 +268,29 @@ def test_rejects_public_pipeline_publication_request(tmp_path: Path) -> None:
     else:
         raise AssertionError("expected public pipeline publication to be rejected")
 
-def test_exposes_the_full_declarative_stage_plan_with_serial_dependencies(tmp_path: Path) -> None:
+def test_exposes_the_full_declarative_stage_plan_without_artificial_serial_dependencies(tmp_path: Path) -> None:
     service = _service(tmp_path, _dependencies(tmp_path, []))
 
     stages = {stage.name: stage for stage in service.definition.stages}
 
-    assert service.definition.plan() == STAGE_IDS
+    assert service.definition.plan() == EXPECTED_DAG_PLAN
     assert tuple(stage.name for stage in service.definition.stages) == STAGE_IDS
-    optional_stages = {"generate-visuals", "compose-cover", "package-release"}
-    for previous, current in pairwise(STAGE_IDS):
-        previous_output = f"{previous}-complete"
-        assert stages[previous].produces == (previous_output,)
-        assert stages[current].after == (previous,)
-        expected_requires = (previous_output,) if previous not in optional_stages else ()
-        assert stages[current].requires == expected_requires
+    assert stages["generate-visuals"].after == ()
+    assert stages["build-html"].after == ()
+    assert stages["build-pdf"].after == ()
+    assert stages["build-html"].requires == ("build-docx-complete",)
+    assert stages["build-pdf"].requires == ("build-docx-complete",)
+    assert stages["package-release"].optional is True
+
+
+def test_publication_chain_requires_editorial_quality_gate(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    stages = {stage.name: stage for stage in service.definition.stages}
+
+    assert "editorial-review-complete" in stages["record-provenance"].requires
+    assert "editorial-review-complete" in stages["package-release"].requires
+    assert "editorial-review-complete" in stages["publish-draft"].requires
 
 
 def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: Path) -> None:
@@ -245,7 +300,7 @@ def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: 
     report = service.run("required-stage-blocked")
 
     assert not report.succeeded
-    assert report.execution.results[-1].stage == "editorial-review"
+    assert report.execution.results[-1].stage == "publish-draft"
     assert calls == [
         "resolve-config",
         "resolve-template",
@@ -272,10 +327,33 @@ def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_chan
     report = service.run("draft-with-migration-gaps")
 
     unsupported = [result for result in report.execution.results if result.outcome == "unsupported"]
-    assert [result.stage for result in unsupported] == ["generate-visuals", "compose-cover", "package-release"]
+    assert [result.stage for result in unsupported] == ["compose-cover", "generate-visuals", "package-release"]
     assert report.succeeded is True
     assert "publish" in calls
     assert any(result.stage == "publish-draft" and result.ok for result in report.execution.results)
+
+
+def test_optional_unavailable_capability_keeps_unsupported_package_release_non_failing(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(
+        tmp_path,
+        _dependencies(tmp_path, calls),
+        capabilities=ToolCapabilityRegistry((ToolCapability("release-tool", "definitely-missing"),)),
+    )
+
+    report = service.run("optional-unsupported-package-release")
+
+    payload = report.to_dict()
+    package_release = next(
+        result for result in report.execution.results if result.stage == "package-release"
+    )
+    assert set(payload) == {"capabilities", "execution", "provenance", "succeeded"}
+    assert payload["capabilities"] == {"release-tool": {"available": False, "path": None}}
+    assert package_release.ok is True
+    assert package_release.outcome == "unsupported"
+    assert package_release.errors == ()
+    assert report.succeeded is True
+    assert "publish" in calls
 
 
 def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp_path: Path) -> None:
@@ -342,11 +420,11 @@ def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) ->
         "ingest-sources",
         "normalize-sources",
         "compile-structure",
-        "generate-visuals",
-        "compose-cover",
         "render",
         "build-html",
         "build-pdf",
+        "compose-cover",
+        "generate-visuals",
         "structural-audit",
         "verify",
         "evidence-review",
@@ -373,3 +451,121 @@ def test_optional_stage_failure_does_not_block_later_serial_stages(tmp_path: Pat
     assert "provenance" in calls
     assert next(result for result in report.execution.results if result.stage == "generate-visuals").ok is False
 
+
+def test_failed_run_rolls_back_legacy_completion_artifacts_without_losing_previous_evidence(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    dependencies = _replace_dependencies(
+        _dependencies(tmp_path, calls),
+        accessibility_review=_stage("accessibility-review", calls),
+        visual_review=_stage("visual-review", calls),
+        reproducibility_check=_stage("reproducibility-check", calls),
+        package_release=_stage("package-release", calls, ok=False),
+    )
+    artifact = tmp_path / "stages" / "accessibility-review-complete.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("previous evidence\n", encoding="utf-8")
+
+    report = _service(tmp_path, dependencies).run("completion-artifact-rollback")
+
+    assert report.succeeded is False
+    assert artifact.read_text(encoding="utf-8") == "previous evidence\n"
+    assert not (tmp_path / "stages" / "reproducibility-check-complete.json").exists()
+
+
+
+def test_adapt_does_not_fabricate_completion_artifacts_for_legacy_stage_results():
+    handler = PipelineServiceV2._adapt(
+        "resolve-config",
+        lambda: (True, "resolved configuration"),
+        "resolve-config-complete",
+    )
+
+    result = handler()
+
+    assert result.ok is True
+    assert result.artifacts == ()
+
+
+def test_external_artifact_generator_is_materialized_once(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run(
+        "generator-prerequisite",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts=(item for item in ("compile-structure-complete",)),
+    )
+
+    assert report.succeeded
+    assert calls == ["render", "build-html", "build-pdf"]
+
+
+def test_policy_less_publication_capability_failure_preflights_before_side_effects(tmp_path: Path) -> None:
+    calls: list[str] = []
+    run_ids: list[str] = []
+    service = PipelineServiceV2(
+        operations={"record-provenance": _stage("provenance", calls)},
+        publication=_dependencies(tmp_path, calls).publication,
+        capabilities=ToolCapabilityRegistry((ToolCapability("soffice", "definitely-missing", required=True),)),
+        ledger=ProvenanceLedgerV2(tmp_path / "provenance.json"),
+        atomic_transform=AtomicTransform(),
+        run_id_sink=run_ids.append,
+    )
+
+    report = service.run("missing-default-capability")
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == ("required capability unavailable: soffice",)
+    assert calls == []
+    assert run_ids == []
+
+
+def test_external_prerequisite_preflight_cleans_up_without_recording_run_id(tmp_path: Path) -> None:
+    calls: list[str] = []
+    run_ids: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+    service._run_id_sink = run_ids.append
+    service._cleanup = lambda: calls.append("cleanup")
+
+    report = service.run(
+        "missing-external",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts=set(),
+    )
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == (
+        "required external artifact unavailable: compile-structure-complete",
+    )
+    assert calls == ["cleanup"]
+    assert run_ids == []
+
+
+def test_required_pdf_capability_preflight_prevents_provenance_and_run_id_mutation(tmp_path: Path) -> None:
+    calls: list[str] = []
+    run_ids: list[str] = []
+    service = PipelineServiceV2(
+        operations={"record-provenance": _stage("provenance", calls)},
+        publication=_dependencies(tmp_path, calls).publication,
+        capabilities=ToolCapabilityRegistry((ToolCapability("soffice", "definitely-missing", required=True),)),
+        ledger=ProvenanceLedgerV2(tmp_path / "provenance.json"),
+        atomic_transform=AtomicTransform(),
+        policy=PipelinePolicy(PipelineMode.draft),
+        run_id_sink=run_ids.append,
+        excluded_stages=frozenset(set(FULL_STAGE_IDS) - {"record-provenance"}),
+        cleanup=lambda: calls.append("cleanup"),
+    )
+
+    report = service.run(
+        "missing-pdf-capability",
+        external_artifacts=service.definition.external_artifacts,
+    )
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == ("required capability unavailable: soffice",)
+    assert calls == ["cleanup"]
+    assert run_ids == []

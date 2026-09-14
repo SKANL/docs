@@ -23,7 +23,7 @@ def test_executes_in_definition_plan_and_reports_results_deterministically():
     assert report.to_json() == '{"results":[{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"first","warnings":[]},{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"second","warnings":[]}]}'
 
 
-def test_non_optional_failure_stops_remaining_stages():
+def test_fail_fast_failure_stops_unconnected_stages():
     definition = PipelineDefinition(stages=(StageSpec("fail"), StageSpec("later")))
     calls = []
     handlers = {
@@ -34,7 +34,94 @@ def test_non_optional_failure_stops_remaining_stages():
     report = PipelineExecutor(definition, handlers).run()
 
     assert calls == ["fail"]
-    assert report.results[-1].errors == ("boom",)
+    assert report.results[0].errors == ("boom",)
+    assert len(report.results) == 1
+
+
+def test_connected_fail_fast_failure_stops_independent_stages():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("built"),),
+        stages=(StageSpec("build", produces=("built",)), StageSpec("later")),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "build": lambda: (calls.append("build") or StageResult("build", False, errors=("boom",))),
+            "later": lambda: (calls.append("later") or StageResult("later", True)),
+        },
+    ).run()
+
+    assert calls == ["build"]
+    assert [result.stage for result in report.results] == ["build"]
+
+
+def test_connected_fail_fast_failure_records_blocked_dependents_without_running_unrelated_stages():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("built"),),
+        stages=(
+            StageSpec("build", produces=("built",)),
+            StageSpec("dependent", requires=("built",)),
+            StageSpec("unrelated"),
+        ),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "build": lambda: (calls.append("build") or StageResult("build", False, errors=("boom",))),
+            "dependent": lambda: (calls.append("dependent") or StageResult("dependent", True)),
+            "unrelated": lambda: (calls.append("unrelated") or StageResult("unrelated", True)),
+        },
+    ).run()
+
+    assert calls == ["build"]
+    assert [result.stage for result in report.results] == ["build", "dependent"]
+    assert report.results[-1].errors == ("required dependency unavailable: built",)
+
+
+def test_failure_blocks_dependents_but_does_not_stop_independent_stages():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("built"),),
+        stages=(
+            StageSpec("build", produces=("built",), fail_fast=False),
+            StageSpec("dependent", requires=("built",)),
+            StageSpec("independent"),
+        ),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "build": lambda: (calls.append("build") or StageResult("build", False, errors=("boom",))),
+            "dependent": lambda: (calls.append("dependent") or StageResult("dependent", True)),
+            "independent": lambda: (calls.append("independent") or StageResult("independent", True)),
+        },
+    ).run()
+
+    assert calls == ["build", "independent"]
+    assert [result.stage for result in report.results] == ["build", "dependent", "independent"]
+    assert report.results[1].errors == ("required dependency unavailable: built",)
+
+
+def test_executor_rejects_missing_external_prerequisite_before_running_handlers():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("context"),),
+        stages=(StageSpec("build", requires=("context",)),),
+        external_artifacts=frozenset({"context"}),
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {"build": lambda: (calls.append("build") or StageResult("build", True))},
+    ).run()
+
+    assert calls == []
+    assert report.results[0].errors == ("required external artifact unavailable: context",)
 
 
 def test_executor_records_non_negative_stage_duration():
@@ -120,8 +207,7 @@ def test_handler_exception_is_reported_as_failed_stage_result():
         },
     ).run()
 
-    assert len(report.results) == 1
-    assert report.results[0].stage == "explode"
+    assert [result.stage for result in report.results] == ["explode"]
     assert report.results[0].ok is False
     assert report.results[0].errors == ("stage handler failed: boom",)
 
@@ -320,3 +406,27 @@ def test_missing_required_declared_output_fails_producer_and_blocks_consumer():
     assert report.results[1].stage == "publish"
     assert report.results[1].ok is False
     assert report.results[1].errors == ("required dependency unavailable: built",)
+
+
+def test_excluded_stage_blocks_explicit_after_dependent_without_artifact_requirement():
+    definition = PipelineDefinition(
+        stages=(
+            StageSpec("prepare"),
+            StageSpec("after-prepare", after=("prepare",)),
+            StageSpec("independent"),
+        )
+    )
+    calls: list[str] = []
+
+    report = PipelineExecutor(
+        definition,
+        {
+            "prepare": lambda: (calls.append("prepare") or StageResult("prepare", True)),
+            "after-prepare": lambda: (calls.append("after-prepare") or StageResult("after-prepare", True)),
+            "independent": lambda: (calls.append("independent") or StageResult("independent", True)),
+        },
+    ).run(excluded_stages={"prepare"})
+
+    assert calls == ["independent"]
+    assert [result.stage for result in report.results] == ["independent", "after-prepare"]
+    assert report.results[1].errors == ("required dependency unavailable: prepare",)

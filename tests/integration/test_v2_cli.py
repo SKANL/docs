@@ -180,7 +180,7 @@ def test_v2_plan_reports_registered_pipeline_contracts(monkeypatch, tmp_path):
     payload = json.loads(result.stdout)
     assert payload["pipeline_id"] == "document-build"
     assert payload["stages"] == [
-        "generate-visuals", "compose-cover", "build-docx"
+        "build-docx", "compose-cover", "generate-visuals"
     ]
 
 
@@ -520,7 +520,7 @@ def test_v2_verify_can_filter_execution_results_by_dimension(monkeypatch, tmp_pa
     } == {"visual-review"}
 
 
-def test_v2_native_accessibility_review_degrades_findings_in_draft(monkeypatch, tmp_path):
+def test_v2_native_accessibility_review_requires_output_in_draft(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     deps.pipeline.accessibility_review = None
     deps.format_audit.result = ReviewResult(
@@ -530,13 +530,17 @@ def test_v2_native_accessibility_review_degrades_findings_in_draft(monkeypatch, 
 
     result = CliRunner().invoke(app, ["v2", "verify", "--policy", "draft", "--json"])
 
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 1, result.stdout
     payload = json.loads(result.stdout)
     accessibility = next(
         item for item in payload["report"]["execution"]["results"] if item["stage"] == "accessibility-review"
     )
-    assert accessibility["ok"] is True
+    assert accessibility["ok"] is False
+    assert accessibility["errors"] == ["required declared artifact missing: accessibility-review-complete"]
     assert accessibility["warnings"] == ["image is missing a caption"]
+    stages = {item["stage"]: item for item in payload["report"]["execution"]["results"]}
+    assert stages["visual-review"]["errors"] == ["required dependency unavailable: accessibility-review"]
+    assert stages["reproducibility-check"]["errors"] == ["required dependency unavailable: visual-review"]
 
 
 def test_v2_native_accessibility_review_blocks_strict_findings(monkeypatch, tmp_path):
@@ -558,7 +562,7 @@ def test_v2_native_accessibility_review_blocks_strict_findings(monkeypatch, tmp_
     assert accessibility["errors"] == ["image is missing a caption"]
 
 
-def test_v2_native_reproducibility_check_degrades_divergence_in_draft(monkeypatch, tmp_path):
+def test_v2_native_reproducibility_check_requires_output_in_draft(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     deps.pipeline.reproducibility_check = None
 
@@ -582,12 +586,13 @@ def test_v2_native_reproducibility_check_degrades_divergence_in_draft(monkeypatc
 
     result = CliRunner().invoke(app, ["v2", "verify", "--policy", "draft", "--json"])
 
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 1, result.stdout
     payload = json.loads(result.stdout)
     reproducibility = next(
         item for item in payload["report"]["execution"]["results"] if item["stage"] == "reproducibility-check"
     )
-    assert reproducibility["ok"] is True
+    assert reproducibility["ok"] is False
+    assert reproducibility["errors"] == ["required declared artifact missing: reproducibility-check-complete"]
     assert reproducibility["warnings"] == ["reproducibility divergence detected"]
 
 
@@ -692,12 +697,10 @@ def test_v2_public_verify_boundary_reuses_the_published_artifact(monkeypatch, tm
     assert built.exit_code == 0, built.stdout
     verified = runner.invoke(app, ["v2", "verify", "--pipeline", "document-verify", "--json"])
 
-    assert verified.exit_code == 0, verified.stdout
+    assert verified.exit_code == 1, verified.stdout
+    assert "required external artifact unavailable: build-docx-complete" in verified.stdout
     stages = [item["stage"] for item in json.loads(verified.stdout)["report"]["execution"]["results"]]
-    assert stages == [
-        "structural-audit", "editorial-review", "evidence-review", "consistency-review",
-        "accessibility-review", "visual-review", "reproducibility-check",
-    ]
+    assert stages == ["external-prerequisites"]
 
 
 def test_v2_public_package_and_publish_boundaries_execute_from_existing_build(
@@ -717,8 +720,10 @@ def test_v2_public_package_and_publish_boundaries_execute_from_existing_build(
         app, ["v2", "build", "--pipeline", "document-publish", "--json"]
     )
 
-    assert packaged.exit_code == 0, packaged.stdout
-    assert published.exit_code == 0, published.stdout
+    assert packaged.exit_code == 1, packaged.stdout
+    assert published.exit_code == 1, published.stdout
+    assert "required external artifact unavailable" in packaged.stdout
+    assert "required external artifact unavailable" in published.stdout
     assert (tmp_path / "documents" / "active" / "output" / "release" / "active.zip").is_file()
 
 
@@ -1124,6 +1129,7 @@ def test_v2_build_rejects_malformed_non_docx_artifacts_before_publication(
     monkeypatch, tmp_path, output_format, payload, expected_detail
 ):
     deps = _deps(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: f"{name}.test")
     deps.renderers[output_format].payload = payload
     monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
 
@@ -1195,6 +1201,7 @@ def test_v2_publishing_build_blocks_after_second_non_docx_reopen(
     monkeypatch, tmp_path, output_format
 ):
     deps = _deps(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: f"{name}.test")
     verifier = _verify_html_artifact if output_format == "html" else _verify_pdf_artifact
     original_verifier = verifier
     calls = 0
@@ -1220,11 +1227,41 @@ def test_v2_publishing_build_blocks_after_second_non_docx_reopen(
     assert names.index("build-" + output_format) < names.index("structural-audit")
     assert names.index("structural-audit") < names.index("editorial-review")
     assert next(item for item in stages if item["stage"] == "editorial-review")["ok"] is False
-    assert all(item["stage"] not in {"record-provenance", "package-release", "publish-draft"} for item in stages)
+    publication_descendants = {
+        item["stage"]: item
+        for item in stages
+        if item["stage"] in {"record-provenance", "package-release", "publish-draft"}
+    }
+    assert set(publication_descendants) == {
+        "record-provenance",
+        "package-release",
+        "publish-draft",
+    }
+    assert all(not item["ok"] for item in publication_descendants.values())
+    assert all("editorial-review-complete" in item["errors"][0] for item in publication_descendants.values())
 
     root = tmp_path / "documents" / "active"
     assert not (root / "output" / "v2" / f"active.{output_format}.manifest.json").exists()
     assert not (root / "output" / "release" / "active.zip").exists()
+
+
+def test_v2_pdf_missing_soffice_reports_all_publication_descendants(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--format", "pdf", "--json"])
+
+    assert result.exit_code == 1, result.stdout
+    stages = {
+        item["stage"]: item
+        for item in json.loads(result.stdout)["report"]["execution"]["results"]
+    }
+    descendants = {
+        name: stages[name]
+        for name in ("record-provenance", "package-release", "publish-draft")
+    }
+    assert all(not item["ok"] for item in descendants.values())
 
 
 def test_v2_document_create_delegates_to_existing_document_services(monkeypatch, tmp_path):

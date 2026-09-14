@@ -50,6 +50,7 @@ class PipelineExecutor:
         self,
         *,
         excluded_stages: set[str] | frozenset[str] = frozenset(),
+        external_artifacts: set[str] | frozenset[str] | None = None,
         result_mapper: Callable[[StageResult], StageResult] | None = None,
         fail_on_unsupported: bool = False,
         block_publication_on_package_failure: bool = False,
@@ -65,15 +66,38 @@ class PipelineExecutor:
         }
         results: list[StageResult] = []
         unavailable_artifacts: set[str] = set()
+        unavailable_stages: set[str] = set()
+        execution_halted = False
+        missing_external = sorted(
+            self.definition.external_artifacts - set(external_artifacts or ())
+        )
+        if missing_external:
+            return PipelineReport(
+                (
+                    StageResult(
+                        "external-prerequisites",
+                        False,
+                        errors=tuple(
+                            f"required external artifact unavailable: {artifact}"
+                            for artifact in missing_external
+                        ),
+                    ),
+                )
+            )
         for stage_name in self.definition.plan():
             if stage_name in excluded_stages:
+                unavailable_stages.add(stage_name)
                 unavailable_artifacts.update(stages[stage_name].produces)
                 continue
             stage = stages[stage_name]
+            unavailable_predecessors = tuple(
+                predecessor for predecessor in stage.after if predecessor in unavailable_stages
+            )
             unavailable_dependencies = tuple(
                 artifact for artifact in stage.requires if artifact in unavailable_artifacts
             )
-            if unavailable_dependencies:
+            if unavailable_predecessors or unavailable_dependencies:
+                unavailable_stages.add(stage_name)
                 unavailable_artifacts.update(stage.produces)
                 results.append(
                     StageResult(
@@ -81,10 +105,14 @@ class PipelineExecutor:
                         False,
                         errors=(
                             "required dependency unavailable: "
-                            + ", ".join(unavailable_dependencies),
+                            + ", ".join(unavailable_dependencies or unavailable_predecessors),
                         ),
                     )
                 )
+                continue
+            if execution_halted:
+                unavailable_stages.add(stage_name)
+                unavailable_artifacts.update(stage.produces)
                 continue
             if block_publication_on_package_failure and stage_name == "publish-draft" and any(
                 result.stage == "package-release"
@@ -163,9 +191,10 @@ class PipelineExecutor:
                 )
             )
             if unavailable:
+                unavailable_stages.add(stage_name)
                 unavailable_artifacts.update(
                     artifact for artifact, producer in producers.items() if producer == stage_name
                 )
-            if not result.ok and stage.fail_fast and not stage.optional:
-                break
+                if stage.fail_fast and not stage.optional:
+                    execution_halted = True
         return PipelineReport(tuple(results))
