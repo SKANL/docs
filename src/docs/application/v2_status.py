@@ -10,6 +10,7 @@ from typing import Any
 
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.artifacts import BuildManifest
+from docs.domain.identity import sha256_content, sha256_file
 
 
 @dataclass(frozen=True)
@@ -72,6 +73,9 @@ class V2StatusReader:
                 manifest.provenance_run
             )
         unsupported_stages, publication_blockers = _runtime_status_details(execution)
+        publication_blockers.extend(_integrity_blockers(document_root, manifest))
+        if publication_blockers and succeeded is True:
+            succeeded = False
         return V2Status(
             manifest=manifest,
             capabilities=capabilities,
@@ -81,6 +85,47 @@ class V2StatusReader:
             unsupported_stages=unsupported_stages,
             publication_blockers=publication_blockers,
         )
+
+
+def _integrity_blockers(document_root: Path, manifest: BuildManifest) -> list[str]:
+    """Validate the immutable evidence behind a v2 status snapshot.
+
+    Legacy manifests without a provenance run remain readable.  Once a
+    manifest claims v2 provenance, however, status must not report a healthy
+    build when its evidence or output bytes no longer match.
+    """
+    if not manifest.provenance_run:
+        return []
+    blockers: list[str] = []
+    ledger = ProvenanceLedgerV2(document_root / "runs" / "v2-provenance.json")
+    run = ledger.load_run(manifest.provenance_run)
+    if run is None:
+        blockers.append(f"provenance run missing: {manifest.provenance_run}")
+    elif not ledger.verify_run(manifest.provenance_run):
+        blockers.append(f"provenance run failed integrity verification: {manifest.provenance_run}")
+
+    recorded = ledger.load_attestation(manifest.provenance_run)
+    expected_attestation = manifest.attestation()
+    if recorded is None:
+        blockers.append(f"provenance attestation missing: {manifest.provenance_run}")
+    elif recorded != expected_attestation:
+        blockers.append(f"provenance attestation mismatch: {manifest.provenance_run}")
+    elif recorded.get("sha256") != sha256_content(recorded.get("manifest")):
+        blockers.append(f"provenance attestation hash mismatch: {manifest.provenance_run}")
+
+    for artifact in manifest.artifacts:
+        path = Path(artifact.path)
+        if not path.exists():
+            blockers.append(f"artifact missing: {path}")
+            continue
+        try:
+            if sha256_file(path) != artifact.sha256:
+                blockers.append(f"artifact hash mismatch: {path}")
+            if artifact.size_bytes is not None and path.stat().st_size != artifact.size_bytes:
+                blockers.append(f"artifact size mismatch: {path}")
+        except OSError as exc:
+            blockers.append(f"artifact unreadable: {path} ({exc})")
+    return blockers
 
 
 def _runtime_status_details(execution: dict[str, Any]) -> tuple[list[str], list[str]]:
