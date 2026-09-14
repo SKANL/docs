@@ -205,7 +205,7 @@ class BuildManifest:
         object.__setattr__(self, "artifacts", normalized)
         _validate_renderer_versions(self.renderer_versions)
 
-    def to_dict_without_schema(self) -> dict[str, Any]:
+    def _identity_dict_without_schema(self) -> dict[str, Any]:
         _validate_renderer_versions(self.renderer_versions)
         return {
             "document_id": self.document_id,
@@ -217,8 +217,21 @@ class BuildManifest:
             "renderer_versions": dict(sorted(self.renderer_versions.items())),
             "artifacts": [artifact.to_dict() for artifact in sorted(self.artifacts, key=lambda item: item.path)],
             "verification": self.verification,
+        }
+
+    def to_dict_without_schema(self) -> dict[str, Any]:
+        return {
+            **self._identity_dict_without_schema(),
             "provenance_run": self.provenance_run,
         }
+
+    def to_identity_dict(self) -> dict[str, Any]:
+        """Return the content-addressed representation, excluding run metadata."""
+        return {"schema": "docs.build/v2", **self._identity_dict_without_schema()}
+
+    def identity(self) -> str:
+        """Return the stable SHA-256 identity of the build inputs and outputs."""
+        return sha256_content(self.to_identity_dict())
 
     def to_dict(self) -> dict[str, Any]:
         return {"schema": "docs.build/v2", **self.to_dict_without_schema()}
@@ -228,11 +241,11 @@ class BuildManifest:
 
     def attestation(self) -> dict[str, Any]:
         """Return a deterministic, content-addressed statement of this build."""
-        payload = self.to_dict()
+        payload = self.to_identity_dict()
         return {
             "schema": "docs.attestation/v2",
             "manifest": payload,
-            "sha256": sha256_content(payload),
+            "sha256": self.identity(),
         }
 
     def validate_for_publication(self) -> None:
