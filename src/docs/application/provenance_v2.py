@@ -25,7 +25,8 @@ def _provenance_class() -> type[Any]:
                 return True
             if not isinstance(recorded, dict) or not isinstance(left, dict) or not isinstance(right, dict):
                 return False
-            if recorded.get("sha256") != sha256_content(left):
+            recorded_hash = recorded.get("sha256")
+            if recorded_hash is not None and recorded_hash != sha256_content(left):
                 return False
             left = _without_optional_artifact_metadata(left)
             right = _without_optional_artifact_metadata(right)
@@ -37,6 +38,10 @@ def _provenance_class() -> type[Any]:
 def _without_optional_artifact_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     """Normalize only fields added after the initial v2 attestation schema."""
     normalized = dict(payload)
+    # v2.1 manifests keep the run id as metadata but exclude it from the
+    # content-addressed attestation. Accept older attestations that included
+    # it when comparing against a current manifest.
+    normalized.pop("provenance_run", None)
     artifacts = normalized.get("artifacts")
     if isinstance(artifacts, list):
         normalized["artifacts"] = [

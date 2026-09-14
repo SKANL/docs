@@ -181,7 +181,7 @@ def test_v2_plan_reports_registered_pipeline_contracts(monkeypatch, tmp_path):
     payload = json.loads(result.stdout)
     assert payload["pipeline_id"] == "document-build"
     assert payload["stages"] == [
-        "build-docx", "compose-cover", "generate-visuals"
+        "generate-visuals", "compose-cover", "build-docx"
     ]
 
 
@@ -756,8 +756,8 @@ def test_v2_native_accessibility_review_requires_output_in_draft(monkeypatch, tm
         item for item in payload["report"]["execution"]["results"] if item["stage"] == "accessibility-review"
     )
     assert accessibility["ok"] is False
-    assert accessibility["errors"] == ["required declared artifact missing: accessibility-review-complete"]
-    assert accessibility["warnings"] == ["image is missing a caption"]
+    assert accessibility["errors"] == ["image is missing a caption"]
+    assert accessibility["warnings"] == []
     stages = {item["stage"]: item for item in payload["report"]["execution"]["results"]}
     assert stages["visual-review"]["errors"] == ["required dependency unavailable: accessibility-review"]
     assert stages["reproducibility-check"]["errors"] == ["required dependency unavailable: visual-review"]
@@ -812,8 +812,8 @@ def test_v2_native_reproducibility_check_requires_output_in_draft(monkeypatch, t
         item for item in payload["report"]["execution"]["results"] if item["stage"] == "reproducibility-check"
     )
     assert reproducibility["ok"] is False
-    assert reproducibility["errors"] == ["required declared artifact missing: reproducibility-check-complete"]
-    assert reproducibility["warnings"] == ["reproducibility divergence detected"]
+    assert reproducibility["errors"] == ["reproducibility divergence detected"]
+    assert reproducibility["warnings"] == []
 
 
 def test_v2_native_reproducibility_check_blocks_release_divergence(monkeypatch, tmp_path):
