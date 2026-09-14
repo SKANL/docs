@@ -135,27 +135,6 @@ def test_stage_callables_delegates_to_legacy_stage_planner():
     assert service._stage_callables("doc", "template", {"paths": {}}, Path("repo"), True, "renderer") is expected
 
 
-def test_run_pipeline_delegates_to_legacy_pipeline_executor():
-    service = _service(_FakeEvidenceRepository())
-    expected = {"passed": True, "stages": []}
-
-    class Executor:
-        def execute(self, pipeline, doc_id, template, config, stage_set, repo_root, strict, renderer):
-            assert pipeline is service
-            assert (doc_id, template, config, stage_set, repo_root, strict, renderer) == (
-                "doc", "template", {"paths": {}}, "prep", Path("repo"), True, "renderer"
-            )
-            return expected
-
-    service.legacy_pipeline_executor = Executor()
-
-    result = service.run_pipeline(
-        "doc", "template", {"paths": {}}, "prep", Path("repo"), strict=True, renderer="renderer"
-    )
-
-    assert result is expected
-
-
 def test_run_pipeline_uses_reusable_flat_pipeline_boundary(monkeypatch):
     service = _service(_FakeEvidenceRepository())
     expected = {"stage_set": "prep", "passed": True, "stages": []}

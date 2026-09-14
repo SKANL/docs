@@ -79,9 +79,6 @@ class PipelineService:
         self.run_history = RunHistoryService(workspace)
         self.metadata_service = metadata_service or PipelineMetadataService(workspace)
         self.stage_planner = stage_planner or LegacyStagePlanner()
-        # Kept as an explicit injection seam for downstream callers during
-        # migration; normal runtime execution uses FlatPipelineV2Adapter.
-        self.legacy_pipeline_executor: Any | None = None
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -141,14 +138,6 @@ class PipelineService:
         # only preserves compatibility for callers that build PipelineService
         # directly without going through the CLI composition root.
         renderer = renderer or self.docx_assembly_service
-        # A caller-provided executor remains a narrow compatibility seam for
-        # integrations that replace the old collaborator. The built-in path
-        # is the reusable v2 boundary and no longer depends on the legacy
-        # executor implementation.
-        if self.legacy_pipeline_executor is not None:
-            return self.legacy_pipeline_executor.execute(
-                self, doc_id, template, config, stage_set, repo_root, strict, renderer
-            )
         stages = pipeline_stage_plan(stage_set, renderer.stage_plan())
         callables = self._stage_callables(doc_id, template, config, repo_root, strict, renderer)
         summary = FlatPipelineV2Adapter(operations=callables).run(
