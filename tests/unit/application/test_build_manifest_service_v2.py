@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from docs.application.build_manifest_service_v2 import BuildManifestServiceV2
-from docs.domain.artifacts import ArtifactState
+from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.identity import canonical_json
 
 
@@ -105,3 +105,32 @@ def test_build_manifest_identity_and_attestation_ignore_run_id(tmp_path: Path) -
     assert second.provenance_run == "second-run"
     assert first.identity() == second.identity()
     assert canonical_json(first.attestation()) == canonical_json(second.attestation())
+
+
+def test_build_manifest_identity_ignores_workspace_absolute_path(tmp_path: Path) -> None:
+    left = tmp_path / "left" / "active.docx"
+    right = tmp_path / "right" / "active.docx"
+    left.parent.mkdir()
+    right.parent.mkdir()
+    left.write_bytes(b"same artifact")
+    right.write_bytes(b"same artifact")
+    common = {
+        "document_id": "active",
+        "source_hash": "a" * 64,
+        "template_hash": "b" * 64,
+        "config_hash": "c" * 64,
+        "context_hash": "d" * 64,
+        "renderer_versions": {"renderer": "e" * 64},
+        "verification": {"passed": True},
+    }
+
+    first = BuildManifest(
+        **common,
+        artifacts=(ArtifactRef(str(left), "f" * 64, ArtifactState.READY, size_bytes=left.stat().st_size),),
+    )
+    second = BuildManifest(
+        **common,
+        artifacts=(ArtifactRef(str(right), "f" * 64, ArtifactState.READY, size_bytes=right.stat().st_size),),
+    )
+
+    assert first.identity() == second.identity()

@@ -4,6 +4,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from docs.domain.identity import canonical_json, sha256_content
@@ -207,6 +208,16 @@ class BuildManifest:
 
     def _identity_dict_without_schema(self) -> dict[str, Any]:
         _validate_renderer_versions(self.renderer_versions)
+        identity_artifacts = [
+            {
+                **artifact.to_dict(),
+                # Workspace-specific absolute paths are publication metadata,
+                # not build identity.  Keep only the stable artifact name so
+                # equivalent builds in different checkouts hash identically.
+                "path": Path(artifact.path).name,
+            }
+            for artifact in self.artifacts
+        ]
         return {
             "document_id": self.document_id,
             "source_hash": self.source_hash,
@@ -215,7 +226,14 @@ class BuildManifest:
             "context_hash": self.context_hash,
             "asset_hashes": dict(sorted(self.asset_hashes.items())),
             "renderer_versions": dict(sorted(self.renderer_versions.items())),
-            "artifacts": [artifact.to_dict() for artifact in sorted(self.artifacts, key=lambda item: item.path)],
+            "artifacts": sorted(
+                identity_artifacts,
+                key=lambda item: (
+                    str(item["path"]),
+                    str(item.get("media_type", "")),
+                    str(item["sha256"]),
+                ),
+            ),
             "verification": self.verification,
         }
 
