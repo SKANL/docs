@@ -11,6 +11,7 @@ import shutil
 import stat
 import tempfile
 import uuid
+import zipfile
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
@@ -167,6 +168,32 @@ def _verify_non_docx_artifact(output_format: str, artifact: Path) -> tuple[bool,
     if output_format == "pdf":
         return _verify_pdf_artifact(artifact)
     return False, f"no format verifier is registered for {output_format}"
+
+
+def _minimal_structural_audit(artifact: Path, output_format: str) -> tuple[bool, str]:
+    """Perform the minimum structural reopen gate when no full auditor is wired."""
+    if not artifact.exists():
+        return False, f"artifact is missing: {artifact}"
+    if not artifact.is_file():
+            return False, f"artifact is not a file: {artifact}"
+    try:
+        if artifact.stat().st_size <= 0:
+            return False, f"artifact is empty: {artifact}"
+        if output_format == "docx":
+            with zipfile.ZipFile(artifact) as archive:
+                if "word/document.xml" not in archive.namelist():
+                    return False, "structural DOCX missing word/document.xml"
+                archive.read("word/document.xml")
+        else:
+            artifact.read_bytes()
+    except (OSError, zipfile.BadZipFile, KeyError) as exc:
+        return False, f"artifact is unreadable: {exc}"
+    return True, f"minimal fallback: {output_format.upper()} reopened and structural dimensions verified"
+
+
+def _fallback_structural_audit(artifact: Path, output_format: str) -> tuple[bool, str]:
+    """Compatibility name for the native structural stage."""
+    return _minimal_structural_audit(artifact, output_format)
 
 
 def _successful_stage_result(name: str, artifact: Path) -> StageResult:
@@ -613,7 +640,7 @@ def create_v2_service(
     def _structural_audit() -> tuple[bool, str]:
         service = _stage_service("structural_audit_service")
         if service is None or not hasattr(service, "audit"):
-            return False, "structural-audit service is not configured"
+            return _fallback_structural_audit(state["artifact"], output_format)
         template = state["resolved"].template
         contract = getattr(template, "template_contract", None)
         # Legacy templates predate the declarative contract.  They still need

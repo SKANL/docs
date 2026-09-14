@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.cli.commands.v2_app import (
     _batch_journal_path,
+    _minimal_structural_audit,
     _package_files,
     _promote_release_candidate,
     _recover_batch_transaction,
@@ -49,6 +50,32 @@ def test_html_verification_reopens_and_rejects_empty_visual_content(tmp_path: Pa
     passed, detail = _verify_html_artifact(artifact)
     assert passed is False
     assert "renderable" in detail
+
+
+@pytest.mark.parametrize(
+    ("suffix", "payload"),
+    [
+        (".html", b"<html><body>report</body></html>"),
+        (".pdf", _minimal_pdf()),
+    ],
+)
+def test_minimal_structural_audit_accepts_nonempty_non_docx_artifacts(
+    tmp_path: Path, suffix: str, payload: bytes
+):
+    artifact = tmp_path / f"report{suffix}"
+    artifact.write_bytes(payload)
+
+    passed, detail = _minimal_structural_audit(artifact, suffix.removeprefix("."))
+
+    assert passed is True
+    assert "minimal fallback" in detail
+
+
+def test_minimal_structural_audit_rejects_a_missing_artifact(tmp_path: Path):
+    passed, detail = _minimal_structural_audit(tmp_path / "missing.html", "html")
+
+    assert passed is False
+    assert "artifact is missing" in detail
 
 
 def test_pdf_reproducibility_accepts_different_bytes_with_same_page_geometry(tmp_path: Path):
@@ -249,6 +276,23 @@ def test_v2_build_resolves_renders_audits_qa_and_publishes_verified_docx(monkeyp
     assert deps.renderer.calls
     assert deps.audit.calls
     assert deps.qa_adapter.calls
+
+
+@pytest.mark.parametrize("output_format", ("html", "pdf"))
+def test_v2_build_uses_minimal_structural_audit_when_service_is_absent(
+    monkeypatch, tmp_path, output_format
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("shutil.which", lambda name: f"{name}.test")
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "build", "--format", output_format, "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    stages = json.loads(result.stdout)["report"]["execution"]["results"]
+    structural_audit = next(item for item in stages if item["stage"] == "structural-audit")
+    assert structural_audit["ok"] is True
+    assert structural_audit["errors"] == []
 
 
 def test_v2_build_records_rendered_artifact_as_output_before_attestation(monkeypatch, tmp_path):
