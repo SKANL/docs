@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from docs.application.atomic_transform_v2 import AtomicTransform
-from docs.application.pipeline_components_v2 import ArtifactStore
+from docs.application.pipeline_components_v2 import PUBLIC_PIPELINES, ArtifactStore
 from docs.application.pipeline_service_v2 import (
     FULL_STAGE_IDS,
     PipelineServiceV2,
@@ -251,6 +251,25 @@ def test_exports_reusable_full_stage_ids() -> None:
 def test_registers_public_pipeline_boundaries():
     service = _service(Path("."), _dependencies(Path("."), []))
     assert {"document-build", "document-verify", "document-package"} <= set(service.registry.names())
+
+
+def test_public_catalog_marks_stage_backed_boundaries_and_read_only_artifact_operations():
+    stage_backed = {entry.pipeline_id for entry in PUBLIC_PIPELINES if entry.stages}
+    read_only = {entry.pipeline_id for entry in PUBLIC_PIPELINES if not entry.stages}
+
+    assert stage_backed == {
+        "source-ingest",
+        "document-prepare",
+        "document-build",
+        "document-verify",
+        "document-publish",
+        "document-package",
+    }
+    assert read_only == {"document-diff", "document-inspect"}
+
+    service = _service(Path("."), _dependencies(Path("."), []))
+    assert all(not service.registry.resolve(name).definition.stages for name in read_only)
+    assert all(service.registry.resolve(name).definition.stages for name in stage_backed)
 
 
 

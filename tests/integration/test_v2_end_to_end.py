@@ -15,6 +15,7 @@ from docs.application.asset import AssetService
 from docs.application.documents import DocumentService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.generate_visuals import GenerateVisualsService
+from docs.application.pipeline_components_v2 import PUBLIC_PIPELINES
 from docs.application.pipeline_service_v2 import FULL_STAGE_IDS
 from docs.cli.main import app
 from docs.domain.models.template import Template
@@ -316,12 +317,117 @@ def test_v2_builtin_template_journey_produces_artifacts_and_provenance(
     assert destination.with_suffix(".docx.manifest.json").read_bytes() == manifest_path.read_bytes()
 
 
-def test_v2_stage_traceability_declares_every_runtime_stage() -> None:
+def test_v2_stage_traceability_declares_every_runtime_stage_with_strict_nested_shape() -> None:
     path = Path(__file__).parents[2] / "docs" / "migration-v2-traceability.json"
     traceability = json.loads(path.read_text(encoding="utf-8"))
-    declared = {entry["stage"] for entry in traceability["pipeline_stages"]}
-    assert declared == set(FULL_STAGE_IDS)
+    assert traceability["schema"] == "docs.migration-v2-traceability/2"
+    stage_records = traceability["pipeline_stages"]
+    assert len(stage_records) == len(FULL_STAGE_IDS)
+    assert len({entry["stage"] for entry in stage_records}) == len(FULL_STAGE_IDS)
+    entries = {entry["stage"]: entry for entry in stage_records}
+    assert set(entries) == set(FULL_STAGE_IDS)
+    for entry in entries.values():
+        assert set(entry) == {
+            "stage",
+            "declaration",
+            "runtime_wiring",
+            "executable_evidence",
+            "observed_outcome",
+        }
+        assert isinstance(entry["stage"], str) and entry["stage"]
+        assert set(entry["declaration"]) == {"status", "source"}
+        assert entry["declaration"]["status"] == "declared"
+        assert isinstance(entry["declaration"]["source"], str) and entry["declaration"]["source"]
+        assert set(entry["runtime_wiring"]) == {"status", "source"}
+        assert entry["runtime_wiring"]["status"] == "wired"
+        assert isinstance(entry["runtime_wiring"]["source"], str) and entry["runtime_wiring"]["source"]
+        assert set(entry["executable_evidence"]) in ({"status", "test"}, {"status", "reason"})
+        assert set(entry["observed_outcome"]) == {"status", "test"}
+        assert entry["declaration"]["status"] == "declared"
+        assert entry["runtime_wiring"]["status"] == "wired"
+        executable = entry["executable_evidence"]
+        observed = entry["observed_outcome"]
+        if executable["status"] == "covered":
+            assert set(executable) == {"status", "test"}
+            assert isinstance(executable["test"], str) and executable["test"]
+        else:
+            assert executable["status"] == "not-covered"
+            assert set(executable) == {"status", "reason"}
+            assert isinstance(executable["reason"], str) and executable["reason"]
+        if observed["status"] == "succeeded":
+            assert executable["status"] == "covered"
+            assert observed["test"] == executable["test"]
+        elif observed["status"] == "unsupported":
+            assert executable["status"] == "not-covered"
+            assert isinstance(observed["test"], str) and observed["test"]
+        else:
+            assert observed["status"] == "not-observed"
+            assert observed["test"] is None
     assert traceability["journey"]["status"] in {"covered", "closest-real-journey"}
+
+
+def test_traceability_keeps_public_stage_pipelines_separate_from_read_only_operations() -> None:
+    path = Path(__file__).parents[2] / "docs" / "migration-v2-traceability.json"
+    traceability = json.loads(path.read_text(encoding="utf-8"))
+    public = traceability["public_pipelines"]
+
+    stage_backed_records = public["stage_backed"]
+    read_only_records = public["read_only_artifact_operations"]
+    assert len({entry["id"] for entry in stage_backed_records}) == len(stage_backed_records)
+    assert len({entry["id"] for entry in read_only_records}) == len(read_only_records)
+    assert all(set(entry) == {"id", "kind", "stages"} for entry in stage_backed_records)
+    assert all(set(entry) == {"id", "kind", "stages"} for entry in read_only_records)
+
+    stage_backed = {entry["id"] for entry in stage_backed_records}
+    read_only = {entry["id"] for entry in read_only_records}
+
+    assert stage_backed.isdisjoint(read_only)
+    assert read_only == {"document-diff", "document-inspect"}
+    assert all(entry["kind"] == "stage-backed" for entry in public["stage_backed"])
+    assert all(
+        entry["kind"] == "read-only-artifact-operation"
+        and entry["stages"] == []
+        for entry in public["read_only_artifact_operations"]
+    )
+
+
+def test_traceability_public_pipeline_classification_matches_runtime_catalog() -> None:
+    path = Path(__file__).parents[2] / "docs" / "migration-v2-traceability.json"
+    traceability = json.loads(path.read_text(encoding="utf-8"))
+    public = traceability["public_pipelines"]
+
+    expected = {
+        "stage_backed": {
+            entry.pipeline_id: {"kind": "stage-backed", "stages": list(entry.stages)}
+            for entry in PUBLIC_PIPELINES
+            if entry.stages
+        },
+        "read_only_artifact_operations": {
+            entry.pipeline_id: {
+                "kind": "read-only-artifact-operation",
+                "stages": [],
+            }
+            for entry in PUBLIC_PIPELINES
+            if not entry.stages
+        },
+    }
+    assert len(public["stage_backed"]) == len(expected["stage_backed"])
+    assert len(public["read_only_artifact_operations"]) == len(expected["read_only_artifact_operations"])
+    assert len({entry["id"] for entry in public["stage_backed"]}) == len(expected["stage_backed"])
+    assert len({entry["id"] for entry in public["read_only_artifact_operations"]}) == len(
+        expected["read_only_artifact_operations"]
+    )
+    assert all(
+        set(entry) == {"id", "kind", "stages"}
+        for group in (public["stage_backed"], public["read_only_artifact_operations"])
+        for entry in group
+    )
+    actual = {
+        group: {entry["id"]: {"kind": entry["kind"], "stages": entry["stages"]} for entry in public[group]}
+        for group in expected
+    }
+
+    assert actual == expected
 
 
 def test_v2_journey_executes_generated_cover_and_visual_spec_fixture(monkeypatch, tmp_path: Path) -> None:

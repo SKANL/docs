@@ -40,6 +40,32 @@ Build and verify return a runtime report containing `capabilities`, `execution`,
 
 A `failed` stage stops its downstream dependency chain. A visible optional `unsupported` result is not the same as a successful implementation; strict/release publication still fails when a required capability or contract is unavailable. The runtime only records successful run hashes after the complete accepted execution.
 
+## Traceability boundary
+
+`docs/migration-v2-traceability.json` keeps four claims separate for every
+runtime stage:
+
+1. **Declaration** — the stage is named by `FULL_STAGE_IDS`.
+2. **Runtime wiring** — `PipelineServiceV2` registers a handler for the stage.
+3. **Executable evidence** — an integration test exercises and asserts the stage.
+4. **Observed outcome** — that test records whether the stage succeeded,
+   remained unsupported, or was not observed.
+
+Each nested claim has a strict shape: declaration and runtime wiring require
+non-empty `source` fields; covered executable evidence requires a `test`,
+while not-covered evidence requires a `reason`; observed outcomes always carry
+a `test` field (or `null` when not observed). A succeeded outcome is valid only
+when executable evidence is covered and points to the same test. An unsupported
+outcome is valid only when executable evidence is not-covered and includes the
+test that observed the unsupported result. The integration contract also
+compares the JSON public-pipeline classification with the runtime
+`PUBLIC_PIPELINES` catalog, keeping stage-backed boundaries distinct from the
+read-only `document-diff` and `document-inspect` operations.
+
+A declared and wired stage is not automatically covered. The traceability file
+deliberately leaves untested stages as `not-covered` and `not-observed` rather
+than inferring support from the registry.
+
 ## Full stage plan
 
 `FULL_STAGE_IDS` is authoritative and ordered as follows. The public boundaries
@@ -50,6 +76,12 @@ they are not separate format-specific implementations:
 source-ingest | document-prepare | document-build | document-verify
 | document-publish | document-package | document-diff | document-inspect
 ```
+
+`source-ingest` through `document-package` are **stage-backed public
+pipelines**: each selects a non-empty stage sub-DAG from the runtime
+definition. `document-diff` and `document-inspect` are **read-only artifact
+operations**: they are public and dispatchable, but intentionally have no
+runtime stages and must not be counted as stage coverage.
 
 `FULL_STAGE_IDS` is authoritative and ordered as follows:
 
@@ -77,7 +109,13 @@ Only requested renderers are executed. A missing optional PDF/visual capability 
 
 ## Read-only artifact operations
 
-`inspect` computes an identity report without modifying the artifact. `diff` compares SHA-256 and adds a UTF-8 unified diff when both inputs are text-readable. `package` and `publish` validate and snapshot source bytes before writing through temporary paths; they do not follow symlinked or escaped paths.
+`inspect` computes an identity report without modifying the artifact. `diff`
+compares SHA-256 and adds a UTF-8 unified diff when both inputs are
+text-readable. These two operations are deliberately separate from the
+stage-backed public pipelines above: they inspect or compare existing
+artifacts and do not execute a stage DAG. `package` and `publish` validate and
+snapshot source bytes before writing through temporary paths; they do not
+follow symlinked or escaped paths.
 
 ## Inspecting pipeline contracts
 
