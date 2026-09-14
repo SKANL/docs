@@ -104,6 +104,8 @@ class ArtifactRecord:
             raise ValueError("Artifact path must not be empty")
         if not re.fullmatch(r"[0-9a-f]{64}|[0-9a-f]+", self.sha256):
             raise ValueError("Artifact sha256 must be a lowercase hexadecimal digest")
+        if self.size_bytes is not None and type(self.size_bytes) is not int:
+            raise ValueError("Artifact size_bytes must be an integer")
         if self.size_bytes is not None and self.size_bytes < 0:
             raise ValueError("Artifact size_bytes must not be negative")
         if self.media_type == "":

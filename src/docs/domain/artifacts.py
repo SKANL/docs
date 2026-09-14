@@ -45,6 +45,8 @@ class ArtifactRef:
     def __post_init__(self) -> None:
         if not self.path:
             raise ValueError("artifact path must not be empty")
+        if not isinstance(self.sha256, str):
+            raise ValueError("artifact sha256 must be a string")
         if self.media_type is not None and (not isinstance(self.media_type, str) or not self.media_type):
             raise ValueError("artifact media_type must be a non-empty string")
         if self.size_bytes is not None and type(self.size_bytes) is not int:
@@ -106,6 +108,16 @@ def _parse_artifact_entry(entry: Any) -> ArtifactRef:
         raise ValueError(
             "invalid artifact entry: expected valid media_type and size_bytes values"
         ) from exc
+
+
+def _validate_renderer_versions(renderer_versions: object) -> None:
+    if not isinstance(renderer_versions, Mapping):
+        raise ValueError("renderer_versions must be a mapping")
+    if any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in renderer_versions.items()
+    ):
+        raise ValueError("renderer_versions must contain string keys and values")
 
 
 @dataclass(frozen=True)
@@ -191,8 +203,10 @@ class BuildManifest:
             for artifact in self.artifacts
         )
         object.__setattr__(self, "artifacts", normalized)
+        _validate_renderer_versions(self.renderer_versions)
 
     def to_dict_without_schema(self) -> dict[str, Any]:
+        _validate_renderer_versions(self.renderer_versions)
         return {
             "document_id": self.document_id,
             "source_hash": self.source_hash,
@@ -223,6 +237,7 @@ class BuildManifest:
 
     def validate_for_publication(self) -> None:
         """Reject evidence that cannot attest a publishable build."""
+        _validate_renderer_versions(self.renderer_versions)
         if not self.document_id:
             raise ValueError("document_id must not be empty")
         for name, digest in (
@@ -263,10 +278,7 @@ class BuildManifest:
             raise ValueError("asset_hashes must be a mapping")
         if any(not isinstance(value, str) for value in asset_hashes.values()):
             raise ValueError("asset_hashes must contain string values")
-        if not isinstance(renderer_versions, Mapping):
-            raise ValueError("renderer_versions must be a mapping")
-        if any(not isinstance(value, str) for value in renderer_versions.values()):
-            raise ValueError("renderer_versions must contain string values")
+        _validate_renderer_versions(renderer_versions)
         artifacts = payload.get("artifacts", [])
         if not isinstance(artifacts, list):
             raise ValueError("artifacts must be a list")
@@ -280,7 +292,7 @@ class BuildManifest:
             config_hash=payload.get("config_hash", ""),
             context_hash=payload.get("context_hash", ""),
             asset_hashes={str(key): value for key, value in asset_hashes.items()},
-            renderer_versions={str(key): value for key, value in renderer_versions.items()},
+            renderer_versions=dict(renderer_versions),
             artifacts=tuple(_parse_artifact_entry(item) for item in artifacts),
             verification=dict(verification),
             provenance_run=payload.get("provenance_run"),

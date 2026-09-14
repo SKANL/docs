@@ -175,6 +175,29 @@ def test_build_manifest_rejects_non_string_renderer_versions_without_coercion(re
         )
 
 
+@pytest.mark.parametrize("renderer_versions", [None, [], "renderer"])
+def test_build_manifest_constructor_rejects_non_mapping_renderer_versions(renderer_versions):
+    with pytest.raises(ValueError, match="renderer_versions"):
+        BuildManifest(document_id="example", renderer_versions=renderer_versions)
+
+
+@pytest.mark.parametrize("renderer_versions", [{123: "version"}, {"docx": 123}])
+def test_build_manifest_constructor_rejects_non_string_renderer_version_keys_and_values(renderer_versions):
+    with pytest.raises(ValueError, match="renderer_versions"):
+        BuildManifest(document_id="example", renderer_versions=renderer_versions)
+
+
+def test_build_manifest_rejects_renderer_version_mutations_during_serialization_and_publication():
+    renderer_versions = {"docx": "test"}
+    manifest = BuildManifest(document_id="example", renderer_versions=renderer_versions)
+    renderer_versions["docx"] = 123
+
+    with pytest.raises(ValueError, match="renderer_versions"):
+        manifest.to_json()
+    with pytest.raises(ValueError, match="renderer_versions"):
+        manifest.validate_for_publication()
+
+
 @pytest.mark.parametrize(
     "field",
     ["document_id", "source_hash", "template_hash", "config_hash", "context_hash"],

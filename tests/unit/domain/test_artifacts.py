@@ -73,6 +73,12 @@ def test_artifact_ref_rejects_non_integer_size_metadata(size_bytes):
         ArtifactRef("output/report.pdf", "b" * 64, size_bytes=size_bytes)
 
 
+@pytest.mark.parametrize("sha256", [123, None, [], {}])
+def test_artifact_ref_rejects_non_string_sha256_before_publication_validation(sha256):
+    with pytest.raises(ValueError, match="sha256"):
+        ArtifactRef("output/report.pdf", sha256)
+
+
 def test_artifact_ref_preserves_legacy_records_without_metadata():
     artifact = ArtifactRef("output/report.pdf", "b" * 64)
 

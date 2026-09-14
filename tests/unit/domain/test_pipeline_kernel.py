@@ -24,6 +24,12 @@ def test_contracts_and_records_serialize_deterministically():
     assert json.loads(deterministic_json(contract))["required"] is True
 
 
+@pytest.mark.parametrize("size_bytes", [1.5, "12", True, [], {}])
+def test_artifact_record_rejects_invalid_size_bytes_at_construction(size_bytes):
+    with pytest.raises(ValueError, match="size_bytes"):
+        ArtifactRecord("manifest", "out/manifest.json", "abc", size_bytes=size_bytes)
+
+
 def test_pipeline_validates_contracts_and_returns_topological_plan():
     pipeline = PipelineDefinition(
         artifacts=(ArtifactContract("source"), ArtifactContract("rendered")),
