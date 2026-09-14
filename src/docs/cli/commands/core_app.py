@@ -21,6 +21,7 @@ from docs.application.flat_pipeline_compatibility import (
     route_for,
     strict_policy_error,
 )
+from docs.application.flat_pipeline_v2 import FlatPipelineV2Adapter
 from docs.application.output_names import (
     resolve_draft_docx_name,
     resolve_draft_pdf_name,
@@ -212,29 +213,52 @@ def _run_v2_all(
     repo_root: Path,
     formats: list[str] | None,
 ) -> dict[str, Any]:
-    """Preserve flat ``all`` order while making its boundaries explicit."""
+    """Run flat ``all`` through the v2 compatibility boundary."""
     if formats:
         renderers = [resolve_renderer(deps.renderers, fmt) for fmt in formats]
     else:
         renderers = [deps.resolve_renderer(resolved.config)]
 
-    def legacy_stage(stage_set: str) -> dict[str, Any]:
-        return deps.legacy_pipeline.run_pipeline(
-            resolved.doc_id,
-            resolved.template,
-            resolved.config,
-            stage_set,
-            repo_root=repo_root,
-            strict=strict,
-            renderer=renderers[0],
-        )
+    operations = deps.pipeline._stage_callables(
+        resolved.doc_id,
+        resolved.template,
+        resolved.config,
+        repo_root,
+        strict,
+        renderers[0],
+    )
+    flat = FlatPipelineV2Adapter(operations=operations)
 
     adapter = FlatPipelineCompatibilityAdapter(
-        prep=lambda: legacy_stage("prep"),
-        review_document=lambda: legacy_stage("review-document"),
+        prep=lambda: flat.run("prep", strict=strict),
+        review_document=lambda: flat.run(
+            "review-document", strict=strict, stages=(("review-document", True),)
+        ),
         assemble=lambda: _run_v2_assemble(deps, resolved, strict, formats),
     )
     return adapter.run_all()
+
+
+def _run_v2_prep(
+    deps: Any,
+    resolved: Any,
+    strict: bool,
+    repo_root: Path,
+    formats: list[str] | None,
+) -> dict[str, Any]:
+    """Run the flat prep contract through injected v2 stage operations."""
+    renderer = resolve_renderer(deps.renderers, formats[0]) if formats else deps.resolve_renderer(resolved.config)
+    operations = deps.pipeline._stage_callables(
+        resolved.doc_id,
+        resolved.template,
+        resolved.config,
+        repo_root,
+        strict,
+        renderer,
+    )
+    summary = FlatPipelineV2Adapter(operations=operations).run("prep", strict=strict)
+    deps.pipeline.log_run(resolved.doc_id, resolved.config, repo_root, "pipeline-prep", summary)
+    return summary
 
 
 def _run_compatible_pipeline(
@@ -742,6 +766,20 @@ def pipeline(
     si hay fuentes nuevas. `--strict` bloquea ante huecos y hallazgos."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
+    if stage_set == "prep":
+        summary = _run_v2_prep(deps, resolved, strict, repo_root, formats)
+        if as_json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            lines = [f"# Pipeline `{stage_set}` (strict={strict})", ""]
+            for stage in summary["stages"]:
+                marker = "OK" if stage["ok"] else "FAIL"
+                lines.append(
+                    f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {stage['detail']}"
+                )
+            lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])
+            print("\n".join(lines))
+        raise typer.Exit(code=0 if summary["passed"] else 1)
     if stage_set == "all":
         summary = _run_v2_all(deps, resolved, strict, repo_root, formats)
         if as_json:

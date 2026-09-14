@@ -292,6 +292,17 @@ def test_flat_pipeline_all_fails_when_v2_execution_stage_fails(
 
     monkeypatch.setattr("docs.cli.commands.core_app.create_v2_service", lambda *args, **kwargs: _V2Service())
     monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", legacy_run)
+    monkeypatch.setattr(
+        "docs.application.pipeline.PipelineService._stage_callables",
+        lambda *args, **kwargs: {
+            name: (lambda name=name: (True, name))
+            for name in (
+                "doctor", "build-rules", "review-rules", "collect-sources",
+                "collect-code-evidence", "collect-issues", "build-ledger",
+                "build-sections", "gap-report", "pack-context", "review-document",
+            )
+        },
+    )
 
     result = runner.invoke(app, ["pipeline", "all", "--json"])
 
@@ -819,15 +830,24 @@ def test_flat_pipeline_ingest_reports_v2_construction_failure_when_ingest_depend
 
 
 @pytest.mark.parametrize("stage_set", ["prep"])
-def test_flat_pipeline_unsupported_stage_sets_stay_on_legacy_backend(workspace, monkeypatch, stage_set):
+def test_flat_pipeline_prep_uses_v2_operation_boundary(workspace, monkeypatch, stage_set):
     _new_doc()
     calls: list[str] = []
 
-    def legacy_run(self, doc_id, template, config, selected, repo_root, strict=False, renderer=None):
-        calls.append(selected)
-        return {"stage_set": selected, "strict": strict, "passed": True, "stages": []}
+    def operation(name):
+        def run():
+            calls.append(name)
+            return True, name
+        return run
 
-    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", legacy_run)
+    monkeypatch.setattr(
+        "docs.application.pipeline.PipelineService._stage_callables",
+        lambda *args, **kwargs: {name: operation(name) for name in (
+            "doctor", "build-rules", "review-rules", "collect-sources",
+            "collect-code-evidence", "collect-issues", "build-ledger",
+            "build-sections", "gap-report", "pack-context",
+        )},
+    )
     monkeypatch.setattr(
         "docs.cli.commands.core_app._source_pipeline_v2",
         lambda deps: (_ for _ in ()).throw(AssertionError("v2 backend used")),
@@ -837,24 +857,27 @@ def test_flat_pipeline_unsupported_stage_sets_stay_on_legacy_backend(workspace, 
 
     assert result.exit_code == 0
     assert json.loads(result.output)["stage_set"] == stage_set
-    assert calls == [stage_set]
+    assert calls[0] == "doctor"
 
 
 def test_flat_pipeline_all_uses_explicit_v2_adapter_without_implicit_ingest(workspace, monkeypatch):
     _new_doc()
     calls: list[str] = []
 
-    def legacy_run(self, doc_id, template, config, selected, repo_root, strict=False, renderer=None):
-        del self, doc_id, template, config, repo_root, strict, renderer
-        calls.append(selected)
-        return {
-            "stage_set": selected,
-            "strict": False,
-            "passed": True,
-            "stages": [{"stage": selected, "ok": True, "duration_s": 0.0, "detail": selected}],
-        }
+    def operation(name):
+        def run():
+            calls.append(name)
+            return True, name
+        return run
 
-    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", legacy_run)
+    monkeypatch.setattr(
+        "docs.application.pipeline.PipelineService._stage_callables",
+        lambda *args, **kwargs: {name: operation(name) for name in (
+            "doctor", "build-rules", "review-rules", "collect-sources",
+            "collect-code-evidence", "collect-issues", "build-ledger",
+            "build-sections", "gap-report", "pack-context", "review-document",
+        )},
+    )
     monkeypatch.setattr(
         "docs.cli.commands.core_app._run_v2_assemble",
         lambda deps, resolved, strict, formats: [{
@@ -870,8 +893,17 @@ def test_flat_pipeline_all_uses_explicit_v2_adapter_without_implicit_ingest(work
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["stage_set"] == "all"
-    assert [stage["stage"] for stage in payload["stages"]] == ["prep", "review-document", "assemble"]
-    assert calls == ["prep", "review-document"]
+    assert [stage["stage"] for stage in payload["stages"]] == [
+        "doctor", "build-rules", "review-rules", "collect-sources",
+        "collect-code-evidence", "collect-issues", "build-ledger",
+        "build-sections", "gap-report", "pack-context", "review-document", "assemble",
+    ]
+    assert calls[:10] == [
+        "doctor", "build-rules", "review-rules", "collect-sources",
+        "collect-code-evidence", "collect-issues", "build-ledger",
+        "build-sections", "gap-report", "pack-context",
+    ]
+    assert calls[10] == "review-document"
 
 
 def test_flat_pipeline_v2_failure_preserves_exit_code_and_summary_shape(workspace, monkeypatch):

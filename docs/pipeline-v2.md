@@ -138,9 +138,11 @@ is intentionally explicit and finite. `ingest` and `prepare` are routed through 
 native v2 source pipeline and its result is adapted back to the legacy summary
 shape (`stage_set`, `strict`, `passed`, and `stages`). `assemble` now routes
 through the native v2 build runtime and projects its execution report back to
-the legacy summary shape. `prep`, `all`, and unknown stage sets continue to use
-the legacy service until their output and publication semantics have equivalent
-v2 coverage. This policy is declared in
+the legacy summary shape. `prep` and `all` now execute through the native
+`FlatPipelineV2Adapter`, which reuses injected stage operations while
+owning ordering, fail-fast behavior, and the stable flat summary. Unknown stage
+sets remain on the legacy service until their output and publication semantics
+have equivalent v2 coverage. This policy is declared in
 `src/docs/application/flat_pipeline_compatibility.py`; it is not inferred from
 the public v2 catalog. Consequently, existing exit codes and JSON/human output
 contracts remain stable while migration proceeds incrementally.
