@@ -1,5 +1,5 @@
 from docs.application.pipeline_executor_v2 import PipelineExecutor
-from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
+from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
 
 
 def test_executes_in_definition_plan_and_reports_results_deterministically():
@@ -166,7 +166,7 @@ def test_stage_report_rejects_artifacts_outside_declared_outputs():
     report = PipelineExecutor(
         definition,
         {"render": lambda: StageResult("render", True, artifacts=(
-            __import__("docs.domain.pipeline_kernel", fromlist=["ArtifactRecord"]).ArtifactRecord(
+            ArtifactRecord(
                 "other", "other.bin", "abc"
             ),
         ))},
@@ -174,6 +174,81 @@ def test_stage_report_rejects_artifacts_outside_declared_outputs():
 
     assert report.results[0].ok is False
     assert report.results[0].errors == ("undeclared artifact produced: other",)
+
+
+def test_stage_report_rejects_a_required_artifact_record_with_the_wrong_identity():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered", required=True, media_type="text/plain"),),
+        stages=(StageSpec("render", produces=("rendered",)),),
+    )
+
+    report = PipelineExecutor(
+        definition,
+        {"render": lambda: StageResult("render", True, artifacts=(
+            ArtifactRecord(
+                "rendered", "report.txt", "0" * 64, media_type="application/json", size_bytes=1
+            ),
+        ))},
+    ).run()
+
+    assert report.results[0].ok is False
+    assert report.results[0].errors == (
+        "artifact rendered does not satisfy its contract: media_type must be text/plain",
+    )
+
+
+def test_stage_report_rejects_missing_media_metadata_for_explicit_media_contract():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered", required=True, media_type="text/plain"),),
+        stages=(StageSpec("render", produces=("rendered",)),),
+    )
+
+    report = PipelineExecutor(
+        definition,
+        {"render": lambda: StageResult("render", True, artifacts=(
+            ArtifactRecord("rendered", "report.txt", "0" * 64),
+        ))},
+    ).run()
+
+    assert report.results[0].ok is False
+    assert report.results[0].errors == (
+        "artifact rendered does not satisfy its contract: media_type is required",
+    )
+
+
+def test_stage_report_preserves_compact_records_for_implicit_media_contracts():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered"),),
+        stages=(StageSpec("render", produces=("rendered",)),),
+    )
+
+    report = PipelineExecutor(
+        definition,
+        {"render": lambda: StageResult("render", True, artifacts=(
+            ArtifactRecord("rendered", "report.txt", "abc"),
+        ))},
+    ).run()
+
+    assert report.results[0].ok is True
+
+
+def test_stage_report_rejects_short_digest_for_explicit_strict_contracts():
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered", require_full_sha256=True),),
+        stages=(StageSpec("render", produces=("rendered",)),),
+    )
+
+    report = PipelineExecutor(
+        definition,
+        {"render": lambda: StageResult("render", True, artifacts=(
+            ArtifactRecord("rendered", "report.txt", "abc"),
+        ))},
+    ).run()
+
+    assert report.results[0].ok is False
+    assert report.results[0].errors == (
+        "artifact rendered does not satisfy its contract: sha256 must be a SHA-256 digest",
+    )
 
 
 def test_failed_optional_stage_with_fail_fast_does_not_stop_required_unrelated_stage():

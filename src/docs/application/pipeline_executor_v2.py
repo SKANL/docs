@@ -123,7 +123,23 @@ class PipelineExecutor:
             reported = {artifact.contract for artifact in result.artifacts}
             undeclared = sorted(reported - declared)
             missing_required = sorted(required_artifacts.intersection(declared) - reported)
-            if result.ok and result.outcome == "succeeded" and (undeclared or missing_required):
+            contracts = {contract.name: contract for contract in self.definition.artifacts}
+            contract_errors: list[str] = []
+            for record in result.artifacts:
+                if record.contract not in declared:
+                    continue
+                contract = contracts.get(record.contract)
+                if contract is None:
+                    continue
+                try:
+                    contract.validate_record(record)
+                except ValueError as exc:
+                    contract_errors.append(
+                        f"artifact {record.contract} does not satisfy its contract: {exc}"
+                    )
+            if result.ok and result.outcome == "succeeded" and (
+                undeclared or missing_required or contract_errors
+            ):
                 result = StageResult(
                     stage_name,
                     False,
@@ -134,7 +150,8 @@ class PipelineExecutor:
                     + tuple(
                         f"required declared artifact missing: {artifact}"
                         for artifact in missing_required
-                    ),
+                    )
+                    + tuple(contract_errors),
                 )
             results.append(result)
             unavailable = not result.ok or (

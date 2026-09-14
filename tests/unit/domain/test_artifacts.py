@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from docs.domain.artifacts import (
     ArtifactRef,
     ArtifactState,
@@ -57,6 +59,25 @@ def test_artifact_verification_can_record_media_size_page_and_evidence():
     assert payload["artifact"]["media_type"] == "application/pdf"
     assert payload["artifact"]["size_bytes"] == 2048
     assert payload["findings"][0]["page"] == 3
+
+
+@pytest.mark.parametrize("media_type", ["", 123, [], {}])
+def test_artifact_ref_rejects_invalid_media_type_metadata(media_type):
+    with pytest.raises(ValueError, match="media_type"):
+        ArtifactRef("output/report.pdf", "b" * 64, media_type=media_type)
+
+
+@pytest.mark.parametrize("size_bytes", [1.5, "12", True, [], {}])
+def test_artifact_ref_rejects_non_integer_size_metadata(size_bytes):
+    with pytest.raises(ValueError, match="size_bytes"):
+        ArtifactRef("output/report.pdf", "b" * 64, size_bytes=size_bytes)
+
+
+def test_artifact_ref_preserves_legacy_records_without_metadata():
+    artifact = ArtifactRef("output/report.pdf", "b" * 64)
+
+    assert artifact.media_type is None
+    assert artifact.size_bytes is None
 
 
 def test_build_manifest_round_trips_rich_artifact_identity_fields():

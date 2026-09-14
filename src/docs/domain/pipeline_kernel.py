@@ -53,6 +53,7 @@ class ArtifactContract:
     expected_path: Path | None = None
     deterministic: bool = True
     reopen_check: str | None = None
+    require_full_sha256: bool = False
 
     def __post_init__(self) -> None:
         _check_identifier(self.name, "artifact")
@@ -68,6 +69,21 @@ class ArtifactContract:
 
     def to_json(self) -> str:
         return deterministic_json(self)
+
+    def validate_record(self, record: ArtifactRecord) -> None:
+        """Validate a produced record against this contract's identity rules."""
+        if record.contract != self.name:
+            raise ValueError(f"contract must be {self.name}")
+        if not isinstance(record.path, str):
+            raise ValueError("path must be a string")
+        if self.expected_path is not None and Path(record.path) != self.expected_path:
+            raise ValueError(f"path must be {self.expected_path.as_posix()}")
+        if self.media_type != "application/octet-stream" and not record.media_type:
+            raise ValueError("media_type is required")
+        if record.media_type is not None and record.media_type != self.media_type:
+            raise ValueError(f"media_type must be {self.media_type}")
+        if self.require_full_sha256 and not re.fullmatch(r"[0-9a-f]{64}", record.sha256):
+            raise ValueError("sha256 must be a SHA-256 digest")
 
 
 @dataclass(frozen=True)

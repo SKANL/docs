@@ -112,3 +112,11 @@ def test_artifact_contract_and_record_expose_reproducible_contract_metadata():
     assert payload["contract"]["source_inputs"] == ["sections/001.md"]
     assert record.artifact_id == "rendered"
     assert payload["record"]["producer_stage"] == "build-pdf"
+
+
+def test_artifact_contract_rejects_non_string_record_paths_with_actionable_error():
+    contract = ArtifactContract("rendered", expected_path=Path("output/rendered.pdf"))
+    record = ArtifactRecord("rendered", 123, "a" * 64)
+
+    with pytest.raises(ValueError, match=r"path.*string"):
+        contract.validate_record(record)

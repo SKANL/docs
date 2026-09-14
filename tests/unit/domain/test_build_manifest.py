@@ -78,3 +78,147 @@ def test_build_manifest_attestation_is_deterministic_and_requires_a_verifiable_r
     assert "timestamp" not in manifest.to_json()
     assert "timestamp" not in str(attestation)
     manifest.validate_for_publication()
+
+
+def test_build_manifest_rejects_artifact_records_with_invalid_hashes():
+    manifest = BuildManifest(
+        document_id="example",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"docx": "test"},
+        artifacts=(ArtifactRef("output.docx", "not-a-digest", ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-001",
+    )
+
+    with pytest.raises(ValueError, match=r"artifact.*SHA-256"):
+        manifest.validate_for_publication()
+
+
+def test_build_manifest_rejects_non_string_artifact_paths_during_publication():
+    manifest = BuildManifest(
+        document_id="example",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"docx": "test"},
+        artifacts=(ArtifactRef(123, "e" * 64, ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-001",
+    )
+
+    with pytest.raises(ValueError, match=r"artifact path.*string"):
+        manifest.validate_for_publication()
+
+
+@pytest.mark.parametrize("provenance_run", [None, "", 123, [], {}])
+def test_build_manifest_rejects_non_string_or_empty_provenance_run(provenance_run):
+    manifest = BuildManifest(
+        document_id="example",
+        source_hash="a" * 64,
+        template_hash="b" * 64,
+        config_hash="c" * 64,
+        context_hash="d" * 64,
+        renderer_versions={"docx": "test"},
+        artifacts=(ArtifactRef("output.docx", "e" * 64, ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run=provenance_run,
+    )
+
+    with pytest.raises(ValueError, match="provenance run"):
+        manifest.validate_for_publication()
+
+
+def test_build_manifest_rejects_malformed_hash_maps_without_attribute_errors():
+    with pytest.raises(ValueError, match="asset_hashes must be a mapping"):
+        BuildManifest.from_dict(
+            {"schema": "docs.build/v2", "document_id": "example", "asset_hashes": []}
+        )
+
+
+@pytest.mark.parametrize("asset_hash", [123, 1.5, None, [], {}])
+def test_build_manifest_rejects_non_string_asset_hashes_without_coercion(asset_hash):
+    with pytest.raises(ValueError, match="asset_hashes"):
+        BuildManifest.from_dict(
+            {
+                "schema": "docs.build/v2",
+                "document_id": "example",
+                "asset_hashes": {"hero.png": asset_hash},
+            }
+        )
+
+
+def test_build_manifest_preserves_valid_legacy_asset_hashes():
+    manifest = BuildManifest.from_dict(
+        {
+            "schema": "docs.build/v2",
+            "document_id": "example",
+            "asset_hashes": {"hero.png": "legacy-digest"},
+        }
+    )
+
+    assert manifest.asset_hashes == {"hero.png": "legacy-digest"}
+
+
+@pytest.mark.parametrize("renderer_version", [123, 1.5, None, [], {}])
+def test_build_manifest_rejects_non_string_renderer_versions_without_coercion(renderer_version):
+    with pytest.raises(ValueError, match="renderer_versions"):
+        BuildManifest.from_dict(
+            {
+                "schema": "docs.build/v2",
+                "document_id": "example",
+                "renderer_versions": {"docx": renderer_version},
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["document_id", "source_hash", "template_hash", "config_hash", "context_hash"],
+)
+@pytest.mark.parametrize("value", [None, 123, [], {}])
+def test_build_manifest_rejects_non_string_top_level_identity_fields(field, value):
+    with pytest.raises(ValueError, match=field):
+        BuildManifest.from_dict({"schema": "docs.build/v2", field: value})
+
+
+@pytest.mark.parametrize("entry", [None, [], {"path": "output.docx"}])
+def test_build_manifest_normalizes_malformed_artifact_entries(entry):
+    with pytest.raises(ValueError, match="artifact entry"):
+        BuildManifest.from_dict(
+            {"schema": "docs.build/v2", "artifacts": [entry]}
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("path", 123), ("path", None), ("sha256", 456), ("sha256", None), ("state", 789), ("state", None)],
+)
+def test_build_manifest_rejects_non_string_artifact_identity_fields(field, value):
+    entry = {"path": "output.docx", "sha256": "legacy-digest", "state": "ready"}
+    entry[field] = value
+
+    with pytest.raises(ValueError, match=field):
+        BuildManifest.from_dict(
+            {"schema": "docs.build/v2", "artifacts": [entry]}
+        )
+
+
+def test_build_manifest_rejects_unknown_artifact_state_with_actionable_error():
+    with pytest.raises(ValueError, match=r"state.*planned, generated"):
+        BuildManifest.from_dict(
+            {
+                "schema": "docs.build/v2",
+                "artifacts": [
+                    {"path": "output.docx", "sha256": "legacy-digest", "state": "complete"}
+                ],
+            }
+        )
+
+
+def test_build_manifest_constructor_normalizes_malformed_artifact_entries():
+    with pytest.raises(ValueError, match="artifact entry"):
+        BuildManifest(document_id="example", artifacts=[None])

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -44,8 +45,10 @@ class ArtifactRef:
     def __post_init__(self) -> None:
         if not self.path:
             raise ValueError("artifact path must not be empty")
-        if self.media_type == "":
-            raise ValueError("artifact media_type must not be empty")
+        if self.media_type is not None and (not isinstance(self.media_type, str) or not self.media_type):
+            raise ValueError("artifact media_type must be a non-empty string")
+        if self.size_bytes is not None and type(self.size_bytes) is not int:
+            raise ValueError("artifact size_bytes must be an integer")
         if self.size_bytes is not None and self.size_bytes < 0:
             raise ValueError("artifact size_bytes must not be negative")
 
@@ -60,6 +63,49 @@ class ArtifactRef:
         if self.size_bytes is not None:
             payload["size_bytes"] = self.size_bytes
         return payload
+
+
+def _parse_artifact_entry(entry: Any) -> ArtifactRef:
+    if not isinstance(entry, Mapping):
+        raise ValueError("invalid artifact entry: expected a mapping")
+
+    values: dict[str, str] = {}
+    for field_name in ("path", "sha256"):
+        if field_name not in entry:
+            raise ValueError(f"invalid artifact entry: artifact {field_name} is required")
+        value = entry[field_name]
+        if not isinstance(value, str):
+            raise ValueError(f"invalid artifact entry: artifact {field_name} must be a string")
+        values[field_name] = value
+
+    state = entry.get("state", "ready")
+    if not isinstance(state, str):
+        raise ValueError("invalid artifact entry: artifact state must be a string")
+    try:
+        artifact_state = ArtifactState(state)
+    except ValueError as exc:
+        allowed_states = ", ".join(item.value for item in ArtifactState)
+        raise ValueError(
+            f"invalid artifact entry: artifact state must be one of: {allowed_states}; got {state!r}"
+        ) from exc
+
+    try:
+        if "media_type" in entry and entry.get("media_type") is None:
+            raise ValueError("artifact media_type must be a non-empty string")
+        if "size_bytes" in entry and entry.get("size_bytes") is None:
+            raise ValueError("artifact size_bytes must be an integer")
+        size_bytes = entry.get("size_bytes")
+        return ArtifactRef(
+            values["path"],
+            values["sha256"],
+            artifact_state,
+            media_type=entry.get("media_type"),
+            size_bytes=size_bytes,
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(
+            "invalid artifact entry: expected valid media_type and size_bytes values"
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -129,14 +175,19 @@ class BuildManifest:
     provenance_run: str | None = None
 
     def __post_init__(self) -> None:
+        for field_name in (
+            "document_id",
+            "source_hash",
+            "template_hash",
+            "config_hash",
+            "context_hash",
+        ):
+            if not isinstance(getattr(self, field_name), str):
+                raise ValueError(f"{field_name} must be a string")
         normalized = tuple(
             artifact
             if isinstance(artifact, ArtifactRef)
-            else ArtifactRef(
-                str(artifact["path"]),
-                str(artifact["sha256"]),
-                ArtifactState(artifact.get("state", "ready")),
-            )
+            else _parse_artifact_entry(artifact)
             for artifact in self.artifacts
         )
         object.__setattr__(self, "artifacts", normalized)
@@ -185,43 +236,52 @@ class BuildManifest:
         if not self.artifacts:
             raise ValueError("at least one artifact is required")
         for artifact in self.artifacts:
+            if not isinstance(artifact.path, str):
+                raise ValueError("artifact path must be a string")
             if artifact.state not in {ArtifactState.READY, ArtifactState.VERIFIED, ArtifactState.PUBLISHED} or not re.fullmatch(r"[0-9a-f]{64}", artifact.sha256):
                 raise ValueError("artifacts must have verified/ready/published SHA-256 identities")
         if self.verification.get("passed") is not True:
             raise ValueError("publication requires passed verification")
+        if any(not isinstance(digest, str) for digest in self.asset_hashes.values()):
+            raise ValueError("asset_hashes must contain string values")
         if any(not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in self.asset_hashes.values()):
             raise ValueError("asset_hashes must contain SHA-256 digests")
         if not self.renderer_versions:
             raise ValueError("renderer_versions must not be empty")
-        if not self.provenance_run:
+        if not isinstance(self.provenance_run, str) or not self.provenance_run:
             raise ValueError("publication requires a provenance run")
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> BuildManifest:
+        if not isinstance(payload, Mapping):
+            raise ValueError("build manifest must be a mapping")
         if payload.get("schema") != "docs.build/v2":
             raise ValueError("unsupported build manifest schema")
+        asset_hashes = payload.get("asset_hashes", {})
+        renderer_versions = payload.get("renderer_versions", {})
+        if not isinstance(asset_hashes, Mapping):
+            raise ValueError("asset_hashes must be a mapping")
+        if any(not isinstance(value, str) for value in asset_hashes.values()):
+            raise ValueError("asset_hashes must contain string values")
+        if not isinstance(renderer_versions, Mapping):
+            raise ValueError("renderer_versions must be a mapping")
+        if any(not isinstance(value, str) for value in renderer_versions.values()):
+            raise ValueError("renderer_versions must contain string values")
+        artifacts = payload.get("artifacts", [])
+        if not isinstance(artifacts, list):
+            raise ValueError("artifacts must be a list")
+        verification = payload.get("verification", {})
+        if not isinstance(verification, Mapping):
+            raise ValueError("verification must be a mapping")
         return cls(
-            document_id=str(payload.get("document_id", "")),
-            source_hash=str(payload.get("source_hash", "")),
-            template_hash=str(payload.get("template_hash", "")),
-            config_hash=str(payload.get("config_hash", "")),
-            context_hash=str(payload.get("context_hash", "")),
-            asset_hashes={str(key): str(value) for key, value in payload.get("asset_hashes", {}).items()},
-            renderer_versions={str(key): str(value) for key, value in payload.get("renderer_versions", {}).items()},
-            artifacts=tuple(
-                ArtifactRef(
-                    str(item["path"]),
-                    str(item["sha256"]),
-                    ArtifactState(item.get("state", "ready")),
-                    media_type=item.get("media_type"),
-                    size_bytes=(
-                        int(item["size_bytes"])
-                        if item.get("size_bytes") is not None
-                        else None
-                    ),
-                )
-                for item in payload.get("artifacts", [])
-            ),
-            verification=dict(payload.get("verification", {})),
+            document_id=payload.get("document_id", ""),
+            source_hash=payload.get("source_hash", ""),
+            template_hash=payload.get("template_hash", ""),
+            config_hash=payload.get("config_hash", ""),
+            context_hash=payload.get("context_hash", ""),
+            asset_hashes={str(key): value for key, value in asset_hashes.items()},
+            renderer_versions={str(key): value for key, value in renderer_versions.items()},
+            artifacts=tuple(_parse_artifact_entry(item) for item in artifacts),
+            verification=dict(verification),
             provenance_run=payload.get("provenance_run"),
         )
