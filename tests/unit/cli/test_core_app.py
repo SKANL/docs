@@ -420,6 +420,39 @@ def test_flat_pipeline_rejects_contradictory_skipped_success_stage(workspace, mo
     assert detail["error"] == {"error": "v2 source pipeline returned contradictory skipped success values"}
 
 
+def test_flat_pipeline_rejects_non_boolean_skipped_stage_value(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def ingest(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": True,
+                "stages": [
+                    {
+                        "name": "ingest-sources",
+                        "succeeded": True,
+                        "skipped": "yes",
+                        "result": {},
+                    }
+                ],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "ingest", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    detail = json.loads(payload["stages"][0]["detail"])
+    assert detail["errors"][0]["code"] == "pipeline.malformed_v2_report"
+    assert "v2 ingest" in detail["errors"][0]["message"]
+    assert "skipped" in detail["errors"][0]["message"]
+
+
 def test_flat_pipeline_prepare_rejects_report_with_no_stages(workspace, monkeypatch):
     _new_doc()
 

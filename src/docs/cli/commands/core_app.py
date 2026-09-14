@@ -326,7 +326,25 @@ def _run_compatible_pipeline(
             ),
         }]
     else:
-        if not all(
+        malformed_skipped = any(
+            isinstance(item, Mapping)
+            and "skipped" in item
+            and not isinstance(item["skipped"], bool)
+            for item in stages
+        )
+        if malformed_skipped:
+            report["succeeded"] = False
+            stage = {
+                "name": fallback_stage_name,
+                "succeeded": False,
+                "result": {"error": "v2 source pipeline returned malformed skipped value"},
+            }
+            report["error"] = stage["result"]
+            report["errors"] = [{
+                "code": "pipeline.malformed_v2_report",
+                "message": f"The {report_label} report stage skipped value must be boolean when present.",
+            }]
+        elif not all(
             isinstance(item, Mapping)
             and isinstance(item.get("name"), str)
             and bool(item["name"])
