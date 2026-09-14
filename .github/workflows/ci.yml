@@ -117,7 +117,7 @@ jobs:
       - name: Install the optional toolchains
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             pandoc libreoffice-writer default-jre-headless
+          sudo apt-get install -y --no-install-recommends             pandoc libreoffice-writer default-jre-headless poppler-utils
           npm install -g @mermaid-js/mermaid-cli
           curl -sSL -o /tmp/resvg.tar.gz             https://github.com/linebender/resvg/releases/download/v0.45.1/resvg-linux-x86_64.tar.gz
           sudo tar -xzf /tmp/resvg.tar.gz -C /usr/local/bin resvg
