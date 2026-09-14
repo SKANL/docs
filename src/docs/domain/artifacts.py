@@ -239,7 +239,18 @@ class BuildManifest:
 
     def to_dict_without_schema(self) -> dict[str, Any]:
         return {
-            **self._identity_dict_without_schema(),
+            "document_id": self.document_id,
+            "source_hash": self.source_hash,
+            "template_hash": self.template_hash,
+            "config_hash": self.config_hash,
+            "context_hash": self.context_hash,
+            "asset_hashes": dict(sorted(self.asset_hashes.items())),
+            "renderer_versions": dict(sorted(self.renderer_versions.items())),
+            "artifacts": [artifact.to_dict() for artifact in sorted(
+                self.artifacts,
+                key=lambda item: (item.path, item.media_type or "", item.sha256),
+            )],
+            "verification": self.verification,
             "provenance_run": self.provenance_run,
         }
 
