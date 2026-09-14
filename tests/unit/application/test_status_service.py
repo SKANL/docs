@@ -401,3 +401,20 @@ def test_v2_status_reader_blocks_tampered_provenance_artifact(tmp_path: Path) ->
     assert snapshot.succeeded is False
     assert any("artifact hash mismatch" in finding for finding in snapshot.publication_blockers)
     assert any("provenance run failed integrity" in finding for finding in snapshot.publication_blockers)
+
+
+def test_v2_status_manifest_selection_ignores_mtime(tmp_path: Path) -> None:
+    output = tmp_path / "output" / "v2"
+    output.mkdir(parents=True)
+    first = BuildManifest(document_id="first")
+    second = BuildManifest(document_id="second")
+    first_path = output / "first.docx.manifest.json"
+    second_path = output / "second.docx.manifest.json"
+    first_path.write_text(first.to_json(), encoding="utf-8")
+    second_path.write_text(second.to_json(), encoding="utf-8")
+    expected = max((first.identity(), first_path.as_posix()), (second.identity(), second_path.as_posix()))[1]
+
+    first_path.touch()
+    second_path.touch()
+
+    assert V2StatusReader._latest_manifest_path(tmp_path) == Path(expected)

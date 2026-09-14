@@ -44,12 +44,19 @@ class V2StatusReader:
 
     @staticmethod
     def _latest_manifest_path(document_root: Path) -> Path | None:
-        manifests = sorted(
-            (document_root / "output" / "v2").glob("*.manifest.json"),
-            key=lambda path: path.stat().st_mtime_ns,
-            reverse=True,
-        )
-        return manifests[0] if manifests else None
+        candidates: list[tuple[str, str, Path]] = []
+        fallback: list[Path] = []
+        for path in (document_root / "output" / "v2").glob("*.manifest.json"):
+            fallback.append(path)
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                manifest = BuildManifest.from_dict(payload)
+            except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+                continue
+            candidates.append((manifest.identity(), path.as_posix(), path))
+        if candidates:
+            return max(candidates, key=lambda item: (item[0], item[1]))[2]
+        return max(fallback, key=lambda path: path.as_posix()) if fallback else None
 
     @staticmethod
     def _status_from_payload(
