@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,6 +54,48 @@ def _stage(name: str, calls: list[str], ok: bool = True) -> Callable[[], tuple[b
         return ok, name
 
     return run
+
+
+def test_architecture_stage_order_matches_runtime_authority() -> None:
+    architecture = Path(__file__).parents[2] / "docs" / "architecture-v2.md"
+    section = architecture.read_text(encoding="utf-8").split(
+        "The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's",
+    )[1]
+    documented = tuple(
+        line.strip()
+        for line in re.search(r"```text\n(?P<stages>.*?)\n```", section, re.DOTALL).group("stages").splitlines()
+        if line.strip()
+    )
+
+    assert documented == FULL_STAGE_IDS
+
+
+def test_architecture_documents_registry_plan_and_published_stage_sequence(tmp_path: Path) -> None:
+    architecture = Path(__file__).parents[2] / "docs" / "architecture-v2.md"
+    section = architecture.read_text(encoding="utf-8").split(
+        "The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's",
+    )[1]
+    documented_inventory, documented_plan = re.findall(
+        r"```text\n(?P<stages>.*?)\n```", section, re.DOTALL
+    )
+    documented = tuple(line.strip() for line in documented_inventory.splitlines() if line.strip())
+    documented_runtime_plan = tuple(
+        line.strip() for line in documented_plan.splitlines() if line.strip()
+    )
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run("architecture-order")
+
+    assert documented == FULL_STAGE_IDS
+    runtime_plan = service.registry.resolve("document").definition.plan()
+    assert documented_runtime_plan == runtime_plan
+    assert tuple(result.stage for result in report.execution.results) == documented_runtime_plan
+    assert tuple(result.stage for result in report.execution.results if result.outcome == "unsupported") == (
+        "compose-cover",
+        "generate-visuals",
+        "package-release",
+    )
 
 
 def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> SimpleNamespace:

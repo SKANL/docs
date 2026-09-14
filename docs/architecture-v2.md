@@ -30,7 +30,8 @@ V2 does not silently fall back to the legacy pipeline and never writes legacy `o
 
 ## Pipeline kernel
 
-The exported `FULL_STAGE_IDS` plan has 23 serial stages:
+The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's
+complete stage inventory, not the execution order:
 
 ```text
 resolve-config
@@ -54,9 +55,42 @@ accessibility-review
 visual-review
 reproducibility-check
 record-provenance
-publish-draft
 package-release
+publish-draft
 ```
+
+The registered `PipelineDefinition.plan()` is the runtime execution order:
+
+```text
+resolve-config
+resolve-template
+resolve-context
+resolve-assets
+validate-contracts
+ingest-sources
+normalize-sources
+compile-structure
+build-docx
+build-html
+build-pdf
+compose-cover
+generate-visuals
+structural-audit
+editorial-review
+evidence-review
+consistency-review
+accessibility-review
+visual-review
+reproducibility-check
+record-provenance
+package-release
+publish-draft
+```
+
+The published execution report preserves that plan sequence. Unsupported
+optional stages remain visible in the report: `compose-cover`,
+`generate-visuals`, and `package-release` are reported as `unsupported` when
+their adapters are unavailable.
 
 The kernel validates stage names, artifact contracts, dependency availability, duplicate producers, and cycles before execution. Each stage produces a named `<stage>-complete` contract in the current bridge. Execution is fail-fast for a failed required stage. Optional stages can report visible `skipped` or `unsupported` outcomes; policy decides whether those warnings are acceptable.
 

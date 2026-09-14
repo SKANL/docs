@@ -5,17 +5,28 @@ import json
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from xml.etree import ElementTree as ET
 
+from PIL import Image
 from typer.testing import CliRunner
 
+from docs.application.asset import AssetService
 from docs.application.documents import DocumentService
+from docs.application.docx_assembly import DocxRendererAdapter
+from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.pipeline_service_v2 import FULL_STAGE_IDS
 from docs.cli.main import app
 from docs.domain.models.template import Template
 from docs.domain.workspace import Workspace
+from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
+from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
+from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
+from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
 
 
 class _JourneyIngest:
@@ -70,6 +81,15 @@ class _JourneyReview:
         from docs.domain.review import ReviewResult
 
         return ReviewResult()
+
+
+class _JourneySvgRasterizer:
+    """Existing internal rasterizer seam, pinned to a deterministic PNG for this journey."""
+
+    def rasterize(self, svg_path: Path, png_path: Path) -> None:
+        del svg_path
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (64, 32), color=(10, 20, 30)).save(png_path, format="PNG")
 
 
 def _journey_deps(tmp_path: Path):
@@ -298,3 +318,138 @@ def test_v2_stage_traceability_declares_every_runtime_stage() -> None:
     declared = {entry["stage"] for entry in traceability["pipeline_stages"]}
     assert declared == set(FULL_STAGE_IDS)
     assert traceability["journey"]["status"] in {"covered", "closest-real-journey"}
+
+
+def test_v2_journey_executes_generated_cover_and_visual_spec_fixture(monkeypatch, tmp_path: Path) -> None:
+    fixture = json.loads(
+        (Path(__file__).parents[1] / "fixtures" / "v2" / "generated-cover-visual-journey.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    deps = _journey_deps(tmp_path)
+    tool_resolver = SystemToolResolverAdapter()
+    real_renderer = DocxRendererAdapter(
+        PythonDocxAssemblyAdapter(),
+        AssetService(FilesystemAssetRepository(), deps.workspace),
+        tool_resolver,
+    )
+    deps.renderers = {"docx": real_renderer}
+    deps.resolve_renderer = lambda config: real_renderer
+    deps.generate_visuals_service = GenerateVisualsService(
+        {"chart": ChartSvgRenderer()},
+        _JourneySvgRasterizer(),
+        image_metadata=PythonDocxImageMetadataAdapter(),
+        writer=FilesystemIngestArtifactWriter(),
+    )
+    original_resolve_context = deps.resolve_context
+
+    def resolve_context(doc_id: str = ""):
+        resolved = original_resolve_context(doc_id)
+        resolved.config.update(fixture["document"])
+        resolved.config["title"] = fixture["title"]
+        return resolved
+
+    deps.resolve_context = resolve_context
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    created = invoke(runner, "create", "generated", "--template", "journey", "--title", fixture["title"])
+    root = deps.workspace.doc_root("generated")
+    document = json.loads((root / "document.json").read_text(encoding="utf-8"))
+    document.update(fixture["document"])
+    (root / "document.json").write_text(json.dumps(document), encoding="utf-8")
+    (root / "inbox" / "source.md").write_text(fixture["source_markdown"], encoding="utf-8")
+    (root / "sections" / "visual-specs.json").write_text(
+        json.dumps(fixture["visual_specs"]), encoding="utf-8"
+    )
+
+    invoke(runner, "ingest")
+    invoke(runner, "prepare")
+    ingested_section = root / "sections" / "ingested" / "brief-md-journey.md"
+    (root / "sections" / "001-brief-md-journey.md").write_bytes(ingested_section.read_bytes())
+    authored_markdown = (root / "sections" / "001-brief-md-journey.md").read_text(encoding="utf-8")
+    assert fixture["source_markdown"].splitlines() == [
+        "# Journey body",
+        "",
+        "Journey body with a generated visual.",
+        "",
+        "[[figure:journey-chart]] Revenue evidence.",
+    ]
+    authored_lines = authored_markdown.splitlines()
+    assert "# Journey body" in authored_lines
+    assert "Journey body with a generated visual." in authored_lines
+    assert "[[figure:journey-chart]] Revenue evidence." in authored_lines
+    assert r"\n" not in authored_markdown
+    first = invoke(runner, "build")
+    artifact = root / "output" / "v2" / "generated.docx"
+
+    assert created["document_id"] == "generated"
+    assert artifact.is_file()
+    figure_files = sorted((root / "assets" / "figures").glob("*.png"))
+    assert figure_files
+    catalog = json.loads((root / "sections" / "figure-catalog.json").read_text(encoding="utf-8"))
+    bindings = json.loads((root / "sections" / "figure-bindings.json").read_text(encoding="utf-8"))
+    assert catalog["figures"]
+    bound_id = bindings["bindings"][fixture["visual_specs"][0]["label"]]
+    assert bound_id.startswith("fig-")
+    bound_catalog_row = next(row for row in catalog["figures"] if row["id"] == bound_id)
+    bound_media_name = Path(bound_catalog_row["origin_relative_path"]).name
+
+    stage_results = first["report"]["execution"]["results"]
+    cover_stage = next(result for result in stage_results if result["stage"] == "compose-cover")
+    visuals_stage = next(result for result in stage_results if result["stage"] == "generate-visuals")
+    assert cover_stage["ok"] is True
+    assert cover_stage["outcome"] == "succeeded"
+    assert cover_stage["errors"] == []
+    assert visuals_stage["ok"] is True
+    assert visuals_stage["outcome"] == "succeeded"
+    assert visuals_stage["errors"] == []
+
+    from docx import Document
+
+    paragraphs = [paragraph.text for paragraph in Document(artifact).paragraphs]
+    document_text = "\n".join(paragraphs)
+    assert "Generated Journey Cover" in document_text
+    assert "Journey body" in document_text
+    assert "generated visual." in document_text
+    assert "Figura 1. Revenue evidence." in document_text
+
+    # The v2 registry deliberately keeps generation after the first build;
+    # the next build consumes the generated catalog/binding artifacts.
+    second = invoke(runner, "build")
+    assert second["report"]["succeeded"] is True
+    second_bytes = artifact.read_bytes()
+    second_sha = hashlib.sha256(second_bytes).hexdigest()
+    reopened = Document(artifact)
+    assert any("Generated Journey Cover" in paragraph.text for paragraph in reopened.paragraphs)
+    with zipfile.ZipFile(artifact) as archive:
+        bound_media_bytes = (root / "assets" / "figures" / bound_media_name).read_bytes()
+        rels = ET.fromstring(archive.read("word/_rels/document.xml.rels"))
+        image_relationships = {
+            relationship.attrib["Id"]: relationship.attrib["Target"]
+            for relationship in rels
+            if relationship.attrib.get("Type", "").endswith("/image")
+        }
+        media_targets = {
+            f"word/{target}": relationship_id
+            for relationship_id, target in image_relationships.items()
+            if target.startswith("media/")
+        }
+        assert media_targets
+        matching_media = {
+            media_name: relationship_id
+            for media_name, relationship_id in media_targets.items()
+            if archive.read(media_name) == bound_media_bytes
+        }
+        assert matching_media
+        document_xml = ET.fromstring(archive.read("word/document.xml"))
+        embed_ids = {
+            blip.attrib["{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"]
+            for blip in document_xml.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}blip")
+        }
+        assert set(matching_media.values()).issubset(embed_ids)
+
+    third = invoke(runner, "build")
+    assert third["report"]["succeeded"] is True
+    assert artifact.read_bytes() == second_bytes
+    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == second_sha
