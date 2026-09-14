@@ -14,10 +14,17 @@ class FlatPipelineRoute:
     stage_set: str
     backend: str
     operation: str
+    expected_stages: tuple[str, ...]
 
 
 FLAT_PIPELINE_ROUTES: tuple[FlatPipelineRoute, ...] = (
-    FlatPipelineRoute("ingest", "v2-source", "ingest"),
+    FlatPipelineRoute("ingest", "v2-source", "ingest", ("ingest-sources",)),
+    FlatPipelineRoute(
+        "prepare",
+        "v2-source",
+        "prepare",
+        ("ingest-sources", "normalize-sources", "compile-structure"),
+    ),
 )
 
 

@@ -163,8 +163,9 @@ def test_pipeline_json_output_is_a_list_when_multiple_formats_requested(workspac
     assert len(payload) == 2
 
 
-def test_flat_pipeline_policy_routes_only_ingest_to_v2():
+def test_flat_pipeline_policy_routes_ingest_and_prepare_to_v2_but_not_legacy_prep():
     assert route_for("ingest") is not None
+    assert route_for("prepare") is not None
     assert route_for("prep") is None
     assert route_for("assemble") is None
     assert route_for("all") is None
@@ -180,6 +181,7 @@ def test_flat_pipeline_ingest_preserves_legacy_summary_shape_and_uses_v2(workspa
             calls.append((document_id, str(document_root)))
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -202,6 +204,336 @@ def test_flat_pipeline_ingest_preserves_legacy_summary_shape_and_uses_v2(workspa
     assert payload["stages"][0]["ok"] is True
     assert {"stage", "ok", "duration_s", "detail"} == set(payload["stages"][0])
     assert calls == [("doc1", str(Deps().workspace.doc_root("doc1")))]
+
+
+def test_flat_pipeline_prepare_projects_all_v2_stages_and_preserves_report_detail(workspace, monkeypatch):
+    _new_doc()
+    source_report = {
+        "schema": "docs.sources/v2",
+        "document_id": "doc1",
+        "succeeded": True,
+        "stages": [
+            {"name": "ingest-sources", "succeeded": True, "result": {"processed": 1}},
+            {"name": "normalize-sources", "succeeded": True, "result": {"count": 1}},
+            {"name": "compile-structure", "succeeded": True, "result": {"parts": 2}},
+        ],
+        "artifacts": ["sections/v2-structure.json"],
+        "warnings": [{"code": "source.advisory", "message": "kept"}],
+        "errors": [{"code": "source.detail", "message": "non-blocking detail"}],
+    }
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return source_report
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["stage_set"] == "prepare"
+    assert payload["passed"] is True
+    assert [stage["stage"] for stage in payload["stages"]] == [
+        "ingest-sources", "normalize-sources", "compile-structure"
+    ]
+    assert all(stage["ok"] is True for stage in payload["stages"])
+    details = [json.loads(stage["detail"]) for stage in payload["stages"]]
+    assert all(detail["stages"] == source_report["stages"] for detail in details)
+    assert all(detail["artifacts"] == source_report["artifacts"] for detail in details)
+    assert all(detail["warnings"] == source_report["warnings"] for detail in details)
+    assert all(detail["errors"] == source_report["errors"] for detail in details)
+    assert payload["warnings"] == source_report["warnings"]
+    assert payload["errors"] == source_report["errors"]
+
+
+def test_flat_pipeline_prepare_strict_is_explicitly_advisory(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": True,
+                "stages": [
+                    {"name": name, "succeeded": True, "result": {}}
+                    for name in ("ingest-sources", "normalize-sources", "compile-structure")
+                ],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare", "--strict", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["strict"] is True
+    assert payload["strict_policy"]["mode"] == "advisory"
+    assert payload["warnings"][0]["code"] == "pipeline.strict_advisory"
+    assert "prepare" in payload["warnings"][0]["message"]
+    assert "ingest" not in payload["warnings"][0]["message"]
+
+
+def test_flat_pipeline_prepare_preserves_downstream_skips_and_returns_failure(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": False,
+                "stages": [
+                    {"name": "ingest-sources", "succeeded": False, "result": {"status": "failed"}},
+                    {"name": "normalize-sources", "succeeded": False, "skipped": True,
+                     "result": {"status": "skipped", "depends_on": "ingest-sources"}},
+                    {"name": "compile-structure", "succeeded": False, "skipped": True,
+                     "result": {"status": "skipped", "depends_on": "normalize-sources"}},
+                ],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    assert [stage["ok"] for stage in payload["stages"]] == [False, False, False]
+    detail = json.loads(payload["stages"][2]["detail"])
+    assert detail["stages"][2]["skipped"] is True
+
+
+def test_flat_pipeline_prepare_projects_skips_as_skip_records_in_json_and_human_output(
+    workspace, monkeypatch
+):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": False,
+                "stages": [
+                    {"name": "ingest-sources", "succeeded": True, "result": {}},
+                    {
+                        "name": "normalize-sources",
+                        "succeeded": False,
+                        "skipped": True,
+                        "result": {"status": "skipped", "depends_on": "ingest-sources"},
+                    },
+                    {
+                        "name": "compile-structure",
+                        "succeeded": False,
+                        "skipped": True,
+                        "result": {"status": "skipped", "depends_on": "normalize-sources"},
+                    },
+                ],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    json_result = runner.invoke(app, ["pipeline", "prepare", "--json"])
+    assert json_result.exit_code == 1
+    payload = json.loads(json_result.output)
+    assert payload["passed"] is False
+    assert payload["stages"][0]["ok"] is True
+    assert payload["stages"][1]["ok"] is False
+    assert payload["stages"][1]["skipped"] is True
+    assert payload["stages"][2]["ok"] is False
+    assert payload["stages"][2]["skipped"] is True
+
+    human_result = runner.invoke(app, ["pipeline", "prepare"])
+    assert human_result.exit_code == 1
+    assert "- SKIP `normalize-sources`" in human_result.output
+    assert "- SKIP `compile-structure`" in human_result.output
+    assert "- FAIL `normalize-sources`" not in human_result.output
+
+
+def test_flat_pipeline_prepare_strict_policy_errors_use_prepare_route_wording(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": True,
+                "stages": [
+                    {"name": name, "succeeded": True, "result": {}}
+                    for name in ("ingest-sources", "normalize-sources", "compile-structure")
+                ],
+                "artifacts": [],
+                "strict_policy": "malformed",
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare", "--strict", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    detail = json.loads(payload["stages"][0]["detail"])
+    assert "v2 prepare strict_policy" in detail["errors"][0]["message"]
+    assert "v2 ingest strict_policy" not in detail["errors"][0]["message"]
+
+
+def test_flat_pipeline_rejects_contradictory_skipped_success_stage(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def ingest(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": True,
+                "stages": [
+                    {
+                        "name": "ingest-sources",
+                        "succeeded": True,
+                        "skipped": True,
+                        "result": {"status": "skipped"},
+                    }
+                ],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "ingest", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    detail = json.loads(payload["stages"][0]["detail"])
+    assert detail["errors"][0]["code"] == "pipeline.malformed_v2_report"
+    assert detail["error"] == {"error": "v2 source pipeline returned contradictory skipped success values"}
+
+
+def test_flat_pipeline_prepare_rejects_report_with_no_stages(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {"schema": "docs.sources/v2", "document_id": "doc1", "succeeded": True, "stages": [], "artifacts": []}
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    assert payload["stages"][0]["stage"] == "prepare"
+    assert json.loads(payload["stages"][0]["detail"])["errors"][0]["code"] == "pipeline.empty_v2_report"
+
+
+def test_flat_pipeline_rejects_v2_report_with_missing_document_id(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def ingest(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "succeeded": True,
+                "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "ingest", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    detail = json.loads(payload["stages"][0]["detail"])
+    assert detail["errors"][0]["code"] == "pipeline.malformed_v2_report"
+    assert "document_id" in detail["errors"][0]["message"]
+
+
+def test_flat_pipeline_rejects_v2_report_with_wrong_document_id(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def ingest(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "other-doc",
+                "succeeded": True,
+                "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "ingest", "--json"])
+
+    assert result.exit_code == 1
+    detail = json.loads(json.loads(result.output)["stages"][0]["detail"])
+    assert "must match resolved document" in detail["errors"][0]["message"]
+
+
+def test_flat_pipeline_prepare_failure_report_keeps_route_specific_dependency_stages(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert [stage["stage"] for stage in payload["stages"]] == [
+        "ingest-sources", "normalize-sources", "compile-structure"
+    ]
+    detail = json.loads(payload["stages"][1]["detail"])
+    assert detail["stages"][1]["result"]["status"] == "skipped"
+
+
+def test_flat_pipeline_human_output_lists_all_v2_stages(workspace, monkeypatch):
+    _new_doc()
+
+    class _SourcePipeline:
+        def prepare(self, document_id, document_root, config):
+            del document_id, document_root, config
+            return {
+                "schema": "docs.sources/v2",
+                "document_id": "doc1",
+                "succeeded": False,
+                "stages": [
+                    {"name": "ingest-sources", "succeeded": True, "result": {}},
+                    {"name": "normalize-sources", "succeeded": False, "result": {"error": "bad"}},
+                    {"name": "compile-structure", "succeeded": False, "skipped": True, "result": {"status": "skipped"}},
+                ],
+                "artifacts": [],
+            }
+
+    monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
+
+    result = runner.invoke(app, ["pipeline", "prepare"])
+
+    assert result.exit_code == 1
+    assert "`ingest-sources`" in result.output
+    assert "`normalize-sources`" in result.output
+    assert "`compile-structure`" in result.output
 
 
 def test_flat_pipeline_ingest_reports_v2_construction_failure_when_ingest_dependency_is_missing(
@@ -267,6 +599,7 @@ def test_flat_pipeline_v2_failure_preserves_exit_code_and_summary_shape(workspac
         def ingest(self, document_id, document_root, config):
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": False,
                 "stages": [{"name": "ingest-sources", "succeeded": False, "result": {}}],
                 "artifacts": [],
@@ -292,6 +625,7 @@ def test_flat_pipeline_v2_strict_is_forwarded_when_supported(workspace, monkeypa
             strict_calls.append(strict)
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -315,6 +649,7 @@ def test_flat_pipeline_v2_doc_root_failure_is_structured(workspace, monkeypatch)
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -342,6 +677,7 @@ def test_flat_pipeline_v2_does_not_keyword_call_positional_only_strict(workspace
             del document_id, document_root, config, strict
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -374,6 +710,7 @@ def test_flat_pipeline_v2_inspects_selected_ingest_callable_not_inner_adapter(
             strict_calls.append(strict)
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -412,6 +749,7 @@ def test_flat_pipeline_v2_strict_is_explicitly_advisory_when_unsupported(workspa
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -450,6 +788,7 @@ def test_flat_pipeline_v2_checks_strict_support_on_underlying_ingest_adapter(
             del document_id, document_root, config, strict
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -482,6 +821,7 @@ def test_flat_pipeline_v2_preserves_explicit_strict_policy_from_adapter(
             del document_id, document_root, config, strict
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -511,6 +851,7 @@ def test_flat_pipeline_v2_rejects_requested_policy_mismatch_without_masking_evid
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -554,6 +895,7 @@ def test_flat_pipeline_v2_rejects_malformed_or_contradictory_strict_policy(
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -579,6 +921,7 @@ def test_flat_pipeline_v2_signature_inspection_type_error_is_safe(workspace, mon
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -648,7 +991,7 @@ def test_flat_pipeline_v2_operation_lookup_failure_is_structured_failure(workspa
         {"succeeded": True, "stages": [{"name": "ingest-sources", "succeeded": True}], "artifacts": []},
         {"schema": "docs.sources/v1", "succeeded": True, "stages": [{"name": "ingest-sources", "succeeded": True}], "artifacts": []},
         {"schema": "docs.sources/v2", "stages": [{"name": "ingest-sources", "succeeded": True}], "artifacts": []},
-        {"schema": "docs.sources/v2", "succeeded": True, "stages": [{"name": "ingest-sources", "succeeded": True}]},
+        {"schema": "docs.sources/v2", "document_id": "doc1", "succeeded": True, "stages": [{"name": "ingest-sources", "succeeded": True}]},
     ],
 )
 def test_flat_pipeline_v2_rejects_incomplete_report_shape(workspace, monkeypatch, report):
@@ -676,7 +1019,7 @@ def test_flat_pipeline_v2_empty_report_is_a_structured_failure(workspace, monkey
     class _SourcePipeline:
         def ingest(self, document_id, document_root, config):
             del document_id, document_root, config
-            return {"schema": "docs.sources/v2", "succeeded": True, "stages": [], "artifacts": []}
+            return {"schema": "docs.sources/v2", "document_id": "doc1", "succeeded": True, "stages": [], "artifacts": []}
 
     monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
 
@@ -702,6 +1045,7 @@ def test_flat_pipeline_v2_forwards_strict_when_ingest_supports_it(workspace, mon
             seen.append(strict)
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -723,6 +1067,7 @@ def test_flat_pipeline_v2_reports_advisory_when_ingest_lacks_strict(workspace, m
         def ingest(self, document_id, document_root, config):
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -746,6 +1091,7 @@ def test_flat_pipeline_v2_preserves_existing_warnings_when_adding_strict_advisor
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -772,6 +1118,7 @@ def test_flat_pipeline_v2_preserves_upstream_strict_policy_warning(workspace, mo
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -804,6 +1151,7 @@ def test_flat_pipeline_v2_malformed_first_stage_is_structured_failure(workspace,
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": "yes", "result": {}}],
                 "artifacts": [],
@@ -835,6 +1183,7 @@ def test_flat_pipeline_v2_malformed_top_level_success_is_structured_failure(work
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": "yes",
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -860,6 +1209,7 @@ def test_flat_pipeline_v2_rejects_non_list_artifacts(workspace, monkeypatch):
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": True}],
                 "artifacts": {},
@@ -883,6 +1233,7 @@ def test_flat_pipeline_v2_rejects_non_list_stages(workspace, monkeypatch):
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": {"name": "ingest-sources", "succeeded": True},
             }
@@ -911,7 +1262,7 @@ def test_flat_pipeline_v2_rejects_malformed_stage_records(workspace, monkeypatch
     class _SourcePipeline:
         def ingest(self, document_id, document_root, config):
             del document_id, document_root, config
-            return {"schema": "docs.sources/v2", "succeeded": True, "stages": stages}
+            return {"schema": "docs.sources/v2", "document_id": "doc1", "succeeded": True, "stages": stages}
 
     monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
 
@@ -931,6 +1282,7 @@ def test_flat_pipeline_v2_rejects_successful_report_with_failed_first_stage(work
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "ingest-sources", "succeeded": False, "result": {}}],
                 "artifacts": [],
@@ -956,6 +1308,7 @@ def test_flat_pipeline_v2_rejects_failed_report_with_successful_first_stage(work
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": False,
                 "stages": [{"name": "ingest-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -980,6 +1333,7 @@ def test_flat_pipeline_v2_requires_ingest_stage_name(workspace, monkeypatch):
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [{"name": "normalize-sources", "succeeded": True, "result": {}}],
                 "artifacts": [],
@@ -1004,6 +1358,7 @@ def test_flat_pipeline_v2_rejects_extra_stage_records(workspace, monkeypatch):
             del document_id, document_root, config
             return {
                 "schema": "docs.sources/v2",
+                "document_id": "doc1",
                 "succeeded": True,
                 "stages": [
                     {"name": "ingest-sources", "succeeded": True, "result": {}},
@@ -1052,7 +1407,7 @@ def test_flat_pipeline_v2_returns_structured_failure_when_report_has_no_stages(w
 
     class _SourcePipeline:
         def ingest(self, document_id, document_root, config):
-            return {"schema": "docs.sources/v2", "succeeded": True, "stages": [], "artifacts": []}
+            return {"schema": "docs.sources/v2", "document_id": "doc1", "succeeded": True, "stages": [], "artifacts": []}
 
     monkeypatch.setattr("docs.cli.commands.core_app._source_pipeline_v2", lambda deps: _SourcePipeline())
 
@@ -1079,7 +1434,7 @@ def test_flat_pipeline_v2_returns_structured_failure_when_report_has_no_stages(w
         },
     ],
 )
-def test_flat_pipeline_v2_forces_selected_document_id_on_malformed_reports(
+def test_flat_pipeline_v2_rejects_malformed_document_ids_without_overwriting_them(
     workspace, monkeypatch, upstream_report
 ):
     _new_doc()
@@ -1096,3 +1451,4 @@ def test_flat_pipeline_v2_forces_selected_document_id_on_malformed_reports(
     assert result.exit_code == 1
     detail = json.loads(json.loads(result.output)["stages"][0]["detail"])
     assert detail["document_id"] == "doc1"
+    assert detail["errors"][0]["code"] == "pipeline.malformed_v2_report"

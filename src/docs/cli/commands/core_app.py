@@ -42,20 +42,46 @@ def _source_pipeline_v2(deps: Any) -> SourcePipelineV2 | None:
     )
 
 
-def _v2_failure_report(document_id: str, error: str, code: str, message: str) -> dict[str, Any]:
+def _v2_failure_report(
+    document_id: str,
+    error: str,
+    code: str,
+    message: str,
+    expected_stages: tuple[str, ...] = ("ingest-sources",),
+) -> dict[str, Any]:
+    stages = [{
+        "name": expected_stages[0],
+        "succeeded": False,
+        "result": {"error": error},
+    }]
+    stages.extend(
+        {
+            "name": stage,
+            "succeeded": False,
+            "skipped": True,
+            "result": {
+                "status": "skipped",
+                "reason": "dependency_failed",
+                "depends_on": expected_stages[index - 1],
+            },
+        }
+        for index, stage in enumerate(expected_stages[1:], start=1)
+    )
     return {
         "schema": "docs.sources/v2",
         "document_id": document_id,
         "succeeded": False,
-        "stages": [{
-            "name": "ingest-sources",
-            "succeeded": False,
-            "result": {"error": error},
-        }],
+        "stages": stages,
         "artifacts": [],
         "error": {"error": error},
         "errors": [{"code": code, "message": message}],
     }
+
+
+def _strict_advisory_message(stage_set: str) -> str:
+    """Describe strict degradation using the route the user invoked."""
+
+    return f"--strict is advisory for the v2 {stage_set} adapter because it does not accept strict."
 
 
 def _run_compatible_pipeline(
@@ -67,6 +93,8 @@ def _run_compatible_pipeline(
     route = route_for(stage_set)
     if route is None:
         return None
+    fallback_stage_name = route.expected_stages[0] if len(route.expected_stages) == 1 else route.stage_set
+    report_label = f"v2 {stage_set}"
     report: dict[str, Any]
     supports_strict = False
     try:
@@ -77,6 +105,7 @@ def _run_compatible_pipeline(
             "v2 source pipeline construction failed",
             "pipeline.v2_construction_failed",
             f"The v2 source pipeline could not be constructed: {exc}",
+            route.expected_stages,
         )
         service = None
     else:
@@ -86,6 +115,7 @@ def _run_compatible_pipeline(
                 "v2 source pipeline construction failed",
                 "pipeline.v2_construction_failed",
                 "The v2 source pipeline could not be constructed because its dependencies are incomplete.",
+                route.expected_stages,
             )
         else:
             try:
@@ -96,6 +126,7 @@ def _run_compatible_pipeline(
                     "v2 source pipeline operation lookup failed",
                     "pipeline.v2_operation_lookup_failed",
                     f"The v2 source pipeline operation could not be resolved: {exc}",
+                    route.expected_stages,
                 )
                 operation = None
             if operation is not None:
@@ -107,6 +138,7 @@ def _run_compatible_pipeline(
                         "v2 source pipeline invocation failed",
                         "pipeline.v2_invocation_failed",
                         f"The v2 source pipeline invocation failed: {exc}",
+                        route.expected_stages,
                     )
                     operation = None
                 else:
@@ -133,17 +165,35 @@ def _run_compatible_pipeline(
                             "v2 source pipeline invocation failed",
                             "pipeline.v2_invocation_failed",
                             f"The v2 source pipeline invocation failed: {exc}",
+                            route.expected_stages,
                         )
     if not isinstance(report, Mapping):
         report = _v2_failure_report(
             resolved.doc_id,
             "v2 source pipeline returned malformed report",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report must be a mapping.",
+            f"The {report_label} report must be a mapping.",
+            route.expected_stages,
         )
     else:
         report = dict(report)
-    report["document_id"] = resolved.doc_id
+    report_document_id = report.get("document_id")
+    if not isinstance(report_document_id, str) or not report_document_id.strip():
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned malformed document_id",
+            "pipeline.malformed_v2_report",
+            "The v2 source report must contain a non-empty document_id matching the resolved document.",
+            route.expected_stages,
+        )
+    elif report_document_id != resolved.doc_id:
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned mismatched document_id",
+            "pipeline.malformed_v2_report",
+            "The v2 source report document_id must match resolved document.",
+            route.expected_stages,
+        )
     strict_policy = report.get("strict_policy")
     if not isinstance(strict_policy, dict):
         if strict_policy is None:
@@ -157,7 +207,8 @@ def _run_compatible_pipeline(
                 resolved.doc_id,
                 "v2 source pipeline returned malformed strict policy",
                 "pipeline.malformed_strict_policy",
-                "The v2 ingest strict_policy must be a mapping.",
+                f"The {report_label} strict_policy must be a mapping.",
+                route.expected_stages,
             )
             strict_policy = {
                 "requested": strict,
@@ -172,7 +223,8 @@ def _run_compatible_pipeline(
                 resolved.doc_id,
                 "v2 source pipeline returned malformed strict policy",
                 "pipeline.malformed_strict_policy",
-                f"The v2 ingest strict_policy is contradictory: {policy_error}",
+                f"The {report_label} strict_policy is contradictory: {policy_error}",
+                route.expected_stages,
             )
             strict_policy = dict(strict_policy)
         elif strict and strict_policy.get("applied") is not True:
@@ -192,16 +244,17 @@ def _run_compatible_pipeline(
             "message": upstream_warning,
         })
     strict_applied = strict_policy.get("applied") is True
+    advisory_message = _strict_advisory_message(stage_set)
     if strict and not strict_applied and "warning" not in strict_policy:
-        strict_policy["warning"] = "v2 ingest does not expose strict enforcement"
+        strict_policy["warning"] = f"v2 {stage_set} does not expose strict enforcement"
         warnings.append({
             "code": "pipeline.strict_advisory",
-            "message": "--strict is advisory for the v2 ingest adapter because it does not accept strict.",
+            "message": advisory_message,
         })
     elif strict and not strict_applied:
         warnings.append({
             "code": "pipeline.strict_advisory",
-            "message": "--strict is advisory for the v2 ingest adapter because it does not accept strict.",
+            "message": advisory_message,
         })
     if warnings:
         report["warnings"] = warnings
@@ -214,7 +267,8 @@ def _run_compatible_pipeline(
             resolved.doc_id,
             "v2 source pipeline returned incomplete report",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report is missing required fields: " + ", ".join(missing_fields) + ".",
+            f"The {report_label} report is missing required fields: " + ", ".join(missing_fields) + ".",
+            route.expected_stages,
         )
         stage = report["stages"][0]
     elif report["schema"] != "docs.sources/v2":
@@ -222,7 +276,8 @@ def _run_compatible_pipeline(
             resolved.doc_id,
             "v2 source pipeline returned unsupported schema",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report schema must be exactly docs.sources/v2.",
+            f"The {report_label} report schema must be exactly docs.sources/v2.",
+            route.expected_stages,
         )
         stage = report["stages"][0]
     elif not isinstance(report["succeeded"], bool):
@@ -230,7 +285,8 @@ def _run_compatible_pipeline(
             resolved.doc_id,
             "v2 source pipeline returned malformed report",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report contained a malformed top-level succeeded value.",
+            f"The {report_label} report contained a malformed top-level succeeded value.",
+            route.expected_stages,
         )
         stage = report["stages"][0]
     elif not isinstance(stages, list):
@@ -238,78 +294,106 @@ def _run_compatible_pipeline(
             resolved.doc_id,
             "v2 source pipeline returned malformed report",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report stages must be a list.",
+            f"The {report_label} report stages must be a list.",
+            route.expected_stages,
         )
         stage = report["stages"][0]
     elif not stages:
         report["succeeded"] = False
         stage = {
-            "name": "ingest-sources",
+            "name": fallback_stage_name,
             "succeeded": False,
             "result": {"error": "v2 source pipeline returned no stages"},
         }
         report["error"] = stage["result"]
         report["errors"] = [{
             "code": "pipeline.empty_v2_report",
-            "message": "The v2 ingest report contained no stages.",
+            "message": f"The {report_label} report contained no stages.",
         }]
-    elif len(stages) != 1:
+    elif len(stages) != len(route.expected_stages):
         report["succeeded"] = False
         stage = {
-            "name": "ingest-sources",
+            "name": fallback_stage_name,
             "succeeded": False,
             "result": {"error": "v2 source pipeline returned unexpected stage records"},
         }
         report["error"] = stage["result"]
         report["errors"] = [{
             "code": "pipeline.malformed_v2_report",
-            "message": "The v2 ingest report must contain exactly one ingest stage.",
+            "message": (
+                "The v2 source report must contain exactly "
+                f"{len(route.expected_stages)} stage records for {stage_set}."
+            ),
         }]
     else:
-        candidate = stages[0]
         if not all(
             isinstance(item, Mapping)
             and isinstance(item.get("name"), str)
             and bool(item["name"])
             and isinstance(item.get("succeeded"), bool)
-            for item in stages
-        ) or (
-            not isinstance(candidate, Mapping)
-            or candidate.get("name") != "ingest-sources"
+            and item.get("name") == expected_name
+            for item, expected_name in zip(stages, route.expected_stages, strict=True)
         ):
             report["succeeded"] = False
             stage = {
-                "name": "ingest-sources",
+                "name": fallback_stage_name,
                 "succeeded": False,
-                "result": {"error": "v2 source pipeline returned malformed first stage"},
+                "result": {
+                    "error": (
+                        "v2 source pipeline returned malformed first stage"
+                        if len(route.expected_stages) == 1
+                        else "v2 source pipeline returned malformed stage records"
+                    )
+                },
             }
             report["error"] = stage["result"]
             report["errors"] = [{
                 "code": "pipeline.malformed_v2_report",
-                "message": "The v2 ingest report contained a malformed first stage.",
+                "message": (
+                    f"The {report_label} report contained a malformed first stage."
+                    if len(route.expected_stages) == 1
+                    else "The v2 source report contained malformed or unexpected stage records."
+                ),
             }]
         else:
-            stage = dict(candidate)
-            if report["succeeded"] != candidate["succeeded"]:
+            contradictory_skipped = any(
+                item.get("skipped") is True and item["succeeded"] is True for item in stages
+            )
+            if contradictory_skipped:
                 report["succeeded"] = False
                 stage = {
-                    "name": "ingest-sources",
+                    "name": fallback_stage_name,
+                    "succeeded": False,
+                    "result": {"error": "v2 source pipeline returned contradictory skipped success values"},
+                }
+                report["error"] = stage["result"]
+                report["errors"] = [{
+                    "code": "pipeline.malformed_v2_report",
+                    "message": "The v2 source report cannot mark a stage skipped and succeeded.",
+                }]
+            else:
+                projected_succeeded = all(item["succeeded"] for item in stages)
+            if not contradictory_skipped and report["succeeded"] != projected_succeeded:
+                report["succeeded"] = False
+                stage = {
+                    "name": fallback_stage_name,
                     "succeeded": False,
                     "result": {"error": "v2 source pipeline returned contradictory success values"},
                 }
                 report["error"] = stage["result"]
                 report["errors"] = [{
                     "code": "pipeline.malformed_v2_report",
-                    "message": "The v2 ingest report cannot disagree with its first stage.",
+                    "message": "The v2 source report cannot disagree with its stage success values.",
                 }]
-            else:
+            elif not contradictory_skipped:
                 stage_shape_valid = True
     if stage_shape_valid and "artifacts" not in report:
         report = _v2_failure_report(
             resolved.doc_id,
             "v2 source pipeline returned incomplete report",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report is missing required fields: artifacts.",
+            f"The {report_label} report is missing required fields: artifacts.",
+            route.expected_stages,
         )
         stage = report["stages"][0]
     elif stage_shape_valid and not isinstance(report["artifacts"], list):
@@ -317,7 +401,8 @@ def _run_compatible_pipeline(
             resolved.doc_id,
             "v2 source pipeline returned malformed report",
             "pipeline.malformed_v2_report",
-            "The v2 ingest report artifacts must be a list.",
+            f"The {report_label} report artifacts must be a list.",
+            route.expected_stages,
         )
         stage = report["stages"][0]
     if "strict_policy" not in report:
@@ -328,10 +413,10 @@ def _run_compatible_pipeline(
         }
         report["strict_policy"] = strict_policy
         if strict:
-            strict_policy["warning"] = "v2 ingest does not expose strict enforcement"
+            strict_policy["warning"] = f"v2 {stage_set} does not expose strict enforcement"
             report["warnings"] = [{
                 "code": "pipeline.strict_advisory",
-                "message": "--strict is advisory for the v2 ingest adapter because it does not accept strict.",
+                "message": _strict_advisory_message(stage_set),
             }]
     detail = json.dumps(report, ensure_ascii=False, sort_keys=True)
     return {
@@ -341,12 +426,26 @@ def _run_compatible_pipeline(
         "strict_policy": report["strict_policy"],
         **({"warnings": report["warnings"]} if "warnings" in report else {}),
         **({"errors": report["errors"]} if "errors" in report else {}),
-        "stages": [{
-            "stage": stage["name"],
-            "ok": stage["succeeded"],
-            "duration_s": 0.0,
-            "detail": detail,
-        }],
+        "stages": (
+            [
+                {
+                    "stage": item["name"],
+                    "ok": item["succeeded"],
+                    **({"skipped": True} if item.get("skipped") is True else {}),
+                    "duration_s": 0.0,
+                    "detail": detail,
+                }
+                for item in report["stages"]
+            ]
+            if stage_shape_valid
+            else [{
+                "stage": stage["name"],
+                "ok": stage["succeeded"],
+                **({"skipped": True} if stage.get("skipped") is True else {}),
+                "duration_s": 0.0,
+                "detail": detail,
+            }]
+        ),
     }
 
 
@@ -449,7 +548,7 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
 @core_app.command()
 def pipeline(
     ctx: typer.Context,
-    stage_set: str = typer.Argument(..., help="prep | ingest | assemble | all"),
+    stage_set: str = typer.Argument(..., help="prep | ingest | prepare | assemble | all"),
     strict: bool = typer.Option(False, "--strict"),
     as_json: bool = typer.Option(False, "--json"),
     repo_root: Path = typer.Option(Path.cwd, "--repo-root"),
@@ -465,7 +564,9 @@ def pipeline(
     `prep` deja el documento listo para redactar (doctor, reglas,
     evidencia, secciones scaffold, gap-report, pack-context). `ingest`
     convierte lo que haya en `inbox/` y regenera los archivos de
-    contexto. `assemble` genera visuales y arma la salida. `all` = prep +
+    contexto. `prepare` ejecuta el pipeline nativo v2 de fuentes
+    (ingest, normalización y estructura) sin reemplazar al `prep` legacy.
+    `assemble` genera visuales y arma la salida. `all` = prep +
     review-document + assemble, y NO incluye ingest: corré `ingest` antes
     si hay fuentes nuevas. `--strict` bloquea ante huecos y hallazgos."""
     deps, doc = _ctx(ctx)
@@ -489,15 +590,17 @@ def pipeline(
                     )
                 )
                 raise typer.Exit(code=1)
-            stage = stages[0]
-            marker = "OK" if stage["ok"] else "FAIL"
-            head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+            lines = []
+            for stage in stages:
+                marker = "SKIP" if stage.get("skipped") is True else ("OK" if stage["ok"] else "FAIL")
+                head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+                lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
             print(
                 "\n".join(
                     [
                         f"# Pipeline `{stage_set}` (strict={strict})",
                         "",
-                        f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}",
+                        *lines,
                         "",
                         "PASÓ" if compatible_summary["passed"] else "FALLÓ",
                     ]
@@ -532,7 +635,7 @@ def pipeline(
         for summary in summaries:
             lines = [f"# Pipeline `{summary['stage_set']}` (strict={summary['strict']})", ""]
             for stage in summary["stages"]:
-                marker = "OK" if stage["ok"] else "FAIL"
+                marker = "SKIP" if stage.get("skipped") is True else ("OK" if stage["ok"] else "FAIL")
                 head = stage["detail"].splitlines()[0] if stage["detail"] else ""
                 lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
             lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])

@@ -424,6 +424,26 @@ def test_document_prepare_wires_all_source_handlers(monkeypatch, tmp_path: Path)
     ]
 
 
+def test_flat_prepare_uses_native_v2_adapter_and_projects_legacy_summary(
+    monkeypatch, tmp_path: Path
+) -> None:
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["pipeline", "prepare", "--json"])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["stage_set"] == "prepare"
+    assert payload["passed"] is True
+    assert [stage["stage"] for stage in payload["stages"]] == [
+        "ingest-sources",
+        "normalize-sources",
+        "compile-structure",
+    ]
+    assert all(json.loads(stage["detail"])["schema"] == "docs.sources/v2" for stage in payload["stages"])
+
+
 def test_source_prepare_propagates_degraded_ingest_without_claiming_success(tmp_path: Path) -> None:
     report = SourcePipelineV2(_FailedIngest(), MdNormalizeAdapter(), AtomicFileAdapter()).prepare("brief", tmp_path / "document", {})
 

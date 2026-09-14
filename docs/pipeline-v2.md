@@ -28,7 +28,15 @@ uv run docs document publish documents/report/output/v2/report.docx published/re
 
 Each report has `schema: "docs.sources/v2"`, `document_id`, `succeeded`, ordered `stages`, and `artifacts`. This shape is also mandatory for failure reports: construction, invocation, malformed-result, and empty-stage failures retain the selected document's `document_id`. A source command exits non-zero when its report is unsuccessful.
 
-The flat compatibility command inspects the selected `SourcePipelineV2.ingest` callable itself before invoking it. It forwards `--strict` when that callable accepts `strict`; the v2 operation then records whether its inner adapter enforced the request or could only provide an explicit advisory.
+The flat compatibility command routes `pipeline ingest` to
+`SourcePipelineV2.ingest` and `pipeline prepare` to
+`SourcePipelineV2.prepare`. It projects each v2 stage into the existing
+legacy summary shape (`stage_set`, `strict`, `passed`, and `stages`) while
+retaining the complete v2 report, including warnings, errors, and artifacts,
+in each stage's `detail`. It forwards `--strict` when the selected callable
+accepts `strict`; `prepare` currently reports strict as advisory because its
+native operation does not accept that argument. The legacy `pipeline prep`
+route remains unchanged.
 
 ## Stage results
 
@@ -126,7 +134,7 @@ Use `docs document plan --pipeline document-build --json` to inspect the ordered
 ## Flat CLI migration boundary
 
 The compatibility policy for the unprefixed `docs pipeline <stage-set>` command
-is intentionally explicit and finite. `ingest` is currently routed through the
+is intentionally explicit and finite. `ingest` and `prepare` are routed through the
 native v2 source pipeline and its result is adapted back to the legacy summary
 shape (`stage_set`, `strict`, `passed`, and `stages`). `prep`, `assemble`, `all`,
 and unknown stage sets continue to use the legacy service until their output and
