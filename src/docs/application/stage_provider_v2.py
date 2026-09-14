@@ -41,6 +41,10 @@ class StageProviderV2:
             return self._generate_visuals
         if name == "compose_cover":
             return self._compose_cover
+        if name in {"package_release", "package-release"} and self._services.get(
+            "package_release_service"
+        ) is not None:
+            return self._package_release
         return None
 
     def _generate_visuals(self) -> tuple[bool, str] | StageResult:
@@ -66,3 +70,9 @@ class StageProviderV2:
         if self._output_format != "docx":
             return True, f"cover composition delegated to {self._output_format} renderer"
         return True, "cover composition delegated to native DOCX compositor"
+
+    def _package_release(self) -> tuple[bool, str] | StageResult:
+        service = self._services.get("package_release_service")
+        if service is None or not hasattr(service, "release"):
+            return StageResult.skipped("package-release")
+        return service.release()

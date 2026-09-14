@@ -51,3 +51,17 @@ def test_compose_cover_operation_is_owned_by_the_application_provider():
     assert isinstance(result, StageResult)
     assert result.stage == "compose-cover"
     assert result.outcome == "skipped"
+
+
+def test_package_release_operation_is_owned_by_the_application_provider():
+    calls = []
+
+    class PackageRelease:
+        def release(self):
+            calls.append("package")
+            return True, "package ready"
+
+    provider = StageProviderV2({"package_release_service": PackageRelease()})
+
+    assert provider.operation("package_release")() == (True, "package ready")
+    assert calls == ["package"]

@@ -27,6 +27,7 @@ from docs.application.artifact_build_service_v2 import (
 )
 from docs.application.atomic_transform_v2 import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service_v2 import BuildManifestServiceV2
+from docs.application.package_release_service_v2 import PackageReleaseServiceV2
 from docs.application.package_service_v2 import (
     PackageFileV2,
     PackagePublicationError,
@@ -507,6 +508,27 @@ def create_v2_service(
         output_format=output_format,
         ensure_assets=ensure_assets,
     )
+    release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
+    stage_services["package_release_service"] = PackageReleaseServiceV2(
+        artifact=lambda: state.get("artifact"),
+        manifest=lambda: state.get("manifest"),
+        document_id=initial.doc_id,
+        output_format=output_format,
+        source_dir=initial_root / "output" / "v2",
+        destination=release_destination,
+        ledger=ledger,
+        write_package=lambda candidate, staging: _write_package_archive(
+            candidate, staging, _allow_staging=True, _lock_held=True
+        ),
+        candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
+        verify_current_build=False,
+    )
+    stage_provider = StageProviderV2(
+        stage_services,
+        config=state["config"],
+        output_format=output_format,
+        ensure_assets=ensure_assets,
+    )
     source_pipeline = _source_pipeline(deps)
     review_stage_service = None
     if output_format == "docx" and all(
@@ -972,7 +994,7 @@ def create_v2_service(
             _callable_stage("consistency_review")
             or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
         ),
-        "package-release": _callable_stage("package_release") or _native_package_release,
+        "package-release": stage_provider.operation("package_release") or _native_package_release,
     }
     operations.update(
         {name.replace("_", "-"): operation for name, operation in explicit_stages.items()}
