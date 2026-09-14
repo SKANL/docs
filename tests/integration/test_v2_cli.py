@@ -346,6 +346,25 @@ def test_v2_package_remains_bound_to_the_exact_verified_build_run(monkeypatch, t
     assert packaged.exit_code == 0, packaged.stdout
     assert package.is_file()
 
+
+def test_v2_document_package_pipeline_releases_after_a_previous_build(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+
+    packaged = runner.invoke(
+        app, ["v2", "build", "--pipeline", "document-package", "--json"]
+    )
+
+    assert packaged.exit_code == 0, packaged.stdout
+    payload = json.loads(packaged.stdout)
+    assert payload["report"]["succeeded"] is True
+    package = tmp_path / "documents" / "active" / "output" / "release" / "active.zip"
+    assert package.is_file()
+
 def test_v2_verify_runs_workspace_stages_without_publishing(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
@@ -793,9 +812,8 @@ def test_v2_public_package_and_publish_boundaries_execute_from_existing_build(
         app, ["v2", "build", "--pipeline", "document-publish", "--json"]
     )
 
-    assert packaged.exit_code == 1, packaged.stdout
+    assert packaged.exit_code == 0, packaged.stdout
     assert published.exit_code == 1, published.stdout
-    assert "required external artifact unavailable" in packaged.stdout
     assert "required external artifact unavailable" in published.stdout
     assert (tmp_path / "documents" / "active" / "output" / "release" / "active.zip").is_file()
 

@@ -185,7 +185,12 @@ class PipelineServiceV2:
             if self._run_id_sink is not None:
                 self._run_id_sink(run_id)
             excluded: frozenset[str] = (
-                frozenset() if publish else frozenset({"publish-draft", "package-release"})
+                frozenset()
+                if publish
+                else frozenset(
+                    {"publish-draft"}
+                    | ({"package-release"} if pipeline_id != "document-package" else set())
+                )
             )
             if not publish and run_id.startswith("cli-verify-"):
                 excluded = excluded | frozenset({"record-provenance"})

@@ -530,7 +530,13 @@ def create_v2_service(
             candidate, staging, _allow_staging=True, _lock_held=True
         ),
         candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
-        verify_current_build=False,
+        # A standalone package boundary receives the persisted
+        # artifact/manifest pair from the prior build and must verify that
+        # pair against provenance before it can produce a release candidate.
+        # The full build already attests the in-memory generation in its
+        # provenance stage; rechecking it here would duplicate the ledger
+        # operation without strengthening the boundary.
+        verify_current_build=pipeline_id == "document-package",
     )
     stage_provider = StageProviderV2(
         stage_services,
@@ -1131,11 +1137,22 @@ def _run(
                 pipeline_id=pipeline_id,
                 provenance_run_id=provenance_run_id,
             )
+            external_artifacts = None
+            if pipeline_id == "document-package":
+                # The package sub-pipeline starts from the persisted, verified
+                # build boundary loaded by create_v2_service.  The package
+                # service performs the artifact/manifest/provenance check;
+                # these contracts only tell the runtime that the boundary is
+                # intentionally supplied from the previous build.
+                external_artifacts = service.registry.resolve(
+                    pipeline_id
+                ).definition.external_artifacts
             report = service.run(
                 provenance_run_id or f"cli-{command}-{output_format}",
                 publish=command == "build"
                 and pipeline_id in {"document", "document-publish"},
                 pipeline_id=pipeline_id,
+                external_artifacts=external_artifacts,
             )
             report_payload = report.to_dict()
             if dimensions:
@@ -1170,7 +1187,11 @@ def _run(
                 "format": output_format,
                 "report": report_payload,
             }
-            if command == "build" and bool(report_payload.get("succeeded")):
+            if (
+                command == "build"
+                and pipeline_id in {"document", "document-publish"}
+                and bool(report_payload.get("succeeded"))
+            ):
                 resolved = ctx.obj["deps"].resolve_context(selected_document)
                 _promote_release_candidate(
                     ctx.obj["deps"].workspace.doc_root(resolved.doc_id),
