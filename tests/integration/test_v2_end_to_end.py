@@ -342,6 +342,10 @@ def test_v2_journey_executes_generated_cover_and_visual_spec_fixture(monkeypatch
         image_metadata=PythonDocxImageMetadataAdapter(),
         writer=FilesystemIngestArtifactWriter(),
     )
+    # The v2 application provider owns these stages; no CLI compatibility
+    # hook is required for the real visual/cover journey.
+    deps.pipeline.generate_visuals = None
+    deps.pipeline.compose_cover = None
     original_resolve_context = deps.resolve_context
 
     def resolve_context(doc_id: str = ""):

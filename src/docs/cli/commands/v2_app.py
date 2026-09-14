@@ -43,7 +43,6 @@ from docs.application.source_pipeline_v2 import SourcePipelineV2
 from docs.application.stage_provider_v2 import StageProviderV2
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
 from docs.domain.artifacts import BuildManifest
-from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
@@ -499,7 +498,15 @@ def create_v2_service(
             service = getattr(compatibility_services, name, None)
         if service is not None:
             stage_services[name] = service
-    stage_provider = StageProviderV2(stage_services)
+    def ensure_assets() -> tuple[bool, str]:
+        return resolve_assets()
+
+    stage_provider = StageProviderV2(
+        stage_services,
+        config=state["config"],
+        output_format=output_format,
+        ensure_assets=ensure_assets,
+    )
     source_pipeline = _source_pipeline(deps)
     review_stage_service = None
     if output_format == "docx" and all(
@@ -553,42 +560,6 @@ def create_v2_service(
         scratch_dirs.append(result.scratch_dir)
         state.setdefault("artifacts", {})[format_name] = result.artifact
         return True, str(result.artifact)
-
-    def _generate_visuals() -> tuple[bool, str] | StageResult:
-        # The ingest stage may recreate an empty derived catalog from an
-        # inbox that contains no images.  Recover legacy assets after ingest,
-        # immediately before any renderer resolves figure bindings.
-        assets_result = resolve_assets()
-        if not assets_result[0]:
-            return assets_result
-        service = _stage_service("generate_visuals_service")
-        if service is None or not hasattr(service, "generate"):
-            paths = state["config"].get("paths", {})
-            sections_dir = paths.get("sections_dir") if isinstance(paths, Mapping) else None
-            specs_path = Path(sections_dir) if isinstance(sections_dir, str) else initial_root / "sections"
-            specs_path = specs_path / "visual-specs.json"
-            try:
-                has_specs = bool(json.loads(specs_path.read_text(encoding="utf-8")))
-            except (FileNotFoundError, OSError, json.JSONDecodeError):
-                has_specs = False
-            if not has_specs:
-                return StageResult.skipped("generate-visuals")
-            return StageResult.skipped(
-                "generate-visuals"
-            )
-        result = service.generate(
-            Path(state["config"]["paths"]["sections_dir"]),
-            Path(state["config"]["paths"]["assets_dir"]),
-        )
-        return True, f"{result.generated} generated, {result.skipped} skipped"
-
-    def _compose_cover() -> tuple[bool, str] | StageResult:
-        spec = resolve_cover_spec(state["config"])
-        if spec is None or spec.mode is not CoverMode.GENERATED:
-            return StageResult.skipped("compose-cover")
-        if output_format != "docx":
-            return True, f"cover composition delegated to {output_format} renderer"
-        return True, "cover composition delegated to native DOCX compositor"
 
     def _structural_audit() -> tuple[bool, str]:
         service = _stage_service("structural_audit_service")
@@ -911,8 +882,8 @@ def create_v2_service(
         return successful("verify")
 
     explicit_stages: dict[str, Any] = {
-        "generate_visuals": _generate_visuals if _stage_service("generate_visuals_service") is not None else _callable_stage("generate_visuals"),
-        "compose_cover": _compose_cover if _callable_stage("compose_cover") is None else _callable_stage("compose_cover"),
+        "generate_visuals": stage_provider.operation("generate_visuals"),
+        "compose_cover": stage_provider.operation("compose_cover"),
         "structural_audit": _structural_audit if _stage_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
         "accessibility_review": _callable_stage("accessibility_review") or (
             (lambda: _review_stage("accessibility-review"))
@@ -930,8 +901,6 @@ def create_v2_service(
             else _native_reproducibility_check
         ),
     }
-    if explicit_stages["generate_visuals"] is None:
-        explicit_stages["generate_visuals"] = _generate_visuals
     if output_format != "html":
         explicit_stages["build_html"] = lambda: _build_with_format("html")
     else:
