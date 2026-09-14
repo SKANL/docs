@@ -97,20 +97,6 @@ class PipelineRuntime:
             if self._policy is None:
                 return result
             stage_specs = {stage.name: stage for stage in self._executor.definition.stages}
-            stage = stage_specs.get(result.stage)
-            draft_degradable = stage is not None and (
-                (stage.optional and result.stage != "package-release")
-                or result.stage in {"accessibility-review", "reproducibility-check"}
-            )
-            if result.errors and draft_degradable and self._policy.mode == PipelineMode.draft:
-                return StageResult(
-                    result.stage,
-                    True,
-                    result.artifacts,
-                    (*result.warnings, *result.errors),
-                    (),
-                    "succeeded",
-                )
             warnings = tuple(
                 warning
                 for warning in result.warnings

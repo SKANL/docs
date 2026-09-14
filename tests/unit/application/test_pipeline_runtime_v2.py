@@ -206,14 +206,11 @@ def test_draft_policy_blocks_publish_draft_stage(tmp_path: Path) -> None:
     assert any("publish disallowed" in error for result in report.execution.results for error in result.errors)
 
 
-def test_draft_policy_degrades_optional_stage_failure_to_warning_and_continues(tmp_path: Path) -> None:
+def test_draft_policy_allows_unsupported_optional_stage_and_continues(tmp_path: Path) -> None:
     calls: list[str] = []
     runtime = PipelineRuntime(
         PipelineDefinition(artifacts=(ArtifactContract("optional-output"),), stages=(StageSpec("optional", produces=("optional-output",), optional=True), StageSpec("later", requires=("optional-output",)))),
-        {
-            "optional": lambda: (calls.append("optional") or StageResult("optional", False, errors=("offline",))),
-            "later": lambda: (calls.append("later") or StageResult("later", True)),
-        },
+        {"later": lambda: (calls.append("later") or StageResult("later", True))},
         ToolCapabilityRegistry(()),
         ProvenanceLedgerV2(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.draft),
@@ -221,9 +218,9 @@ def test_draft_policy_degrades_optional_stage_failure_to_warning_and_continues(t
 
     report = runtime.run("draft-optional-failure", excluded_stages={"publish-draft"})
 
-    assert calls == ["optional", "later"]
+    assert calls == ["later"]
     assert report.succeeded is True
-    assert report.execution.results[0].warnings == ("offline",)
+    assert report.execution.results[0].outcome == "unsupported"
 
 
 def test_strict_policy_keeps_optional_stage_failure_blocking(tmp_path: Path) -> None:

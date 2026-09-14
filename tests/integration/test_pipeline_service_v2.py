@@ -42,12 +42,7 @@ STAGE_IDS = (
     "package-release",
     "publish-draft",
 )
-EXPECTED_DAG_PLAN = (*STAGE_IDS[:8],
-    "build-docx", "build-html", "build-pdf", "compose-cover", "generate-visuals",
-    "structural-audit", "editorial-review", "evidence-review", "consistency-review",
-    "accessibility-review", "visual-review", "reproducibility-check", "record-provenance",
-    "package-release", "publish-draft",
-)
+EXPECTED_DAG_PLAN = STAGE_IDS
 
 
 def _stage(name: str, calls: list[str], ok: bool = True) -> Callable[[], tuple[bool, str]]:
@@ -90,12 +85,18 @@ def test_architecture_documents_registry_plan_and_published_stage_sequence(tmp_p
     report = service.run("architecture-order")
 
     assert documented == FULL_STAGE_IDS
-    runtime_plan = service.registry.resolve("document").definition.plan()
+    definition = service.registry.resolve("document").definition
+    runtime_plan = definition.plan()
+    dependencies = {stage.name: stage.requires for stage in definition.stages}
+    assert dependencies["compose-cover"] == ("generate-visuals-complete",)
+    assert dependencies["build-docx"] == ("compose-cover-complete",)
+    assert dependencies["build-html"] == ("build-docx-complete",)
+    assert dependencies["build-pdf"] == ("build-docx-complete",)
     assert documented_runtime_plan == runtime_plan
     assert tuple(result.stage for result in report.execution.results) == documented_runtime_plan
     assert tuple(result.stage for result in report.execution.results if result.outcome == "unsupported") == (
-        "compose-cover",
         "generate-visuals",
+        "compose-cover",
         "package-release",
     )
 
@@ -287,7 +288,7 @@ def test_runs_a_registered_public_subdag_without_running_unrelated_stages(tmp_pa
     assert report.succeeded
     assert calls == ["render", "build-html", "build-pdf"]
     assert [result.stage for result in report.execution.results] == [
-        "build-docx", "build-html", "build-pdf", "compose-cover", "generate-visuals"
+        "generate-visuals", "compose-cover", "build-docx", "build-html", "build-pdf"
     ]
 
 
@@ -342,6 +343,8 @@ def test_exposes_the_full_declarative_stage_plan_without_artificial_serial_depen
     assert service.definition.plan() == EXPECTED_DAG_PLAN
     assert tuple(stage.name for stage in service.definition.stages) == STAGE_IDS
     assert stages["generate-visuals"].after == ()
+    assert stages["compose-cover"].requires == ("generate-visuals-complete",)
+    assert stages["build-docx"].requires == ("compose-cover-complete",)
     assert stages["build-html"].after == ()
     assert stages["build-pdf"].after == ()
     assert stages["build-html"].requires == ("build-docx-complete",)
@@ -393,7 +396,7 @@ def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_chan
     report = service.run("draft-with-migration-gaps")
 
     unsupported = [result for result in report.execution.results if result.outcome == "unsupported"]
-    assert [result.stage for result in unsupported] == ["compose-cover", "generate-visuals", "package-release"]
+    assert [result.stage for result in unsupported] == ["generate-visuals", "compose-cover", "package-release"]
     assert report.succeeded is True
     assert "publish" in calls
     assert any(result.stage == "publish-draft" and result.ok for result in report.execution.results)
@@ -486,11 +489,11 @@ def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) ->
         "ingest-sources",
         "normalize-sources",
         "compile-structure",
+        "generate-visuals",
+        "compose-cover",
         "render",
         "build-html",
         "build-pdf",
-        "compose-cover",
-        "generate-visuals",
         "structural-audit",
         "verify",
         "evidence-review",
@@ -502,7 +505,7 @@ def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) ->
     ]
 
 
-def test_optional_stage_failure_does_not_block_later_serial_stages(tmp_path: Path) -> None:
+def test_failed_visual_generation_blocks_dependent_cover_and_document_build(tmp_path: Path) -> None:
     calls: list[str] = []
     dependencies = _replace_dependencies(
         _dependencies(tmp_path, calls),
@@ -510,11 +513,16 @@ def test_optional_stage_failure_does_not_block_later_serial_stages(tmp_path: Pat
         compose_cover=_stage("compose-cover", calls),
     )
 
-    report = _service(tmp_path, dependencies).run("optional-stage-failure", publish=False)
+    report = _service(
+        tmp_path,
+        dependencies,
+        policy=PipelinePolicy(PipelineMode.draft),
+    ).run("optional-stage-failure", publish=False)
 
     assert not report.succeeded
-    assert "render" in calls
-    assert "provenance" in calls
+    assert "compose-cover" not in calls
+    assert "render" not in calls
+    assert "provenance" not in calls
     assert next(result for result in report.execution.results if result.stage == "generate-visuals").ok is False
 
 
