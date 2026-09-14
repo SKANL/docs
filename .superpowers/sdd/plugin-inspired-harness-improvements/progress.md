@@ -170,3 +170,19 @@ source-only by design.
 - Regression coverage confirms creating `Deps` does not construct the bridge;
   focused tests passed (10), full suite passed (2129 passed, 5 skipped), and
   ruff/mypy/CodeGraph/CI passed.
+
+## Post-merge CI and runtime hardening: complete
+- Routed the normal flat pipeline service path through FlatPipelineV2Adapter
+  and removed the obsolete LegacyPipelineExecutor; the CLI compatibility
+  facade remains isolated for commands that still expose the historical
+  surface.
+- Made BuildManifest.identity() independent of workspace absolute paths while
+  retaining actual paths in persisted manifests for publication/status checks.
+  Legacy attestations are normalized only during comparison and still require
+  live artifact digest validation.
+- Fixed mutable renderer_versions validation on serialization.
+- CI initially exposed 25 path-serialization regressions and then one missed
+  mutation-validation regression; both were fixed and the succeeding run
+  passed architecture, check, and toolchains.
+- Verification: local full suite 2433 passed, 5 skipped; focused pipeline
+  service tests 16 passed; CodeGraph index current.
