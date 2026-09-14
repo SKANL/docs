@@ -238,6 +238,7 @@ class BuildManifest:
         }
 
     def to_dict_without_schema(self) -> dict[str, Any]:
+        _validate_renderer_versions(self.renderer_versions)
         return {
             "document_id": self.document_id,
             "source_hash": self.source_hash,
