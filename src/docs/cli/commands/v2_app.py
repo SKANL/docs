@@ -426,9 +426,17 @@ def create_v2_service(
     pipeline_id: str = "document",
     provenance_run_id: str | None = None,
     publication_destination: Path | None = None,
+    artifact_path: Path | None = None,
+    manifest_path: Path | None = None,
 ) -> PipelineServiceV2:
     """Adapt the composition-root services to the v2 pipeline contracts."""
-    state: dict[str, Any] = {"resolved": None, "renderer": None, "artifact": None}
+    state: dict[str, Any] = {
+        "resolved": None,
+        "renderer": None,
+        "artifact": None,
+        "manifest_path": None,
+        "attested_artifact_sha256": None,
+    }
     scratch_dirs: list[Path] = []
 
     def active_context() -> Any:
@@ -450,14 +458,18 @@ def create_v2_service(
         initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
     )
     if pipeline_id in {"document-verify", "document-package", "document-publish"}:
-        if destination.is_file():
-            state["artifact"] = destination
-        manifest_path = destination.with_suffix(destination.suffix + ".manifest.json")
-        if manifest_path.is_file():
+        source_artifact = artifact_path or destination
+        source_manifest = manifest_path or source_artifact.with_suffix(
+            source_artifact.suffix + ".manifest.json"
+        )
+        if source_artifact.is_file() and not source_artifact.is_symlink():
+            state["artifact"] = source_artifact
+        if source_manifest.is_file() and not source_manifest.is_symlink():
             try:
                 state["manifest"] = BuildManifest.from_dict(
-                    json.loads(manifest_path.read_text(encoding="utf-8"))
+                    json.loads(source_manifest.read_text(encoding="utf-8"))
                 )
+                state["manifest_path"] = source_manifest
             except (OSError, TypeError, ValueError, json.JSONDecodeError):
                 # The stage that consumes this state emits the actionable
                 # contract error; service construction remains deterministic.
@@ -949,6 +961,25 @@ def create_v2_service(
     explicit_stages = {name: operation for name, operation in explicit_stages.items() if operation is not None}
 
     def provenance() -> tuple[bool, str]:
+        if pipeline_id == "document-publish":
+            artifact = state.get("artifact")
+            manifest = state.get("manifest")
+            if not isinstance(manifest, BuildManifest):
+                return False, "publish requires an attested artifact/manifest pair"
+            try:
+                manifest.validate_for_publication()
+            except ValueError as exc:
+                return False, str(exc)
+            artifact_digest = sha256_file(artifact) if isinstance(artifact, Path) else ""
+            if (
+                not isinstance(artifact, Path)
+                or manifest.document_id != initial.doc_id
+                or not any(item.sha256 == artifact_digest for item in manifest.artifacts)
+                or not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation())
+            ):
+                return False, "publish requires an attested artifact/manifest pair"
+            state["attested_artifact_sha256"] = artifact_digest
+            return successful("provenance", "reused verified artifact and manifest")
         resolved = state["resolved"]
         manifest = manifest_service.create_manifest(
             resolved=resolved,
@@ -978,12 +1009,40 @@ def create_v2_service(
         staged_manifest = scratch / f"primary.{output_format}.manifest.json"
         staged_package = scratch / f"{initial.doc_id}.zip"
         staged.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(state["artifact"], staged)
-        manifest_service.write_manifest(state["manifest"], staged_manifest)
+        artifact = state.get("artifact")
+        manifest = state.get("manifest")
+        if pipeline_id == "document-publish":
+            persisted_manifest = state.get("manifest_path")
+            expected_digest = state.get("attested_artifact_sha256")
+            if (
+                not isinstance(artifact, Path)
+                or not isinstance(manifest, BuildManifest)
+                or not isinstance(persisted_manifest, Path)
+                or not isinstance(expected_digest, str)
+                or persisted_manifest.is_symlink()
+            ):
+                raise RuntimeError("publish requires an attested artifact/manifest pair")
+            shutil.copyfile(artifact, staged)
+            shutil.copyfile(persisted_manifest, staged_manifest)
+            try:
+                staged_manifest_data = BuildManifest.from_dict(
+                    json.loads(staged_manifest.read_text(encoding="utf-8"))
+                )
+            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise RuntimeError("persisted manifest changed before publication") from exc
+            if staged_manifest_data != manifest:
+                raise RuntimeError("persisted manifest changed before publication")
+        else:
+            if not isinstance(artifact, Path) or not isinstance(manifest, BuildManifest):
+                raise RuntimeError("publish requires a verified artifact and manifest")
+            shutil.copyfile(artifact, staged)
+            manifest_service.write_manifest(manifest, staged_manifest)
         package_candidate = state.get("package_candidate")
         if not isinstance(package_candidate, Path) or not package_candidate.is_file():
             raise RuntimeError("package-release completed without a safe release candidate")
         shutil.copyfile(package_candidate, staged_package)
+        if pipeline_id == "document-publish" and sha256_file(staged) != expected_digest:
+            raise RuntimeError("artifact changed before publication")
 
     manifest_destination = destination.with_suffix(destination.suffix + ".manifest.json")
     release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
@@ -1084,6 +1143,8 @@ def _run(
     policy: PipelineMode | None,
     dimensions: list[ReviewDimension] | None = None,
     pipeline_id: str = "document",
+    artifact_path: Path | None = None,
+    manifest_path: Path | None = None,
 ) -> None:
     selected_document = ctx.obj.get("doc", "")
     if formats is None:
@@ -1136,17 +1197,43 @@ def _run(
                 document=selected_document,
                 pipeline_id=pipeline_id,
                 provenance_run_id=provenance_run_id,
+                artifact_path=artifact_path,
+                manifest_path=manifest_path,
             )
-            external_artifacts = None
-            if pipeline_id == "document-package":
+            external_artifacts: set[str] | frozenset[str] | None = None
+            if pipeline_id in {"document-package", "document-publish"}:
                 # The package sub-pipeline starts from the persisted, verified
                 # build boundary loaded by create_v2_service.  The package
                 # service performs the artifact/manifest/provenance check;
                 # these contracts only tell the runtime that the boundary is
                 # intentionally supplied from the previous build.
-                external_artifacts = service.registry.resolve(
-                    pipeline_id
-                ).definition.external_artifacts
+                required = service.registry.resolve(pipeline_id).definition.external_artifacts
+                if pipeline_id == "document-package":
+                    external_artifacts = required
+                else:
+                    source_manifest = manifest_path
+                    if source_manifest is None:
+                        resolved = ctx.obj["deps"].resolve_context(selected_document)
+                        source_artifact = (
+                            resolved.config.get("paths", {}).get("output_draft_dir")
+                        )
+                        source_manifest = (
+                            Path(source_artifact).parent / "v2" / f"{resolved.doc_id}.{output_format}.manifest.json"
+                            if isinstance(source_artifact, str)
+                            else None
+                        )
+                    try:
+                        if source_manifest is None:
+                            raise ValueError("publish manifest is unavailable")
+                        manifest_data = json.loads(source_manifest.read_text(encoding="utf-8"))
+                        records = manifest_data.get("verification", {}).get("stage_artifacts", [])
+                        external_artifacts = {
+                            record["contract"]
+                            for record in records
+                            if isinstance(record, Mapping) and isinstance(record.get("contract"), str)
+                        }
+                    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+                        external_artifacts = set()
             report = service.run(
                 provenance_run_id or f"cli-{command}-{output_format}",
                 publish=command == "build"
@@ -1189,7 +1276,7 @@ def _run(
             }
             if (
                 command == "build"
-                and pipeline_id in {"document", "document-publish"}
+                and pipeline_id in {"document", "document-publish", "document-package"}
                 and bool(report_payload.get("succeeded"))
             ):
                 resolved = ctx.obj["deps"].resolve_context(selected_document)
@@ -1200,7 +1287,12 @@ def _run(
                 )
                 draft_dir = resolved.config.get("paths", {}).get("output_draft_dir")
                 resolved_root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-                if isinstance(draft_dir, str):
+                if (
+                    pipeline_id == "document"
+                    and artifact_path is None
+                    and manifest_path is None
+                    and isinstance(draft_dir, str)
+                ):
                     artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
                     if artifact.is_file():
                         ledger = ProvenanceLedgerV2(resolved_root / "runs" / "v2-provenance.json", trusted_root=resolved_root)
@@ -1426,9 +1518,20 @@ def build(
     formats: list[str] | None = typer.Option(None, "--format"),
     policy: PipelineMode | None = typer.Option(None, "--policy"),
     pipeline_id: str = typer.Option("document", "--pipeline", help="Registered pipeline boundary to execute."),
+    artifact: Path | None = typer.Option(None, "--artifact", help="Verified existing artifact for publish/package."),
+    manifest: Path | None = typer.Option(None, "--manifest", help="Verified existing manifest for publish/package."),
 ) -> None:
     """Build verified v2 artifacts in one or more requested formats."""
-    _run(ctx, "build", json_output, formats, policy, pipeline_id=pipeline_id)
+    _run(
+        ctx,
+        "build",
+        json_output,
+        formats,
+        policy,
+        pipeline_id=pipeline_id,
+        artifact_path=artifact,
+        manifest_path=manifest,
+    )
 
 
 @v2_app.command("verify")

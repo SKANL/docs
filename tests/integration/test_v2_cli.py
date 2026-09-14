@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -364,6 +365,133 @@ def test_v2_document_package_pipeline_releases_after_a_previous_build(monkeypatc
     assert payload["report"]["succeeded"] is True
     package = tmp_path / "documents" / "active" / "output" / "release" / "active.zip"
     assert package.is_file()
+
+
+def test_v2_document_package_publishes_a_durable_release_from_verified_outputs(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+    release_dir = tmp_path / "documents" / "active" / "output" / "release"
+    (release_dir / "active.zip").unlink()
+
+    packaged = runner.invoke(app, ["v2", "build", "--pipeline", "document-package", "--json"])
+
+    assert packaged.exit_code == 0, packaged.stdout
+    package = release_dir / "active.zip"
+    assert package.is_file()
+    with zipfile.ZipFile(package) as archive:
+        assert "active.docx" in archive.namelist()
+
+
+def test_v2_document_publish_accepts_verified_external_artifact_and_manifest(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+    root = tmp_path / "documents" / "active"
+    artifact = root / "output" / "v2" / "active.docx"
+    manifest = artifact.with_suffix(".docx.manifest.json")
+    external = tmp_path / "verified"
+    external.mkdir()
+    external_artifact = external / artifact.name
+    external_manifest = external / manifest.name
+    external_artifact.write_bytes(artifact.read_bytes())
+    external_manifest.write_bytes(manifest.read_bytes())
+    artifact.unlink()
+    manifest.unlink()
+
+    published = runner.invoke(
+        app,
+        [
+            "v2",
+            "build",
+            "--pipeline",
+            "document-publish",
+            "--artifact",
+            str(external_artifact),
+            "--manifest",
+            str(external_manifest),
+            "--json",
+        ],
+    )
+
+    assert published.exit_code == 0, published.stdout
+    assert (root / "output" / "v2" / "active.docx").read_bytes() == b"DOCX:active"
+    assert not deps.renderer.calls[1:]
+
+
+def test_v2_document_publish_rejects_a_tampered_persisted_artifact(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+    artifact = tmp_path / "documents" / "active" / "output" / "v2" / "active.docx"
+    artifact.write_bytes(b"tampered after verification")
+
+    published = runner.invoke(
+        app, ["v2", "build", "--pipeline", "document-publish", "--json"]
+    )
+
+    assert published.exit_code != 0
+    assert artifact.read_bytes() == b"tampered after verification"
+
+
+def test_v2_document_publish_rejects_external_artifact_replaced_during_materialization(
+    monkeypatch, tmp_path
+):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    built = runner.invoke(app, ["v2", "build", "--json"])
+    assert built.exit_code == 0, built.stdout
+    root = tmp_path / "documents" / "active"
+    artifact = root / "output" / "v2" / "active.docx"
+    manifest = artifact.with_suffix(".docx.manifest.json")
+    external = tmp_path / "verified"
+    external.mkdir()
+    external_artifact = external / artifact.name
+    external_manifest = external / manifest.name
+    external_artifact.write_bytes(artifact.read_bytes())
+    external_manifest.write_bytes(manifest.read_bytes())
+    expected = artifact.read_bytes()
+    original_copyfile = shutil.copyfile
+    replaced = False
+
+    def replace_external(source, destination, *args, **kwargs):
+        nonlocal replaced
+        if Path(source) == external_artifact and not replaced:
+            external_artifact.write_bytes(b"concurrent replacement")
+            replaced = True
+        return original_copyfile(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr("docs.cli.commands.v2_app.shutil.copyfile", replace_external)
+
+    published = runner.invoke(
+        app,
+        [
+            "v2",
+            "build",
+            "--pipeline",
+            "document-publish",
+            "--artifact",
+            str(external_artifact),
+            "--manifest",
+            str(external_manifest),
+            "--json",
+        ],
+    )
+
+    assert replaced
+    assert published.exit_code != 0
+    assert artifact.read_bytes() == expected
 
 def test_v2_verify_runs_workspace_stages_without_publishing(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
@@ -813,8 +941,8 @@ def test_v2_public_package_and_publish_boundaries_execute_from_existing_build(
     )
 
     assert packaged.exit_code == 0, packaged.stdout
-    assert published.exit_code == 1, published.stdout
-    assert "required external artifact unavailable" in published.stdout
+    assert published.exit_code == 0, published.stdout
+    assert json.loads(published.stdout)["report"]["succeeded"] is True
     assert (tmp_path / "documents" / "active" / "output" / "release" / "active.zip").is_file()
 
 
