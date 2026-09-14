@@ -17,10 +17,16 @@ from typing import Any
 import typer
 
 from docs.application.flat_pipeline_compatibility import route_for, strict_policy_error
+from docs.application.output_names import (
+    resolve_draft_docx_name,
+    resolve_draft_pdf_name,
+    resolve_html_name,
+)
 from docs.application.source_pipeline_v2 import SourcePipelineV2
 from docs.cli._shared import _ctx, emit_result, resolve_renderer
-from docs.cli.commands.v2_app import _capabilities_for
+from docs.cli.commands.v2_app import _capabilities_for, create_v2_service
 from docs.domain.issue_codes import ISSUE_CODES, explain_code
+from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
@@ -84,6 +90,113 @@ def _strict_advisory_message(stage_set: str) -> str:
     return f"--strict is advisory for the v2 {stage_set} adapter because it does not accept strict."
 
 
+def _run_v2_assemble(
+    deps: Any,
+    resolved: Any,
+    strict: bool,
+    formats: list[str] | None,
+) -> list[dict[str, Any]]:
+    """Run flat ``assemble`` through the native v2 build runtime."""
+    if formats:
+        requested = formats
+    else:
+        output = resolved.config.get("output", {})
+        configured = output.get("format") if isinstance(output, Mapping) else None
+        requested = [configured if isinstance(configured, str) else "docx"]
+
+    summaries: list[dict[str, Any]] = []
+    policy = PipelinePolicy(PipelineMode.strict) if strict else None
+    for output_format in requested:
+        try:
+            output_draft_dir = Path(resolved.config["paths"]["output_draft_dir"])
+            output_name_resolver = {
+                "docx": resolve_draft_docx_name,
+                "html": resolve_html_name,
+                "pdf": resolve_draft_pdf_name,
+            }.get(output_format)
+            if output_name_resolver is None:
+                available = ", ".join(sorted(getattr(deps, "renderers", {}))) or "ninguno"
+                raise ValueError(
+                    f"Formato de salida no registrado: '{output_format}'. "
+                    f"Formatos disponibles: {available}."
+                )
+            output_name = output_name_resolver(resolved.doc_id, resolved.config)
+            service = create_v2_service(
+                deps,
+                output_format,
+                policy,
+                document=resolved.doc_id,
+                pipeline_id="document",
+                publication_destination=output_draft_dir / output_name,
+            )
+            report = service.run(
+                f"cli-assemble-{output_format}",
+                publish=True,
+                pipeline_id="document",
+            )
+            payload = report.to_dict()
+            execution = payload.get("execution", {})
+            results = execution.get("results", []) if isinstance(execution, Mapping) else []
+            detail = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            stages = []
+            valid_results = [item for item in results if isinstance(item, Mapping)] if isinstance(results, list) else []
+            if not valid_results:
+                stages = [{
+                    "stage": "assemble",
+                    "ok": False,
+                    "duration_s": 0.0,
+                    "detail": detail,
+                    "error": {
+                        "code": "pipeline.malformed_v2_execution",
+                        "message": (
+                            "The v2 assemble report must contain execution.results "
+                            "with at least one mapping stage."
+                        ),
+                    },
+                }]
+            for item in valid_results:
+                if not isinstance(item, Mapping):
+                    continue
+                outcome = item.get("outcome", "succeeded")
+                duration_ms = item.get("duration_ms")
+                duration_s = round(duration_ms / 1000, 3) if isinstance(duration_ms, int) else 0.0
+                stages.append({
+                    "stage": item.get("stage", "assemble"),
+                    "ok": item.get("ok") is True,
+                    "duration_s": duration_s,
+                    "detail": detail,
+                    "outcome": outcome,
+                    **({"skipped": True} if outcome == "skipped" else {}),
+                })
+            if not stages:
+                stages = [{
+                    "stage": "assemble",
+                    "ok": False,
+                    "duration_s": 0.0,
+                    "detail": detail,
+                }]
+            summaries.append({
+                "stage_set": "assemble",
+                "strict": strict,
+                "passed": bool(valid_results) and payload.get("succeeded") is True,
+                "stages": stages,
+                "v2_report": payload,
+            })
+        except Exception as exc:
+            detail = json.dumps(
+                {"error": {"code": "pipeline.v2_assemble_failed", "message": str(exc)}},
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            summaries.append({
+                "stage_set": "assemble",
+                "strict": strict,
+                "passed": False,
+                "stages": [{"stage": "assemble", "ok": False, "duration_s": 0.0, "detail": detail}],
+            })
+    return summaries
+
+
 def _run_compatible_pipeline(
     deps: Any,
     resolved: Any,
@@ -91,7 +204,7 @@ def _run_compatible_pipeline(
     strict: bool,
 ) -> dict[str, Any] | None:
     route = route_for(stage_set)
-    if route is None:
+    if route is None or route.backend != "v2-source":
         return None
     fallback_stage_name = route.expected_stages[0] if len(route.expected_stages) == 1 else route.stage_set
     report_label = f"v2 {stage_set}"
@@ -589,6 +702,22 @@ def pipeline(
     si hay fuentes nuevas. `--strict` bloquea ante huecos y hallazgos."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
+    if stage_set == "assemble":
+        summaries = _run_v2_assemble(deps, resolved, strict, formats)
+        passed = all(summary["passed"] for summary in summaries)
+        if as_json:
+            payload = summaries[0] if len(summaries) == 1 else summaries
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            for summary in summaries:
+                lines = [f"# Pipeline `{summary['stage_set']}` (strict={summary['strict']})", ""]
+                for stage in summary["stages"]:
+                    marker = "SKIP" if stage.get("skipped") is True else ("OK" if stage["ok"] else "FAIL")
+                    head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+                    lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
+                lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])
+                print("\n".join(lines))
+        raise typer.Exit(code=0 if passed else 1)
     compatible_summary = _run_compatible_pipeline(deps, resolved, stage_set, strict)
     if compatible_summary is not None:
         if as_json:

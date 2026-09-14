@@ -25,6 +25,7 @@ FLAT_PIPELINE_ROUTES: tuple[FlatPipelineRoute, ...] = (
         "prepare",
         ("ingest-sources", "normalize-sources", "compile-structure"),
     ),
+    FlatPipelineRoute("assemble", "v2-runtime", "build", ()),
 )
 
 

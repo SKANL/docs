@@ -34,3 +34,7 @@ def resolve_body_docx_name(doc_id: str, config: dict[str, Any]) -> str:
 def resolve_html_name(doc_id: str, config: dict[str, Any]) -> str:
     default = DEFAULT_HTML_NAME_FORMAT.format(doc_id=doc_id)
     return config.get("output", {}).get("html_name", default)
+
+
+def resolve_draft_pdf_name(doc_id: str, config: dict[str, Any]) -> str:
+    return f"{resolve_draft_docx_name(doc_id, config).rsplit('.', 1)[0]}.pdf"

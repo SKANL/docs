@@ -425,6 +425,7 @@ def create_v2_service(
     document: str = "",
     pipeline_id: str = "document",
     provenance_run_id: str | None = None,
+    publication_destination: Path | None = None,
 ) -> PipelineServiceV2:
     """Adapt the composition-root services to the v2 pipeline contracts."""
     state: dict[str, Any] = {"resolved": None, "renderer": None, "artifact": None}
@@ -445,7 +446,9 @@ def create_v2_service(
     initial_root = deps.workspace.doc_root(initial.doc_id)
     initial_root.mkdir(parents=True, exist_ok=True)
     capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
-    destination = initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
+    destination = publication_destination or (
+        initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
+    )
     if pipeline_id in {"document-verify", "document-package", "document-publish"}:
         if destination.is_file():
             state["artifact"] = destination

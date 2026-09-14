@@ -136,9 +136,11 @@ Use `docs document plan --pipeline document-build --json` to inspect the ordered
 The compatibility policy for the unprefixed `docs pipeline <stage-set>` command
 is intentionally explicit and finite. `ingest` and `prepare` are routed through the
 native v2 source pipeline and its result is adapted back to the legacy summary
-shape (`stage_set`, `strict`, `passed`, and `stages`). `prep`, `assemble`, `all`,
-and unknown stage sets continue to use the legacy service until their output and
-publication semantics have equivalent v2 coverage. This policy is declared in
+shape (`stage_set`, `strict`, `passed`, and `stages`). `assemble` now routes
+through the native v2 build runtime and projects its execution report back to
+the legacy summary shape. `prep`, `all`, and unknown stage sets continue to use
+the legacy service until their output and publication semantics have equivalent
+v2 coverage. This policy is declared in
 `src/docs/application/flat_pipeline_compatibility.py`; it is not inferred from
 the public v2 catalog. Consequently, existing exit codes and JSON/human output
 contracts remain stable while migration proceeds incrementally.

@@ -59,12 +59,17 @@ def _new_doc(doc_id="doc1"):
     Deps().documents.create(doc_id, "tesina")
 
 
-def _fake_run_pipeline(seen_formats):
-    def run_pipeline(self, doc_id, template, config, stage_set, repo_root, strict=False, renderer=None):
-        seen_formats.append(renderer.output_format)
-        return {"stage_set": stage_set, "strict": strict, "passed": True, "stages": []}
+def _fake_v2_assemble(seen_formats):
+    def run_v2_assemble(deps, resolved, strict, formats):
+        del deps, resolved
+        seen_formats.append(formats)
+        requested = formats or ["docx"]
+        return [
+            {"stage_set": "assemble", "strict": strict, "passed": True, "stages": []}
+            for _ in requested
+        ]
 
-    return run_pipeline
+    return run_v2_assemble
 
 
 def test_deps_registers_the_html_renderer(workspace):
@@ -87,34 +92,34 @@ def test_deps_registers_named_legacy_pipeline_service(workspace):
 def test_pipeline_format_pdf_selects_the_pdf_renderer(workspace, monkeypatch):
     _new_doc()
     seen_formats: list[str] = []
-    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", _fake_run_pipeline(seen_formats))
+    monkeypatch.setattr("docs.cli.commands.core_app._run_v2_assemble", _fake_v2_assemble(seen_formats))
 
     result = runner.invoke(app, ["pipeline", "assemble", "--format", "pdf"])
 
     assert result.exit_code == 0
-    assert seen_formats == ["pdf"]
+    assert seen_formats == [["pdf"]]
 
 
 def test_pipeline_format_html_selects_the_html_renderer(workspace, monkeypatch):
     _new_doc()
     seen_formats: list[str] = []
-    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", _fake_run_pipeline(seen_formats))
+    monkeypatch.setattr("docs.cli.commands.core_app._run_v2_assemble", _fake_v2_assemble(seen_formats))
 
     result = runner.invoke(app, ["pipeline", "assemble", "--format", "html"])
 
     assert result.exit_code == 0
-    assert seen_formats == ["html"]
+    assert seen_formats == [["html"]]
 
 
 def test_pipeline_format_is_repeatable_and_builds_each_requested_format(workspace, monkeypatch):
     _new_doc()
     seen_formats: list[str] = []
-    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", _fake_run_pipeline(seen_formats))
+    monkeypatch.setattr("docs.cli.commands.core_app._run_v2_assemble", _fake_v2_assemble(seen_formats))
 
     result = runner.invoke(app, ["pipeline", "assemble", "--format", "html", "--format", "docx"])
 
     assert result.exit_code == 0
-    assert seen_formats == ["html", "docx"]
+    assert seen_formats == [["html", "docx"]]
 
 
 def test_pipeline_no_format_flag_keeps_the_config_driven_docx_default(workspace, monkeypatch):
@@ -124,12 +129,12 @@ def test_pipeline_no_format_flag_keeps_the_config_driven_docx_default(workspace,
     # silently ignore an explicit `output.format` in a template's config.
     _new_doc()
     seen_formats: list[str] = []
-    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", _fake_run_pipeline(seen_formats))
+    monkeypatch.setattr("docs.cli.commands.core_app._run_v2_assemble", _fake_v2_assemble(seen_formats))
 
     result = runner.invoke(app, ["pipeline", "assemble"])
 
     assert result.exit_code == 0
-    assert seen_formats == ["docx"]
+    assert seen_formats == [None]
 
 
 def test_pipeline_json_output_stays_a_single_object_for_one_format(workspace, monkeypatch):
@@ -138,8 +143,8 @@ def test_pipeline_json_output_stays_a_single_object_for_one_format(workspace, mo
     # only one format is built (the default, unflagged path).
     _new_doc()
     monkeypatch.setattr(
-        "docs.application.pipeline.PipelineService.run_pipeline",
-        _fake_run_pipeline([]),
+        "docs.cli.commands.core_app._run_v2_assemble",
+        _fake_v2_assemble([]),
     )
 
     result = runner.invoke(app, ["pipeline", "assemble", "--json"])
@@ -152,8 +157,8 @@ def test_pipeline_json_output_stays_a_single_object_for_one_format(workspace, mo
 def test_pipeline_json_output_is_a_list_when_multiple_formats_requested(workspace, monkeypatch):
     _new_doc()
     monkeypatch.setattr(
-        "docs.application.pipeline.PipelineService.run_pipeline",
-        _fake_run_pipeline([]),
+        "docs.cli.commands.core_app._run_v2_assemble",
+        _fake_v2_assemble([]),
     )
 
     result = runner.invoke(app, ["pipeline", "assemble", "--format", "html", "--format", "docx", "--json"])
@@ -163,13 +168,147 @@ def test_pipeline_json_output_is_a_list_when_multiple_formats_requested(workspac
     assert len(payload) == 2
 
 
-def test_flat_pipeline_policy_routes_ingest_and_prepare_to_v2_but_not_legacy_prep():
+def test_flat_pipeline_policy_routes_assemble_to_v2_but_keeps_prep_and_all_legacy():
     assert route_for("ingest") is not None
     assert route_for("prepare") is not None
     assert route_for("prep") is None
-    assert route_for("assemble") is None
+    assert route_for("assemble").backend == "v2-runtime"
     assert route_for("all") is None
     assert route_for("unsupported") is None
+
+
+def test_flat_pipeline_assemble_projects_v2_runtime_and_preserves_legacy_summary(
+    workspace, monkeypatch
+):
+    _new_doc()
+    calls: list[tuple[str, bool, str]] = []
+
+    class _Report:
+        def to_dict(self):
+            return {
+                "succeeded": True,
+                "execution": {
+                    "results": [
+                        {
+                            "stage": "build-docx",
+                            "ok": True,
+                            "outcome": "succeeded",
+                            "artifacts": [],
+                            "warnings": [],
+                            "errors": [],
+                        }
+                    ]
+                },
+            }
+
+    class _V2Service:
+        def run(self, run_id, *, publish, pipeline_id):
+            calls.append((run_id, publish, pipeline_id))
+            return _Report()
+
+    monkeypatch.setattr(
+        "docs.cli.commands.core_app.create_v2_service",
+        lambda deps, output_format, policy, document, pipeline_id, publication_destination: _V2Service(),
+    )
+    monkeypatch.setattr(
+        "docs.application.pipeline.PipelineService.run_pipeline",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy backend used")),
+    )
+
+    result = runner.invoke(app, ["pipeline", "assemble", "--format", "docx", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["stage_set"] == "assemble"
+    assert payload["passed"] is True
+    assert payload["stages"][0]["stage"] == "build-docx"
+    assert payload["stages"][0]["ok"] is True
+    assert calls == [("cli-assemble-docx", True, "document")]
+
+
+@pytest.mark.parametrize("execution", [{}, {"results": "invalid"}, {"results": [None, "invalid"]}])
+def test_flat_pipeline_assemble_rejects_missing_or_invalid_execution_results(
+    workspace, monkeypatch, execution
+):
+    _new_doc()
+
+    class _Report:
+        def to_dict(self):
+            return {"succeeded": True, "execution": execution}
+
+    class _V2Service:
+        def run(self, run_id, *, publish, pipeline_id):
+            del run_id, publish, pipeline_id
+            return _Report()
+
+    monkeypatch.setattr(
+        "docs.cli.commands.core_app.create_v2_service",
+        lambda *args, **kwargs: _V2Service(),
+    )
+
+    result = runner.invoke(app, ["pipeline", "assemble", "--format", "docx", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    assert payload["stages"] == [
+        {
+            "stage": "assemble",
+            "ok": False,
+            "duration_s": 0.0,
+            "detail": json.dumps(
+                {"succeeded": True, "execution": execution},
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            "error": {
+                "code": "pipeline.malformed_v2_execution",
+                "message": "The v2 assemble report must contain execution.results with at least one mapping stage.",
+            },
+        }
+    ]
+
+
+def test_flat_pipeline_assemble_publishes_to_draft_and_preserves_final(
+    workspace, monkeypatch
+):
+    _new_doc()
+    doc_root = Deps().workspace.doc_root("doc1")
+    draft = doc_root / "output" / "draft" / "doc1-draft.docx"
+    final = doc_root / "output" / "final" / "doc1-draft.docx"
+    final.parent.mkdir(parents=True, exist_ok=True)
+    final.write_text("existing-final", encoding="utf-8")
+    seen: list[Path] = []
+
+    class _Report:
+        def to_dict(self):
+            return {
+                "succeeded": True,
+                "execution": {"results": [{"stage": "build-docx", "ok": True}]},
+            }
+
+    class _V2Service:
+        def run(self, run_id, *, publish, pipeline_id):
+            assert publish is True
+            assert pipeline_id == "document"
+            destination = seen[-1]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text("new-draft", encoding="utf-8")
+            return _Report()
+
+    def _create_service(deps, output_format, policy, document, pipeline_id, publication_destination):
+        del deps, output_format, policy, document, pipeline_id
+        seen.append(publication_destination)
+        return _V2Service()
+
+    monkeypatch.setattr("docs.cli.commands.core_app.create_v2_service", _create_service)
+
+    result = runner.invoke(app, ["pipeline", "assemble", "--format", "docx", "--json"])
+
+    assert result.exit_code == 0
+    assert seen == [draft]
+    assert draft.read_text(encoding="utf-8") == "new-draft"
+    assert final.read_text(encoding="utf-8") == "existing-final"
 
 
 def test_flat_pipeline_ingest_preserves_legacy_summary_shape_and_uses_v2(workspace, monkeypatch):
@@ -603,7 +742,7 @@ def test_flat_pipeline_ingest_reports_v2_construction_failure_when_ingest_depend
     assert calls == []
 
 
-@pytest.mark.parametrize("stage_set", ["prep", "assemble", "all"])
+@pytest.mark.parametrize("stage_set", ["prep", "all"])
 def test_flat_pipeline_unsupported_stage_sets_stay_on_legacy_backend(workspace, monkeypatch, stage_set):
     _new_doc()
     calls: list[str] = []
