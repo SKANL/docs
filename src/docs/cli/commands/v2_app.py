@@ -38,6 +38,7 @@ from docs.application.pipeline_service_v2 import (
     PublicationSpec,
 )
 from docs.application.provenance_v2 import ProvenanceLedgerV2
+from docs.application.review_stages import ReviewStageService
 from docs.application.source_pipeline_v2 import SourcePipelineV2
 from docs.application.stage_provider_v2 import StageProviderV2
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
@@ -499,6 +500,21 @@ def create_v2_service(
             stage_services[name] = service
     stage_provider = StageProviderV2(stage_services)
     source_pipeline = _source_pipeline(deps)
+    review_stage_service = None
+    if output_format == "docx" and all(
+        service is not None
+        for service in (
+            getattr(deps, "structural_audit_service", None),
+            getattr(deps, "format_audit", None),
+            getattr(deps, "review", None),
+        )
+    ):
+        review_stage_service = ReviewStageService(
+            structural_audit=deps.structural_audit_service,
+            format_audit=deps.format_audit,
+            document_review=deps.review,
+            rules_manifest_state=getattr(deps, "rules_manifest_state", lambda _config: (False, 0)),
+        )
 
     def _stage_service(name: str) -> Any:
         return stage_provider.get(name)
@@ -658,6 +674,32 @@ def create_v2_service(
         except Exception as exc:
             return False, f"reproducibility check failed: {exc}"
         return _successful_stage_result("reproducibility-check", artifact)
+
+    def _review_stage(name: str) -> tuple[bool, str] | StageResult:
+        if review_stage_service is None:
+            return False, f"{name} service is not configured"
+        effective_policy = policy or PipelinePolicy(PipelineMode.draft)
+        outcome = review_stage_service.run_stage(
+            name,
+            document_id=state["resolved"].doc_id,
+            artifact_path=state["artifact"],
+            config=state["config"],
+            template=state["resolved"].template,
+            policy=effective_policy,
+            rebuild=lambda output: state["renderer"].build(
+                state["resolved"].doc_id, state["config"], output=output
+            ),
+            scratch_dir=initial_root / "runs" / "v2-review" / name,
+        )
+        if outcome.ok and not outcome.warnings:
+            return _successful_stage_result(name, state["artifact"])
+        return StageResult(
+            name,
+            outcome.ok,
+            artifacts=(_successful_stage_result(name, state["artifact"]).artifacts if outcome.ok else ()),
+            warnings=outcome.warnings,
+            errors=outcome.errors,
+        )
 
     def _native_package_release() -> tuple[bool, str]:
         """Package the verified, attested v2 artifact before publication."""
@@ -866,9 +908,21 @@ def create_v2_service(
         "generate_visuals": _generate_visuals if _stage_service("generate_visuals_service") is not None else _callable_stage("generate_visuals"),
         "compose_cover": _compose_cover if _callable_stage("compose_cover") is None else _callable_stage("compose_cover"),
         "structural_audit": _structural_audit if _stage_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
-        "accessibility_review": _callable_stage("accessibility_review") or _native_accessibility_review,
-        "visual_review": _callable_stage("visual_review") or _native_visual_review,
-        "reproducibility_check": _callable_stage("reproducibility_check") or _native_reproducibility_check,
+        "accessibility_review": _callable_stage("accessibility_review") or (
+            (lambda: _review_stage("accessibility-review"))
+            if review_stage_service is not None
+            else _native_accessibility_review
+        ),
+        "visual_review": _callable_stage("visual_review") or (
+            (lambda: _review_stage("visual-review"))
+            if review_stage_service is not None
+            else _native_visual_review
+        ),
+        "reproducibility_check": _callable_stage("reproducibility_check") or (
+            (lambda: _review_stage("reproducibility-check"))
+            if review_stage_service is not None
+            else _native_reproducibility_check
+        ),
     }
     if explicit_stages["generate_visuals"] is None:
         explicit_stages["generate_visuals"] = _generate_visuals
@@ -930,8 +984,16 @@ def create_v2_service(
         "normalize-sources": lambda: _source_stage("normalize-sources"),
         "compile-structure": lambda: _source_stage("compile-structure"),
         "build-docx": render,
-        "structural-audit": audit,
-        "editorial-review": verify,
+        "structural-audit": (
+            lambda: _review_stage("structural-audit")
+            if review_stage_service is not None
+            else audit()
+        ),
+        "editorial-review": (
+            lambda: _review_stage("editorial-review")
+            if review_stage_service is not None
+            else verify()
+        ),
         "record-provenance": provenance,
         "evidence-review": _callable_stage("evidence_review")
         or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),
