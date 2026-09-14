@@ -25,6 +25,7 @@ ISSUE_CODE_FAMILIES: dict[str, str] = {
     "evidence": "Respaldo verificable de lo que la sección afirma.",
     "privacy": "Secretos, credenciales o datos sensibles filtrados al texto.",
     "qa": "Auditoría visual del artefacto renderizado (PDF vía LibreOffice).",
+    "reproducibility": "Reproducibilidad determinista de los artefactos generados.",
     "scope": "Delimitación del alcance declarado del documento.",
     "structure": "Existencia y forma de las secciones y sus títulos.",
     "template": "Validez del archivo de plantilla en sí.",
@@ -133,6 +134,11 @@ ISSUE_CODES: dict[str, IssueCode] = {
     "qa.skipped": IssueCode(
         meaning="No se pudo hacer la auditoría visual porque falta LibreOffice; la de formato sí corrió.",
         fix="Instalá LibreOffice para habilitarla. No bloquea: la auditoría estructural del .docx ya se ejecutó.",
+    ),
+    # --- reproducibility ---------------------------------------------------
+    "reproducibility.failed": IssueCode(
+        meaning="La reconstrucción del artefacto no coincide con el artefacto original.",
+        fix="Revisá las entradas, el renderer y cualquier fuente de datos no determinista hasta que ambas salidas coincidan.",
     ),
     # --- scope --------------------------------------------------------------
     "scope.excluded_section": IssueCode(

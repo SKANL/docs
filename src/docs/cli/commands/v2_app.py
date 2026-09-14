@@ -817,6 +817,11 @@ def create_v2_service(
             return operation()
         return source_pipeline.run_stage(name, initial.doc_id, initial_root, state["config"])
 
+    def _review_stage_operation(stage: str, fallback: Any) -> Any:
+        if review_stage_service is not None:
+            return lambda: _review_stage(stage)
+        return fallback
+
     def validate_contracts() -> tuple[bool, str]:
         resolved = state["resolved"]
         if getattr(state["renderer"], "output_format", "") != output_format:
@@ -984,16 +989,8 @@ def create_v2_service(
         "normalize-sources": lambda: _source_stage("normalize-sources"),
         "compile-structure": lambda: _source_stage("compile-structure"),
         "build-docx": render,
-        "structural-audit": (
-            lambda: _review_stage("structural-audit")
-            if review_stage_service is not None
-            else audit()
-        ),
-        "editorial-review": (
-            lambda: _review_stage("editorial-review")
-            if review_stage_service is not None
-            else verify()
-        ),
+        "structural-audit": _review_stage_operation("structural-audit", audit),
+        "editorial-review": _review_stage_operation("editorial-review", verify),
         "record-provenance": provenance,
         "evidence-review": _callable_stage("evidence_review")
         or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),

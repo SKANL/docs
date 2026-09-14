@@ -176,12 +176,19 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     }
     assert {
         "_native_document_review",
-        "_native_visual_review",
         "_native_package_release",
         "_write_package_archive",
     } <= functions
     assert '"package-release": _callable_stage("package_release") or _native_package_release' in source
-    assert '"visual_review": _callable_stage("visual_review") or _native_visual_review' in source
+    assert '"visual_review": _callable_stage("visual_review") or (' in source
+    assert 'lambda: _review_stage("visual-review")' in source
+
+
+def test_workspace_bridge_keeps_audit_and_verify_fallbacks_callable() -> None:
+    source = (SRC_ROOT / "cli" / "commands" / "v2_app.py").read_text(encoding="utf-8")
+    assert 'return lambda: _review_stage(stage)' in source
+    assert '"structural-audit": _review_stage_operation("structural-audit", audit)' in source
+    assert '"editorial-review": _review_stage_operation("editorial-review", verify)' in source
 
 
 def test_v2_composition_does_not_reach_through_legacy_pipeline_aggregate():

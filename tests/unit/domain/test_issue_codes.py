@@ -93,3 +93,7 @@ def test_codes_are_grouped_by_a_documented_prefix():
     assert prefixes <= set(ISSUE_CODE_FAMILIES), (
         f"familias de código sin documentar: {sorted(prefixes - set(ISSUE_CODE_FAMILIES))}"
     )
+
+
+def test_reproducibility_failure_is_documented():
+    assert "reproducibility.failed" in ISSUE_CODES
