@@ -856,7 +856,7 @@ def pipeline(
         renderers = [deps.resolve_renderer(resolved.config)]
 
     summaries = [
-        deps.legacy_pipeline.run_pipeline(
+        deps.pipeline.run_pipeline(
             resolved.doc_id, resolved.template, resolved.config, stage_set,
             repo_root=repo_root, strict=strict, renderer=renderer,
         )
