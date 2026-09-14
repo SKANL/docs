@@ -285,6 +285,34 @@ def test_v2_manifest_renderer_identity_changes_with_declared_version(monkeypatch
     assert second.exit_code == 0, second.stdout
     assert first_manifest["renderer_versions"] != second_manifest["renderer_versions"]
 
+
+def test_v2_package_remains_bound_to_the_exact_verified_build_run(monkeypatch, tmp_path):
+    deps = _deps(tmp_path)
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    first = runner.invoke(app, ["v2", "build", "--json"])
+    assert first.exit_code == 0, first.stdout
+    artifact = tmp_path / "documents" / "active" / "output" / "v2" / "active.docx"
+    manifest_path = artifact.with_suffix(".docx.manifest.json")
+    first_artifact = artifact.read_bytes()
+    first_manifest = manifest_path.read_bytes()
+    first_run = json.loads(first_manifest)["provenance_run"]
+
+    deps.renderer.version = "renderer-two"
+    second = runner.invoke(app, ["v2", "build", "--json"])
+    second_run = json.loads(manifest_path.read_text(encoding="utf-8"))["provenance_run"]
+    artifact.write_bytes(first_artifact)
+    manifest_path.write_bytes(first_manifest)
+
+    package = tmp_path / "release.zip"
+    packaged = runner.invoke(app, ["v2", "package", str(artifact.parent), str(package), "--json"])
+
+    assert second.exit_code == 0, second.stdout
+    assert first_run != second_run
+    assert packaged.exit_code == 0, packaged.stdout
+    assert package.is_file()
+
 def test_v2_verify_runs_workspace_stages_without_publishing(monkeypatch, tmp_path):
     deps = _deps(tmp_path)
     monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
@@ -356,7 +384,8 @@ def test_v2_build_runs_native_review_and_package_handlers_when_legacy_hooks_are_
         for stage in ("evidence-review", "consistency-review", "visual-review", "package-release")
     )
     assert deps.review.calls
-    assert attestation_checks == ["cli-build-docx"]
+    assert len(attestation_checks) == 1
+    assert attestation_checks[0].startswith("cli-build-docx-")
     release = tmp_path / "documents" / "active" / "output" / "release" / "active.zip"
     assert release.is_file()
     import zipfile

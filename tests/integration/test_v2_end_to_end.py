@@ -306,8 +306,8 @@ def test_v2_builtin_template_journey_produces_artifacts_and_provenance(
     assert manifest["document_id"] == "canonical"
     assert manifest["verification"]["passed"] is True
     assert manifest["artifacts"][0]["sha256"] == inspected["sha256"]
-    assert manifest["provenance_run"] == "cli-build-docx"
-    assert "cli-build-docx" in (root / "runs" / "v2-provenance.json").read_text(encoding="utf-8")
+    assert manifest["provenance_run"].startswith("cli-build-docx-")
+    assert manifest["provenance_run"] in (root / "runs" / "v2-provenance.json").read_text(encoding="utf-8")
     assert published["published"] is True
     assert destination.read_bytes() == artifact.read_bytes()
     assert destination.with_suffix(".docx.manifest.json").read_bytes() == manifest_path.read_bytes()
@@ -535,5 +535,5 @@ def test_v2_build_and_verify_honor_each_builtin_template_contract(
     assert manifest["template_hash"]
     assert manifest["verification"]["passed"] is True
     assert manifest["artifacts"][0]["path"] == str(artifact.resolve())
-    assert manifest["provenance_run"] == "cli-build-docx"
+    assert manifest["provenance_run"].startswith("cli-build-docx-")
     assert (root / "runs" / "v2-provenance.json").is_file()

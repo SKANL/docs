@@ -424,6 +424,7 @@ def create_v2_service(
     policy: PipelinePolicy | None = None,
     document: str = "",
     pipeline_id: str = "document",
+    provenance_run_id: str | None = None,
 ) -> PipelineServiceV2:
     """Adapt the composition-root services to the v2 pipeline contracts."""
     state: dict[str, Any] = {"resolved": None, "renderer": None, "artifact": None}
@@ -468,7 +469,7 @@ def create_v2_service(
         artifact_hash=sha256_file,
         write_text=_write_manifest_text,
     )
-    state["run_id"] = f"cli-build-{output_format}"
+    state["run_id"] = provenance_run_id or f"cli-build-{output_format}-{uuid.uuid4().hex}"
     build_token = uuid.uuid4().hex
 
     stage_services: dict[str, Any] = {}
@@ -1117,15 +1118,17 @@ def _run(
     try:
         for output_format in requested:
             selected_policy = PipelinePolicy(policy) if policy is not None else None
+            provenance_run_id = f"cli-build-{output_format}-{uuid.uuid4().hex}" if command == "build" else None
             service = create_v2_service(
                 ctx.obj["deps"],
                 output_format,
                 selected_policy,
                 document=selected_document,
                 pipeline_id=pipeline_id,
+                provenance_run_id=provenance_run_id,
             )
             report = service.run(
-                f"cli-{command}-{output_format}",
+                provenance_run_id or f"cli-{command}-{output_format}",
                 publish=command == "build"
                 and pipeline_id in {"document", "document-publish"},
                 pipeline_id=pipeline_id,
@@ -1176,7 +1179,7 @@ def _run(
                     artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
                     if artifact.is_file():
                         ledger = ProvenanceLedgerV2(resolved_root / "runs" / "v2-provenance.json", trusted_root=resolved_root)
-                        recorded = ledger.load_attestation(f"cli-build-{output_format}")
+                        recorded = ledger.load_attestation(provenance_run_id or "")
                         if recorded is None:
                             raise RuntimeError("missing pre-publication build attestation")
                         BuildManifest.from_dict(recorded.get("manifest", recorded))

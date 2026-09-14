@@ -142,7 +142,7 @@ optional and degrades to a warning rather than a failure:
 ## Development
 
 ```bash
-uv run pytest              # 1563 tests
+uv run pytest              # full test suite (the count is reported by pytest/CI)
 uv run ruff check .
 uv run mypy
 ```
