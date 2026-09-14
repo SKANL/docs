@@ -6,22 +6,348 @@ Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted flat
 """
 from __future__ import annotations
 
+import inspect
 import json
+from collections.abc import Mapping
 from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 import typer
 
+from docs.application.flat_pipeline_compatibility import route_for, strict_policy_error
+from docs.application.source_pipeline_v2 import SourcePipelineV2
 from docs.cli._shared import _ctx, emit_result, resolve_renderer
 from docs.cli.commands.v2_app import _capabilities_for
 from docs.domain.issue_codes import ISSUE_CODES, explain_code
 from docs.domain.review import ReviewDimension, ReviewResult
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 
 core_app = typer.Typer()
 
 _AGENTS_MD_PACKAGE = "docs.data"
 _AGENTS_MD_NAME = "AGENTS.md"
+
+
+def _source_pipeline_v2(deps: Any) -> SourcePipelineV2 | None:
+    ingest = getattr(deps, "ingest", None)
+    if ingest is None:
+        return None
+    return SourcePipelineV2(
+        ingest,
+        getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter(),
+        getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
+    )
+
+
+def _v2_failure_report(document_id: str, error: str, code: str, message: str) -> dict[str, Any]:
+    return {
+        "schema": "docs.sources/v2",
+        "document_id": document_id,
+        "succeeded": False,
+        "stages": [{
+            "name": "ingest-sources",
+            "succeeded": False,
+            "result": {"error": error},
+        }],
+        "artifacts": [],
+        "error": {"error": error},
+        "errors": [{"code": code, "message": message}],
+    }
+
+
+def _run_compatible_pipeline(
+    deps: Any,
+    resolved: Any,
+    stage_set: str,
+    strict: bool,
+) -> dict[str, Any] | None:
+    route = route_for(stage_set)
+    if route is None:
+        return None
+    report: dict[str, Any]
+    supports_strict = False
+    try:
+        service = _source_pipeline_v2(deps)
+    except Exception as exc:
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline construction failed",
+            "pipeline.v2_construction_failed",
+            f"The v2 source pipeline could not be constructed: {exc}",
+        )
+        service = None
+    else:
+        if service is None:
+            report = _v2_failure_report(
+                resolved.doc_id,
+                "v2 source pipeline construction failed",
+                "pipeline.v2_construction_failed",
+                "The v2 source pipeline could not be constructed because its dependencies are incomplete.",
+            )
+        else:
+            try:
+                operation = getattr(service, route.operation)
+            except Exception as exc:
+                report = _v2_failure_report(
+                    resolved.doc_id,
+                    "v2 source pipeline operation lookup failed",
+                    "pipeline.v2_operation_lookup_failed",
+                    f"The v2 source pipeline operation could not be resolved: {exc}",
+                )
+                operation = None
+            if operation is not None:
+                try:
+                    document_root = deps.workspace.doc_root(resolved.doc_id)
+                except Exception as exc:
+                    report = _v2_failure_report(
+                        resolved.doc_id,
+                        "v2 source pipeline invocation failed",
+                        "pipeline.v2_invocation_failed",
+                        f"The v2 source pipeline invocation failed: {exc}",
+                    )
+                    operation = None
+                else:
+                    args = (resolved.doc_id, document_root, resolved.config)
+                if operation is not None:
+                    try:
+                        parameters = inspect.signature(operation).parameters.values()
+                        supports_strict = any(
+                            (
+                                parameter.name == "strict"
+                                and parameter.kind
+                                in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+                            )
+                            or parameter.kind is inspect.Parameter.VAR_KEYWORD
+                            for parameter in parameters
+                        )
+                    except (TypeError, ValueError):
+                        supports_strict = False
+                    try:
+                        report = operation(*args, strict=strict) if supports_strict else operation(*args)
+                    except Exception as exc:
+                        report = _v2_failure_report(
+                            resolved.doc_id,
+                            "v2 source pipeline invocation failed",
+                            "pipeline.v2_invocation_failed",
+                            f"The v2 source pipeline invocation failed: {exc}",
+                        )
+    if not isinstance(report, Mapping):
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned malformed report",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report must be a mapping.",
+        )
+    else:
+        report = dict(report)
+    report["document_id"] = resolved.doc_id
+    strict_policy = report.get("strict_policy")
+    if not isinstance(strict_policy, dict):
+        if strict_policy is None:
+            strict_policy = {
+                "requested": strict,
+                "applied": False,
+                "mode": "advisory",
+            }
+        else:
+            report = _v2_failure_report(
+                resolved.doc_id,
+                "v2 source pipeline returned malformed strict policy",
+                "pipeline.malformed_strict_policy",
+                "The v2 ingest strict_policy must be a mapping.",
+            )
+            strict_policy = {
+                "requested": strict,
+                "applied": False,
+                "mode": "advisory",
+            }
+    else:
+        strict_policy = dict(strict_policy)
+        policy_error = strict_policy_error(strict_policy, strict)
+        if policy_error is not None:
+            report = _v2_failure_report(
+                resolved.doc_id,
+                "v2 source pipeline returned malformed strict policy",
+                "pipeline.malformed_strict_policy",
+                f"The v2 ingest strict_policy is contradictory: {policy_error}",
+            )
+            strict_policy = dict(strict_policy)
+        elif strict and strict_policy.get("applied") is not True:
+            strict_policy.update({
+                "requested": True,
+                "applied": False,
+                "mode": "advisory",
+            })
+    report["strict_policy"] = strict_policy
+    warnings = report.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    upstream_warning = strict_policy.get("warning")
+    if isinstance(upstream_warning, str) and upstream_warning:
+        warnings.append({
+            "code": "pipeline.strict_policy",
+            "message": upstream_warning,
+        })
+    strict_applied = strict_policy.get("applied") is True
+    if strict and not strict_applied and "warning" not in strict_policy:
+        strict_policy["warning"] = "v2 ingest does not expose strict enforcement"
+        warnings.append({
+            "code": "pipeline.strict_advisory",
+            "message": "--strict is advisory for the v2 ingest adapter because it does not accept strict.",
+        })
+    elif strict and not strict_applied:
+        warnings.append({
+            "code": "pipeline.strict_advisory",
+            "message": "--strict is advisory for the v2 ingest adapter because it does not accept strict.",
+        })
+    if warnings:
+        report["warnings"] = warnings
+    required_fields = ("schema", "succeeded", "stages")
+    missing_fields = [field for field in required_fields if field not in report]
+    stages = report.get("stages")
+    stage_shape_valid = False
+    if missing_fields:
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned incomplete report",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report is missing required fields: " + ", ".join(missing_fields) + ".",
+        )
+        stage = report["stages"][0]
+    elif report["schema"] != "docs.sources/v2":
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned unsupported schema",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report schema must be exactly docs.sources/v2.",
+        )
+        stage = report["stages"][0]
+    elif not isinstance(report["succeeded"], bool):
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned malformed report",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report contained a malformed top-level succeeded value.",
+        )
+        stage = report["stages"][0]
+    elif not isinstance(stages, list):
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned malformed report",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report stages must be a list.",
+        )
+        stage = report["stages"][0]
+    elif not stages:
+        report["succeeded"] = False
+        stage = {
+            "name": "ingest-sources",
+            "succeeded": False,
+            "result": {"error": "v2 source pipeline returned no stages"},
+        }
+        report["error"] = stage["result"]
+        report["errors"] = [{
+            "code": "pipeline.empty_v2_report",
+            "message": "The v2 ingest report contained no stages.",
+        }]
+    elif len(stages) != 1:
+        report["succeeded"] = False
+        stage = {
+            "name": "ingest-sources",
+            "succeeded": False,
+            "result": {"error": "v2 source pipeline returned unexpected stage records"},
+        }
+        report["error"] = stage["result"]
+        report["errors"] = [{
+            "code": "pipeline.malformed_v2_report",
+            "message": "The v2 ingest report must contain exactly one ingest stage.",
+        }]
+    else:
+        candidate = stages[0]
+        if not all(
+            isinstance(item, Mapping)
+            and isinstance(item.get("name"), str)
+            and bool(item["name"])
+            and isinstance(item.get("succeeded"), bool)
+            for item in stages
+        ) or (
+            not isinstance(candidate, Mapping)
+            or candidate.get("name") != "ingest-sources"
+        ):
+            report["succeeded"] = False
+            stage = {
+                "name": "ingest-sources",
+                "succeeded": False,
+                "result": {"error": "v2 source pipeline returned malformed first stage"},
+            }
+            report["error"] = stage["result"]
+            report["errors"] = [{
+                "code": "pipeline.malformed_v2_report",
+                "message": "The v2 ingest report contained a malformed first stage.",
+            }]
+        else:
+            stage = dict(candidate)
+            if report["succeeded"] != candidate["succeeded"]:
+                report["succeeded"] = False
+                stage = {
+                    "name": "ingest-sources",
+                    "succeeded": False,
+                    "result": {"error": "v2 source pipeline returned contradictory success values"},
+                }
+                report["error"] = stage["result"]
+                report["errors"] = [{
+                    "code": "pipeline.malformed_v2_report",
+                    "message": "The v2 ingest report cannot disagree with its first stage.",
+                }]
+            else:
+                stage_shape_valid = True
+    if stage_shape_valid and "artifacts" not in report:
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned incomplete report",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report is missing required fields: artifacts.",
+        )
+        stage = report["stages"][0]
+    elif stage_shape_valid and not isinstance(report["artifacts"], list):
+        report = _v2_failure_report(
+            resolved.doc_id,
+            "v2 source pipeline returned malformed report",
+            "pipeline.malformed_v2_report",
+            "The v2 ingest report artifacts must be a list.",
+        )
+        stage = report["stages"][0]
+    if "strict_policy" not in report:
+        strict_policy = {
+            "requested": strict,
+            "applied": False,
+            "mode": "advisory",
+        }
+        report["strict_policy"] = strict_policy
+        if strict:
+            strict_policy["warning"] = "v2 ingest does not expose strict enforcement"
+            report["warnings"] = [{
+                "code": "pipeline.strict_advisory",
+                "message": "--strict is advisory for the v2 ingest adapter because it does not accept strict.",
+            }]
+    detail = json.dumps(report, ensure_ascii=False, sort_keys=True)
+    return {
+        "stage_set": stage_set,
+        "strict": strict,
+        "passed": report["succeeded"],
+        "strict_policy": report["strict_policy"],
+        **({"warnings": report["warnings"]} if "warnings" in report else {}),
+        **({"errors": report["errors"]} if "errors" in report else {}),
+        "stages": [{
+            "stage": stage["name"],
+            "ok": stage["succeeded"],
+            "duration_s": 0.0,
+            "detail": detail,
+        }],
+    }
 
 
 def _filter_review_dimensions(
@@ -144,6 +470,40 @@ def pipeline(
     si hay fuentes nuevas. `--strict` bloquea ante huecos y hallazgos."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
+    compatible_summary = _run_compatible_pipeline(deps, resolved, stage_set, strict)
+    if compatible_summary is not None:
+        if as_json:
+            print(json.dumps(compatible_summary, ensure_ascii=False, indent=2))
+        else:
+            stages = compatible_summary["stages"]
+            if not stages:
+                print(
+                    "\n".join(
+                        [
+                            f"# Pipeline `{stage_set}` (strict={strict})",
+                            "",
+                            f"FAIL: {compatible_summary['errors'][0]['message']}",
+                            "",
+                            "FALLÓ",
+                        ]
+                    )
+                )
+                raise typer.Exit(code=1)
+            stage = stages[0]
+            marker = "OK" if stage["ok"] else "FAIL"
+            head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+            print(
+                "\n".join(
+                    [
+                        f"# Pipeline `{stage_set}` (strict={strict})",
+                        "",
+                        f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}",
+                        "",
+                        "PASÓ" if compatible_summary["passed"] else "FALLÓ",
+                    ]
+                )
+            )
+        raise typer.Exit(code=0 if compatible_summary["passed"] else 1)
     # No --format: preserve today's config-driven resolution exactly (a
     # single renderer from `output.format`, default "docx") so an explicit
     # `output.format` in a template's config is never silently overridden by

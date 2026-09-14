@@ -26,7 +26,9 @@ uv run docs document publish documents/report/output/v2/report.docx published/re
 | `ingest` | `runs/v2-ingest.json` | `ingest-sources` | `sections/ingested/*`, registered assets, ingest report data |
 | `prepare` | `runs/v2-prepare.json` | `ingest-sources`, `normalize-sources`, `compile-structure` | normalized ingested Markdown and `sections/v2-structure.json` |
 
-Each report has `schema: "docs.sources/v2"`, `document_id`, `succeeded`, ordered `stages`, and `artifacts`. A source command exits non-zero when its report is unsuccessful.
+Each report has `schema: "docs.sources/v2"`, `document_id`, `succeeded`, ordered `stages`, and `artifacts`. This shape is also mandatory for failure reports: construction, invocation, malformed-result, and empty-stage failures retain the selected document's `document_id`. A source command exits non-zero when its report is unsuccessful.
+
+The flat compatibility command inspects the selected `SourcePipelineV2.ingest` callable itself before invoking it. It forwards `--strict` when that callable accepts `strict`; the v2 operation then records whether its inner adapter enforced the request or could only provide an explicit advisory.
 
 ## Stage results
 
@@ -120,3 +122,21 @@ follow symlinked or escaped paths.
 ## Inspecting pipeline contracts
 
 Use `docs document plan --pipeline document-build --json` to inspect the ordered stages, external artifacts, and contracts without executing or publishing a build. The command uses the same registered DAG that `build` and `verify --pipeline` execute.
+
+## Flat CLI migration boundary
+
+The compatibility policy for the unprefixed `docs pipeline <stage-set>` command
+is intentionally explicit and finite. `ingest` is currently routed through the
+native v2 source pipeline and its result is adapted back to the legacy summary
+shape (`stage_set`, `strict`, `passed`, and `stages`). `prep`, `assemble`, `all`,
+and unknown stage sets continue to use the legacy service until their output and
+publication semantics have equivalent v2 coverage. This policy is declared in
+`src/docs/application/flat_pipeline_compatibility.py`; it is not inferred from
+the public v2 catalog. Consequently, existing exit codes and JSON/human output
+contracts remain stable while migration proceeds incrementally.
+
+For the flat `ingest` route, `--strict` is forwarded when the selected v2
+operation declares that keyword. If the adapter does not accept it, the command
+does not silently discard the flag: it keeps the result degradable and emits a
+structured `pipeline.strict_advisory` warning in JSON. A v2 report without any
+stage is always a compatibility failure with `pipeline.empty_v2_report`.
