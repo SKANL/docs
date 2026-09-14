@@ -30,6 +30,12 @@ def test_artifact_record_rejects_invalid_size_bytes_at_construction(size_bytes):
         ArtifactRecord("manifest", "out/manifest.json", "abc", size_bytes=size_bytes)
 
 
+@pytest.mark.parametrize("sha256", [123, None, b"abc"])
+def test_artifact_record_rejects_non_string_sha256_with_actionable_error(sha256):
+    with pytest.raises(ValueError, match=r"sha256.*string"):
+        ArtifactRecord("manifest", "out/manifest.json", sha256)
+
+
 def test_pipeline_validates_contracts_and_returns_topological_plan():
     pipeline = PipelineDefinition(
         artifacts=(ArtifactContract("source"), ArtifactContract("rendered")),

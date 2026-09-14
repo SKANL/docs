@@ -102,6 +102,8 @@ class ArtifactRecord:
         _check_identifier(self.contract, "artifact")
         if not self.path:
             raise ValueError("Artifact path must not be empty")
+        if not isinstance(self.sha256, str):
+            raise ValueError("Artifact sha256 must be a string containing a lowercase hexadecimal digest")
         if not re.fullmatch(r"[0-9a-f]{64}|[0-9a-f]+", self.sha256):
             raise ValueError("Artifact sha256 must be a lowercase hexadecimal digest")
         if self.size_bytes is not None and type(self.size_bytes) is not int:
