@@ -992,10 +992,16 @@ def create_v2_service(
         "structural-audit": _review_stage_operation("structural-audit", audit),
         "editorial-review": _review_stage_operation("editorial-review", verify),
         "record-provenance": provenance,
-        "evidence-review": _callable_stage("evidence_review")
-        or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),
-        "consistency-review": _callable_stage("consistency_review")
-        or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
+        "evidence-review": _review_stage_operation(
+            "evidence-review",
+            _callable_stage("evidence_review")
+            or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),
+        ),
+        "consistency-review": _review_stage_operation(
+            "consistency-review",
+            _callable_stage("consistency_review")
+            or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
+        ),
         "package-release": _callable_stage("package_release") or _native_package_release,
     }
     operations.update(

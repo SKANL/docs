@@ -11,6 +11,7 @@ from docs.application.review_stages import ReviewStageService
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.models.template import Template
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.review import Issue, ReviewDimension, ReviewResult
 from docs.domain.workspace import Workspace
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
@@ -57,6 +58,8 @@ def test_review_stages_run_real_adapters_for_a_compliant_fixture_document(tmp_pa
     assert tuple(outcomes) == (
         "structural-audit",
         "editorial-review",
+        "evidence-review",
+        "consistency-review",
         "accessibility-review",
         "visual-review",
         "reproducibility-check",
@@ -98,3 +101,38 @@ def test_run_stage_executes_only_the_requested_review_adapter(tmp_path: Path) ->
     )
 
     assert outcome.ok is True
+
+
+def test_evidence_review_applies_pipeline_policy_to_evidence_findings(tmp_path: Path) -> None:
+    class Review:
+        def review_document(self, *args: object, **kwargs: object) -> ReviewResult:
+            return ReviewResult([
+                Issue(
+                    "warning",
+                    "evidence needs support",
+                    code="evidence.missing_support",
+                    dimension=ReviewDimension.EVIDENCE,
+                )
+            ])
+
+    service = ReviewStageService(
+        structural_audit=StructuralAuditService(StructuralAuditAdapter()),
+        format_audit=FormatAuditService(PythonDocxAuditAdapter()),
+        document_review=Review(),
+        rules_manifest_state=lambda _config: (True, 1),
+    )
+
+    outcome = service.run_stage(
+        "evidence-review",
+        document_id="fixture",
+        artifact_path=tmp_path / "unused.docx",
+        config={},
+        template=_template(),
+        policy=PipelinePolicy(PipelineMode.strict),
+        rebuild=lambda output: output,
+        scratch_dir=tmp_path / "rebuild",
+    )
+
+    assert outcome.ok is False
+    assert outcome.errors == ("evidence needs support",)
+    assert not outcome.warnings

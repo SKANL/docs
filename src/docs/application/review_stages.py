@@ -64,6 +64,8 @@ class ReviewStageService:
             for stage in (
                 "structural-audit",
                 "editorial-review",
+                "evidence-review",
+                "consistency-review",
                 "accessibility-review",
                 "visual-review",
                 "reproducibility-check",
@@ -86,6 +88,10 @@ class ReviewStageService:
             return self.structural_audit(artifact_path, template, policy)
         if stage == "editorial-review":
             return self.editorial_review(document_id, template, config, policy)
+        if stage == "evidence-review":
+            return self.evidence_review(document_id, template, config, policy)
+        if stage == "consistency-review":
+            return self.consistency_review(document_id, template, config, policy)
         if stage == "accessibility-review":
             return self.accessibility_review(artifact_path, config, policy)
         if stage == "visual-review":
@@ -128,6 +134,47 @@ class ReviewStageService:
             strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
         )
         return self._outcome(result.filter_dimensions({ReviewDimension.ACCESSIBILITY}), policy)
+
+    def evidence_review(
+        self,
+        document_id: str,
+        template: Template,
+        config: dict[str, Any],
+        policy: PipelinePolicy,
+    ) -> ReviewStageOutcome:
+        return self._document_dimension_review(
+            document_id, template, config, policy, ReviewDimension.EVIDENCE
+        )
+
+    def consistency_review(
+        self,
+        document_id: str,
+        template: Template,
+        config: dict[str, Any],
+        policy: PipelinePolicy,
+    ) -> ReviewStageOutcome:
+        return self._document_dimension_review(
+            document_id, template, config, policy, ReviewDimension.CONSISTENCY
+        )
+
+    def _document_dimension_review(
+        self,
+        document_id: str,
+        template: Template,
+        config: dict[str, Any],
+        policy: PipelinePolicy,
+        dimension: ReviewDimension,
+    ) -> ReviewStageOutcome:
+        manifest_exists, manifest_size = self._rules_manifest_state(config)
+        result = self._document_review.review_document(
+            document_id,
+            template,
+            strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
+            manifest_exists=manifest_exists,
+            manifest_size=manifest_size,
+            normative=resolve_normative_settings(config),
+        )
+        return self._outcome(result.filter_dimensions({dimension}), policy)
 
     def visual_review(
         self, artifact_path: Path, config: dict[str, Any], policy: PipelinePolicy
