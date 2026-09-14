@@ -140,6 +140,7 @@ jobs:
       # muddy the zero-skip assertion below.
       - name: Tests with the full toolchain
         run: |
+          set -o pipefail
           uv run pytest tests/unit tests/integration -q -rs 2>&1 | tee /tmp/out.txt
 
       # What this job exists to defend: with every toolchain installed, NO test
@@ -153,7 +154,7 @@ jobs:
       # Between the two jobs both directions run.
       - name: Fail if the toolchain coverage regressed
         run: |
-          missing=$(grep -E '^SKIPPED' /tmp/out.txt | grep -Ei 'not installed|not on PATH|not available' || true)
+          missing=$(grep -E '^SKIPPED' /tmp/out.txt | grep -Ei 'external toolchain unavailable|not installed|not on PATH|not available' || true)
           if [ -n "$missing" ]; then
             echo "::error::a toolchain went missing -- these tests skipped for want of a tool:"
             echo "$missing"
