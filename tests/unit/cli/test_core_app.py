@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from docs.application.flat_pipeline_compatibility import route_for
+from docs.application.flat_pipeline_compatibility import FlatPipelineCompatibilityAdapter, route_for
 from docs.cli._shared import Deps
 from docs.cli.commands.core_app import _run_compatible_pipeline
 from docs.cli.main import app
@@ -168,13 +168,42 @@ def test_pipeline_json_output_is_a_list_when_multiple_formats_requested(workspac
     assert len(payload) == 2
 
 
-def test_flat_pipeline_policy_routes_assemble_to_v2_but_keeps_prep_and_all_legacy():
+def test_flat_pipeline_policy_routes_v2_slices_and_leaves_prep_legacy():
     assert route_for("ingest") is not None
     assert route_for("prepare") is not None
     assert route_for("prep") is None
     assert route_for("assemble").backend == "v2-runtime"
-    assert route_for("all") is None
+    assert route_for("all").backend == "v2-runtime"
     assert route_for("unsupported") is None
+
+
+def test_flat_pipeline_all_adapter_preserves_historical_order_without_ingest():
+    calls: list[str] = []
+
+    def run_stage(stage_set: str) -> dict[str, object]:
+        calls.append(stage_set)
+        return {
+            "stage_set": stage_set,
+            "strict": False,
+            "passed": True,
+            "stages": [{"stage": stage_set, "ok": True, "duration_s": 0.0, "detail": stage_set}],
+        }
+
+    adapter = FlatPipelineCompatibilityAdapter(
+        prep=lambda: run_stage("prep"),
+        review_document=lambda: run_stage("review-document"),
+        assemble=lambda: [run_stage("assemble")],
+    )
+
+    summary = adapter.run_all()
+
+    assert calls == ["prep", "review-document", "assemble"]
+    assert [stage["stage"] for stage in summary["stages"]] == [
+        "prep",
+        "review-document",
+        "assemble",
+    ]
+    assert summary["passed"] is True
 
 
 def test_flat_pipeline_assemble_projects_v2_runtime_and_preserves_legacy_summary(
@@ -224,6 +253,53 @@ def test_flat_pipeline_assemble_projects_v2_runtime_and_preserves_legacy_summary
     assert payload["stages"][0]["stage"] == "build-docx"
     assert payload["stages"][0]["ok"] is True
     assert calls == [("cli-assemble-docx", True, "document")]
+
+
+def test_flat_pipeline_all_fails_when_v2_execution_stage_fails(
+    workspace, monkeypatch
+):
+    _new_doc()
+
+    class _Report:
+        def to_dict(self):
+            return {
+                "succeeded": True,
+                "execution": {
+                    "results": [
+                        {
+                            "stage": "build-docx",
+                            "ok": False,
+                            "outcome": "failed",
+                            "errors": [{"message": "render failed"}],
+                        }
+                    ]
+                },
+            }
+
+    class _V2Service:
+        def run(self, run_id, *, publish, pipeline_id):
+            del run_id, publish, pipeline_id
+            return _Report()
+
+    def legacy_run(self, doc_id, template, config, selected, repo_root, strict=False, renderer=None):
+        del self, doc_id, template, config, repo_root, strict, renderer
+        return {
+            "stage_set": selected,
+            "strict": False,
+            "passed": True,
+            "stages": [{"stage": selected, "ok": True, "duration_s": 0.0, "detail": selected}],
+        }
+
+    monkeypatch.setattr("docs.cli.commands.core_app.create_v2_service", lambda *args, **kwargs: _V2Service())
+    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", legacy_run)
+
+    result = runner.invoke(app, ["pipeline", "all", "--json"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["passed"] is False
+    assert payload["stages"][-1]["stage"] == "build-docx"
+    assert payload["stages"][-1]["ok"] is False
 
 
 @pytest.mark.parametrize("execution", [{}, {"results": "invalid"}, {"results": [None, "invalid"]}])
@@ -742,7 +818,7 @@ def test_flat_pipeline_ingest_reports_v2_construction_failure_when_ingest_depend
     assert calls == []
 
 
-@pytest.mark.parametrize("stage_set", ["prep", "all"])
+@pytest.mark.parametrize("stage_set", ["prep"])
 def test_flat_pipeline_unsupported_stage_sets_stay_on_legacy_backend(workspace, monkeypatch, stage_set):
     _new_doc()
     calls: list[str] = []
@@ -762,6 +838,40 @@ def test_flat_pipeline_unsupported_stage_sets_stay_on_legacy_backend(workspace, 
     assert result.exit_code == 0
     assert json.loads(result.output)["stage_set"] == stage_set
     assert calls == [stage_set]
+
+
+def test_flat_pipeline_all_uses_explicit_v2_adapter_without_implicit_ingest(workspace, monkeypatch):
+    _new_doc()
+    calls: list[str] = []
+
+    def legacy_run(self, doc_id, template, config, selected, repo_root, strict=False, renderer=None):
+        del self, doc_id, template, config, repo_root, strict, renderer
+        calls.append(selected)
+        return {
+            "stage_set": selected,
+            "strict": False,
+            "passed": True,
+            "stages": [{"stage": selected, "ok": True, "duration_s": 0.0, "detail": selected}],
+        }
+
+    monkeypatch.setattr("docs.application.pipeline.PipelineService.run_pipeline", legacy_run)
+    monkeypatch.setattr(
+        "docs.cli.commands.core_app._run_v2_assemble",
+        lambda deps, resolved, strict, formats: [{
+            "stage_set": "assemble",
+            "strict": strict,
+            "passed": True,
+            "stages": [{"stage": "assemble", "ok": True, "duration_s": 0.0, "detail": "v2"}],
+        }],
+    )
+
+    result = runner.invoke(app, ["pipeline", "all", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["stage_set"] == "all"
+    assert [stage["stage"] for stage in payload["stages"]] == ["prep", "review-document", "assemble"]
+    assert calls == ["prep", "review-document"]
 
 
 def test_flat_pipeline_v2_failure_preserves_exit_code_and_summary_shape(workspace, monkeypatch):

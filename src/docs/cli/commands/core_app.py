@@ -16,7 +16,11 @@ from typing import Any
 
 import typer
 
-from docs.application.flat_pipeline_compatibility import route_for, strict_policy_error
+from docs.application.flat_pipeline_compatibility import (
+    FlatPipelineCompatibilityAdapter,
+    route_for,
+    strict_policy_error,
+)
 from docs.application.output_names import (
     resolve_draft_docx_name,
     resolve_draft_pdf_name,
@@ -178,7 +182,11 @@ def _run_v2_assemble(
             summaries.append({
                 "stage_set": "assemble",
                 "strict": strict,
-                "passed": bool(valid_results) and payload.get("succeeded") is True,
+                "passed": (
+                    bool(valid_results)
+                    and payload.get("succeeded") is True
+                    and all(item.get("ok") is True for item in valid_results)
+                ),
                 "stages": stages,
                 "v2_report": payload,
             })
@@ -195,6 +203,38 @@ def _run_v2_assemble(
                 "stages": [{"stage": "assemble", "ok": False, "duration_s": 0.0, "detail": detail}],
             })
     return summaries
+
+
+def _run_v2_all(
+    deps: Any,
+    resolved: Any,
+    strict: bool,
+    repo_root: Path,
+    formats: list[str] | None,
+) -> dict[str, Any]:
+    """Preserve flat ``all`` order while making its boundaries explicit."""
+    if formats:
+        renderers = [resolve_renderer(deps.renderers, fmt) for fmt in formats]
+    else:
+        renderers = [deps.resolve_renderer(resolved.config)]
+
+    def legacy_stage(stage_set: str) -> dict[str, Any]:
+        return deps.legacy_pipeline.run_pipeline(
+            resolved.doc_id,
+            resolved.template,
+            resolved.config,
+            stage_set,
+            repo_root=repo_root,
+            strict=strict,
+            renderer=renderers[0],
+        )
+
+    adapter = FlatPipelineCompatibilityAdapter(
+        prep=lambda: legacy_stage("prep"),
+        review_document=lambda: legacy_stage("review-document"),
+        assemble=lambda: _run_v2_assemble(deps, resolved, strict, formats),
+    )
+    return adapter.run_all()
 
 
 def _run_compatible_pipeline(
@@ -702,6 +742,19 @@ def pipeline(
     si hay fuentes nuevas. `--strict` bloquea ante huecos y hallazgos."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
+    if stage_set == "all":
+        summary = _run_v2_all(deps, resolved, strict, repo_root, formats)
+        if as_json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            lines = [f"# Pipeline `{stage_set}` (strict={strict})", ""]
+            for stage in summary["stages"]:
+                marker = "SKIP" if stage.get("skipped") is True else ("OK" if stage["ok"] else "FAIL")
+                head = stage["detail"].splitlines()[0] if stage["detail"] else ""
+                lines.append(f"- {marker} `{stage['stage']}` ({stage['duration_s']}s): {head}")
+            lines.extend(["", "PASÓ" if summary["passed"] else "FALLÓ"])
+            print("\n".join(lines))
+        raise typer.Exit(code=0 if summary["passed"] else 1)
     if stage_set == "assemble":
         summaries = _run_v2_assemble(deps, resolved, strict, formats)
         passed = all(summary["passed"] for summary in summaries)
