@@ -655,7 +655,8 @@ def create_v2_service(
     def _native_accessibility_review() -> tuple[bool, str] | StageResult:
         """Run the existing format audit's accessibility checks as a V2 stage."""
         if output_format != "docx":
-            return successful("accessibility-review", f"not applicable to {output_format}")
+            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
+            return passed, f"accessibility reopen: {detail}"
         strict = policy is not None and policy.mode in {PipelineMode.strict, PipelineMode.release}
         result: ReviewResult = deps.format_audit.audit_format(state["artifact"], state["config"], strict=strict)
         findings = result.filter_dimensions({ReviewDimension.ACCESSIBILITY}).issues
@@ -689,7 +690,8 @@ def create_v2_service(
     def _native_visual_review() -> tuple[bool, str]:
         """Reuse the format audit's visual findings for the rendered artifact."""
         if output_format != "docx":
-            return successful("visual-review", f"not applicable to {output_format}")
+            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
+            return passed, f"visual reopen: {detail}"
         result: ReviewResult = deps.format_audit.audit_format(state["artifact"], state["config"])
         findings = result.filter_dimensions({ReviewDimension.VISUAL}).issues
         if not findings:
