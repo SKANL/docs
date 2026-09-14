@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
+import pytest
 from PIL import Image
 from typer.testing import CliRunner
 
@@ -453,3 +454,86 @@ def test_v2_journey_executes_generated_cover_and_visual_spec_fixture(monkeypatch
     assert third["report"]["succeeded"] is True
     assert artifact.read_bytes() == second_bytes
     assert hashlib.sha256(artifact.read_bytes()).hexdigest() == second_sha
+
+
+_BUILTIN_TEMPLATE_CASES = {
+    "reporte-estadia-tic": {
+        "structure_types": ["cover_from_asset", "blank_page", "fixed_text_page", "sections"],
+        "required_contract": "resumen",
+        "context_topic": "alumno",
+    },
+    "technical-report-srs": {
+        "structure_types": ["fixed_text_page", "toc", "sections"],
+        "required_contract": "requirements",
+        "context_topic": "project",
+    },
+    "documento-generico": {
+        "structure_types": ["fixed_text_page", "sections"],
+        "required_contract": "introduccion",
+        "context_topic": "documento",
+    },
+}
+
+
+@pytest.mark.parametrize("template_name", _BUILTIN_TEMPLATE_CASES)
+def test_v2_build_and_verify_honor_each_builtin_template_contract(
+    monkeypatch, tmp_path: Path, template_name: str
+) -> None:
+    deps = _journey_deps(tmp_path)
+    fixture_dir = Path(__file__).parents[1] / "fixtures" / "templates"
+    fixture = fixture_dir / f"{template_name}.json"
+    (deps.workspace.templates_dir / fixture.name).write_bytes(fixture.read_bytes())
+
+    repository = deps.document_repository
+    original_resolve_context = deps.resolve_context
+
+    def resolve_context(doc_id: str = ""):
+        selected = doc_id or repository.active_id()
+        document = repository.read_document(selected)
+        template = repository.load_template(document.template)
+        resolved = original_resolve_context(selected)
+        config = template.model_dump()
+        config["paths"] = resolved.config["paths"]
+        config["doc_id"] = selected
+        return SimpleNamespace(doc_id=selected, config=config, template=template)
+
+    deps.resolve_context = resolve_context
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+
+    created = invoke(
+        runner,
+        "create",
+        "matrix",
+        "--template",
+        template_name,
+        "--title",
+        "Matrix",
+    )
+    root = deps.workspace.doc_root("matrix")
+    (root / "inbox" / "source.md").write_text("A source claim.\n", encoding="utf-8")
+    invoke(runner, "ingest")
+    invoke(runner, "prepare")
+    built = invoke(runner, "build")
+    verified = invoke(runner, "verify")
+
+    template = repository.load_template(template_name)
+    expected = _BUILTIN_TEMPLATE_CASES[template_name]
+    assert created["template"] == template_name
+    assert [part["type"] for part in template.structure] == expected["structure_types"]
+    assert expected["required_contract"] in template.section_contracts
+    assert any(topic.id == expected["context_topic"] for topic in template.context_schema.topics)
+    assert built["report"]["succeeded"] is True
+    assert verified["report"]["succeeded"] is True
+
+    artifact = root / "output" / "v2" / "matrix.docx"
+    manifest_path = artifact.with_suffix(".docx.manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert artifact.is_file()
+    assert manifest["schema"] == "docs.build/v2"
+    assert manifest["document_id"] == "matrix"
+    assert manifest["template_hash"]
+    assert manifest["verification"]["passed"] is True
+    assert manifest["artifacts"][0]["path"] == str(artifact.resolve())
+    assert manifest["provenance_run"] == "cli-build-docx"
+    assert (root / "runs" / "v2-provenance.json").is_file()
