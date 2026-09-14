@@ -25,8 +25,8 @@ from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
-from docs.application.legacy_pipeline import LegacyPipelineService
 from docs.application.pdf_render import PdfRendererAdapter
+from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
@@ -35,7 +35,6 @@ from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
-from docs.cli.legacy_pipeline_bridge import LegacyPipelineBridge
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
@@ -122,7 +121,7 @@ def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
 
 
 class _LazyPipelineService:
-    """Defer the legacy aggregate until a legacy command actually needs it."""
+    """Lazily construct the native application pipeline service."""
 
     def __init__(self, factory: Any) -> None:
         object.__setattr__(self, "_factory", factory)
@@ -349,8 +348,8 @@ class Deps:
         self.verification = DocumentVerificationService(
             review_service, evidence_repo, format_audit_service, qa_service
         )
-        def build_legacy_pipeline() -> LegacyPipelineBridge:
-            return LegacyPipelineBridge(
+        def build_pipeline() -> PipelineService:
+            return PipelineService(
                 doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
                 review_service, context_pack_service, context_repo, docx_assembly_service,
                 format_audit_service, qa_service, self.workspace, self.ingest,
@@ -360,10 +359,7 @@ class Deps:
                 section_service=self.section,
             )
 
-        self.pipeline = _LazyPipelineService(build_legacy_pipeline)
-        self.legacy_pipeline = LegacyPipelineService(self.pipeline)
-        # V2 consumes these named services directly. The legacy aggregate above
-        # remains available only to the legacy CLI and is not a V2 dependency.
+        self.pipeline = _LazyPipelineService(build_pipeline)
         self.structural_audit_service = structural_audit_service
         self.rules_manifest_state = _rules_manifest_state
 

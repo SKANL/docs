@@ -55,12 +55,12 @@ def test_deps_wires_pdf_render_adapter_when_toolchain_available(tmp_path: Path):
     assert isinstance(deps.ingest.pdf_render, Pdfium2PdfRenderAdapter)
 
 
-def test_deps_does_not_construct_legacy_pipeline_until_requested(monkeypatch, tmp_path: Path):
-    """V2 composition must not eagerly instantiate the legacy aggregate."""
+def test_deps_does_not_construct_pipeline_until_requested(monkeypatch, tmp_path: Path):
+    """Composition must not eagerly instantiate the native pipeline."""
     monkeypatch.setattr(
         shared,
-        "LegacyPipelineBridge",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("legacy pipeline was eager")),
+        "PipelineService",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pipeline was eager")),
     )
 
     deps = _deps(tmp_path)

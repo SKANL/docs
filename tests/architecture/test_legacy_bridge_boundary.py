@@ -1,15 +1,14 @@
-"""Keep incidental CLI helpers independent from the legacy pipeline aggregate."""
+"""Guard the v2 runtime against deleted legacy pipeline adapters."""
 
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "docs" / "cli" / "commands"
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_command_helpers_do_not_read_legacy_pipeline_manifest_state() -> None:
-    commands = ("section_app.py", "doc_app.py", "collection_app.py")
-    violations = []
-    for name in commands:
-        source = (SRC / name).read_text(encoding="utf-8")
-        if "deps.pipeline.rules_manifest_state" in source:
-            violations.append(name)
-    assert not violations, "incidental manifest-state reads must use the named composition-root service: " + ", ".join(violations)
+def test_legacy_pipeline_adapters_are_not_runtime_modules() -> None:
+    forbidden = (
+        ROOT / "src" / "docs" / "application" / "legacy_pipeline.py",
+        ROOT / "src" / "docs" / "cli" / "legacy_pipeline_bridge.py",
+        ROOT / "src" / "docs" / "application" / "legacy_pipeline_executor.py",
+    )
+    assert all(not path.exists() for path in forbidden)

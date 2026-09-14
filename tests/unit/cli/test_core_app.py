@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
+import docs.cli._shared as shared
 from docs.application.flat_pipeline_compatibility import FlatPipelineCompatibilityAdapter, route_for
 from docs.cli._shared import Deps
 from docs.cli.commands.core_app import _run_compatible_pipeline
@@ -82,11 +83,11 @@ def test_deps_registers_the_pdf_renderer(workspace):
     assert Deps().renderers["pdf"].output_format == "pdf"
 
 
-def test_deps_registers_named_legacy_pipeline_service(workspace):
+def test_deps_exposes_only_the_lazy_native_pipeline(workspace):
     deps = Deps()
 
-    assert deps.legacy_pipeline is not deps.pipeline
-    assert deps.legacy_pipeline._pipeline is deps.pipeline
+    assert not hasattr(deps, "legacy_pipeline")
+    assert isinstance(deps.pipeline, shared._LazyPipelineService)
 
 
 def test_pipeline_format_pdf_selects_the_pdf_renderer(workspace, monkeypatch):
