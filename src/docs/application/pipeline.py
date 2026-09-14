@@ -10,10 +10,10 @@ from docs.application.context import ContextService
 from docs.application.context_pack import ContextPackService
 from docs.application.doctor import DoctorService
 from docs.application.evidence import EvidenceService
+from docs.application.flat_pipeline_v2 import FlatPipelineV2Adapter
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.ingest import IngestService
-from docs.application.legacy_pipeline_executor import LegacyPipelineExecutor
 from docs.application.legacy_stage_planner import LegacyStagePlanner
 from docs.application.pipeline_metadata import PipelineMetadataService
 from docs.application.qa import QaService
@@ -21,9 +21,10 @@ from docs.application.review import ReviewService
 from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
 from docs.application.structural_audit import StructuralAuditService
+from docs.domain.cover import cover_provenance
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
-from docs.domain.pipeline import pipeline_stage_plan  # noqa: F401 - legacy patch/import compatibility
+from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.evidence_repository import EvidenceRepository
@@ -78,7 +79,9 @@ class PipelineService:
         self.run_history = RunHistoryService(workspace)
         self.metadata_service = metadata_service or PipelineMetadataService(workspace)
         self.stage_planner = stage_planner or LegacyStagePlanner()
-        self.legacy_pipeline_executor = LegacyPipelineExecutor()
+        # Kept as an explicit injection seam for downstream callers during
+        # migration; normal runtime execution uses FlatPipelineV2Adapter.
+        self.legacy_pipeline_executor: Any | None = None
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
@@ -138,9 +141,28 @@ class PipelineService:
         # only preserves compatibility for callers that build PipelineService
         # directly without going through the CLI composition root.
         renderer = renderer or self.docx_assembly_service
-        return self.legacy_pipeline_executor.execute(
-            self, doc_id, template, config, stage_set, repo_root, strict, renderer
+        # A caller-provided executor remains a narrow compatibility seam for
+        # integrations that replace the old collaborator. The built-in path
+        # is the reusable v2 boundary and no longer depends on the legacy
+        # executor implementation.
+        if self.legacy_pipeline_executor is not None:
+            return self.legacy_pipeline_executor.execute(
+                self, doc_id, template, config, stage_set, repo_root, strict, renderer
+            )
+        stages = pipeline_stage_plan(stage_set, renderer.stage_plan())
+        callables = self._stage_callables(doc_id, template, config, repo_root, strict, renderer)
+        summary = FlatPipelineV2Adapter(operations=callables).run(
+            stage_set,
+            strict=strict,
+            stages=tuple(stages),
         )
+        cover = cover_provenance(config)
+        if cover is not None:
+            summary["cover"] = cover
+        if stage_set in ("assemble", "all"):
+            summary["build_version"] = self._next_build_version(doc_id, config)
+        self.log_run(doc_id, config, repo_root, f"pipeline-{stage_set}", summary)
+        return summary
 
     def verify_all(
         self,

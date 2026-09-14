@@ -156,6 +156,38 @@ def test_run_pipeline_delegates_to_legacy_pipeline_executor():
     assert result is expected
 
 
+def test_run_pipeline_uses_reusable_flat_pipeline_boundary(monkeypatch):
+    service = _service(_FakeEvidenceRepository())
+    expected = {"stage_set": "prep", "passed": True, "stages": []}
+    captured = {}
+
+    class Flat:
+        def __init__(self, *, operations):
+            captured["operations"] = operations
+
+        def run(self, stage_set, *, strict, stages):
+            captured["args"] = (stage_set, strict, stages)
+            return expected
+
+    class Renderer:
+        def stage_plan(self):
+            return []
+
+    monkeypatch.setattr("docs.application.pipeline.FlatPipelineV2Adapter", Flat)
+    monkeypatch.setattr(
+        "docs.application.pipeline.pipeline_stage_plan",
+        lambda stage_set, renderer_stages: (("doctor", True),),
+    )
+    monkeypatch.setattr(service, "log_run", lambda *args: Path("run.json"))
+
+    result = service.run_pipeline(
+        "doc", "template", {"paths": {}}, "prep", Path("repo"), strict=True, renderer=Renderer()
+    )
+
+    assert result is expected
+    assert captured["args"] == ("prep", True, (("doctor", True),))
+
+
 def test_run_pipeline_honors_application_pipeline_stage_plan_patch(tmp_path, monkeypatch):
     class SourceRepository:
         def run_git_rev_parse_head(self, repo_root):
