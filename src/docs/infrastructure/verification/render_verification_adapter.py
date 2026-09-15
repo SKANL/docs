@@ -20,6 +20,15 @@ class RenderVerificationAdapter:
         suffix = path.suffix.lower()
         findings = self._format_findings(path, profile)
         try:
+            if preview_dir is not None:
+                if profile.baseline_dir is not None and (
+                    preview_dir.resolve().is_relative_to(profile.baseline_dir.resolve())
+                    or profile.baseline_dir.resolve().is_relative_to(preview_dir.resolve())
+                ):
+                    raise ValueError("Preview and baseline directories must not overlap")
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                for stale in preview_dir.glob("*.png"):
+                    stale.unlink()
             if suffix == ".pdf":
                 findings.extend(self._verify_pdf(path, profile, preview_dir))
             elif suffix == ".docx":
@@ -63,7 +72,7 @@ class RenderVerificationAdapter:
                             if self._is_blank(image):
                                 findings.append(self._blank_finding(f"Página {index + 1} vacía.", profile))
                             if preview_dir is not None:
-                                image.save(preview_dir / f"{path.stem}-p{index + 1:02d}.png")
+                                image.save(preview_dir / f"{profile.preview_stem or path.stem}-p{index + 1:02d}.png")
                     finally:
                         bitmap.close()
                 finally:
@@ -153,7 +162,7 @@ class RenderVerificationAdapter:
                 findings.append(self._blank_finding("Imagen vacía.", profile))
             if preview_dir is not None:
                 preview_dir.mkdir(parents=True, exist_ok=True)
-                image.copy().save(preview_dir / f"{path.stem}-p01.png")
+                image.copy().save(preview_dir / f"{profile.preview_stem or path.stem}-p01.png")
             elif profile.require_previews:
                 findings.append(VerificationFinding("render.previews.required", "Se requieren previews, pero no se indicó directorio."))
             return findings

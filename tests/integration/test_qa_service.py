@@ -217,3 +217,20 @@ def test_qa_docx_compares_configured_visual_baseline(tmp_path):
 
     report = (output_dir / "qa-report.md").read_text(encoding="utf-8")
     assert "visual.baseline_changed" not in report
+
+
+def test_qa_docx_enforces_required_previews_without_renderer(tmp_path):
+    class QaPort:
+        def render_docx_to_pdf(self, config, docx_path, output_dir):
+            raise RuntimeError("renderer unavailable")
+
+        def run_documents_audits(self, *args):
+            return []
+
+    docx_path = _make_docx(tmp_path)
+    service = QaService(QaPort(), FormatAuditService(PythonDocxAuditAdapter()))
+    with pytest.raises(RuntimeError, match=r"preview|PNG"):
+        service.qa_docx({
+            "paths": {"output_qa_dir": str(tmp_path / "qa")},
+            "visual_qa": {"require_previews": True},
+        }, docx_path)

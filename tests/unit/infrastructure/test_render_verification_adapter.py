@@ -272,3 +272,46 @@ def test_pdf_preview_baseline_reports_changed_missing_and_extra_pages(tmp_path):
     assert {"visual.baseline_changed", "visual.baseline_missing", "visual.baseline_extra_page"} <= {
         finding.code for finding in report.findings
     }
+
+
+def test_pdf_previews_remove_obsolete_pages_before_baseline_comparison(tmp_path):
+    import shutil
+
+    import pypdfium2 as pdfium
+
+    artifact = tmp_path / "report.pdf"
+    previews = tmp_path / "previews"
+    baseline = tmp_path / "baseline"
+    service = RenderVerificationService(RenderVerificationAdapter())
+
+    def write_pages(count):
+        with pdfium.PdfDocument.new() as document:
+            for _ in range(count):
+                page = document.new_page(100, 100)
+                page.close()
+            document.save(artifact)
+
+    write_pages(2)
+    service.verify(artifact, RenderProfile(format="pdf", allow_blank_pages=True), previews)
+    shutil.copytree(previews, baseline)
+    write_pages(1)
+    report = service.verify(artifact, RenderProfile(format="pdf", allow_blank_pages=True, baseline_dir=baseline), previews)
+    assert {finding.code for finding in report.findings} >= {"visual.baseline_extra_page"}
+    assert [p.name for p in previews.glob("*.png")] == ["report-p01.png"]
+    assert (baseline / "report-p02.png").exists()
+
+
+def test_preview_cleanup_never_mutates_explicit_baseline_directory(tmp_path):
+    pdf = tmp_path / "report.pdf"
+    _write_blank_pdf(pdf)
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    page = baseline / "precious.png"
+    Image.new("RGB", (10, 10), "black").save(page)
+    before = page.read_bytes()
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(
+        pdf, RenderProfile(format="pdf", baseline_dir=baseline, allow_blank_pages=True), baseline,
+    )
+    assert not report.passed
+    assert page.read_bytes() == before
+    assert [path.name for path in baseline.iterdir()] == ["precious.png"]

@@ -13,7 +13,7 @@ import tempfile
 import uuid
 import zipfile
 from collections.abc import Mapping
-from contextlib import contextmanager, nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from copy import deepcopy
 from difflib import unified_diff
 from html.parser import HTMLParser
@@ -145,17 +145,27 @@ def _verify_pdf_reproducibility(original: Path, rebuilt: Path) -> tuple[bool, st
     try:
         import pypdfium2 as pdfium
 
-        first = pdfium.PdfDocument(str(original))
-        second = pdfium.PdfDocument(str(rebuilt))
-        try:
-            if len(first) != len(second):
+        with pdfium.PdfDocument(str(original)) as first, pdfium.PdfDocument(str(rebuilt)) as second:
+            if not len(first) or len(first) != len(second):
                 return False, "PDF reproducibility changed the page count"
             for index in range(len(first)):
-                if first[index].get_size() != second[index].get_size():
-                    return False, f"PDF reproducibility changed page geometry at page {index + 1}"
-        finally:
-            first.close()
-            second.close()
+                left, right = first[index], second[index]
+                try:
+                    if left.get_size() != right.get_size():
+                        return False, f"PDF reproducibility changed page geometry at page {index + 1}"
+                    with closing(left.get_textpage()) as left_text, closing(right.get_textpage()) as right_text:
+                        if left_text.get_text_range() != right_text.get_text_range():
+                            return False, f"PDF reproducibility changed text at page {index + 1}"
+                    with (
+                        closing(left.render(scale=150 / 72)) as left_bitmap,
+                        closing(right.render(scale=150 / 72)) as right_bitmap,
+                        left_bitmap.to_pil() as left_image, right_bitmap.to_pil() as right_image,
+                    ):
+                        if left_image.size != right_image.size or left_image.tobytes() != right_image.tobytes():
+                            return False, f"PDF reproducibility changed rendered content at page {index + 1}"
+                finally:
+                    left.close()
+                    right.close()
     except (ImportError, OSError, RuntimeError, ValueError) as exc:
         return False, f"PDF reproducibility comparison failed: {exc}"
     return True, "PDF reproducibility verified semantically"
@@ -600,6 +610,8 @@ def create_v2_service(
             document_review=deps.review,
             rules_manifest_state=getattr(deps, "rules_manifest_state", lambda _config: (False, 0)),
             render_verification=deps.render_verification,
+            qa=getattr(deps, "qa", None) if hasattr(getattr(deps, "qa", None), "inspect_docx") else None,
+            pdf_reproducibility=_verify_pdf_reproducibility,
         )
 
     def _stage_service(name: str) -> Any:
@@ -731,11 +743,15 @@ def create_v2_service(
         if review_stage_service is None:
             return False, f"{name} service is not configured"
         effective_policy = policy or PipelinePolicy(PipelineMode.draft)
+        review_config = deepcopy(state["config"])
+        visual_settings = review_config.setdefault("visual_qa", {})
+        if isinstance(visual_settings, dict):
+            visual_settings["preview_stem"] = f"{state['resolved'].doc_id}.{output_format}"
         outcome = review_stage_service.run_stage(
             name,
             document_id=state["resolved"].doc_id,
             artifact_path=state["artifact"],
-            config=state["config"],
+            config=review_config,
             template=state["resolved"].template,
             policy=effective_policy,
             rebuild=lambda output: state["renderer"].build(
@@ -973,7 +989,7 @@ def create_v2_service(
         ),
         "visual_review": (
             (lambda: _review_stage("visual-review"))
-            if review_stage_service is not None and output_format != "docx"
+            if review_stage_service is not None
             else _callable_stage("visual_review")
             or ((lambda: _review_stage("visual-review")) if review_stage_service is not None else _native_visual_review)
         ),
@@ -1178,7 +1194,14 @@ def _run(
     pipeline_id: str = "document",
     artifact_path: Path | None = None,
     manifest_path: Path | None = None,
+    _batch_lock_held: bool = False,
 ) -> None:
+    if command == "build" and not _batch_lock_held:
+        resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
+        root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
+        with owned_directory_lock(root / "runs" / ".v2-batch.lock"):
+            return _run(ctx, command, json_output, formats, policy, dimensions, pipeline_id,
+                        artifact_path, manifest_path, _batch_lock_held=True)
     selected_document = ctx.obj.get("doc", "")
     if formats is None:
         resolved = ctx.obj["deps"].resolve_context(selected_document)
@@ -1201,7 +1224,7 @@ def _run(
         batch_root = ctx.obj["deps"].workspace.doc_root(resolved_for_backup.doc_id)
         batch_root.mkdir(parents=True, exist_ok=True)
         batch_journal = _batch_journal_path(batch_root)
-        _recover_batch_transaction(batch_journal)
+        _recover_batch_transaction(batch_journal, _lock_held=True)
         batch_backup = Path(tempfile.mkdtemp(prefix=".v2-batch-", dir=batch_root))
         batch_paths = (Path("output") / "v2", Path("output") / "release")
         for relative in batch_paths:
@@ -1210,15 +1233,8 @@ def _run(
                 shutil.copytree(current, batch_backup / relative)
         _write_batch_journal(batch_journal, batch_root, batch_backup, batch_paths)
     def restore_batch() -> None:
-        if batch_backup is None or batch_root is None:
-            return
-        for relative in (Path("output") / "v2", Path("output") / "release"):
-            current = batch_root / relative
-            saved = batch_backup / relative
-            if current.exists() and not current.is_symlink():
-                shutil.rmtree(current) if current.is_dir() else current.unlink()
-            if saved.exists():
-                shutil.copytree(saved, current)
+        if batch_journal is not None:
+            _recover_batch_transaction(batch_journal, _lock_held=True)
     try:
         for output_format in requested:
             selected_policy = PipelinePolicy(policy) if policy is not None else None
@@ -1337,19 +1353,20 @@ def _run(
                         if not manifest_path.is_file():
                             raise RuntimeError("missing atomic build manifest sidecar")
                         item["manifest"] = str(manifest_path)
+            if batch_journal is not None:
+                _record_batch_outputs(batch_journal, resolved_for_backup.doc_id, output_format)
             reports.append(item)
     except Exception:
+        # Recovery failure must leave the journal and backups for a retry.
         restore_batch()
         raise
-    finally:
-        if batch_backup is not None and reports and not all(
-            item["report"].get("succeeded", False) for item in reports
-        ):
+    else:
+        if batch_backup is not None and not all(item["report"].get("succeeded", False) for item in reports):
             restore_batch()
-        if batch_backup is not None:
-            shutil.rmtree(batch_backup, ignore_errors=True)
-        if batch_journal is not None:
-            batch_journal.unlink(missing_ok=True)
+        if batch_journal is not None and batch_journal.exists():
+            batch_journal.unlink()
+            if batch_backup is not None:
+                shutil.rmtree(batch_backup)
     payload = reports[0] if len(reports) == 1 else reports
     if json_output:
         typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
@@ -1372,33 +1389,119 @@ def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[P
         "root": str(root.resolve()),
         "backup": str(backup.resolve()),
         "paths": [path.as_posix() for path in paths],
+        "expected": {path.as_posix(): _batch_snapshot(root / path) for path in paths},
+        "saved": {path.as_posix(): _batch_snapshot(backup / path) for path in paths},
     }
     temporary = journal.with_name(f".{journal.name}.{uuid.uuid4().hex}.tmp")
     temporary.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8")
     os.replace(temporary, journal)
 
 
-def _recover_batch_transaction(journal: Path) -> None:
+def _batch_snapshot(directory: Path) -> dict[str, list[object]]:
+    if any(path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0) for path in (directory, *directory.parents)):
+        raise RuntimeError("batch recovery refuses redirected paths")
+    if not directory.exists():
+        return {}
+    if not directory.is_dir():
+        raise RuntimeError("batch recovery output path must be a directory")
+    snapshot: dict[str, list[object]] = {}
+    for path in sorted(directory.rglob("*")):
+        if path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0):
+            raise RuntimeError("batch recovery refuses redirected paths")
+        if path.is_file():
+            identity = path.stat()
+            snapshot[path.relative_to(directory).as_posix()] = [
+                sha256_file(path), identity.st_dev, identity.st_ino,
+                identity.st_size, identity.st_mtime_ns, identity.st_ctime_ns,
+            ]
+        elif not path.is_dir():
+            raise RuntimeError("batch recovery refuses non-regular paths")
+    return snapshot
+
+
+def _record_batch_outputs(journal: Path, doc_id: str, output_format: str) -> None:
+    """Record only the known publication paths, never adopt unrelated outputs.
+
+    A crash before this checkpoint fails closed: publication ownership cannot
+    be inferred from a legacy batch journal or from unrecorded output bytes.
+    """
+    payload = json.loads(journal.read_text(encoding="utf-8"))
+    owned = {
+        "output/v2": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
+        "output/release": (f"{doc_id}.zip",),
+    }
+    for relative, names in owned.items():
+        current = _batch_snapshot(Path(payload["root"]) / relative)
+        for name in names:
+            if name in current:
+                payload["expected"][relative][name] = current[name]
+    temporary = journal.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    os.replace(temporary, journal)
+
+
+def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> None:
     if not journal.exists():
         return
-    try:
-        payload = json.loads(journal.read_text(encoding="utf-8"))
-        root = Path(payload["root"]).resolve()
-        backup = Path(payload["backup"]).resolve()
-        if backup.parent != root.resolve():
-            raise RuntimeError("batch recovery backup escapes document root")
-        paths = tuple(Path(value) for value in payload["paths"])
+    if not _lock_held:
+        with owned_directory_lock(journal.parent / ".v2-batch.lock"):
+            return _recover_batch_transaction(journal, _lock_held=True)
+    payload = json.loads(journal.read_text(encoding="utf-8"))
+    root = journal.parent.parent.resolve()
+    backup = Path(payload["backup"])
+    paths = (Path("output/v2"), Path("output/release"))
+    if (Path(payload["root"]).resolve() != root
+            or journal.resolve() != _batch_journal_path(root)
+            or backup.parent.resolve() != root or not backup.name.startswith(".v2-batch-")
+            or payload.get("paths") != [path.as_posix() for path in paths]):
+        raise RuntimeError("batch recovery path scope is invalid")
+    if not isinstance(payload.get("expected"), dict) or not isinstance(payload.get("saved"), dict):
+        raise RuntimeError("batch recovery ownership unavailable; preserve journal for manual recovery")
+    _batch_snapshot(backup)  # Validate all backup paths before touching any output.
+
+    def checked_snapshot(relative: Path) -> dict[str, list[object]]:
+        key = relative.as_posix()
+        current = _batch_snapshot(root / relative)
+        expected = payload["expected"][key]
+        saved = payload["saved"][key]
+        for name in current.keys() | expected.keys() | saved.keys():
+            value = current.get(name)
+            previous = saved.get(name)
+            if value == expected.get(name) or (value is not None and previous is not None and value[0] == previous[0]):
+                continue
+            if value is None and previous is None:  # Already removed on a previous recovery attempt.
+                continue
+            raise RuntimeError(f"batch recovery output changed concurrently: {relative / name}")
+        return current
+
+    for relative in paths:
+        if _batch_snapshot(backup / relative) != payload["saved"][relative.as_posix()]:
+            raise RuntimeError("batch recovery backup changed")
+        checked_snapshot(relative)
+    # Copy first. A failed copy never removes a live output or consumes backups.
+    with tempfile.TemporaryDirectory(prefix=".v2-batch-restore-", dir=root) as temporary:
+        staged = Path(temporary)
         for relative in paths:
-            current = root / relative
-            saved = backup / relative
-            if current.is_symlink():
-                raise RuntimeError("batch recovery refuses symlinked output")
-            if current.exists():
-                shutil.rmtree(current) if current.is_dir() else current.unlink()
-            if saved.exists():
-                shutil.copytree(saved, current)
-    finally:
-        journal.unlink(missing_ok=True)
+            saved_dir = backup / relative
+            if saved_dir.exists():
+                shutil.copytree(saved_dir, staged / relative)
+        for relative in paths:
+            current = checked_snapshot(relative)
+            saved = payload["saved"][relative.as_posix()]
+            for name in sorted(current.keys() | saved.keys()):
+                checked_snapshot(relative)
+                target = root / relative / name
+                if name in saved:
+                    if name in current and current[name][0] == saved[name][0]:
+                        continue
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with directory_handle_guard(target.parent):
+                        os.replace(staged / relative / name, target)
+                else:
+                    target.unlink(missing_ok=True)
+    # Only a fully restored transaction can retire its recovery evidence.
+    journal.unlink()
+    shutil.rmtree(backup)
 
 
 def _document_create_payload(deps: Any, doc_id: str, template: str, title: str) -> dict[str, str]:

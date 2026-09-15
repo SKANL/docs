@@ -218,6 +218,9 @@ class AtomicTransform:
                     AtomicTransform._sync_file(backup)
                     AtomicTransform._sync_directory(backup.parent)
                 AtomicTransform._assert_destination_unchanged(destination, entry)
+                # replace may succeed before its durability/identity checks fail.
+                # From this point recovery, not discard, decides target ownership.
+                published = True
                 AtomicTransform._replace_checked(
                     scratch / relative,
                     destination,
@@ -227,7 +230,6 @@ class AtomicTransform:
                 # The destination is now owned by this transaction.  Any
                 # failure while recording its identity/journal must take the
                 # rollback path rather than discarding the recovery record.
-                published = True
                 published_identity = os.stat(destination, follow_symlinks=False)
                 entry["published_identity"] = (
                     published_identity.st_dev,
@@ -265,7 +267,9 @@ class AtomicTransform:
             identity = os.stat(destination, follow_symlinks=False)
             existing_identity = (identity.st_dev, identity.st_ino)
             previous_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest()
+        staged = os.stat(scratch / relative, follow_symlinks=False)
         return {
+            "staged_identity": (staged.st_dev, staged.st_ino),
             "target": str(destination),
             "backup": str(backup),
             "existed": existed,
@@ -366,9 +370,14 @@ class AtomicTransform:
                 if AtomicTransform._publication_target_needs_rollback(target, raw_entry):
                     if backup.is_file():
                         AtomicTransform._replace_checked(backup, target, expected_parent, operation="rollback")
-                    elif not bool(raw_entry["existed"]) and raw_entry.get("published_identity") is not None:
+                    elif not bool(raw_entry["existed"]) and (raw_entry.get("published_identity") is not None or raw_entry.get("staged_identity") is not None):
                         target.unlink(missing_ok=True)
                         AtomicTransform._assert_parent_identity(target, expected_parent, operation="rollback")
+                elif target.is_file():
+                    # A previous retry may have restored the bytes but failed
+                    # their sync. Do not retire evidence until that sync works.
+                    AtomicTransform._sync_file(target)
+                AtomicTransform._sync_directory(target.parent)
             except (OSError, RuntimeError) as exc:
                 recovery_errors.append(str(exc))
         if recovery_errors:
@@ -443,7 +452,7 @@ class AtomicTransform:
                     raw_entry["parent_identity"],
                     operation="rollback",
                 )
-            elif not bool(raw_entry["existed"]) and raw_entry.get("published_identity") is not None:
+            elif not bool(raw_entry["existed"]) and (raw_entry.get("published_identity") is not None or raw_entry.get("staged_identity") is not None):
                 target.unlink(missing_ok=True)
         shutil.rmtree(publication.backup_dir, ignore_errors=True)
         publication.journal_path.unlink(missing_ok=True)
@@ -548,12 +557,23 @@ class AtomicTransform:
             )
             if tuple(published_identity) != current_identity:
                 raise RuntimeError(f"publication target changed before rollback: {target}")
+        elif isinstance(staged_identity := entry.get("staged_identity"), (tuple, list)):
+            identity = os.stat(target, follow_symlinks=False)
+            if tuple(staged_identity) != (identity.st_dev, identity.st_ino):
+                raise RuntimeError(f"publication target changed before rollback: {target}")
         if actual == expected_hash:
             return True
         raise RuntimeError(f"publication target changed before rollback: {target}")
 
     @staticmethod
     def _replace_checked(source: Path, destination: Path, expected_parent: object, *, operation: str) -> None:
+        if operation == "rollback":
+            # Keep the durable backup until restoration (including sync) succeeds.
+            with tempfile.TemporaryDirectory(prefix=".atomic-restore-", dir=source.parent) as temporary:
+                candidate = Path(temporary) / source.name
+                shutil.copy2(source, candidate)
+                AtomicTransform._replace_checked(candidate, destination, expected_parent, operation="rollback-copy")
+            return
         with directory_handle_guard(destination.parent):
             AtomicTransform._assert_parent_identity(destination, expected_parent, operation=operation)
             os.replace(source, destination)

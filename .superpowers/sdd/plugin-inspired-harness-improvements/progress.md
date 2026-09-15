@@ -240,3 +240,9 @@ source-only by design.
 - Reused the existing domain image-similarity comparator for PDF/HTML previews; verification never updates baselines.
 - Draft reports baseline drift as warnings; strict/release promote drift to blocking findings.
 - Focused baseline/render/review tests: 37 passed; ruff, mypy, and diff checks passed.
+## Final recovery and QA closure: complete
+- Fixed the atomic publication recovery boundary so a successful replacement followed by a sync/identity failure retains durable recovery evidence and retries safely.
+- Made batch publication recovery lock-aware, ownership-checked, copy-before-restore, and retryable when restoration fails; journals are retired only after complete recovery or successful publication.
+- Routed DOCX visual review through structured rendered QA, switched PDF reproducibility to semantic page/text/raster comparison, and stabilized preview names while removing stale previews.
+- Added catalog entries for the new render and visual findings after the full suite exposed undocumented diagnostics.
+- Focused regression tests: 184 passed, 2 skipped; issue-code tests: 9 passed; ruff, mypy, and diff checks passed. A full suite run before the catalog fix was 2489 passed, 1 failed, 5 skipped; the failure was limited to the newly emitted undocumented codes and was corrected.

@@ -16,8 +16,9 @@ similarity tolerance in the document configuration:
 }
 ```
 
-QA compares each rendered `*.png` page with the same-named baseline without
-rewriting either directory. It reports `visual.baseline_changed`,
+QA regenerates the execution's preview PNGs, removing obsolete pages before
+comparison. It compares each page with the same-named baseline without modifying
+the baseline directory. Preview and baseline directories must not overlap. It reports `visual.baseline_changed`,
 `visual.baseline_missing`, `visual.baseline_extra_page`, or
 `visual.baseline_unreadable` with the affected page. Draft mode reports these
 as warnings; strict and release mode make them blocking errors. Updating a
@@ -39,7 +40,8 @@ Use `uv run docs doctor` to see optional executables and their versions. For a d
 
 - **Contract QA:** stage definitions, artifact names, dependencies, and outcomes are deterministic and validated before execution.
 - **Source QA:** ingest, normalization, and compiled structure are reported as `docs.sources/v2` and `docs.structure/v2` artifacts.
-- **DOCX QA:** format audit plus configured document QA adapters.
+- **DOCX QA:** format audit plus rendered `QaService` findings through the existing
+  `QaRenderPort`, including configured baselines and required previews.
 - **HTML QA:** UTF-8 decoding and exactly one HTML root and body root.
 - **PDF QA:** `%PDF-` signature, readable reopen, at least one page, and valid page render dimensions.
 - **Provenance QA:** source/output hashes and manifest attestation are recorded only after accepted execution.
@@ -48,11 +50,18 @@ Use `uv run docs doctor` to see optional executables and their versions. For a d
 ### Injectable multiformat review service
 
 `ReviewStageService` accepts `render_verification=RenderVerificationService(port)`.
-Use the existing `RenderVerificationAdapter` for this port; DOCX keeps its
-existing format-audit path. The HTML/PDF CLI fallback callbacks still perform
-the reopen checks listed above until the composition root injects and routes
-this service. A passing CLI fallback is **not** evidence that these additional
-checks ran.
+The CLI injects the existing `RenderVerificationAdapter` for HTML/PDF and
+`qa=QaService(...)` for DOCX visual review. `QaService.inspect_docx` returns
+structured findings and a durable report; `qa_docx` retains its Path-returning
+compatibility API. DOCX visual review keeps format audit and cannot silently
+skip configured baselines or required previews. Without injected services,
+legacy fallback callbacks remain technical reopen checks, not rendered QA.
+
+`pdf_reproducibility` injects the same comparator used by the CLI fallback:
+PDF page count, geometry, extracted text, and rendered page content at 150 DPI
+must match. PDF container bytes and metadata comments need not match. This
+checks the current renderer, not equivalence across renderer versions or every
+possible zoom level. DOCX and HTML retain byte-level reproducibility checks.
 
 - **HTML accessibility:** declared nonempty `html[lang]`, a visible nonempty
   `h1`, basic heading-level progression, main/header landmarks (or equivalent
@@ -79,8 +88,12 @@ checks ran.
 The service uses `visual_qa.allow_blank_pages` (default false),
 `visual_qa.require_previews` (default false), and optional
 `visual_qa.expected_page_size` (PDF points; two positive finite numbers).
-With `paths.output_qa_dir`, PDF previews go under `<artifact-stem>/previews/`.
-Without that directory pages are still rasterized and inspected in memory.
+With `paths.output_qa_dir`, CLI previews go under `<document-id>.<format>/previews/`
+and are named `<document-id>.<format>-pNN.png`, independent of build/run tokens.
+Direct adapter calls default to the artifact stem; callers may supply the stable
+`RenderProfile.preview_stem`. Existing token-named baselines require an explicit
+baseline update; verification never migrates them automatically. Without an
+output directory, PDF pages are still rasterized and inspected in memory.
 Draft permits warnings; strict/release and matching `warning_codes` promote
 them to errors. Missing artifacts and corrupt images remain errors in draft.
 Accessibility and visual findings are gated separately.

@@ -36,6 +36,14 @@ class RenderProfile:
     baseline_dir: Path | None = None
     minimum_similarity: float = 0.75
     baseline_strict: bool = False
+    preview_stem: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.preview_stem is not None and (
+            not self.preview_stem or self.preview_stem in {".", ".."}
+            or any(char in self.preview_stem for char in '/\\:')
+        ):
+            raise ValueError("preview_stem must be a nonempty filename stem")
 
 
 @dataclass(frozen=True)

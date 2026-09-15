@@ -210,16 +210,8 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
         if isinstance(key, ast.Constant) and key.value == "visual_review"
     )
     assert isinstance(visual_stage, ast.IfExp)
-    assert any(
-        isinstance(node, ast.Compare)
-        and isinstance(node.left, ast.Name)
-        and node.left.id == "output_format"
-        and len(node.ops) == len(node.comparators) == 1
-        and isinstance(node.ops[0], ast.NotEq)
-        and isinstance(node.comparators[0], ast.Constant)
-        and node.comparators[0].value == "docx"
-        for node in ast.walk(visual_stage.test)
-    )
+    # DOCX must use the injected rendered QA too. Runtime routing is covered by
+    # test_v2_docx_visual_review_routes_real_qa_despite_compatibility_callback.
     assert isinstance(visual_stage.body, ast.Lambda)
     assert isinstance(visual_stage.body.body, ast.Call)
     assert isinstance(visual_stage.body.body.func, ast.Name)

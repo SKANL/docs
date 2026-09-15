@@ -88,6 +88,10 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "html_name": {},
     },
     "visual_qa": {
+        "allow_blank_pages": {},
+        "expected_page_size": {},
+        "preview_stem": {},
+        "require_previews": {},
         "baseline_dir": {},
         "minimum_similarity": {},
     },

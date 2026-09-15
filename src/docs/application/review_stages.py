@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.format_audit import FormatAuditService
+from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.structural_audit import StructuralAuditService
@@ -37,12 +38,16 @@ class ReviewStageService:
         document_review: ReviewService,
         rules_manifest_state: Callable[[dict[str, Any]], tuple[bool, int]],
         render_verification: RenderVerificationService | None = None,
+        qa: QaService | None = None,
+        pdf_reproducibility: Callable[[Path, Path], tuple[bool, str]] | None = None,
     ) -> None:
         self._structural_audit = structural_audit
         self._format_audit = format_audit
         self._document_review = document_review
         self._rules_manifest_state = rules_manifest_state
         self._render_verification = render_verification
+        self._qa = qa
+        self._pdf_reproducibility = pdf_reproducibility
 
     def run_all(
         self,
@@ -188,11 +193,24 @@ class ReviewStageService:
     ) -> ReviewStageOutcome:
         if artifact_path.suffix.lower() in {".html", ".htm", ".pdf"}:
             return self._render_review(artifact_path, config, policy, ReviewDimension.VISUAL)
-        result = self._format_audit.audit_format(
-            artifact_path,
-            config,
-            strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
-        )
+        strict = policy.mode in {PipelineMode.strict, PipelineMode.release}
+        if self._qa is not None:
+            try:
+                _, result = self._qa.inspect_docx(config, artifact_path, strict=strict)
+            except (OSError, RuntimeError, ValueError, KeyError) as exc:
+                result = ReviewResult([Issue("error", f"DOCX QA failed: {exc}",
+                                             code="render.open", dimension=ReviewDimension.VISUAL)])
+        else:
+            result = self._format_audit.audit_format(artifact_path, config, strict=strict)
+            settings = config.get("visual_qa", {})
+            if settings or config.get("paths", {}).get("visual_baseline_dir"):
+                required = isinstance(settings, dict) and settings.get("require_previews", False)
+                result.issues.append(Issue(
+                    "error" if required else "warning",
+                    "DOCX rendered QA is not configured; baseline/previews are unverified.",
+                    code="render.previews.required" if required else "render.capability.unavailable",
+                    dimension=ReviewDimension.VISUAL,
+                ))
         return self._outcome(result.filter_dimensions({ReviewDimension.VISUAL}), policy)
 
     def _render_review(
@@ -237,7 +255,7 @@ class ReviewStageService:
                 code="render.profile.invalid", dimension=dimension,
             )]), policy)
         preview_root = config.get("paths", {}).get("output_qa_dir") if visual else None
-        previews = Path(preview_root) / path.stem / "previews" if preview_root else None
+        previews = Path(preview_root) / settings.get("preview_stem", path.stem) / "previews" if preview_root else None
         profile = RenderProfile(
             format="html" if path.suffix.lower() in {".html", ".htm"} else "pdf",
             expected_page_size=tuple(expected) if expected is not None else None,
@@ -247,6 +265,7 @@ class ReviewStageService:
                           else Path(baseline_dir) if baseline_dir is not None else None),
             minimum_similarity=float(minimum_similarity),
             baseline_strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
+            preview_stem=settings.get("preview_stem"),
         )
         try:
             report = self._render_verification.verify(path, profile, previews)
@@ -279,7 +298,13 @@ class ReviewStageService:
             if candidate is None:
                 raise RuntimeError("reproducibility check produced no artifact")
             rebuilt = Path(candidate)
-            if sha256(artifact_path.read_bytes()).digest() != sha256(rebuilt.read_bytes()).digest():
+            if artifact_path.suffix.lower() == ".pdf":
+                if self._pdf_reproducibility is None:
+                    raise RuntimeError("PDF semantic reproducibility comparator is not configured")
+                passed, detail = self._pdf_reproducibility(artifact_path, rebuilt)
+                if not passed:
+                    raise RuntimeError(detail)
+            elif sha256(artifact_path.read_bytes()).digest() != sha256(rebuilt.read_bytes()).digest():
                 raise RuntimeError("reproducibility divergence detected")
         except Exception as exc:
             return self._outcome(

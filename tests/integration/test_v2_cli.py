@@ -1722,3 +1722,210 @@ def test_v2_inspect_and_diff_reject_missing_inputs_without_creating_outputs(tmp_
     assert diff_result.exit_code != 0
     assert not output_dir.exists()
     assert not missing.exists()
+
+
+def _batch_recovery_fixture(tmp_path):
+    root = tmp_path / "document"
+    output = root / "output" / "v2"
+    output.mkdir(parents=True)
+    (output / "report.docx").write_text("partial")
+    backup = root / ".v2-batch-crash"
+    saved = backup / "output" / "v2"
+    saved.mkdir(parents=True)
+    (saved / "report.docx").write_text("previous")
+    journal = _batch_journal_path(root)
+    _write_batch_journal(journal, root, backup, (Path("output/v2"), Path("output/release")))
+    return root, output, backup, journal
+
+
+def test_batch_recovery_preserves_evidence_when_copy_fails_and_retries(tmp_path, monkeypatch):
+    import shutil
+
+    _, output, backup, journal = _batch_recovery_fixture(tmp_path)
+    copytree = shutil.copytree
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "copytree", lambda *a, **kw: (_ for _ in ()).throw(OSError("restore denied")))
+        with pytest.raises(OSError, match="restore denied"):
+            _recover_batch_transaction(journal)
+    assert journal.is_file()
+    assert (backup / "output/v2/report.docx").read_text() == "previous"
+    assert (output / "report.docx").read_text() == "partial"
+    assert shutil.copytree is copytree
+    _recover_batch_transaction(journal)
+    _recover_batch_transaction(journal)
+    assert (output / "report.docx").read_text() == "previous"
+    assert not journal.exists()
+    assert not backup.exists()
+
+
+@pytest.mark.parametrize("concurrent", ["report.docx", "other.docx"])
+def test_batch_recovery_refuses_concurrent_output_changes(tmp_path, concurrent):
+    _, output, backup, journal = _batch_recovery_fixture(tmp_path)
+    (output / concurrent).write_text("concurrent")
+    with pytest.raises(RuntimeError, match=r"changed|concurrent"):
+        _recover_batch_transaction(journal)
+    assert (output / concurrent).read_text() == "concurrent"
+    assert backup.is_dir() and journal.is_file()
+
+
+@pytest.mark.parametrize("relative", ["../outside", "output", "output/../inbox"])
+def test_batch_recovery_validates_all_paths_before_mutating(tmp_path, relative):
+    _root, output, backup, journal = _batch_recovery_fixture(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "precious.txt").write_text("untouched")
+    payload = json.loads(journal.read_text())
+    payload["paths"].append(relative)
+    journal.write_text(json.dumps(payload))
+    with pytest.raises(RuntimeError, match=r"path|scope"):
+        _recover_batch_transaction(journal)
+    assert (outside / "precious.txt").read_text() == "untouched"
+    assert (output / "report.docx").read_text() == "partial"
+    assert backup.is_dir() and journal.is_file()
+
+
+def test_v2_pdf_baseline_names_are_stable_across_distinct_build_tokens(tmp_path, monkeypatch):
+    import shutil
+
+    deps = _deps(tmp_path)
+    deps.structural_audit_service = _StructuralAudit()
+    deps.render_verification = RenderVerificationService(RenderVerificationAdapter())
+    config = deps.resolve_context().config
+    config["visual_qa"] = {"allow_blank_pages": True}
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    runner = CliRunner()
+    first = runner.invoke(app, ["v2", "verify", "--format", "pdf", "--json"])
+    assert first.exit_code == 0, first.stdout
+    qa = Path(config["paths"]["output_qa_dir"])
+    first_previews = sorted(qa.rglob("*.png"))
+    assert first_previews
+    baseline = tmp_path / "baseline"
+    shutil.copytree(first_previews[0].parent, baseline)
+    config["visual_qa"]["baseline_dir"] = str(baseline)
+    second = runner.invoke(app, ["v2", "verify", "--format", "pdf", "--json"])
+    stages = json.loads(second.stdout)["report"]["execution"]["results"]
+    visual = next(stage for stage in stages if stage["stage"] == "visual-review")
+    findings = " ".join([*visual["errors"], *visual["warnings"]])
+    assert "visual.baseline_missing" not in findings
+    assert "visual.baseline_extra_page" not in findings
+    assert len(list(qa.rglob("*.png"))) == len(first_previews)
+    retained = tmp_path / "documents/active/runs/v2-artifacts"
+    assert len(list(retained.glob("*.pdf"))) == 2  # The artifacts really used distinct tokens.
+
+
+def test_v2_build_does_not_recover_another_live_batch(tmp_path, monkeypatch):
+    from docs.infrastructure.locking import owned_directory_lock
+
+    deps = _deps(tmp_path)
+    root = deps.workspace.doc_root("active")
+    lock_path = root / "runs" / ".v2-batch.lock"
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    monkeypatch.setattr("docs.cli.commands.v2_app.owned_directory_lock",
+                        lambda path: owned_directory_lock(path, timeout=0.01))
+    with owned_directory_lock(lock_path):
+        result = CliRunner().invoke(app, ["v2", "build", "--json"])
+    assert isinstance(result.exception, TimeoutError)
+    assert not list((root / "output/v2").glob("*.docx"))
+
+
+def test_v2_docx_visual_review_routes_real_qa_despite_compatibility_callback(tmp_path, monkeypatch):
+    from docs.application.qa import QaService
+
+    class QaPort:
+        def render_docx_to_pdf(self, config, docx_path, output_dir):
+            pdf = output_dir / f"{docx_path.stem}.pdf"
+            pdf.write_bytes(_minimal_pdf())
+            return pdf
+
+        def run_documents_audits(self, *args):
+            return []
+
+    deps = _deps(tmp_path)
+    deps.structural_audit_service = _StructuralAudit()
+    deps.render_verification = RenderVerificationService(RenderVerificationAdapter())
+    deps.qa = QaService(QaPort(), deps.format_audit, deps.render_verification)
+    deps.resolve_context().config["visual_qa"] = {
+        "allow_blank_pages": True, "baseline_dir": str(tmp_path / "absent-baseline"),
+    }
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    result = CliRunner().invoke(app, ["v2", "verify", "--format", "docx", "--json"])
+    stages = json.loads(result.stdout)["report"]["execution"]["results"]
+    visual = next(stage for stage in stages if stage["stage"] == "visual-review")
+    assert visual["ok"]
+    assert any("No visual baseline" in warning for warning in visual["warnings"])
+    qa = Path(deps.resolve_context().config["paths"]["output_qa_dir"])
+    assert (qa / "active.docx/previews/active.docx-p01.png").is_file()
+
+
+def test_v2_pdf_reproducibility_uses_semantic_comparison_when_review_service_is_injected(tmp_path, monkeypatch):
+    deps = _deps(tmp_path)
+    deps.structural_audit_service = _StructuralAudit()
+    deps.render_verification = RenderVerificationService(RenderVerificationAdapter())
+    deps.pipeline.reproducibility_check = None
+    deps.resolve_context().config["visual_qa"] = {"allow_blank_pages": True}
+    renderer = deps.renderers["pdf"]
+    original = renderer.build
+
+    def build(*args, **kwargs):
+        path = original(*args, **kwargs)
+        path.write_bytes(path.read_bytes() + f"\n% render {len(renderer.calls)}\n".encode())
+        return path
+
+    renderer.build = build
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    result = CliRunner().invoke(app, ["v2", "verify", "--format", "pdf", "--json"])
+    stages = json.loads(result.stdout)["report"]["execution"]["results"]
+    reproducibility = next(stage for stage in stages if stage["stage"] == "reproducibility-check")
+    assert len(renderer.calls) == 2
+    assert reproducibility["ok"], reproducibility
+
+
+def test_batch_recovery_retries_after_partial_file_restoration(tmp_path, monkeypatch):
+    import docs.cli.commands.v2_app as module
+
+    _, output, backup, journal = _batch_recovery_fixture(tmp_path)
+    (output / "second.docx").write_text("new-second")
+    (backup / "output/v2/second.docx").write_text("old-second")
+    _write_batch_journal(journal, output.parent.parent, backup, (Path("output/v2"), Path("output/release")))
+    real_replace = module.os.replace
+
+    def fail_second(source, target):
+        if Path(target).name == "second.docx":
+            raise OSError("second restore interrupted")
+        real_replace(source, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(module.os, "replace", fail_second)
+        with pytest.raises(OSError, match="interrupted"):
+            _recover_batch_transaction(journal)
+    assert (output / "report.docx").read_text() == "previous"
+    assert journal.exists() and backup.exists()
+    _recover_batch_transaction(journal)
+    assert (output / "second.docx").read_text() == "old-second"
+
+
+def test_pdf_reproducibility_checks_text_even_when_it_is_not_visible(tmp_path):
+    def text_pdf(text):
+        stream = f"BT /F1 12 Tf 3 Tr 10 20 Td ({text}) Tj ET".encode()
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            (b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R "
+             b"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>"),
+            f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
+        ]
+        data = b"%PDF-1.4\n"
+        offsets = []
+        for index, obj in enumerate(objects, 1):
+            offsets.append(len(data))
+            data += f"{index} 0 obj\n".encode() + obj + b"\nendobj\n"
+        xref = len(data)
+        data += b"xref\n0 5\n0000000000 65535 f \n"
+        data += b"".join(f"{offset:010} 00000 n \n".encode() for offset in offsets)
+        return data + f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+
+    first, second = tmp_path / "first.pdf", tmp_path / "second.pdf"
+    first.write_bytes(text_pdf("alpha"))
+    second.write_bytes(text_pdf("bravo"))
+    passed, detail = _verify_pdf_reproducibility(first, second)
+    assert not passed and "changed text" in detail

@@ -30,6 +30,7 @@ ISSUE_CODE_FAMILIES: dict[str, str] = {
     "scope": "Delimitación del alcance declarado del documento.",
     "structure": "Existencia y forma de las secciones y sus títulos.",
     "template": "Validez del archivo de plantilla en sí.",
+    "visual": "Comparación visual y evidencia de previews del artefacto renderizado.",
     "voice": "Registro y persona gramatical exigidos por el template.",
 }
 
@@ -149,10 +150,22 @@ ISSUE_CODES: dict[str, IssueCode] = {
         meaning="La configuración del perfil de QA visual contiene opciones con tipos o dimensiones inválidas.",
         fix="Corregí `visual_qa` para usar booleanos en sus opciones y dos dimensiones numéricas positivas en `expected_page_size`, luego repetí la revisión.",
     ),
+    "render.failed": IssueCode(
+        meaning="La verificación del render encontró uno o más defectos bloqueantes en el artefacto visual.",
+        fix="Revisá los hallazgos por página, corregí el origen en la fuente o plantilla y reconstruí el artefacto antes de publicar.",
+    ),
+    "render.previews.required": IssueCode(
+        meaning="La política de QA exige previews por página, pero el renderer no produjo ninguna.",
+        fix="Habilitá el renderer requerido y sus herramientas, o ajustá explícitamente la política si el formato no admite previews.",
+    ),
     # --- reproducibility ---------------------------------------------------
     "reproducibility.failed": IssueCode(
         meaning="La reconstrucción del artefacto no coincide con el artefacto original.",
         fix="Revisá las entradas, el renderer y cualquier fuente de datos no determinista hasta que ambas salidas coincidan.",
+    ),
+    "visual.baseline_unreadable": IssueCode(
+        meaning="La comparación visual no pudo ejecutarse porque faltan previews legibles del artefacto.",
+        fix="Generá previews válidas antes de comparar contra la baseline y verificá que el directorio de QA sea accesible.",
     ),
     # --- scope --------------------------------------------------------------
     "scope.excluded_section": IssueCode(

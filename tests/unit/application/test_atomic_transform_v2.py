@@ -758,3 +758,48 @@ def test_post_publication_rollback_failure_is_reported(tmp_path: Path, monkeypat
 
     assert result.ok is False
     assert "rollback failed" in (result.error or "")
+
+
+def test_sync_failure_after_replace_restores_destination_and_keeps_recoverable_journal(tmp_path, monkeypatch):
+    destination = tmp_path / "result.txt"
+    destination.write_text("previous", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    real_sync = AtomicTransform._sync_file
+
+    def fail_destination_sync(path):
+        if path == destination:
+            raise OSError("injected post-replace sync failure")
+        real_sync(path)
+
+    monkeypatch.setattr(AtomicTransform, "_sync_file", fail_destination_sync)
+    result = AtomicTransform().run(spec, lambda scratch: (scratch / "result").write_text("new"))
+
+    assert not result.ok
+    assert destination.read_text() == "previous"
+    journal = tmp_path / ".atomic-transform-journal.json"
+    assert journal.is_file()
+    backups = list(tmp_path.glob(".atomic-transform-backups-*/0"))
+    assert len(backups) == 1 and backups[0].read_text() == "previous"
+    with pytest.raises(RuntimeError, match="post-replace sync failure"):
+        AtomicTransform._recover_pending(spec.destinations)
+    assert journal.is_file() and backups[0].is_file()
+    monkeypatch.setattr(AtomicTransform, "_sync_file", real_sync)
+    AtomicTransform._recover_pending(spec.destinations)
+    assert destination.read_text() == "previous"
+    assert not journal.exists()
+
+
+def test_sync_failure_after_publishing_new_destination_removes_owned_output(tmp_path, monkeypatch):
+    destination = tmp_path / "new.txt"
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    real_sync = AtomicTransform._sync_file
+
+    def fail_sync(path):
+        if path == destination:
+            raise OSError("post-replace sync failure")
+        real_sync(path)
+
+    monkeypatch.setattr(AtomicTransform, "_sync_file", fail_sync)
+    result = AtomicTransform().run(spec, lambda scratch: (scratch / "result").write_text("new"))
+    assert not result.ok
+    assert not destination.exists()

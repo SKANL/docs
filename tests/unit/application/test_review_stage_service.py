@@ -138,7 +138,7 @@ def test_evidence_review_applies_pipeline_policy_to_evidence_findings(tmp_path: 
     assert not outcome.warnings
 
 
-def _multiformat_service(tmp_path: Path) -> ReviewStageService:
+def _multiformat_service(tmp_path: Path, **options) -> ReviewStageService:
     from docs.application.render_verification import RenderVerificationService
     from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
@@ -149,6 +149,7 @@ def _multiformat_service(tmp_path: Path) -> ReviewStageService:
         document_review=ReviewService(JsonSectionRepository(workspace)),
         rules_manifest_state=lambda _: (True, 1),
         render_verification=RenderVerificationService(RenderVerificationAdapter()),
+        **options,
     )
 
 
@@ -277,3 +278,93 @@ def test_visual_stage_compares_configured_pdf_baseline_without_updating_it(tmp_p
     assert not strict.ok and "visual.baseline_changed" in strict.detail
     assert not release.ok and "visual.baseline_changed" in release.detail
     assert baseline_page.read_bytes() == original
+
+
+def test_docx_visual_stage_does_not_silently_ignore_configured_baseline(tmp_path):
+    artifact = _document(tmp_path)
+    config = {
+        "paths": {"output_qa_dir": str(tmp_path / "qa")},
+        "visual_qa": {"baseline_dir": str(tmp_path / "missing-baseline")},
+    }
+    outcome = _multiformat_service(tmp_path).visual_review(artifact, config, PipelinePolicy(PipelineMode.strict))
+    assert not outcome.ok
+    assert "baseline" in outcome.detail.lower() or "configured" in outcome.detail.lower()
+
+
+def test_docx_visual_stage_does_not_silently_ignore_required_previews(tmp_path):
+    artifact = _document(tmp_path)
+    config = {"visual_qa": {"require_previews": True}}
+    outcome = _multiformat_service(tmp_path).visual_review(artifact, config, PipelinePolicy())
+    assert not outcome.ok
+    assert "preview" in outcome.detail.lower()
+
+
+def test_pdf_reproducibility_accepts_metadata_only_changes(tmp_path):
+    from docs.cli.commands.v2_app import _verify_pdf_reproducibility
+
+    artifact = tmp_path / "document.pdf"
+    _write_blank_pdf(artifact)
+    service = _multiformat_service(tmp_path, pdf_reproducibility=_verify_pdf_reproducibility)
+
+    def rebuild(output):
+        output.write_bytes(artifact.read_bytes() + b"\n% different metadata comment\n")
+        return output
+
+    outcome = service.reproducibility_check(artifact, PipelinePolicy(), rebuild, tmp_path / "rebuild")
+    assert outcome.ok, outcome.detail
+
+
+def test_docx_visual_stage_uses_rendered_qa_and_keeps_format_audit(tmp_path):
+    from docs.application.qa import QaService
+    from docs.application.render_verification import RenderVerificationService
+    from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
+
+    class QaPort:
+        def render_docx_to_pdf(self, config, docx_path, output_dir):
+            pdf = output_dir / "rendered.pdf"
+            _write_blank_pdf(pdf)
+            return pdf
+
+        def run_documents_audits(self, *args):
+            return []
+
+    artifact = _document(tmp_path, heading="Mixed case")
+    service = _multiformat_service(tmp_path, qa=QaService(
+        QaPort(), FormatAuditService(PythonDocxAuditAdapter()),
+        RenderVerificationService(RenderVerificationAdapter()),
+    ))
+    config = {
+        "paths": {"output_qa_dir": str(tmp_path / "qa")},
+        "visual_qa": {"baseline_dir": str(tmp_path / "missing"), "allow_blank_pages": True},
+    }
+    draft = service.visual_review(artifact, config, PipelinePolicy())
+    assert draft.ok
+    assert "No visual baseline" in draft.detail
+    assert "Mixed case" in draft.detail
+    assert list((tmp_path / "qa").rglob("*.png"))
+    for mode in (PipelineMode.strict, PipelineMode.release):
+        outcome = service.visual_review(artifact, config, PipelinePolicy(mode))
+        assert not outcome.ok and "No visual baseline" in outcome.detail
+
+
+def test_pdf_reproducibility_rejects_changed_image_with_identical_geometry(tmp_path):
+    import pypdfium2 as pdfium
+    from PIL import Image
+
+    from docs.cli.commands.v2_app import _verify_pdf_reproducibility
+
+    paths = (tmp_path / "first.pdf", tmp_path / "second.pdf")
+    for path, color in zip(paths, ("black", "red"), strict=True):
+        with pdfium.PdfDocument.new() as document:
+            page = document.new_page(100, 100)
+            bitmap = pdfium.PdfBitmap.from_pil(Image.new("RGB", (10, 10), color))
+            obj = pdfium.PdfImage.new(document)
+            obj.set_bitmap(bitmap)
+            obj.set_matrix(pdfium.PdfMatrix(80, 0, 0, 80, 10, 10))
+            page.insert_obj(obj)
+            page.gen_content()
+            document.save(path)
+            bitmap.close()
+            page.close()
+    ok, detail = _verify_pdf_reproducibility(*paths)
+    assert not ok, detail
