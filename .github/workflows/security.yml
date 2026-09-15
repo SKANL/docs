@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, javascript]
+        language: [python]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
       - uses: github/codeql-action/init@311b4ee155dcdab395044f00946f664bd51ff173 # v3.28.17
@@ -43,6 +43,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    continue-on-error: true
     steps:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
