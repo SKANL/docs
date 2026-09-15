@@ -225,3 +225,8 @@ source-only by design.
 - PDF inspection reports tagged-structure limitations honestly and checks rendered pages, objects, images, dimensions, blank pages, and previews.
 - V2 HTML/PDF accessibility and visual stages now use ReviewStageService and RenderVerificationService instead of reopen-only fallbacks.
 - Focused integration: 171 passed; ruff, mypy, and diff checks passed.
+## Durable transform recovery: complete
+- Strengthened v2 publication durability by syncing backups, journals, replacements, and directory metadata where supported.
+- Added recovery-before-next-run coverage for a prepared interrupted transaction.
+- Documented the honest guarantee: multi-file publication is sequential but journaled, durable, idempotent, and never publishes an unvalidated scratch output.
+- Focused atomic-transform tests: 34 passed; ruff, mypy, and diff checks passed.

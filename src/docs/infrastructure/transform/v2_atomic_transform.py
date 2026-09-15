@@ -49,7 +49,13 @@ class _PublicationTransaction:
 
 
 class AtomicTransform:
-    """Run a transform off-path and publish all outputs transactionally."""
+    """Publish staged outputs with a durable journal and recovery-before-next-run.
+
+    `os.replace` is atomic only for one path.  Multi-output publication is a
+    sequence of durable replacements, never one physically indivisible
+    filesystem operation.  A prepared journal and durable backups let the next
+    invocation roll that sequence back before it executes or publishes again.
+    """
 
     def __init__(self, subprocess_adapter: SubprocessAdapter | None = None) -> None:
         self._subprocess = subprocess_adapter or self._default_subprocess_adapter
@@ -209,6 +215,8 @@ class AtomicTransform:
                 backup = Path(str(entry["backup"]))
                 if destination.exists():
                     shutil.copy2(destination, backup)
+                    AtomicTransform._sync_file(backup)
+                    AtomicTransform._sync_directory(backup.parent)
                 AtomicTransform._assert_destination_unchanged(destination, entry)
                 AtomicTransform._replace_checked(
                     scratch / relative,
@@ -291,11 +299,41 @@ class AtomicTransform:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
                 handle.flush()
-                os.fsync(handle.fileno())
+                AtomicTransform._sync_file(temporary_path)
             with directory_handle_guard(path.parent):
                 os.replace(temporary_path, path)
+            AtomicTransform._sync_directory(path.parent)
         finally:
             temporary_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _sync_file(path: Path) -> None:
+        """Durably flush one file; failures are publication failures."""
+        descriptor = os.open(path, os.O_RDWR)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _sync_directory(path: Path) -> None:
+        """Flush directory metadata when the host filesystem exposes it.
+
+        Windows generally cannot open a directory descriptor for ``fsync``;
+        that is a platform limitation, not a failed publication.  File data is
+        still flushed through ``_sync_file`` on every supported host.
+        """
+        try:
+            descriptor = os.open(path, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            try:
+                os.fsync(descriptor)
+            except OSError:
+                return
+        finally:
+            os.close(descriptor)
 
     @staticmethod
     def _recover_pending(destinations: tuple[Path, ...]) -> None:
@@ -519,6 +557,8 @@ class AtomicTransform:
         with directory_handle_guard(destination.parent):
             AtomicTransform._assert_parent_identity(destination, expected_parent, operation=operation)
             os.replace(source, destination)
+            AtomicTransform._sync_file(destination)
+            AtomicTransform._sync_directory(destination.parent)
             AtomicTransform._assert_parent_identity(destination, expected_parent, operation=operation)
 
     @staticmethod

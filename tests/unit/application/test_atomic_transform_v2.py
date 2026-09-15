@@ -251,6 +251,92 @@ def test_multi_output_publication_recovers_after_process_interruption(tmp_path: 
     assert second.read_text(encoding="utf-8") == "final-second"
 
 
+def test_next_run_recovers_prepared_transaction_before_executing_new_operation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("old-first", encoding="utf-8")
+    second.write_text("old-second", encoding="utf-8")
+    spec = TransformSpec(expected_outputs=("first", "second"), destinations=(first, second))
+    real_replace = atomic_module.os.replace
+    interrupted = False
+
+    def interrupt_after_first(source: str | Path, target: str | Path) -> None:
+        nonlocal interrupted
+        real_replace(source, target)
+        if Path(target) == first and not interrupted:
+            interrupted = True
+            raise KeyboardInterrupt("simulated interruption")
+
+    monkeypatch.setattr(atomic_module.os, "replace", interrupt_after_first)
+    with pytest.raises(KeyboardInterrupt):
+        AtomicTransform().run(
+            spec,
+            lambda scratch: [
+                (scratch / "first").write_text("new-first", encoding="utf-8"),
+                (scratch / "second").write_text("new-second", encoding="utf-8"),
+            ],
+        )
+    monkeypatch.setattr(atomic_module.os, "replace", real_replace)
+
+    observed_before_new_operation: list[tuple[str, str]] = []
+
+    def rebuild(scratch: Path) -> None:
+        observed_before_new_operation.append(
+            (first.read_text(encoding="utf-8"), second.read_text(encoding="utf-8"))
+        )
+        (scratch / "first").write_text("final-first", encoding="utf-8")
+        (scratch / "second").write_text("final-second", encoding="utf-8")
+
+    result = AtomicTransform().run(spec, rebuild)
+
+    assert result.ok is True
+    assert observed_before_new_operation == [("old-first", "old-second")]
+    assert (first.read_text(encoding="utf-8"), second.read_text(encoding="utf-8")) == (
+        "final-first",
+        "final-second",
+    )
+
+
+def test_journal_and_replacement_sync_file_and_directory_when_supported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "result.txt"
+    spec = TransformSpec(expected_outputs=("result",), destinations=(destination,))
+    synced_files: list[Path] = []
+    synced_directories: list[Path] = []
+
+    def sync_file(path: Path) -> None:
+        synced_files.append(path)
+
+    def sync_directory(path: Path) -> None:
+        synced_directories.append(path)
+
+    monkeypatch.setattr(
+        atomic_module.AtomicTransform,
+        "_sync_file",
+        staticmethod(sync_file),
+    )
+    monkeypatch.setattr(
+        atomic_module.AtomicTransform,
+        "_sync_directory",
+        staticmethod(sync_directory),
+    )
+
+    result = AtomicTransform().run(
+        spec, lambda scratch: (scratch / "result").write_text("new", encoding="utf-8")
+    )
+
+    journal = tmp_path / ".atomic-transform-journal.json"
+    assert result.ok is True
+    assert destination in synced_files
+    assert tmp_path in synced_directories
+    assert len([path for path in synced_files if path != destination]) >= 3
+    assert len(synced_directories) >= 3
+    assert not journal.exists()
+
+
 def test_cross_device_publication_is_rejected_before_replacement(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
