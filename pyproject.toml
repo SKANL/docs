@@ -42,6 +42,7 @@ dev = [
     "mypy>=1.19.1",
     "ruff>=0.15.6",
     "types-defusedxml>=0.7.0",
+    "diff-cover>=9.2.0",
 ]
 
 [build-system]

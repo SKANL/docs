@@ -1,0 +1,25 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    uses: ./.github/workflows/reusable-python.yml
+    with:
+      command: >-
+        uv run ruff check src tests &&
+        uv run mypy src tools &&
+        uv run pytest -q --junitxml=junit.xml --cov=src --cov-report=xml:coverage.xml
+        --cov-report=html:coverage-html --cov-report=term --cov-fail-under=86 &&
+        uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=80

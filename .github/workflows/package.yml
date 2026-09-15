@@ -1,0 +1,66 @@
+name: Package
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4.7.0
+        with:
+          version: '0.8.22'
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv build
+      - name: Inspect package and create manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          forbidden = ('legacy', 'compat', 'v2_atomic', 'flat_pipeline')
+          for artifact in Path('dist').iterdir():
+              if artifact.suffix == '.whl':
+                  with ZipFile(artifact) as z:
+                      bad = [name for name in z.namelist() if any(token in name.lower() for token in forbidden)]
+                      if bad: raise SystemExit(f'forbidden package entries: {bad}')
+          PY
+          sha256sum dist/* > dist/SHA256SUMS
+      - name: Upload package evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: package-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+  attest:
+    if: github.event_name != 'pull_request'
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: package-${{ github.run_id }}
+          path: dist
+      - uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v2.2.3
+        with:
+          subject-path: 'dist/*'
