@@ -79,7 +79,7 @@ def test_artifact_ref_rejects_non_string_sha256_before_publication_validation(sh
         ArtifactRef("output/report.pdf", sha256)
 
 
-def test_artifact_ref_preserves_legacy_records_without_metadata():
+def test_artifact_ref_preserves_current_records_without_metadata():
     artifact = ArtifactRef("output/report.pdf", "b" * 64)
 
     assert artifact.media_type is None

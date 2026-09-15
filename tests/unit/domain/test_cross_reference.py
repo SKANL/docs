@@ -72,7 +72,7 @@ def test_unresolvable_ref_becomes_placeholder_and_reports_warning():
     assert "no-existe" in warnings[0]
 
 
-def test_leaves_hardcoded_captions_untouched_backward_compatible():
+def test_leaves_hardcoded_captions_untouched_stable():
     # Sections that already hand-write `Figura N.` (no markers) must build
     # unchanged -- the current generated document does exactly this.
     sections = [("a", "Figura 1. Ya está numerada a mano.")]

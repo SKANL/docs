@@ -97,7 +97,7 @@ def test_build_manifest_policy_carries_advisor_overrides_and_modes():
     assert manifest["policy"]["strict_mode"] == strict
 
 
-def test_build_manifest_advisor_overrides_duplicated_at_top_level_verbatim_legacy():
+def test_build_manifest_advisor_overrides_duplicated_at_top_level_verbatim_current():
     overrides = [{"id": "x", "status": "active"}]
     manifest = _call(advisor_overrides=overrides)
     assert manifest["advisor_overrides"] == overrides
@@ -227,7 +227,7 @@ def test_build_source_hash_payload_preserves_file_order():
 
 
 def test_build_prompt_hash_payload_uses_bare_filename_under_path_key():
-    # Legacy quirk (intentional, verbatim from tesina_harness.py:433-439): the
+    # Current quirk (intentional, verbatim from tesina_harness.py:433-439): the
     # dict key is "path" but the value is the bare filename (path.name), not a
     # full path — prompts are hashed by filename only, unlike source_hash's files.
     fact = PromptHashFileFact(name="section-author.md", sha256="c" * 64)

@@ -73,11 +73,11 @@ The harness owns the document lifecycle; external plugins are not runtime depend
 - **Atomic transforms.** Builds happen in a private scratch directory, validate every declared output, then publish. Failed ordinary publication restores the previous files; temporary files are cleaned.
 - **Three verification layers.** Editorial review checks prose and section rules; structural verification checks document mechanics and template requirements; visual verification checks rendered pages. A green editorial review does not replace the other layers.
 - **Draft versus strict.** Draft mode reports permitted missing tools/evidence as warnings or skips. Strict mode requests complete evidence and promotes applicable failures to errors.
-- **Template fidelity.** `template_contract` can declare page geometry, styles, components, editable slots, required assets, `fidelity_checks`, and `allowed_degradations`. It is validated and provenance-bound; legacy templates without it retain existing behavior.
+- **Template fidelity.** `template_contract` can declare page geometry, styles, components, editable slots, required assets, `fidelity_checks`, and `allowed_degradations`. It is validated and provenance-bound; current templates without it retain existing behavior.
 
 #### Inspecting QA evidence
 
-After assembly, inspect `output/draft/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+After assembly, inspect `output/work/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
 
 #### Extending renderers and templates
 
@@ -90,22 +90,22 @@ docs doc init                       # 1. bootstrap workspace + seed a template
 docs template use <builtin-id>      # 2. (only if init didn't already seed one)
 docs doc new <id> --template <type> # 3. create a document, mark it active
 # 4. drop raw source material (PDFs, docx, md, images) into <doc>/inbox/
-docs pipeline ingest                # 5. convert inbox/ sources to markdown + assets
+docs document ingest                # 5. convert inbox/ sources to markdown + assets
 docs doc status --json              # 6. see what's filled, what's missing, what's next
 docs context set <topic> <field> <value>   # 7. fill required context fields
-docs pipeline prep                  # 8. scaffold section files from the template (runs build-section per section, once)
+docs document prepare                  # 8. scaffold section files from the template (runs build-section per section, once)
 # 9. author: edit sections/NNN-<id>.md bodies (the cognitive slot)
 docs stamp-section <id> --by <agent> # 10. record provenance + recompute body_hash (recommended, see §0/§4)
 docs review-section <id> --json     # 11. iterate to green (see loop below)
-docs pipeline assemble              # 12. render the final output(s), --format html|pdf|docx
-docs verify                         # 13. structural + audit verification
+docs document build              # 12. render the final output(s), --format html|pdf|docx
+docs document verify                         # 13. structural + audit verification
 # 14. optional, after a first assemble: docs doc revise <id> "<request>" <file>
-docs doc mark-final                 # 15. optional: flip lifecycle draft -> final, snapshot draft build into output/final/
+docs document publish                 # 15. optional: flip lifecycle draft -> final, snapshot draft build into output/published/
 ```
 
 **WARNING — `build-section` vs `stamp-section`: not interchangeable.**
 `docs build-section <id>` (**re**)generates a section **from the template
-scaffold** — it is the initial-scaffolding command (`pipeline prep` runs it
+scaffold** — it is the initial-scaffolding command (`document prepare` runs it
 once for every section) and must **not** be run again on a section you have
 already hand-authored. The harness protects you — if it detects authored
 content it diverts the regenerated scaffold to
@@ -139,7 +139,7 @@ remaining sources still ingest.
 repo. On a non-git workspace, commands that opportunistically read git
 metadata (revision, remote, per-file history) fail closed internally and
 print harmless stderr lines such as `git rev-parse --short HEAD failed in
-...` / `git remote get-url origin failed in ...` during `pipeline`/`verify`/
+...` / `git remote get-url origin failed in ...` during `document` commands/
 `doctor` — this is expected, not an error; the command still exits `0`.
 
 Two `docs doctor` checks worth knowing up front:
@@ -147,19 +147,19 @@ Two `docs doctor` checks worth knowing up front:
   `inbox/`): if absent, doctor WARNs that no manual/guide was detected and
   the document will use default rules — non-blocking.
 - **`build-rules`** is a real subcommand (`docs build-rules`), but it
-  already runs automatically as a stage of `docs pipeline prep`. Doctor's
+  already runs automatically as a stage of `docs document prepare`. Doctor's
   WARN about a missing rules manifest is usually already resolved by the
-  time an agent runs `pipeline prep`; running it manually is only needed
+  time an agent runs `document prepare`; running it manually is only needed
   outside the normal `prep` flow.
 
 ### Command groups
 
 | Group | Purpose |
 |---|---|
-| `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `mark-final` |
+| `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `document publish` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
-| (flat, no prefix) | `doctor`, `pipeline <stage_set>`, `verify`, `history`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
+| (flat, no prefix) | `doctor`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
 | `asset` | asset registration commands |
 | `docx` | low-level `.docx` inspection commands |
 
@@ -232,27 +232,27 @@ reach in this phase: base-14 fonts have no coverage for them.
 
 #### Contract-driven pipeline v2
 
-The v2 runtime exposes `docs document build --json` and
-`docs document verify --json`. The former opt-in alias remains available for
+The native runtime exposes `docs document build --json` and
+`docs document verify --json`. 
 existing callers. These commands resolve the active document, execute
 the contract-driven stage DAG, run DOCX audit/visual QA adapters, record
 provenance only after successful verification, and publish verified copies
-under `output/v2/`. They never promote to `output/final/` and never silently
-fall back to the legacy pipeline. See `docs/architecture-v2.md` and
-`docs/pipeline-v2.md` for the migration contract.
+under `output/current/`. They never promote to `output/published/` and never silently
+use an alternate pipeline. See `docs/architecture.md` and
+`docs/pipeline.md` for the migration contract.
 
 The same surface provides `docs document inspect`, `docs document diff`,
 `docs document package`, and `docs document publish`. Inspection and diff are
 read-only; packaging and publication use temporary files plus atomic replacement.
 
-`docs pipeline <stage_set>` accepts `prep | ingest | assemble | all`.
+The document command group exposes only the named commands shown in the CLI help.
 **`ingest` must run before `assemble`/`all` whenever sources exist in
 `inbox/`** — `all` does NOT include the ingest stages by design (ingest is
 a separate, re-runnable conversion step, not always needed).
 
 ### Output-format selection: `--format`
 
-`docs pipeline assemble --format <fmt>` selects which artifact(s) to build;
+`docs document build --format <fmt>` selects which artifact(s) to build;
 the flag is repeatable (`--format html --format pdf --format docx`) and
 defaults to the document's configured `output.format` (`docx`) when
 omitted — existing single-format workflows are unaffected.
@@ -283,18 +283,18 @@ always passes).
 
 ### Ingest & classification: advisory, and never auto-injected into sections
 
-`docs pipeline ingest` converts every file in `inbox/` to Markdown at
+`docs document ingest` converts every file in `inbox/` to Markdown at
 `sections/ingested/<stem>-<kind>-<sha8>.md` and reports what it found in
 `inbox/intake-report.md` (a human-readable Found / Missing / How-to-finish
 summary) and `inbox/_classification-queue.json` (one entry per source file:
 `proposed_role`, `confidence`, `signals`, `confirmed_role`).
 
 **Classification is advisory, not a gate.** In the default (non-`--strict`)
-mode, `pipeline ingest` still succeeds (exit 0) even when a file's role is
+mode, `document ingest` still succeeds (exit 0) even when a file's role is
 `unknown` or low-confidence — arbitrarily-named source files are common and
 expected. There is no CLI command that "confirms" a role: hand-edit
 `_classification-queue.json`, setting `confirmed_role` on an entry, and the
-*next* `pipeline ingest` run reads it back. `confirmed_role` accepts exactly
+*next* `document ingest` run reads it back. `confirmed_role` accepts exactly
 one of `evidence | example | normative` — any other value (a typo, a
 section id, `unknown`) is rejected with a WARNING and the entry stays
 pending, same as if it were never confirmed. Confirming a role only clears
@@ -313,9 +313,9 @@ scaffold-only section that later fails `review-section`.
 
 ### Native declarative covers
 
-Legacy `cover_from_asset` and `cover_from_template` structure parts remain
+Current `cover_from_asset` and `cover_from_template` structure parts remain
 supported. For a native generated cover, add this optional `cover` block to a
-template or document configuration; it replaces the legacy cover source while
+template or document configuration; it replaces the current cover source while
 leaving the rest of the structure unchanged:
 
 ```json
@@ -446,7 +446,7 @@ declarative JSON string (`{"kind", "labels", "series"}`) that the harness
 parses, it is never `eval`'d/`exec`'d/shelled-out as agent-authored code.
 
 A `generate-visuals` stage runs automatically as part of
-`docs pipeline assemble`/`all` (after ingest, before the render stages) and
+`docs document build`/`all` (after ingest, before the render stages) and
 renders each entry into a figure and **auto-binds** it —
 it writes the `label -> fig-<sha8>` binding into `figure-bindings.json`
 itself, so the agent only needs to reference it with the existing
@@ -508,7 +508,7 @@ considering a section done.
 
 **Section H1 titles must be in sustained uppercase — checked at `docs
 verify` time, not by `review-section`.** The `.docx` format audit
-(`docs verify`, run against the rendered output — a separate check from
+(`docs document verify`, run against the rendered output — a separate check from
 `review-section`/`review-document`) WARNs `Título de primer orden no está
 en mayúsculas sostenidas: <title>` whenever a rendered Heading-1
 paragraph's text is not fully upper-case; this is why built-in scaffolds
@@ -518,7 +518,7 @@ WARNs, never blocks, but keep authored H1 titles in sustained caps to
 avoid tripping it.
 
 **Scaffold hint text can be generic — the template's declared rules win,
-not the hint.** `pipeline prep`'s scaffolded section bodies include
+not the hint.** `document prepare`'s scaffolded section bodies include
 boilerplate reminders (e.g. a references-section hint mentioning "APA 7")
 that are not always conditioned on the active template's `citation_style`;
 a `citation_style: none` template (e.g. `technical-report-srs`) can still
@@ -542,7 +542,7 @@ docs doc revise <target-id> "<request>" <body-file> [--field <key>] [--json]
   **context topic id** (edits a context field/value — the "ripple" case
   below). Anything else (an unknown id, or a request to add/remove a
   section) is rejected: `revise` never performs structural changes — use
-  `docs pipeline prep`/`docs context set`/ingest for that.
+  `docs document prepare`/`docs context set`/ingest for that.
 - `<body-file>` is a `.md` file the agent has already written out-of-band
   with the full replacement body/value — `revise` never generates prose
   itself, it only applies, diffs, and re-validates it.
@@ -573,26 +573,26 @@ argument/content; use `apply-corrections` for literal text substitutions.
 
 ## 6. Document lifecycle and build version
 
-Every document starts `lifecycle: draft`. `docs doc mark-final [<id>]`
+Every document starts `lifecycle: draft`. `docs document publish [<id>]`
 (defaults to the active document) flips it to `final` — a one-way,
 user-driven signal with no effect on build mechanics; it exists so an agent
 or reviewer can tell, from `docs doc status --json`, whether a document is
 still being iterated on or considered done.
 
-**`mark-final` also promotes the current draft build into `output/final/`.**
-Beyond flipping the lifecycle flag, `docs doc mark-final` copies every file
-currently in `output/draft/` into `output/final/` — a **point-in-time
+**`document publish` also promotes the current draft build into `output/published/`.**
+Beyond flipping the lifecycle flag, `docs document publish` copies every file
+currently in `output/work/` into `output/published/` — a **point-in-time
 snapshot**, not a live mirror: it reflects whatever was last built at the
-moment `mark-final` ran. If you edit a section and re-assemble afterward,
-`output/draft/` moves ahead and `output/final/` is now stale — **re-run
-`docs doc mark-final` to re-sync it** after any further edit+assemble cycle.
-If `output/draft/` is empty when `mark-final` runs (nothing has been
-assembled yet), it WARNs and promotes nothing — `mark-final` never fails,
-but `output/final/` stays empty until at least one `pipeline assemble` has
+moment `document publish` ran. If you edit a section and re-assemble afterward,
+`output/work/` moves ahead and `output/published/` is now stale — **re-run
+`docs document publish` to re-sync it** after any further edit+assemble cycle.
+If `output/work/` is empty when `document publish` runs (nothing has been
+assembled yet), it WARNs and promotes nothing — `document publish` never fails,
+but `output/published/` stays empty until at least one `document build` has
 run. `docs doc status --json`'s `output.final_exists` reflects whether
-`output/final/` currently has any file in it (see the table below).
+`output/published/` currently has any file in it (see the table below).
 
-Each `docs pipeline assemble`/`all` run appends a `build_version` (an
+Each `docs document build`/`all` run appends a `build_version` (an
 incrementing integer, starting at `1`) to the document's `runs/` history —
 this is a wall-clock log, not part of the deterministic build artifact
 (§7). `docs doc status --json` surfaces both fields directly:
@@ -612,10 +612,10 @@ this is a wall-clock log, not part of the deterministic build artifact
 | `sections.needs_review` | Section exists and `review-section` currently reports one or more issues — tracked independently of `scaffold`. |
 | `sections.authored` | Raw count of section files that exist on disk, regardless of scaffold/needs_review state. |
 | `ingest.classification_pending` | Count of `inbox/_classification-queue.json` entries with no `confirmed_role` yet (§1). |
-| `figures.count` | Number of entries in `sections/figure-catalog.json`, built by `pipeline ingest` from image assets found under `inbox/` (declared + heuristically-detected images, plus rendered vector-PDF pages). It is **not** a count of inline `[[figure:label]]` markers (§3) — those are independent, resolved/numbered only at build time, and never increment this field; a section can reference figures via `[[figure:...]]` with `figures.count` still `0` if no image ever went through `pipeline ingest`. |
-| `lifecycle` | `"draft"` or `"final"`, set by `doc mark-final` (above). |
-| `build_version` | Highest `build_version` recorded under `runs/`, or `null` before the first `pipeline assemble`. |
-| `output.final_exists` | Whether `output/final/` currently contains any file — becomes `true` after a `doc mark-final` run that had a non-empty `output/draft/` to promote (above); stays `false` before the first successful promotion. |
+| `figures.count` | Number of entries in `sections/figure-catalog.json`, built by `document ingest` from image assets found under `inbox/` (declared + heuristically-detected images, plus rendered vector-PDF pages). It is **not** a count of inline `[[figure:label]]` markers (§3) — those are independent, resolved/numbered only at build time, and never increment this field; a section can reference figures via `[[figure:...]]` with `figures.count` still `0` if no image ever went through `document ingest`. |
+| `lifecycle` | `"draft"` or `"final"`, set by `docs document publish` (above). |
+| `build_version` | Highest `build_version` recorded under `runs/`, or `null` before the first `document build`. |
+| `output.final_exists` | Whether `output/published/` currently contains any file — becomes `true` after a `docs document publish` run that had a non-empty `output/work/` to promote (above); stays `false` before the first successful promotion. |
 
 ## 7. Reproducibility boundary (read this before worrying about "identical output")
 
@@ -665,14 +665,14 @@ This means:
 ```
 <documents_dir>/<doc-id>/
   document.json           # active template/config; lifecycle (draft|final)
-  inbox/                  # drop raw source material here; docs pipeline ingest converts it
+  inbox/                  # drop raw source material here; docs document ingest converts it
   sections/                # your cognitive-slot .md files (NNN-<id>.md) + generated manifests
-    ingested/               # docs pipeline ingest output: <stem>-<kind>-<sha8>.md -- authoring-reference source material, read but don't hand-edit
+    ingested/               # docs document ingest output: <stem>-<kind>-<sha8>.md -- authoring-reference source material, read but don't hand-edit
     _revisions/             # docs doc revise: per-edit .diff snapshots + revision-log.json
   context/                # per-topic context fields (docs context set/status)
   assets/                 # figures/images referenced by sections
-  output/draft|final/     # rendered .docx/html/pdf output; draft/ is always the current build, final/ is a snapshot copy `doc mark-final` promotes it into (see §6)
-  runs/                   # command history + build_version (docs history, docs doc status)
+  output/work|final/     # rendered .docx/html/pdf output; draft/ is always the current build, final/ is a snapshot copy `docs document publish` promotes it into (see §6)
+  runs/                   # command history + build_version (document runs, document status)
 ```
 
 ## Single source of truth
@@ -685,13 +685,12 @@ harness's own suite asserts the installed copy never drifts from it.
 
 ### Current v2 public contract
 
-The public v2 command set is `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` (`v2` is the compatibility alias). `document release` runs the complete verified build/package/publication pipeline for the active document. Build publishes verified requested formats under `output/v2`; verify runs without publication. V2 does not fall back to the legacy pipeline or promote to `output/final`.
+The public document command set is `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` . `document release` runs the complete verified build/package/publication pipeline for the active document. Build publishes verified requested formats under `output/current`; verify runs without publication. The native runtime does not fall back to an alternate pipeline or promote to `output/published`.
 
-`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete legacy migration.
+`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete current migration.
 
 Policies are `draft`, `strict`, and `release`. Draft may warn for permitted optional capability gaps and cannot publish. Strict and release promote warnings and missing required capabilities to errors and permit publication only after verification. Capabilities are local executable checks injected through the composition root; plugins are not runtime dependencies.
 
 Publication requires a matching v2 manifest and verifiable v2 ledger attestation for the exact artifact bytes. The manifest must include SHA-256 identities for source/template/config/context, assets, and outputs, renderer versions, passed verification, and a provenance run. HTML and PDF have independent structural checks; non-DOCX verification is not a DOCX fallback. PDF is a derived, toolchain-dependent artifact and is not byte-deterministic.
 
 Current source inputs are `document.json`, section Markdown, resolved context, template/configuration, and assets. Rendered outputs, manifests, QA reports, packages, and published copies are derived artifacts. The separate v2 ledger records provenance only after successful stages.
-

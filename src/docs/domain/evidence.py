@@ -53,7 +53,7 @@ def build_manifest(
             # `paths.extracted_dir_policy` -- default "" when not declared.
             "pdf_and_extracted_use": pdf_and_extracted_use,
             "apa_style": "APA 7",
-            # Legacy quirk (intentional, not a bug): advisor_overrides is duplicated
+            # Current quirk (intentional, not a bug): advisor_overrides is duplicated
             # both here and at the manifest's top level (see below). Preserve as-is.
             "advisor_overrides": advisor_overrides,
             "draft_mode": draft_mode,
@@ -86,7 +86,7 @@ def build_manifest(
         # Guards Absent Paths").
         "skipped_paths": skipped_paths or [],
     }
-    # Omitted and empty contracts preserve legacy manifests byte-for-byte.
+    # Omitted and empty contracts preserve current manifests byte-for-byte.
     # Only a non-empty, explicitly declared contract is provenance-bound.
     if template_contract is not None:
         manifest["template_contract"] = template_contract
@@ -143,7 +143,7 @@ class PromptHashFileFact:
 
 
 def build_prompt_hash_payload(files: list[PromptHashFileFact]) -> list[dict[str, str]]:
-    # Legacy quirk (intentional, verbatim from the original single-file harness
+    # Current quirk (intentional, verbatim from the original single-file harness
     # script, lines 433-439): the dict key is "path" but the value is the bare
     # filename (path.name), not a full path — prompts are hashed by filename
     # only, unlike source_hash's files.

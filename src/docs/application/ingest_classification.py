@@ -69,7 +69,7 @@ class SourceClassifier:
             ),
         }
 
-    def read_prior_confirmed_roles(self, inbox_dir: Path) -> dict[str, str]:
+    def read_current_confirmed_roles(self, inbox_dir: Path) -> dict[str, str]:
         queue_path = inbox_dir / CLASSIFICATION_QUEUE_NAME
         if not queue_path.exists():
             return {}

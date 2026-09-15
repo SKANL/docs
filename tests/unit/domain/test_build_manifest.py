@@ -151,16 +151,16 @@ def test_build_manifest_rejects_non_string_asset_hashes_without_coercion(asset_h
         )
 
 
-def test_build_manifest_preserves_valid_legacy_asset_hashes():
+def test_build_manifest_preserves_valid_current_asset_hashes():
     manifest = BuildManifest.from_dict(
         {
             "schema": "docs.build/v2",
             "document_id": "example",
-            "asset_hashes": {"hero.png": "legacy-digest"},
+            "asset_hashes": {"hero.png": "current-digest"},
         }
     )
 
-    assert manifest.asset_hashes == {"hero.png": "legacy-digest"}
+    assert manifest.asset_hashes == {"hero.png": "current-digest"}
 
 
 @pytest.mark.parametrize("renderer_version", [123, 1.5, None, [], {}])
@@ -221,7 +221,7 @@ def test_build_manifest_normalizes_malformed_artifact_entries(entry):
     [("path", 123), ("path", None), ("sha256", 456), ("sha256", None), ("state", 789), ("state", None)],
 )
 def test_build_manifest_rejects_non_string_artifact_identity_fields(field, value):
-    entry = {"path": "output.docx", "sha256": "legacy-digest", "state": "ready"}
+    entry = {"path": "output.docx", "sha256": "current-digest", "state": "ready"}
     entry[field] = value
 
     with pytest.raises(ValueError, match=field):
@@ -236,7 +236,7 @@ def test_build_manifest_rejects_unknown_artifact_state_with_actionable_error():
             {
                 "schema": "docs.build/v2",
                 "artifacts": [
-                    {"path": "output.docx", "sha256": "legacy-digest", "state": "complete"}
+                    {"path": "output.docx", "sha256": "current-digest", "state": "complete"}
                 ],
             }
         )

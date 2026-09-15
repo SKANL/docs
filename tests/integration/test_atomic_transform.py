@@ -56,10 +56,10 @@ def test_atomic_transform_rejects_missing_declared_outputs_without_publishing(tm
     assert (output_dir / "report.txt").read_text(encoding="utf-8") == "last known good"
 
 
-def test_atomic_transform_preserves_prior_direct_files_when_replacement_fails(
+def test_atomic_transform_preserves_current_direct_files_when_replacement_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Breaks if a failed file replacement deletes a prior direct output."""
+    """Breaks if a failed file replacement deletes a current direct output."""
     output_dir = tmp_path / "output"
     spec = TransformSpec(output_dir=output_dir, expected_outputs=("report.txt", "manifest.json"))
 

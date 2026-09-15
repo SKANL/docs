@@ -1,6 +1,6 @@
 import pytest
 
-from docs.cli.commands.v2_app import _renderer_capabilities
+from docs.cli.commands.document_app import _renderer_capabilities
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
@@ -128,8 +128,8 @@ def test_capability_diagnostics_exposes_policy_metadata_without_changing_report(
         }
     }
 
-def test_registry_rejects_incompatible_duplicate_declarations():
-    with pytest.raises(ValueError, match=r"incompatible duplicate capability.*pandoc"):
+def test_registry_rejects_distinct_duplicate_declarations():
+    with pytest.raises(ValueError, match=r"distinct duplicate capability.*pandoc"):
         ToolCapabilityRegistry(
             (
                 ToolCapability("pandoc", "pandoc"),

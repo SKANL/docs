@@ -60,7 +60,7 @@ def test_unchanged_source_is_not_re_ingested_on_second_run(tmp_path: Path):
     assert first["files"][0]["output"] == second["files"][0]["output"]
 
 
-def test_changed_content_triggers_fresh_ingest_without_touching_prior_output(tmp_path: Path):
+def test_changed_content_triggers_fresh_ingest_without_touching_current_output(tmp_path: Path):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     src = inbox / "a.docx"
@@ -79,8 +79,8 @@ def test_changed_content_triggers_fresh_ingest_without_touching_prior_output(tmp
     assert len(handler.calls) == 2, "changed content must trigger a fresh ingest"
     assert second["files"][0]["status"] == "ingested"
     assert second_output != first_output, "each distinct hash gets its own deterministic path"
-    assert first_output.exists(), "prior output must not be deleted or corrupted"
-    assert first_output.read_bytes() == first_bytes, "prior output content must be untouched"
+    assert first_output.exists(), "current output must not be deleted or corrupted"
+    assert first_output.read_bytes() == first_bytes, "current output content must be untouched"
 
 
 def test_partially_processed_inbox_only_converts_unprocessed_files(tmp_path: Path):

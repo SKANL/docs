@@ -1,1235 +1,668 @@
-# tests/integration/test_pipeline_service.py
 from __future__ import annotations
 
-import json
+import re
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
-import pytest
-from docx import Document
+from docs.application.atomic_transform import AtomicTransform
+from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
+from docs.application.pipeline_service import (
+    FULL_STAGE_IDS,
+    PipelineService,
+    PublicationSpec,
+)
+from docs.application.provenance import ProvenanceLedger
+from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 
-from docs.application.asset import AssetService
-from docs.application.collection import CollectionService
-from docs.application.context import ContextService
-from docs.application.context_pack import ContextPackService
-from docs.application.doctor import DoctorService
-from docs.application.docx_assembly import DocxRendererAdapter
-from docs.application.evidence import EvidenceService
-from docs.application.format_audit import FormatAuditService
-from docs.application.ingest import IngestService
-from docs.application.pipeline import PipelineService
-from docs.application.qa import QaService
-from docs.application.review import ReviewService
-from docs.application.run_history import RunRecorderService
-from docs.domain.artifacts import ArtifactRef, VerificationFinding, VerificationReport
-from docs.domain.context import TopicStatus
-from docs.domain.models.template import ContextSchema, Template, Topic
-from docs.domain.workspace import Workspace
-from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter, resolve_libreoffice_executable
-from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
-from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
-from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
-from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
-from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
-from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
-from docs.infrastructure.ingest.pandoc_ingest_adapter import PandocIngestAdapter
-from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
-from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
-from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
-from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
-from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
-from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
-from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+STAGE_IDS = (
+    "resolve-config",
+    "resolve-template",
+    "resolve-context",
+    "resolve-assets",
+    "validate-contracts",
+    "ingest-sources",
+    "normalize-sources",
+    "compile-structure",
+    "generate-visuals",
+    "compose-cover",
+    "build-docx",
+    "build-html",
+    "build-pdf",
+    "structural-audit",
+    "editorial-review",
+    "evidence-review",
+    "consistency-review",
+    "accessibility-review",
+    "visual-review",
+    "reproducibility-check",
+    "record-provenance",
+    "package-release",
+    "publish-draft",
+)
+EXPECTED_DAG_PLAN = STAGE_IDS
 
-_HAS_LIBREOFFICE = resolve_libreoffice_executable({}) is not None
+
+def _stage(name: str, calls: list[str], ok: bool = True) -> Callable[[], tuple[bool, str]]:
+    def run() -> tuple[bool, str]:
+        calls.append(name)
+        return ok, name
+
+    return run
+
+
+def test_architecture_stage_order_matches_runtime_authority() -> None:
+    architecture = Path(__file__).parents[2] / "docs" / "architecture.md"
+    section = architecture.read_text(encoding="utf-8").split(
+        "The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's",
+    )[1]
+    documented = tuple(
+        line.strip()
+        for line in re.search(r"```text\n(?P<stages>.*?)\n```", section, re.DOTALL).group("stages").splitlines()
+        if line.strip()
+    )
+
+    assert documented == FULL_STAGE_IDS
+
+
+def test_architecture_documents_registry_plan_and_published_stage_sequence(tmp_path: Path) -> None:
+    architecture = Path(__file__).parents[2] / "docs" / "architecture.md"
+    section = architecture.read_text(encoding="utf-8").split(
+        "The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's",
+    )[1]
+    documented_inventory, documented_plan = re.findall(
+        r"```text\n(?P<stages>.*?)\n```", section, re.DOTALL
+    )
+    documented = tuple(line.strip() for line in documented_inventory.splitlines() if line.strip())
+    documented_runtime_plan = tuple(
+        line.strip() for line in documented_plan.splitlines() if line.strip()
+    )
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run("architecture-order")
+
+    assert documented == FULL_STAGE_IDS
+    definition = service.registry.resolve("document").definition
+    runtime_plan = definition.plan()
+    dependencies = {stage.name: stage.requires for stage in definition.stages}
+    assert dependencies["compose-cover"] == ("generate-visuals-complete",)
+    assert dependencies["build-docx"] == ("compose-cover-complete",)
+    assert dependencies["build-html"] == ("build-docx-complete",)
+    assert dependencies["build-pdf"] == ("build-docx-complete",)
+    assert documented_runtime_plan == runtime_plan
+    assert tuple(result.stage for result in report.execution.results) == documented_runtime_plan
+    assert tuple(result.stage for result in report.execution.results if result.outcome == "unsupported") == (
+        "generate-visuals",
+        "compose-cover",
+        "package-release",
+    )
+
+
+def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> SimpleNamespace:
+    destination = tmp_path / "published" / "document.txt"
+
+    def publish(scratch: Path) -> None:
+        calls.append("publish")
+        (scratch / "document.txt").write_text("published document", encoding="utf-8")
+
+    return SimpleNamespace(
+        resolve_config=_stage("resolve-config", calls),
+        resolve_template=_stage("resolve-template", calls),
+        resolve_context=_stage("resolve-context", calls),
+        resolve_assets=_stage("resolve-assets", calls),
+        validate_contracts=_stage("validate-contracts", calls),
+        ingest_sources=_stage("ingest-sources", calls),
+        normalize_sources=_stage("normalize-sources", calls),
+        compile_structure=_stage("compile-structure", calls),
+        render=_stage("render", calls),
+        build_html=_stage("build-html", calls),
+        build_pdf=_stage("build-pdf", calls),
+        audit=_stage("audit", calls),
+        verify=_stage("verify", calls, ok=verification_ok),
+        evidence_review=_stage("evidence-review", calls),
+        consistency_review=_stage("consistency-review", calls),
+        accessibility_review=_stage("accessibility-review", calls),
+        visual_review=_stage("visual-review", calls),
+        reproducibility_check=_stage("reproducibility-check", calls),
+        provenance=_stage("provenance", calls),
+        publication=PublicationSpec(
+            expected_outputs=("document.txt",),
+            destinations=(destination,),
+            operation=publish,
+        ),
+    )
 
 
 def _service(
-    tmp_path, image_metadata=None, generate_visuals_service=None
-) -> tuple[PipelineService, Workspace]:
-    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
-    evidence_repo = JsonEvidenceRepository()
-    section_repo = JsonSectionRepository(workspace)
-    source_repo = FilesystemSourceRepository()
-    context_repo = JsonContextRepository(workspace)
-    document_repo = JsonDocumentRepository(workspace)
-    asset_service = AssetService(FilesystemAssetRepository(), workspace)
-    evidence_service = EvidenceService(evidence_repo)
-    review_service = ReviewService(section_repo)
-    collection_service = CollectionService(source_repo, evidence_repo)
-    context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
-    context_service = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
-    tool_resolver = SystemToolResolverAdapter()
-    docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
-    format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
-    qa_service = QaService(LibreOfficeQaAdapter(), format_audit_service)
-    doctor_service = DoctorService(evidence_repo, asset_service, tool_resolver)
-    pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
-    pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
-    md_ingest_adapter = MdNormalizeAdapter()
-    ingest_service = IngestService(
-        FiletypeDetectorAdapter(),
-        {
-            "docx": pandoc_ingest_adapter,
-            "odt": pandoc_ingest_adapter,
-            "pdf": pdf_ingest_adapter,
-            "md": md_ingest_adapter,
-            "txt": md_ingest_adapter,
-        },
-        image_metadata=image_metadata,
-    )
-    service = PipelineService(
-        doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
-        review_service, context_pack_service, context_repo, docx_assembly_service,
-        format_audit_service, qa_service, workspace, ingest_service,
-        context_service=context_service,
-        generate_visuals_service=generate_visuals_service,
-    )
-    return service, workspace
-
-
-def test_run_recorder_writes_the_legacy_record_shape(tmp_path):
-    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
-    recorder = RunRecorderService(workspace, FilesystemSourceRepository())
-    path = recorder.record("doc1", {"paths": {}}, tmp_path, "verify", {"passed": True})
-    record = json.loads(path.read_text(encoding="utf-8"))
-    assert path.parent == workspace.doc_root("doc1") / "runs"
-    assert record["command"] == "verify"
-    assert record["passed"] is True
-    assert "timestamp" in record
-    assert "git_commit" in record
-
-
-def test_build_section_renders_scaffold_gathers_six_hashes_and_writes_section_file(tmp_path: Path):
-    from docs.domain.models.template import ContextSchema, Field, Section, SectionContract, Topic
-
-    service, _workspace = _service(tmp_path)
-    topic = Topic(id="alumno", title="Alumno", consumed_by=["introduccion"], fields=[Field(key="nombre", label="Nombre")])
-    template = Template(
-        type="tesina",
-        title="Tesina",
-        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)],
-        section_contracts={"introduccion": SectionContract(required_content=["alcance"])},
-        context_schema=ContextSchema(topics=[topic]),
-    )
-    service.context_repository.write_topic("doc-1", topic, {"nombre": "Ana"})
-    config = {
-        "paths": {
-            "manual_dir": str(tmp_path / "manual"),
-            "extracted_dir": str(tmp_path / "extracted"),
-            "rules_manifest": str(tmp_path / "manual-rules.json"),
-            "context_dir": str(tmp_path / "context"),
-            "prompts_dir": str(tmp_path / "prompts"),
-            "source_manifest": str(tmp_path / "source-manifest.json"),
-            "code_evidence_manifest": str(tmp_path / "code-evidence-manifest.json"),
-        },
-        "sections": [{"id": "introduccion"}],
-        "section_contracts": {"introduccion": {"required_content": ["alcance"]}},
-        "format": {},
-        "apa7": {},
-        "structure": [],
-        "preliminaries": {},
+    tmp_path: Path,
+    dependencies: SimpleNamespace,
+    policy: PipelinePolicy | None = None,
+    capabilities: ToolCapabilityRegistry | None = None,
+    artifact_store: ArtifactStore | None = None,
+) -> PipelineService:
+    stage_names = {
+        "resolve_config": "resolve-config",
+        "resolve_template": "resolve-template",
+        "resolve_context": "resolve-context",
+        "resolve_assets": "resolve-assets",
+        "validate_contracts": "validate-contracts",
+        "ingest_sources": "ingest-sources",
+        "normalize_sources": "normalize-sources",
+        "compile_structure": "compile-structure",
+        "generate_visuals": "generate-visuals",
+        "compose_cover": "compose-cover",
+        "render": "build-docx",
+        "build_html": "build-html",
+        "build_pdf": "build-pdf",
+        "audit": "structural-audit",
+        "structural_audit": "structural-audit",
+        "verify": "editorial-review",
+        "evidence_review": "evidence-review",
+        "consistency_review": "consistency-review",
+        "accessibility_review": "accessibility-review",
+        "visual_review": "visual-review",
+        "reproducibility_check": "reproducibility-check",
+        "provenance": "record-provenance",
+        "package_release": "package-release",
     }
-
-    path = service.build_section("doc-1", template, "introduccion", config)
-
-    assert path.exists()
-    raw = path.read_text(encoding="utf-8")
-    assert "- Nombre: Ana" in raw
-    assert "PENDIENTE: documentar alcance con evidencia del ledger, contexto o fuentes." in raw
-    metadata = json.loads(raw.split("---\n")[1])
-    assert metadata["section_id"] == "introduccion"
-    assert len(metadata["source_hash"]) == 64
-    assert len(metadata["prompt_hash"]) == 64
-    assert len(metadata["rules_hash"]) == 64
-    assert len(metadata["contract_hash"]) == 64
-    assert metadata["source_manifest_hash"] == ""  # manifest never built -> manifest_hash("") sentinel
-    assert metadata["code_evidence_manifest_hash"] == ""
-
-
-def test_build_section_only_includes_context_topics_consumed_by_the_target_section(tmp_path: Path):
-    from docs.domain.models.template import ContextSchema, Section, SectionContract, Topic
-
-    service, _workspace = _service(tmp_path)
-    other_topic = Topic(id="otro", title="Otro", consumed_by=["otra-seccion"], multiline=True)
-    template = Template(
-        type="tesina",
-        title="Tesina",
-        sections=[Section(id="introduccion", title="Introducción", order=1, required=True)],
-        section_contracts={"introduccion": SectionContract()},
-        context_schema=ContextSchema(topics=[other_topic]),
-    )
-    service.context_repository.write_topic("doc-1", other_topic, "Texto no relacionado con introduccion.")
-    config = {
-        "paths": {
-            "manual_dir": str(tmp_path / "manual"),
-            "extracted_dir": str(tmp_path / "extracted"),
-            "rules_manifest": str(tmp_path / "manual-rules.json"),
-            "context_dir": str(tmp_path / "context"),
-            "prompts_dir": str(tmp_path / "prompts"),
-            "source_manifest": str(tmp_path / "source-manifest.json"),
-            "code_evidence_manifest": str(tmp_path / "code-evidence-manifest.json"),
-        },
-        "sections": [{"id": "introduccion"}],
-        "section_contracts": {},
-        "format": {},
-        "apa7": {},
-        "structure": [],
-        "preliminaries": {},
+    operations = {
+        stage: getattr(dependencies, attribute)
+        for attribute, stage in stage_names.items()
+        if getattr(dependencies, attribute, None) is not None
     }
-
-    path = service.build_section("doc-1", template, "introduccion", config)
-
-    raw = path.read_text(encoding="utf-8")
-    assert "Texto no relacionado" not in raw
-
-
-def test_build_section_raises_file_not_found_for_unknown_section_id(tmp_path: Path):
-    service, _ = _service(tmp_path)
-    template = Template(type="tesina", title="Tesina", sections=[])
-
-    with pytest.raises(FileNotFoundError, match="No existe sección: no-existe"):
-        service.build_section("doc-1", template, "no-existe", {"paths": {}})
-
-
-def test_rules_manifest_state_goes_through_evidence_repository_not_direct_stat(tmp_path, monkeypatch):
-    # rules_path is never created on disk: a Path.stat()-direct implementation
-    # would see it as absent (exists=False, size=0) and could not possibly
-    # reproduce the values below. The injected evidence_repository fake
-    # reports contradictory values (exists=True, size=999) for that same
-    # missing path. If rules_manifest_state() still returns (True, 999), the
-    # only way that is possible is that it called through
-    # self.evidence_repository.file_exists/file_size rather than touching the
-    # filesystem itself.
-    service, _workspace = _service(tmp_path)
-    rules_path = tmp_path / "manual-rules.json"
-    assert not rules_path.exists()
-    monkeypatch.setattr(service.evidence_repository, "file_exists", lambda path: True)
-    monkeypatch.setattr(service.evidence_repository, "file_size", lambda path: 999)
-    config = {"paths": {"rules_manifest": str(rules_path)}}
-
-    exists, size = service.rules_manifest_state(config)
-
-    assert exists is True
-    assert size == 999
-
-
-def test_rules_manifest_state_reports_absent_manifest(tmp_path):
-    service, _workspace = _service(tmp_path)
-    config = {"paths": {"rules_manifest": str(tmp_path / "missing.json")}}
-
-    exists, size = service.rules_manifest_state(config)
-
-    assert exists is False
-    assert size == 0
-
-
-def test_log_run_writes_a_json_record_under_the_document_runs_dir(tmp_path):
-    service, workspace = _service(tmp_path)
-    config = {"paths": {}}
-    path = service.log_run("doc1", config, tmp_path, "pipeline-prep", {"passed": True, "stages": []})
-    assert path.parent == workspace.doc_root("doc1") / "runs"
-    record = json.loads(path.read_text(encoding="utf-8"))
-    assert record["command"] == "pipeline-prep"
-    assert record["passed"] is True
-    assert "timestamp" in record
-    assert "git_commit" in record
-
-
-def test_log_run_honors_configured_runs_dir_override(tmp_path):
-    service, _ = _service(tmp_path)
-    override_dir = tmp_path / "custom-runs"
-    config = {"paths": {"runs_dir": str(override_dir)}}
-    path = service.log_run("doc1", config, tmp_path, "pipeline-prep", {"passed": True})
-    assert path.parent == override_dir
-
-
-def test_list_runs_returns_empty_list_when_runs_dir_missing(tmp_path):
-    service, _ = _service(tmp_path)
-    assert service.list_runs("doc1", {"paths": {}}) == []
-
-
-def test_list_runs_returns_records_most_recent_first(tmp_path):
-    service, _ = _service(tmp_path)
-    config = {"paths": {}}
-    service.log_run("doc1", config, tmp_path, "pipeline-prep", {"n": 1})
-    service.log_run("doc1", config, tmp_path, "pipeline-assemble", {"n": 2})
-    records = service.list_runs("doc1", config)
-    assert [r["n"] for r in records] == [2, 1]
-
-
-def test_list_runs_respects_limit(tmp_path):
-    service, _ = _service(tmp_path)
-    config = {"paths": {}}
-    for i in range(3):
-        service.log_run("doc1", config, tmp_path, "pipeline-prep", {"n": i})
-    assert len(service.list_runs("doc1", config, limit=2)) == 2
-
-
-def test_list_runs_skips_malformed_json_files(tmp_path):
-    service, workspace = _service(tmp_path)
-    config = {"paths": {}}
-    service.log_run("doc1", config, tmp_path, "pipeline-prep", {"n": 1})
-    (workspace.doc_root("doc1") / "runs" / "broken.json").write_text("not json", encoding="utf-8")
-    records = service.list_runs("doc1", config)
-    assert len(records) == 1
-
-
-def test_context_confirmed_lines_skips_sensitive_fields_and_includes_regular_ones(tmp_path):
-    from docs.domain.models.template import Field, Template, Topic
-
-    service, _workspace = _service(tmp_path)
-    template = Template(
-        type="tesina",
-        title="Tesina",
-        context_schema={
-            "topics": [
-                Topic(
-                    id="alumno",
-                    title="Alumno",
-                    fields=[
-                        Field(key="nombre", label="Nombre", required=True),
-                        Field(key="curp", label="CURP", required=False, sensitive=True),
-                    ],
-                )
-            ]
-        },
-    )
-    service.context_repository.write_topic("doc-1", template.context_schema.topics[0], {"nombre": "Ada", "curp": "AAAA000101HDFRRD01"})
-
-    lines = service.context_confirmed_lines("doc-1", template)
-
-    assert lines == ["Nombre: Ada"]
-
-
-# --- Task 5: run_pipeline -----------------------------------------------
-#
-# NOTE on fixtures below: the plan's own draft `_template()`/`_pipeline_config()`
-# were NOT copied verbatim. Two real discrepancies were found against the
-# actual source and fixed here (see Task 5 final report for the full writeup):
-#
-# 1. `review_rules` (src/docs/domain/rules.py) unconditionally raises "error"
-#    issues for a `Template` that lacks `paths.extracted_dir_policy`,
-#    `preliminaries.roman_pagination`/`body_pagination_start`,
-#    `format.page_margins_cm`, and an active `margins-2-5cm-non-cover`
-#    advisor_override -- and for any declared `section_contracts` entry with
-#    empty `required_content`. The plan's bare `_template()` (no extra
-#    fields) and `_pipeline_config()` (no `type`/`title`, no matching
-#    `section_contracts`) both fail `review_rules` unconditionally. Since
-#    `review-rules` is a `fail_fast=True` prep stage, EVERY test that expects
-#    stages after `review-rules` to run (build-sections, pack-context) would
-#    never get there. Fixed by extending both fixtures with the same
-#    review_rules-satisfying shape `tests/unit/domain/test_rules.py` already
-#    uses for this purpose (`_valid_extra`), and by using
-#    `Template.model_validate(...)` on a matching dict instead of the bare
-#    constructor so `model_extra` is actually populated.
-# 2. `DoctorService.run_doctor` (src/docs/application/doctor.py) appends
-#    "pandoc" and "libreoffice" as `required=True` checks unconditionally
-#    (not gated by `strict`, unlike "gh"). This host has pandoc but not
-#    LibreOffice, so `doctor` would always fail regardless of config,
-#    fail-fast-stopping every "prep" run at stage 1. Patched via the same
-#    monkeypatch-the-resolver convention the plan itself already used for
-#    "gh" (`shutil.which`), applied to `resolve_pandoc_executable`/
-#    `resolve_libreoffice_executable` as imported into `docs.application.doctor`.
-# 3. `del config["paths"]["context_dir"]` in the plan's fail-fast test does
-#    NOT reproduce a KeyError: `run_doctor` reads `config["paths"].get(name)`
-#    defensively, so a missing key is silently skipped (no check emitted at
-#    all), and doctor would pass instead of failing. The actual, real way to
-#    make the required `context_dir` check fail is to leave the configured
-#    path pointing at a directory that is never created -- which is already
-#    what happens if the `tmp_path / "context"` `.mkdir()` call is simply
-#    omitted for that one test. The `del` line was removed accordingly.
-
-
-def _valid_rules_extra() -> dict:
-    """Matches tests/unit/domain/test_rules.py::_estadia_extra() -- the minimal
-    shape that makes review_rules() report zero "error" issues."""
-    return {
-        "preliminaries": {
-            "roman_pagination": {"enabled": True},
-            "body_pagination_start": {"section_id": "introduccion"},
-        },
-        "format": {
-            "page_margins_cm": {
-                "cover_policy": "preserve_template",
-                "non_cover": {"top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5},
-            }
-        },
-        "advisor_overrides": [{"id": "margins-2-5cm-non-cover", "status": "active"}],
-    }
-
-
-def _template() -> Template:
-    return Template.model_validate(
-        {
-            "type": "tesina",
-            "title": "Tesina",
-            "sections": [{"id": "introduccion", "title": "Introducción", "order": 1}],
-            "section_contracts": {"introduccion": {"required_content": ["algo"]}},
-            "paths": {"extracted_dir_policy": "rules_traceability_only"},
-            **_valid_rules_extra(),
-        }
+    return PipelineService(
+        operations=operations,
+        publication=dependencies.publication,
+        capabilities=capabilities if capabilities is not None else ToolCapabilityRegistry(()),
+        ledger=ProvenanceLedger(tmp_path / "provenance.json"),
+        atomic_transform=AtomicTransform(),
+        policy=policy,
+        artifact_store=artifact_store,
     )
 
 
-def _pipeline_config(tmp_path: Path) -> dict:
-    return {
-        "type": "tesina",
-        "title": "Tesina",
-        "paths": {
-            "rules_manifest": str(tmp_path / "manual-rules.json"),
-            "context_dir": str(tmp_path / "context"),
-            "sections_dir": str(tmp_path / "sections"),
-            "source_manifest": str(tmp_path / "source.json"),
-            "issues_manifest": str(tmp_path / "issues.json"),
-            "code_evidence_manifest": str(tmp_path / "code-evidence.json"),
-            "fact_ledger": str(tmp_path / "00-fact-ledger.md"),
-            "prompts_dir": str(tmp_path / "prompts"),
-            "extracted_dir_policy": "rules_traceability_only",
-        },
-        "sections": [{"id": "introduccion", "title": "Introducción", "order": 1}],
-        "section_contracts": {"introduccion": {"required_content": ["algo"]}},
-        **_valid_rules_extra(),
-        "evidence_sources": {},
-        "privacy": {},
-        "project": {},
-    }
-
-
-def _patch_doctor_tools(monkeypatch) -> None:
-    """doctor's pandoc/libreoffice checks are required=True unconditionally
-    (unlike gh, which is only required in --strict). Patched so `doctor`'s
-    pass/fail in these tests reflects the fixture, not this host's toolchain.
-    Task 2 (Slice 16, ToolResolverPort) moved DoctorService off the module-level
-    resolve_pandoc_executable/resolve_libreoffice_executable imports it used to
-    call directly, onto an injected ToolResolverPort (SystemToolResolverAdapter
-    in these tests). The adapter still calls those same free functions, but now
-    imports them into tool_resolver_adapter's namespace -- so the patch target
-    moves there to keep intercepting the calls."""
-    monkeypatch.setattr("docs.infrastructure.docx.tool_resolver_adapter.resolve_pandoc_executable", lambda paths: "pandoc")
-    monkeypatch.setattr(
-        "docs.infrastructure.docx.tool_resolver_adapter.resolve_libreoffice_executable", lambda paths: "soffice"
-    )
-
-
-def test_run_pipeline_prep_build_sections_succeeds_and_writes_the_section_file(tmp_path, monkeypatch):
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    _patch_doctor_tools(monkeypatch)
-    # gh unavailable -> collect-issues "omitido"; every other tool (e.g. the
-    # new required "uv" capability check, item L) still resolves so doctor
-    # itself does not fail-fast before build-sections runs.
-    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
-    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
-    stage = next(s for s in summary["stages"] if s["stage"] == "build-sections")
-    assert stage["ok"] is True
-    assert stage["detail"] == "1 secciones"
-    section_path = service.review_service.repository.section_path("doc1", 1, "introduccion")
-    assert section_path.exists()
-    assert "PENDIENTE: documentar algo con evidencia del ledger, contexto o fuentes." in section_path.read_text(
-        encoding="utf-8"
-    )
-
-
-def test_run_pipeline_prep_runs_pack_context_after_build_sections(tmp_path, monkeypatch):
-    # build-sections now succeeds (Task 5); this test only confirms the stage
-    # ordering/continuation still holds, not a failure-recovery scenario.
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
-    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
-    stage_names = [s["stage"] for s in summary["stages"]]
-    assert "pack-context" in stage_names
-    pack_context_stage = next(s for s in summary["stages"] if s["stage"] == "pack-context")
-    assert pack_context_stage["ok"] is True
-
-
-def test_run_pipeline_stops_at_first_fail_fast_failure(tmp_path):
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    # `tmp_path / "context"` is intentionally never created: doctor's required
-    # `context_dir` check (`path.exists() and path.is_dir()`) fails, which is
-    # what actually reproduces the fail-fast-at-doctor scenario (see note above).
-    summary = service.run_pipeline("doc1", _template(), config, "prep", repo_root=tmp_path)
-    assert summary["passed"] is False
-    assert summary["stages"][0]["stage"] == "doctor"
-    assert len(summary["stages"]) == 1
-
-
-def test_run_pipeline_writes_a_run_log_entry(tmp_path, monkeypatch):
-    Path(tmp_path / "context").mkdir()
-    service, _workspace = _service(tmp_path)
-    _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
-    service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
-    runs = service.list_runs("doc1", _pipeline_config(tmp_path))
-    assert any(r["command"] == "pipeline-prep" for r in runs)
-
-
-def test_run_pipeline_unknown_stage_set_raises_value_error(tmp_path):
-    service, _ = _service(tmp_path)
-    with pytest.raises(ValueError, match="Conjunto de etapas desconocido"):
-        service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "bogus", repo_root=tmp_path)
-
-
-def test_run_pipeline_assemble_threads_custom_draft_name_to_audit_and_qa(tmp_path, monkeypatch):
-    # Remediation (fresh-context review, WARNING): a custom
-    # config["output"]["draft_name"] must reach format-audit-docx/qa-docx too
-    # -- not just build-docx -- otherwise those stages look for the wrong
-    # (missing, or worse, stale) hardcoded "tesina-draft.docx".
-    class _FakeDocxRenderer:
-        output_format = "docx"
-
-        def stage_plan(self):
-            return [("build-docx", True), ("format-audit-docx", True), ("qa-docx", True)]
-
-        def build(self, doc_id, config, output=None):
-            output_dir = Path(config["paths"]["output_draft_dir"])
-            output_dir.mkdir(parents=True, exist_ok=True)
-            name = config.get("output", {}).get("draft_name", "tesina-draft.docx")
-            path = output or (output_dir / name)
-            Document().save(path)
-            return path
-
-    service, _ = _service(tmp_path)
-    monkeypatch.setattr(
-        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
-        lambda paths: None,
-    )
-    config = _pipeline_config(tmp_path)
-    draft_dir = tmp_path / "draft"
-    config["paths"]["output_draft_dir"] = str(draft_dir)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    config["output"] = {"draft_name": "custom-draft.docx"}
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeDocxRenderer()
-    )
-
-    audit_stage = next(s for s in summary["stages"] if s["stage"] == "format-audit-docx")
-    assert "No existe DOCX para auditar" not in audit_stage["detail"]
-    # The correct custom-named file was produced; the stale default name never was.
-    assert (draft_dir / "custom-draft.docx").exists()
-    assert not (draft_dir / "tesina-draft.docx").exists()
-
-
-# --- build-html stage (PR2, item C-html) ----------------------------------
-
-
-def test_run_pipeline_assemble_runs_build_html_stage_for_html_renderer(tmp_path):
-    class _FakeHtmlRenderer:
-        output_format = "html"
-
-        def stage_plan(self):
-            return [("build-html", True)]
-
-        def build(self, doc_id, config, output=None):
-            output_dir = Path(config["paths"]["output_draft_dir"])
-            output_dir.mkdir(parents=True, exist_ok=True)
-            path = output or (output_dir / "tesina-draft.html")
-            path.write_text("<html></html>", encoding="utf-8")
-            return path
-
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeHtmlRenderer()
-    )
-
-    html_stage = next(s for s in summary["stages"] if s["stage"] == "build-html")
-    assert html_stage["ok"] is True
-    assert (tmp_path / "draft" / "tesina-draft.html").exists()
-
-
-def test_run_pipeline_build_html_stage_degrades_cleanly_when_renderer_skips(tmp_path):
-    # HtmlRendererAdapter.build() returns None (WARN + skip) when pandoc is
-    # absent -- the stage must stay ok=True with an "omitido" detail, the same
-    # best-effort pattern as stage_collect_issues, never a pipeline failure
-    # for a secondary, opt-in output format.
-    class _FakeSkippingHtmlRenderer:
-        output_format = "html"
-
-        def stage_plan(self):
-            return [("build-html", True)]
-
-        def build(self, doc_id, config, output=None):
-            return None
-
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingHtmlRenderer()
-    )
-
-    html_stage = next(s for s in summary["stages"] if s["stage"] == "build-html")
-    assert html_stage["ok"] is True
-    assert "omitido" in html_stage["detail"]
-
-
-# --- build-pdf stage (PR3, item C-pdf) -------------------------------------
-
-
-def test_run_pipeline_build_pdf_stage_degrades_cleanly_when_renderer_skips(tmp_path):
-    # PdfRendererAdapter.build() returns None (WARN + skip) when soffice is
-    # absent -- the stage must stay ok=True with an "omitido" detail, same
-    # best-effort pattern as build-html, never a pipeline failure for a
-    # secondary, opt-in output format (spec: document-render "Best-Effort PDF
-    # Renderer With Graceful Degradation").
-    class _FakeSkippingPdfRenderer:
-        output_format = "pdf"
-
-        def stage_plan(self):
-            return [("build-pdf", True)]
-
-        def build(self, doc_id, config, output=None):
-            return None
-
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingPdfRenderer()
-    )
-
-    pdf_stage = next(s for s in summary["stages"] if s["stage"] == "build-pdf")
-    assert pdf_stage["ok"] is True
-    assert "omitido" in pdf_stage["detail"]
-
-
-def test_run_pipeline_assemble_runs_build_pdf_stage_for_pdf_renderer(tmp_path):
-    class _FakePdfRenderer:
-        output_format = "pdf"
-
-        def stage_plan(self):
-            return [("build-pdf", True)]
-
-        def build(self, doc_id, config, output=None):
-            output_dir = Path(config["paths"]["output_draft_dir"])
-            output_dir.mkdir(parents=True, exist_ok=True)
-            path = output or (output_dir / "tesina-draft.pdf")
-            path.write_bytes(b"fake pdf")
-            return path
-
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakePdfRenderer()
-    )
-
-    pdf_stage = next(s for s in summary["stages"] if s["stage"] == "build-pdf")
-    assert pdf_stage["ok"] is True
-    assert (tmp_path / "draft" / "tesina-draft.pdf").exists()
-
-
-def test_pipeline_and_renderer_resolve_draft_name_from_one_shared_default(tmp_path, monkeypatch):
-    # D1 (tech-debt closeout): pipeline.py and docx_assembly.py each used to
-    # declare their own "tesina-draft.docx" literal. Both must now resolve
-    # the default (now doc-id derived, not a hardcoded literal -- residual
-    # estadia-coupling fix) from a single shared definition
-    # (docs.application.output_names) -- patching that one place must change
-    # what BOTH modules resolve.
-    monkeypatch.setattr("docs.application.output_names.DEFAULT_DRAFT_DOCX_NAME_FORMAT", "patched-{doc_id}.docx")
-    service, workspace = _service(tmp_path)
-    asset_service = AssetService(FilesystemAssetRepository(), workspace)
-    renderer = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
-
-    assert service._resolve_draft_docx_name("doc1", {}) == "patched-doc1.docx"
-    assert renderer._draft_docx_name("doc1", {}) == "patched-doc1.docx"
-
-
-# --- Task 6: verify_all --------------------------------------------------
-#
-# NOTE: `verify_all` takes no `repo_root` parameter -- confirmed against the
-# plan's Task 6 section ("Verbatim legacy reference: verify_all does not call
-# collect_issues/collect_code_evidence/log_run, so it takes no repo_root
-# parameter, unlike run_pipeline"), and reuses `_rules_manifest_state`/
-# `resolve_normative_settings` from Task 5 rather than re-deriving them.
-
-
-def test_verify_all_includes_review_rules_and_review_document_issues(tmp_path):
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")  # no docx present -> docx-dependent checks skipped
-    result = service.verify_all("doc1", _template(), config, strict=True)
-    assert not result.passed  # missing rules_manifest -> review_rules error under strict
-
-
-def test_verify_all_skips_docx_checks_when_no_draft_exists(tmp_path):
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
-    result = service.verify_all("doc1", _template(), config, strict=False)
-    assert not any(issue.code == "qa.failed" for issue in result.issues)
-
-
-# Task 6's plan sketched a single loosely-asserting third test whose outcome
-# depends on whether LibreOffice is installed in the execution environment.
-# This is split into two variants, following test_libreoffice_qa_adapter.py's
-# existing convention: one forces LibreOffice-unavailable deterministically
-# via monkeypatch (works regardless of host toolchain, no skipif needed), one
-# exercises the real success path and is skipif-skipped when LibreOffice is
-# absent (as it is on this host).
-
-
-def test_verify_all_reports_qa_skipped_when_libreoffice_unavailable_in_draft(tmp_path, monkeypatch):
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    draft_dir = tmp_path / "draft"
-    draft_dir.mkdir()
-    config["paths"]["output_draft_dir"] = str(draft_dir)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    docx_path = draft_dir / "doc1-draft.docx"
-    Document().save(docx_path)
-    monkeypatch.setattr(
-        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
-        lambda paths: None,
-    )
-    result = service.verify_all("doc1", _template(), config, strict=False)
-    # Degraded, not failed: the visual render is optional in draft, but its
-    # absence is reported -- never a silently "clean" QA that never ran.
-    assert any(issue.code == "qa.skipped" and issue.severity == "warning" for issue in result.issues)
-    assert not any(issue.code == "qa.failed" for issue in result.issues)
-
-
-def test_verify_all_finds_docx_at_configured_draft_name(tmp_path, monkeypatch):
-    # Remediation (fresh-context review, WARNING): verify_all's default-draft
-    # lookup must honor config["output"]["draft_name"] too, not just the
-    # hardcoded "tesina-draft.docx" -- otherwise a custom name makes verify_all
-    # silently skip DOCX checks (candidate.exists() is False for the wrong name).
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    draft_dir = tmp_path / "draft"
-    draft_dir.mkdir()
-    config["paths"]["output_draft_dir"] = str(draft_dir)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    config["output"] = {"draft_name": "custom-draft.docx"}
-    Document().save(draft_dir / "custom-draft.docx")
-    monkeypatch.setattr(
-        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
-        lambda paths: None,
-    )
-
-    result = service.verify_all("doc1", _template(), config, strict=False)
-
-    # It found and audited the custom-named file (qa.skipped comes from the
-    # QA stage running against it, not from "no docx found at all").
-    assert any(issue.code == "qa.skipped" for issue in result.issues)
-
-
-# --- Task 8.1: ingest stage_set wiring -----------------------------------
-
-
-def _ingest_stage_config(workspace: Workspace, doc_id: str) -> dict:
-    doc_root = workspace.doc_root(doc_id)
-    return {
-        "paths": {
-            "inbox_dir": str(doc_root / "inbox"),
-            "sections_dir": str(doc_root / "sections"),
-            "context_dir": str(doc_root / "context"),
-        },
-    }
-
-
-def test_run_pipeline_ingest_stage_set_writes_curated_index_without_touching_topic_qa_index(tmp_path):
-    # Binding note carried from PR7's fresh review: `JsonContextRepository.
-    # regenerate_index` (Topic/Q&A subsystem) and this module's new curated
-    # progressive-disclosure index both target `context/`. Wiring must
-    # namespace them under distinct filenames so neither writer clobbers
-    # the other's most recent write.
-    service, workspace = _service(tmp_path)
-    doc_id = "doc1"
-    topic = Topic(id="alumno", title="Alumno", required=True)
-    schema = ContextSchema(topics=[topic])
-    status = TopicStatus(id="alumno", title="Alumno", required=True, exists=False, missing=["(texto)"])
-    service.context_repository.regenerate_index(doc_id, schema, [status])
-
-    context_dir = workspace.doc_root(doc_id) / "context"
-    topic_index_before = (context_dir / "index.md").read_text(encoding="utf-8")
-    assert "Alumno" in topic_index_before  # sanity: the Topic/Q&A writer ran
-
-    template = Template(type="doc", title="Doc")
-    config = _ingest_stage_config(workspace, doc_id)
-
-    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
-
-    assert summary["passed"] is True
-    topic_index_after = (context_dir / "index.md").read_text(encoding="utf-8")
-    assert topic_index_after == topic_index_before  # untouched by the curation writer
-
-    curated_index = (context_dir / "curated-index.md").read_text(encoding="utf-8")
-    assert curated_index.startswith("# Context Index")
-    assert curated_index != topic_index_after
-
-
-def test_run_pipeline_ingest_stage_detail_surfaces_media_cleanup_activity(tmp_path):
-    # SUGGESTION-2 (fresh-context verify, PR2 fix batch) -- media cleanup is
-    # computed on every ingest run but was invisible in the CLI-facing stage
-    # detail string. Seed an orphan _media/ dir directly under
-    # sections/ingested/ (removed) and a foreign-shaped one (refused) so both
-    # counts must appear.
-    service, workspace = _service(tmp_path)
-    doc_id = "doc1"
-    config = _ingest_stage_config(workspace, doc_id)
-    ingested_dir = Path(config["paths"]["sections_dir"]) / "ingested"
-    orphan_media = ingested_dir / "readme-md-a1b2c3d4_media"
-    orphan_media.mkdir(parents=True)
-    (orphan_media / "image1.png").write_bytes(b"fake-png-bytes")
-    foreign_dir = ingested_dir / "manually_added_media"
-    foreign_dir.mkdir(parents=True)
-    (foreign_dir / "notes.txt").write_text("do not delete me", encoding="utf-8")
-
-    template = Template(type="doc", title="Doc")
-    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
-
-    stage = next(s for s in summary["stages"] if s["stage"] == "ingest")
-    assert "1 eliminado" in stage["detail"]
-    assert "1 rechazado" in stage["detail"]
-
-
-def test_run_pipeline_ingest_stage_detail_omits_media_cleanup_when_nothing_happened(tmp_path):
-    service, workspace = _service(tmp_path)
-    doc_id = "doc1"
-    config = _ingest_stage_config(workspace, doc_id)
-
-    template = Template(type="doc", title="Doc")
-    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
-
-    stage = next(s for s in summary["stages"] if s["stage"] == "ingest")
-    assert "media" not in stage["detail"].lower()
-
-
-def _malformed_but_pillow_openable_png() -> bytes:
-    """See `tests/integration/test_ingest_assets_figures.py`'s copy of this
-    helper for the full explanation: a hand-built PNG whose IDAT chunk
-    declares a length longer than its actual data. Pillow tolerates it;
-    python-docx's minimal chunk walker raises `UnexpectedEndOfFileError`
-    (empty message) trying to skip past it -- the real, deterministic
-    trigger for the reported clean-room bug."""
-    import struct
-    import zlib
-
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
-
-    def chunk_with_declared_len(tag: bytes, data: bytes, declared_len: int) -> bytes:
-        return struct.pack(">I", declared_len) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
-
-    width = height = 4
-    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    raw = b"".join(b"\x00" + bytes([255, 0, 0, 255] * width) for _ in range(height))
-    idat_data = zlib.compress(raw)
-    idat_chunk = chunk_with_declared_len(b"IDAT", idat_data, len(idat_data) + 8)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + idat_chunk + chunk(b"IEND", b"")
-
-
-def test_run_pipeline_ingest_stage_survives_a_crashing_image_and_runs_downstream_stages(tmp_path):
-    # HIGH robustness fix, pipeline-level regression: before the fix, a
-    # single malformed-but-Pillow-openable image in the inbox made the
-    # `ingest` stage crash with an EMPTY `"ERROR: "` detail and, because
-    # `ingest` is `fail_fast=True` in `_INGEST_STAGES`, aborted the whole
-    # `ingest` stage_set -- `build-context-files`/`build-context-index`
-    # never ran. This must now degrade gracefully: `ingest` stays `ok=True`,
-    # every stage in the set runs, and the good source is still ingested.
-    from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
-
-    service, workspace = _service(tmp_path, image_metadata=PythonDocxImageMetadataAdapter())
-    doc_id = "doc1"
-    config = _ingest_stage_config(workspace, doc_id)
-    inbox = Path(config["paths"]["inbox_dir"])
-    inbox.mkdir(parents=True)
-    (inbox / "bad.png").write_bytes(_malformed_but_pillow_openable_png())
-    (inbox / "notes.md").write_text("# hello\n", encoding="utf-8")
-
-    template = Template(type="doc", title="Doc")
-    summary = service.run_pipeline(doc_id, template, config, "ingest", repo_root=tmp_path)
-
-    assert summary["passed"] is True
-    stage_names = [s["stage"] for s in summary["stages"]]
-    assert stage_names == ["ingest", "build-context-files", "build-context-index"]
-    ingest_stage = summary["stages"][0]
-    assert ingest_stage["ok"] is True
-    assert ingest_stage["detail"] != "ERROR: "
-
-    ingested_dir = Path(config["paths"]["sections_dir"]) / "ingested"
-    assert any(p.name.startswith("notes-md-") for p in ingested_dir.glob("*.md"))
-
-
-# --- Task 8.6: full-pipeline determinism (proposal success criterion) ---
-
-
-def test_full_pipeline_ingest_and_assemble_are_deterministic_across_runs(tmp_path, monkeypatch):
-    # Proposal success criterion: "Full pipeline reproducible: same inputs
-    # -> identical outputs." Runs ingest -> assemble twice over the same
-    # fixture inbox/sections and asserts every artifact (ingested markdown,
-    # context-curation files, and the built DOCX) is byte-identical.
-    # This is also the testable statement for the Reproducibility Boundary
-    # Principle (design.md item M; openspec/specs/document-pipeline/spec.md
-    # "Reproducibility Boundary Principle"): unchanged section .md sources
-    # rebuild to byte-identical output; the principle does NOT claim prose
-    # edits themselves must be byte-identical across sessions.
-    monkeypatch.setattr(
-        "docs.infrastructure.docx.libreoffice_qa_adapter.resolve_libreoffice_executable",
-        lambda paths: None,
-    )
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    sections_dir = tmp_path / "sections"
-    draft_dir = tmp_path / "draft"
-    config["paths"]["sections_dir"] = str(sections_dir)
-    config["paths"]["inbox_dir"] = str(tmp_path / "inbox")
-    config["paths"]["output_draft_dir"] = str(draft_dir)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-
-    inbox = Path(config["paths"]["inbox_dir"])
-    inbox.mkdir(parents=True)
-    (inbox / "note.md").write_text("# Heading\n\nBody text.\n", encoding="utf-8")
-
-    sections_dir.mkdir(parents=True, exist_ok=True)
-    (sections_dir / "001-introduccion.md").write_text(
-        "---\n{}\n---\n# Introducción\n\nContenido de la sección.\n", encoding="utf-8"
-    )
-
-    def run_once() -> tuple[dict[str, bytes], dict[str, bytes], dict[str, bytes]]:
-        service.run_pipeline("doc1", _template(), config, "ingest", repo_root=tmp_path)
-        service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path)
-        # Coverage gap closed here: this used to read only doc1-draft.docx,
-        # so it never caught the body docx (doc1-body.docx, written
-        # directly by the pandoc subprocess) being non-deterministic --
-        # every .docx persisted anywhere under the doc's output tree must be
-        # byte-identical across runs, not just the final draft.
-        docx_bytes = {str(p.relative_to(tmp_path)): p.read_bytes() for p in sorted(tmp_path.rglob("*.docx"))}
-        context_bytes = {p.name: p.read_bytes() for p in Path(config["paths"]["context_dir"]).glob("*.md")}
-        ingested_bytes = {p.name: p.read_bytes() for p in (sections_dir / "ingested").glob("*.md")}
-        return docx_bytes, context_bytes, ingested_bytes
-
-    first_docx, first_context, first_ingested = run_once()
-    second_docx, second_context, second_ingested = run_once()
-
-    assert first_ingested and first_ingested == second_ingested
-    assert first_context and first_context == second_context
-    assert first_docx and first_docx == second_docx
-    assert {Path(name).name for name in first_docx} == {"doc1-draft.docx", "doc1-body.docx"}
-
-
-# --- Phase 6: lifecycle + build version (item F) -------------------------
-
-
-class _FakeRenderer:
-    """Minimal renderer for build-version tests -- an empty stage_plan means
-    run_pipeline("assemble"/"all") completes with zero renderer stages;
-    build() is never invoked since no stage name resolves to it."""
-
-    output_format = "docx"
-
-    def stage_plan(self) -> list[tuple[str, bool]]:
-        return []
-
-
-def test_run_pipeline_assemble_records_build_version_1_on_first_run(tmp_path):
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
-    )
-    assert summary["build_version"] == 1
-
-
-def test_run_pipeline_assemble_increments_build_version_on_repeated_runs(tmp_path):
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    service.run_pipeline("doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer())
-    second = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
-    )
-    assert second["build_version"] == 2
-
-
-def test_run_pipeline_prep_does_not_record_a_build_version(tmp_path, monkeypatch):
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    _patch_doctor_tools(monkeypatch)
-    monkeypatch.setattr("shutil.which", lambda name: None if name == "gh" else f"/fake/{name}")
-    summary = service.run_pipeline("doc1", _template(), _pipeline_config(tmp_path), "prep", repo_root=tmp_path)
-    assert "build_version" not in summary
-
-
-@pytest.mark.skipif(not _HAS_LIBREOFFICE, reason="LibreOffice not installed")
-def test_verify_all_completes_qa_without_qa_failed_when_libreoffice_available(tmp_path):
-    Path(tmp_path / "context").mkdir()
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-    draft_dir = tmp_path / "draft"
-    draft_dir.mkdir()
-    config["paths"]["output_draft_dir"] = str(draft_dir)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    docx_path = draft_dir / "doc1-draft.docx"
-    Document().save(docx_path)
-    result = service.verify_all("doc1", _template(), config, strict=False)
-    assert not any(issue.code == "qa.failed" for issue in result.issues)
-
-
-# --- Slice 5b (on-demand-visual-generation): generate-visuals stage wiring
-
-
-class _FakeGenerateVisualsService:
-    """Test double capturing the `(sections_dir, assets_dir)` args the stage
-    resolves from `config["paths"]`, mirrors the real
-    `GenerateVisualsService.generate` return shape without touching real
-    renderers/rasterizer/matplotlib."""
-
-    def __init__(self, generated: int = 0, skipped: int = 0) -> None:
-        self.calls: list[tuple[Path, Path]] = []
-        self._generated = generated
-        self._skipped = skipped
-
-    def generate(self, sections_dir: Path, assets_dir: Path):
-        self.calls.append((Path(sections_dir), Path(assets_dir)))
-        from docs.application.generate_visuals import GenerateVisualsResult
-
-        return GenerateVisualsResult(generated=self._generated, skipped=self._skipped)
-
-
-def test_stage_generate_visuals_is_wired_and_never_fail_fast(tmp_path):
-    fake_service = _FakeGenerateVisualsService(generated=0, skipped=2)
-    service, _ = _service(tmp_path, generate_visuals_service=fake_service)
-    config = _pipeline_config(tmp_path)
-    config["paths"]["assets_dir"] = str(tmp_path / "assets")
-
-    callables = service._stage_callables(
-        "doc1", _template(), config, tmp_path, strict=False, renderer=_FakeRenderer()
-    )
-    ok, detail = callables["generate-visuals"]()
-
-    assert ok is True
-    assert fake_service.calls == [
-        (Path(config["paths"]["sections_dir"]), Path(config["paths"]["assets_dir"]))
+def _replace_dependencies(dependencies: SimpleNamespace, **changes: object) -> SimpleNamespace:
+    return SimpleNamespace(**{**vars(dependencies), **changes})
+
+
+def test_runs_current_adapters_in_order_and_publishes_atomically_after_verification(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run("publish-success")
+
+    assert report.succeeded
+    assert calls == [
+        "resolve-config",
+        "resolve-template",
+        "resolve-context",
+        "resolve-assets",
+        "validate-contracts",
+        "ingest-sources",
+        "normalize-sources",
+        "compile-structure",
+        "render",
+        "build-html",
+        "build-pdf",
+        "audit",
+        "verify",
+        "evidence-review",
+        "consistency-review",
+        "accessibility-review",
+        "visual-review",
+        "reproducibility-check",
+        "provenance",
+        "publish",
     ]
-    # A WARN-visible degrade (some/all visuals skipped) is never a stage
-    # failure -- fail_fast=False (domain/pipeline.py:_GENERATE_VISUALS).
-    assert "2" in detail
+    assert (tmp_path / "published" / "document.txt").read_text(encoding="utf-8") == "published document"
+    assert service.definition.plan() == EXPECTED_DAG_PLAN
 
 
-def test_generate_visuals_stage_is_a_noop_when_service_not_wired(tmp_path):
-    # Backward-compat: every pre-Slice-5b `_service()` call in this file
-    # constructs `PipelineService` without a `generate_visuals_service` --
-    # the stage must degrade like build-html/collect-issues ("omitido:"
-    # detail, ok=True), never a KeyError on a missing
-    # config["paths"]["assets_dir"].
-    service, _ = _service(tmp_path)  # generate_visuals_service defaults to None
-    config = _pipeline_config(tmp_path)  # no "assets_dir" key at all
+def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls, verification_ok=False))
 
-    callables = service._stage_callables(
-        "doc1", _template(), config, tmp_path, strict=False, renderer=_FakeRenderer()
-    )
-    ok, detail = callables["generate-visuals"]()
+    report = service.run("publish-blocked")
 
-    assert ok is True
-    assert "omitido" in detail
-
-
-def test_run_pipeline_build_docx_stage_fails_loudly_when_the_renderer_skips(tmp_path):
-    # DOCX is the PRIMARY format, not an opt-in secondary like html/pdf: a
-    # renderer that returns None there produced no artifact, and every later
-    # stage (format-audit-docx, qa-docx) reads that missing file. The stage
-    # must fail so `--strict` stops, never report ok=True with the literal
-    # string "None" as its detail.
-    class _FakeSkippingDocxRenderer:
-        output_format = "docx"
-
-        def stage_plan(self):
-            return [("build-docx", True)]
-
-        def build(self, doc_id, config, output=None):
-            return None
-
-    service, _ = _service(tmp_path)
-    config = _pipeline_config(tmp_path)
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeSkippingDocxRenderer()
-    )
-
-    docx_stage = next(s for s in summary["stages"] if s["stage"] == "build-docx")
-    assert docx_stage["ok"] is False
-    assert docx_stage["detail"] != "None"
+    assert not report.succeeded
+    assert calls == [
+        "resolve-config",
+        "resolve-template",
+        "resolve-context",
+        "resolve-assets",
+        "validate-contracts",
+        "ingest-sources",
+        "normalize-sources",
+        "compile-structure",
+        "render",
+        "build-html",
+        "build-pdf",
+        "audit",
+        "verify",
+    ]
+    assert not (tmp_path / "published" / "document.txt").exists()
 
 
-def test_qa_stage_says_when_the_visual_render_was_skipped(tmp_path):
-    # Measured on a real workspace: `qa-docx` reported `ok=True` with a bare
-    # directory path for 24 consecutive runs while LibreOffice was absent and
-    # the visual render -- the "visual" half of visual QA -- never happened.
-    #
-    # The information was not lost: `qa-report.md` says "PDF: no disponible".
-    # It was one level deeper than its siblings put it. `build-html` and
-    # `build-pdf` both report their own degradation in the pipeline line
-    # ("omitido: pandoc no disponible"); this one made you open a file to
-    # find out half of it did not run.
-    class _QaWithoutRender:
-        def qa_docx(self, config, docx_path, strict=False):
-            out = Path(config["paths"]["output_qa_dir"]) / docx_path.stem
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "qa-report.md").write_text("# QA\n- PDF: no disponible\n", encoding="utf-8")
-            return out
+def test_exports_reusable_full_stage_ids() -> None:
+    assert FULL_STAGE_IDS == STAGE_IDS
 
-    class _FakeRenderer:
-        output_format = "docx"
+def test_registers_public_pipeline_boundaries():
+    service = _service(Path("."), _dependencies(Path("."), []))
+    assert {"document-build", "document-verify", "document-package"} <= set(service.registry.names())
 
-        def stage_plan(self):
-            return [("build-docx", True), ("qa-docx", True)]
 
-        def build(self, doc_id, config, output=None):
-            path = Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            Document().save(path)
-            return path
+def test_public_catalog_marks_stage_backed_boundaries_and_read_only_artifact_operations():
+    stage_backed = {entry.pipeline_id for entry in PUBLIC_PIPELINES if entry.stages}
+    read_only = {entry.pipeline_id for entry in PUBLIC_PIPELINES if not entry.stages}
 
-    service, _ = _service(tmp_path)
-    service.qa_service = _QaWithoutRender()
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
+    assert stage_backed == {
+        "source-ingest",
+        "document-prepare",
+        "document-build",
+        "document-verify",
+        "document-publish",
+        "document-package",
+    }
+    assert read_only == {"document-diff", "document-inspect"}
 
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    service = _service(Path("."), _dependencies(Path("."), []))
+    assert all(not service.registry.resolve(name).definition.stages for name in read_only)
+    assert all(service.registry.resolve(name).definition.stages for name in stage_backed)
+
+
+
+def test_runs_a_registered_public_subdag_without_running_unrelated_stages(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run(
+        "public-build",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts={"compile-structure-complete"},
     )
 
-    stage = next(s for s in summary["stages"] if s["stage"] == "qa-docx")
-    assert stage["ok"] is True, "sigue degradando, no falla"
-    assert "sin render" in stage["detail"].lower() or "omitido" in stage["detail"].lower()
+    assert report.succeeded
+    assert calls == ["render", "build-html", "build-pdf"]
+    assert [result.stage for result in report.execution.results] == [
+        "generate-visuals", "compose-cover", "build-docx", "build-html", "build-pdf"
+    ]
 
 
-def test_qa_stage_stays_quiet_when_the_render_happened(tmp_path):
-    class _QaWithRender:
-        def qa_docx(self, config, docx_path, strict=False):
-            out = Path(config["paths"]["output_qa_dir"]) / docx_path.stem
-            out.mkdir(parents=True, exist_ok=True)
-            (out / f"{docx_path.stem}.pdf").write_bytes(b"%PDF-1.4\n")
-            return out
+def test_omitted_external_artifacts_fail_closed_for_public_subdag(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    class _FakeRenderer:
-        output_format = "docx"
-
-        def stage_plan(self):
-            return [("build-docx", True), ("qa-docx", True)]
-
-        def build(self, doc_id, config, output=None):
-            path = Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            Document().save(path)
-            return path
-
-    service, _ = _service(tmp_path)
-    service.qa_service = _QaWithRender()
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    report = service.run(
+        "public-build-with-omitted-prerequisites",
+        pipeline_id="document-build",
+        publish=False,
     )
 
-    stage = next(s for s in summary["stages"] if s["stage"] == "qa-docx")
-    assert "omitido" not in stage["detail"].lower()
-
-
-def test_assemble_fails_when_wired_render_verification_reports_an_error(tmp_path):
-    class _QaPort:
-        def render_docx_to_pdf(self, _config, docx_path, output_dir):
-            pdf_path = output_dir / f"{docx_path.stem}.pdf"
-            pdf_path.write_bytes(b"pdf")
-            return pdf_path
-
-        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
-            return []
-
-    class _BlockingVerification:
-        def verify(self, artifact_path, _profile, _preview_dir=None):
-            return VerificationReport(
-                ArtifactRef(artifact_path.as_posix(), "a" * 64),
-                [VerificationFinding("render.page.blank", "blank page", "error")],
-            )
-
-    class _FakeRenderer:
-        output_format = "docx"
-
-        def stage_plan(self):
-            return [("build-docx", True), ("qa-docx", True)]
-
-        def build(self, _doc_id, config, output=None):
-            path = output or Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            Document().save(path)
-            return path
-
-    service, _ = _service(tmp_path)
-    service.qa_service = QaService(
-        _QaPort(),
-        FormatAuditService(PythonDocxAuditAdapter()),
-        render_verification_service=_BlockingVerification(),
-    )
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    assert report.succeeded is False
+    assert calls == []
+    assert report.execution.results[0].errors == (
+        "required external artifact unavailable: compile-structure-complete",
     )
 
-    assert summary["passed"] is False
-    assert next(stage for stage in summary["stages"] if stage["stage"] == "qa-docx")["ok"] is False
 
+def test_explicit_empty_external_artifacts_fail_public_subdag_preflight(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
 
-def test_assemble_allows_wired_render_verification_warnings_in_non_strict_mode(tmp_path):
-    class _QaPort:
-        def render_docx_to_pdf(self, _config, docx_path, output_dir):
-            pdf_path = output_dir / f"{docx_path.stem}.pdf"
-            pdf_path.write_bytes(b"pdf")
-            return pdf_path
-
-        def run_documents_audits(self, _config, _docx_path, _output_dir, _strict):
-            return []
-
-    class _WarningVerification:
-        def verify(self, artifact_path, _profile, _preview_dir=None):
-            return VerificationReport(
-                ArtifactRef(artifact_path.as_posix(), "a" * 64),
-                [VerificationFinding("render.preview.unavailable", "preview unavailable", "warning")],
-            )
-
-    class _FakeRenderer:
-        output_format = "docx"
-
-        def stage_plan(self):
-            return [("build-docx", True), ("qa-docx", True)]
-
-        def build(self, _doc_id, config, output=None):
-            path = output or Path(config["paths"]["output_draft_dir"]) / "doc1-draft.docx"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            Document().save(path)
-            return path
-
-    service, _ = _service(tmp_path)
-    service.qa_service = QaService(
-        _QaPort(),
-        FormatAuditService(PythonDocxAuditAdapter()),
-        render_verification_service=_WarningVerification(),
-    )
-    config = _pipeline_config(tmp_path)
-    config["paths"]["output_qa_dir"] = str(tmp_path / "qa")
-    config["paths"]["output_draft_dir"] = str(tmp_path / "draft")
-
-    summary = service.run_pipeline(
-        "doc1", _template(), config, "assemble", repo_root=tmp_path, renderer=_FakeRenderer()
+    report = service.run(
+        "public-build-without-prerequisites",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts=set(),
     )
 
-    assert summary["passed"] is True
-    assert next(stage for stage in summary["stages"] if stage["stage"] == "qa-docx")["ok"] is True
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == (
+        "required external artifact unavailable: compile-structure-complete",
+    )
+
+
+def test_rejects_public_pipeline_publication_request(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    try:
+        service.run("invalid-public-publication", pipeline_id="document-build", publish=True)
+    except ValueError as exc:
+        assert "only the full document pipeline" in str(exc)
+    else:
+        raise AssertionError("expected public pipeline publication to be rejected")
+
+def test_exposes_the_full_declarative_stage_plan_without_artificial_serial_dependencies(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    stages = {stage.name: stage for stage in service.definition.stages}
+
+    assert service.definition.plan() == EXPECTED_DAG_PLAN
+    assert tuple(stage.name for stage in service.definition.stages) == STAGE_IDS
+    assert stages["generate-visuals"].after == ()
+    assert stages["compose-cover"].requires == ("generate-visuals-complete",)
+    assert stages["build-docx"].requires == ("compose-cover-complete",)
+    assert stages["build-html"].after == ()
+    assert stages["build-pdf"].after == ()
+    assert stages["build-html"].requires == ("build-docx-complete",)
+    assert stages["build-pdf"].requires == ("build-docx-complete",)
+    assert stages["package-release"].optional is True
+
+
+def test_publication_chain_requires_editorial_quality_gate(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    stages = {stage.name: stage for stage in service.definition.stages}
+
+    assert "editorial-review-complete" in stages["record-provenance"].requires
+    assert "editorial-review-complete" in stages["package-release"].requires
+    assert "editorial-review-complete" in stages["publish-draft"].requires
+
+
+def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls, verification_ok=False))
+
+    report = service.run("required-stage-blocked")
+
+    assert not report.succeeded
+    assert report.execution.results[-1].stage == "publish-draft"
+    assert calls == [
+        "resolve-config",
+        "resolve-template",
+        "resolve-context",
+        "resolve-assets",
+        "validate-contracts",
+        "ingest-sources",
+        "normalize-sources",
+        "compile-structure",
+        "render",
+        "build-html",
+        "build-pdf",
+        "audit",
+        "verify",
+    ]
+    assert "provenance" not in calls
+    assert "publish" not in calls
+
+
+def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_changing_current_execution(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run("draft-with-migration-gaps")
+
+    unsupported = [result for result in report.execution.results if result.outcome == "unsupported"]
+    assert [result.stage for result in unsupported] == ["generate-visuals", "compose-cover", "package-release"]
+    assert report.succeeded is True
+    assert "publish" in calls
+    assert any(result.stage == "publish-draft" and result.ok for result in report.execution.results)
+
+
+def test_optional_unavailable_capability_keeps_unsupported_package_release_non_failing(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(
+        tmp_path,
+        _dependencies(tmp_path, calls),
+        capabilities=ToolCapabilityRegistry((ToolCapability("release-tool", "definitely-missing"),)),
+    )
+
+    report = service.run("optional-unsupported-package-release")
+
+    payload = report.to_dict()
+    package_release = next(
+        result for result in report.execution.results if result.stage == "package-release"
+    )
+    assert set(payload) == {"capabilities", "execution", "provenance", "succeeded"}
+    assert payload["capabilities"] == {"release-tool": {"available": False, "path": None}}
+    assert package_release.ok is True
+    assert package_release.outcome == "unsupported"
+    assert package_release.errors == ()
+    assert report.succeeded is True
+    assert "publish" in calls
+
+
+def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp_path: Path) -> None:
+    for mode in (PipelineMode.strict, PipelineMode.release):
+        calls: list[str] = []
+        service = _service(
+            tmp_path / mode.value,
+                _replace_dependencies(_dependencies(tmp_path / mode.value, calls), ingest_sources=None),
+            PipelinePolicy(mode),
+        )
+
+        report = service.run(f"{mode.value}-migration-gap")
+
+        assert report.succeeded is False
+        first_failure = next(result for result in report.execution.results if not result.ok)
+        assert first_failure.stage == "ingest-sources"
+        assert first_failure.outcome == "failed"
+        assert first_failure.errors == ("stage unsupported: ingest-sources",)
+        assert "render" not in calls
+        assert "publish" not in calls
+
+
+def test_strict_and_release_package_failure_never_runs_publish_side_effect(tmp_path: Path) -> None:
+    for mode in (PipelineMode.strict, PipelineMode.release):
+        calls: list[str] = []
+        dependencies = _replace_dependencies(
+            _dependencies(tmp_path / mode.value, calls),
+            package_release=_stage("package-release", calls, ok=False),
+        )
+
+        report = _service(tmp_path / mode.value, dependencies, PipelinePolicy(mode)).run(
+            f"{mode.value}-package-failure"
+        )
+
+        assert not report.succeeded
+        assert "package-release" in calls
+        assert "publish" not in calls
+        assert not (tmp_path / mode.value / "published" / "document.txt").exists()
+
+
+def test_explicit_current_handlers_cover_safe_migration_stages(tmp_path: Path) -> None:
+    calls: list[str] = []
+    dependencies = _replace_dependencies(
+        _dependencies(tmp_path, calls),
+        generate_visuals=_stage("generate-visuals", calls),
+        compose_cover=_stage("compose-cover", calls),
+        structural_audit=_stage("structural-audit", calls),
+        visual_review=_stage("visual-review", calls),
+        accessibility_review=_stage("accessibility-review", calls),
+        reproducibility_check=_stage("reproducibility-check", calls),
+        build_html=_stage("build-html", calls),
+        build_pdf=_stage("build-pdf", calls),
+    )
+
+    report = _service(tmp_path, dependencies).run("wired-stages", publish=False)
+
+    assert report.succeeded
+    assert calls == [
+        "resolve-config",
+        "resolve-template",
+        "resolve-context",
+        "resolve-assets",
+        "validate-contracts",
+        "ingest-sources",
+        "normalize-sources",
+        "compile-structure",
+        "generate-visuals",
+        "compose-cover",
+        "render",
+        "build-html",
+        "build-pdf",
+        "structural-audit",
+        "verify",
+        "evidence-review",
+        "consistency-review",
+        "accessibility-review",
+        "visual-review",
+        "reproducibility-check",
+        "provenance",
+    ]
+
+
+def test_failed_visual_generation_blocks_dependent_cover_and_document_build(tmp_path: Path) -> None:
+    calls: list[str] = []
+    dependencies = _replace_dependencies(
+        _dependencies(tmp_path, calls),
+        generate_visuals=_stage("generate-visuals", calls, ok=False),
+        compose_cover=_stage("compose-cover", calls),
+    )
+
+    report = _service(
+        tmp_path,
+        dependencies,
+        policy=PipelinePolicy(PipelineMode.draft),
+    ).run("optional-stage-failure", publish=False)
+
+    assert not report.succeeded
+    assert "compose-cover" not in calls
+    assert "render" not in calls
+    assert "provenance" not in calls
+    assert next(result for result in report.execution.results if result.stage == "generate-visuals").ok is False
+
+
+def test_failed_run_rolls_back_current_completion_artifacts_without_losing_previous_evidence(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+    dependencies = _replace_dependencies(
+        _dependencies(tmp_path, calls),
+        accessibility_review=_stage("accessibility-review", calls),
+        visual_review=_stage("visual-review", calls),
+        reproducibility_check=_stage("reproducibility-check", calls),
+        package_release=_stage("package-release", calls, ok=False),
+    )
+    artifact = tmp_path / "stages" / "accessibility-review-complete.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("previous evidence\n", encoding="utf-8")
+
+    report = _service(tmp_path, dependencies).run("completion-artifact-rollback")
+
+    assert report.succeeded is False
+    assert artifact.read_text(encoding="utf-8") == "previous evidence\n"
+    assert not (tmp_path / "stages" / "reproducibility-check-complete.json").exists()
+
+
+
+def test_adapt_does_not_fabricate_completion_artifacts_for_current_stage_results():
+    handler = PipelineService._adapt(
+        "resolve-config",
+        lambda: (True, "resolved configuration"),
+        "resolve-config-complete",
+    )
+
+    result = handler()
+
+    assert result.ok is True
+    assert result.artifacts == ()
+
+
+def test_external_artifact_generator_is_materialized_once(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.run(
+        "generator-prerequisite",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts=(item for item in ("compile-structure-complete",)),
+    )
+
+    assert report.succeeded
+    assert calls == ["render", "build-html", "build-pdf"]
+
+
+def test_policy_less_publication_capability_failure_preflights_before_side_effects(tmp_path: Path) -> None:
+    calls: list[str] = []
+    run_ids: list[str] = []
+    service = PipelineService(
+        operations={"record-provenance": _stage("provenance", calls)},
+        publication=_dependencies(tmp_path, calls).publication,
+        capabilities=ToolCapabilityRegistry((ToolCapability("soffice", "definitely-missing", required=True),)),
+        ledger=ProvenanceLedger(tmp_path / "provenance.json"),
+        atomic_transform=AtomicTransform(),
+        run_id_sink=run_ids.append,
+    )
+
+    report = service.run("missing-default-capability")
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == ("required capability unavailable: soffice",)
+    assert calls == []
+    assert run_ids == []
+
+
+def test_external_prerequisite_preflight_cleans_up_without_recording_run_id(tmp_path: Path) -> None:
+    calls: list[str] = []
+    run_ids: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+    service._run_id_sink = run_ids.append
+    service._cleanup = lambda: calls.append("cleanup")
+
+    report = service.run(
+        "missing-external",
+        pipeline_id="document-build",
+        publish=False,
+        external_artifacts=set(),
+    )
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == (
+        "required external artifact unavailable: compile-structure-complete",
+    )
+    assert calls == ["cleanup"]
+    assert run_ids == []
+
+
+def test_required_pdf_capability_preflight_prevents_provenance_and_run_id_mutation(tmp_path: Path) -> None:
+    calls: list[str] = []
+    run_ids: list[str] = []
+    service = PipelineService(
+        operations={"record-provenance": _stage("provenance", calls)},
+        publication=_dependencies(tmp_path, calls).publication,
+        capabilities=ToolCapabilityRegistry((ToolCapability("soffice", "definitely-missing", required=True),)),
+        ledger=ProvenanceLedger(tmp_path / "provenance.json"),
+        atomic_transform=AtomicTransform(),
+        policy=PipelinePolicy(PipelineMode.draft),
+        run_id_sink=run_ids.append,
+        excluded_stages=frozenset(set(FULL_STAGE_IDS) - {"record-provenance"}),
+        cleanup=lambda: calls.append("cleanup"),
+    )
+
+    report = service.run(
+        "missing-pdf-capability",
+        external_artifacts=service.definition.external_artifacts,
+    )
+
+    assert report.succeeded is False
+    assert report.execution.results[0].errors == ("required capability unavailable: soffice",)
+    assert calls == ["cleanup"]
+    assert run_ids == []
+
+
+def test_materializes_durable_records_for_successful_non_skipped_stages(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(
+        tmp_path,
+        _dependencies(tmp_path, calls),
+        artifact_store=ArtifactStore(tmp_path / "stage-records", AtomicFileAdapter()),
+    )
+
+    report = service.run("durable-stage-records")
+
+    succeeded = [
+        result
+        for result in report.execution.results
+        if result.ok and result.outcome == "succeeded"
+    ]
+    assert all(result.artifacts for result in succeeded)
+    records = [record for result in succeeded for record in result.artifacts]
+    assert all(
+        (Path(record.path) if Path(record.path).is_absolute() else tmp_path / "stage-records" / record.path).is_file()
+        for record in records
+    )

@@ -26,7 +26,7 @@ def test_issue_default_code_is_empty_string():
     assert issue.dimension is ReviewDimension.EDITORIAL
 
 
-def test_issue_legacy_positional_call_and_json_use_editorial_dimension():
+def test_issue_current_positional_call_and_json_use_editorial_dimension():
     issue = Issue("warning", "Cuidado.", "some.code")
 
     assert issue.to_dict() == {
@@ -55,7 +55,7 @@ def test_issue_serializes_optional_review_contract_metadata_when_provided():
         evidence="SHA-256 mismatch between equivalent builds.",
         resolution_condition="Rebuild produces matching bytes.",
         section="methodology",
-        file="output/draft/report.docx",
+        file="output/work/report.docx",
         page=4,
         stage_originator="reproducibility-check",
     )
@@ -68,7 +68,7 @@ def test_issue_serializes_optional_review_contract_metadata_when_provided():
         "evidence": "SHA-256 mismatch between equivalent builds.",
         "resolution_condition": "Rebuild produces matching bytes.",
         "section": "methodology",
-        "file": "output/draft/report.docx",
+        "file": "output/work/report.docx",
         "page": 4,
         "stage_originator": "reproducibility-check",
     }

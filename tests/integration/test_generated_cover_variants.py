@@ -60,7 +60,7 @@ def test_generated_variants_have_distinct_docx_semantics_and_deterministic_bytes
     ).digest()
 
 
-def test_assemble_without_a_cover_block_preserves_legacy_body_only_output(tmp_path):
+def test_assemble_without_a_cover_block_preserves_current_body_only_output(tmp_path):
     body = Document()
     body.add_paragraph("Body marker")
     body_path = tmp_path / "body.docx"

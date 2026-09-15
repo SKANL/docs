@@ -4,7 +4,6 @@ spec: `Type-Based Ingest Routing`) — `Deps.ingest` must route every
 supported kind to a real adapter, not just the PR5 routing stubs."""
 from pathlib import Path
 
-import docs.cli._shared as shared
 from docs.application.ingest import IngestService
 from docs.cli._shared import Deps
 from docs.domain.workspace import Workspace
@@ -53,16 +52,3 @@ def test_deps_wires_pdf_render_adapter_when_toolchain_available(tmp_path: Path):
 
     deps = _deps(tmp_path)
     assert isinstance(deps.ingest.pdf_render, Pdfium2PdfRenderAdapter)
-
-
-def test_deps_does_not_construct_pipeline_until_requested(monkeypatch, tmp_path: Path):
-    """Composition must not eagerly instantiate the native pipeline."""
-    monkeypatch.setattr(
-        shared,
-        "PipelineService",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("pipeline was eager")),
-    )
-
-    deps = _deps(tmp_path)
-
-    assert deps.markdown_normalizer is deps.ingest.handlers["md"]

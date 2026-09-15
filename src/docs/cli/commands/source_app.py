@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import typer
 
-from docs.cli.commands.v2_app import _run_source_command
+from docs.cli.commands.document_app import _run_source_command
 
 source_app = typer.Typer(help="Source ingestion and normalization commands.")
 

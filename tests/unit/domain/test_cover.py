@@ -98,10 +98,10 @@ def test_missing_standard_cover_paths_produce_clear_findings():
     assert cover_findings(spec, {"title": "Report"}) == ["cover.missing_slot: author"]
 
 
-def test_cover_content_wins_over_legacy_slots_and_resolves_standard_sources():
+def test_cover_content_wins_over_current_slots_and_resolves_standard_sources():
     spec = CoverSpec(
         content={"title": "{{document.title}}", "author": "{{author.name}}"},
-        slots={"title": "legacy title", "author": "legacy author"},
+        slots={"title": "current title", "author": "current author"},
     )
 
     resolved = resolve_cover_slots(

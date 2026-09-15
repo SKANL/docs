@@ -26,7 +26,6 @@ from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
-from docs.application.pipeline import PipelineService
 from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
@@ -99,7 +98,7 @@ def _load_workspace_config() -> dict[str, str] | None:
 def build_workspace() -> Workspace:
     """Workspace roots: `docs.config.json` (cwd) -> env vars (injectable in
     tests) -> cwd-relative defaults, in that precedence order (spec:
-    workspace-config "Config Precedence Resolution"). Legacy hardcoded
+    workspace-config "Config Precedence Resolution"). Current hardcoded
     HARNESS_ROOT/documents & templates; no library equivalent (Judgment call
     2)."""
     documents_dir, templates_dir = resolve_workspace_roots(
@@ -112,36 +111,12 @@ logger = logging.getLogger(__name__)
 
 
 def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
-    """Read the rules manifest without constructing the legacy pipeline."""
+    """Read the rules manifest without constructing the alternate pipeline."""
     try:
         path = Path(config["paths"]["rules_manifest"])
         return (True, path.stat().st_size) if path.is_file() else (False, 0)
     except (KeyError, OSError, TypeError):
         return False, 0
-
-
-class _LazyPipelineService:
-    """Lazily construct the native application pipeline service."""
-
-    def __init__(self, factory: Any) -> None:
-        object.__setattr__(self, "_factory", factory)
-        object.__setattr__(self, "_instance", None)
-
-    def _resolve(self) -> Any:
-        instance = self._instance
-        if instance is None:
-            instance = self._factory()
-            object.__setattr__(self, "_instance", instance)
-        return instance
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._resolve(), name)
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"_factory", "_instance"}:
-            object.__setattr__(self, name, value)
-            return
-        setattr(self._resolve(), name, value)
 
 
 class Deps:
@@ -349,18 +324,6 @@ class Deps:
         self.verification = DocumentVerificationService(
             review_service, evidence_repo, format_audit_service, qa_service
         )
-        def build_pipeline() -> PipelineService:
-            return PipelineService(
-                doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
-                review_service, context_pack_service, context_repo, docx_assembly_service,
-                format_audit_service, qa_service, self.workspace, self.ingest,
-                context_service=self.context,
-                generate_visuals_service=self.generate_visuals_service,
-                structural_audit_service=structural_audit_service,
-                section_service=self.section,
-            )
-
-        self.pipeline = _LazyPipelineService(build_pipeline)
         self.structural_audit_service = structural_audit_service
         self.rules_manifest_state = _rules_manifest_state
 

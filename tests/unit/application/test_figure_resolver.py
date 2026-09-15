@@ -200,7 +200,7 @@ def test_binding_with_unknown_catalog_id_is_excluded_and_warns(tmp_path, capsys)
     assert "organigrama" in captured.err
 
 
-def test_unknown_catalog_id_recovers_valid_legacy_png(tmp_path):
+def test_unknown_catalog_id_recovers_valid_current_png(tmp_path):
     sections_dir = tmp_path / "sections"
     assets_dir = tmp_path / "assets"
     _write_catalog(sections_dir, [])

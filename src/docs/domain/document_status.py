@@ -31,10 +31,10 @@ class DocumentStatus:
     lifecycle: str = "draft"
     build_version: int | None = None
     cover: dict[str, Any] | None = None
-    v2_capabilities: dict[str, Any] | None = None
-    v2_execution: dict[str, Any] | None = None
-    v2_provenance: dict[str, Any] | None = None
-    v2_succeeded: bool | None = None
+    capabilities: dict[str, Any] | None = None
+    execution: dict[str, Any] | None = None
+    provenance: dict[str, Any] | None = None
+    succeeded: bool | None = None
     unsupported_stages: list[str] = field(default_factory=list)
     publication_blockers: list[str] = field(default_factory=list)
 
@@ -68,17 +68,17 @@ class DocumentStatus:
         if self.cover is not None:
             result["cover"] = self.cover
         v2 = {
-            "capabilities": self.v2_capabilities,
-            "execution": self.v2_execution,
-            "provenance": self.v2_provenance,
-            "succeeded": self.v2_succeeded,
+            "capabilities": self.capabilities,
+            "execution": self.execution,
+            "provenance": self.provenance,
+            "succeeded": self.succeeded,
             "unsupported_stages": self.unsupported_stages,
             "publication_blockers": self.publication_blockers,
         }
         if (
             any(
                 value is not None
-                for value in (self.v2_capabilities, self.v2_execution, self.v2_provenance, self.v2_succeeded)
+                for value in (self.capabilities, self.execution, self.provenance, self.succeeded)
             )
             or self.unsupported_stages
             or self.publication_blockers

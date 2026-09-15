@@ -71,7 +71,7 @@ class CollectionService:
                 "referencia estructural, no fuente de contenido",
             )
 
-        # Legacy calls load_context(config) twice (once per check below) for the
+        # Current calls load_context(config) twice (once per check below) for the
         # identical result. read_context_texts is referentially transparent over
         # the same config, so this service computes it once and reuses it —
         # not a behavior change, just removing a verbatim duplicate call.

@@ -190,7 +190,7 @@ def test_determinism_same_svg_ingested_twice_is_byte_identical(tmp_path: Path):
     assert run1 == run2
 
 
-# --- backward-compat: raster images still ingest exactly as before ---------
+# --- stable: raster images still ingest exactly as before ---------
 
 
 def test_raster_image_ingest_unaffected_by_svg_support(tmp_path: Path):

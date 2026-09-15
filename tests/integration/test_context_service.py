@@ -117,7 +117,7 @@ def test_show_missing_topic_raises_file_not_found(setup):
 
 
 def test_show_does_not_validate_against_schema(setup):
-    # legacy quirk: show works for a topic id that doesn't exist in the schema,
+    # current quirk: show works for a topic id that doesn't exist in the schema,
     # as long as the file happens to exist on disk.
     service, template = setup
     service.context_repo.write_topic("alpha", template.context_schema.topics[1], "manual write")

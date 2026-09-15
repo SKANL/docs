@@ -9,7 +9,7 @@ from docs.domain.workspace import Workspace
 
 
 class RunRecorderService:
-    """Persist run records using the legacy on-disk contract."""
+    """Persist run records using the current on-disk contract."""
 
     def __init__(self, workspace: Workspace, source_repository: Any) -> None:
         self.workspace = workspace

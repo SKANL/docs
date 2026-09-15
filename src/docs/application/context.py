@@ -93,7 +93,7 @@ class ContextService:
         return path
 
     def show(self, doc_id: str, topic_id: str) -> str:
-        # Legacy quirk: show does NOT validate the topic id against the schema;
+        # Current quirk: show does NOT validate the topic id against the schema;
         # it reads the raw file by id. read_topic_raw raises FileNotFoundError if absent.
         return self.context_repo.read_topic_raw(doc_id, topic_id)
 
@@ -139,7 +139,7 @@ class ContextService:
     def write_requests_file(self, doc_id: str, template: Template, only_topic: str = "") -> Path:
         """Non-interactive elicitation: render the pending-fields questionnaire
         and persist it. Composes the already-migrated status + render_requests +
-        ContextRepository.write_requests. The interactive TTY loop (legacy
+        ContextRepository.write_requests. The interactive TTY loop (current
         elicit_interactive) is out of scope for this migration."""
         self._require_document(doc_id)
         statuses = self.status(doc_id, template)

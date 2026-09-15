@@ -118,4 +118,3 @@ def test_template_create_alias_emits_the_same_declarative_skeleton(workspace):
     assert result.exit_code == 0, result.stdout
     assert (workspace / "alias-type.json").is_file()
     assert "alias-type" in result.stdout
-

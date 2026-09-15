@@ -164,7 +164,7 @@ def test_misleading_extension_docx_is_ingested_via_detected_kind_not_suffix(tmp_
 @pytest.mark.skipif(not _HAS_PANDOC, reason="pandoc not installed")
 def test_retry_after_orphaned_media_dir_converges_to_complete_output(tmp_path: Path):
     # FRESH-REVIEW FINDING 2 repro: the adapter finalizes the media dir, THEN
-    # the `.md` file, as two separate `os.replace` calls. If a prior attempt
+    # the `.md` file, as two separate `os.replace` calls. If a current attempt
     # died between those two steps, it leaves the media dir in place with no
     # paired `.md` — `IngestService`'s skip-check only looks at the `.md`, so
     # a retry re-runs pandoc and, before the fix, `atomic_finalize` tries to
@@ -179,7 +179,7 @@ def test_retry_after_orphaned_media_dir_converges_to_complete_output(tmp_path: P
     stem_tag = f"report-docx-{sha8}"
     stale_media_dir = out_dir / f"{stem_tag}_media"
     stale_media_dir.mkdir()
-    (stale_media_dir / "stale-leftover.bin").write_bytes(b"orphaned from a failed prior attempt")
+    (stale_media_dir / "stale-leftover.bin").write_bytes(b"orphaned from a failed current attempt")
     assert not (out_dir / f"{stem_tag}.md").exists()
 
     output = adapter.ingest(src, out_dir, "docx")

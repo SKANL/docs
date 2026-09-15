@@ -14,4 +14,3 @@ def test_filter_review_dimensions_keeps_only_requested_findings():
 
     assert filtered.issues == [result.issues[1]]
     assert filtered.passed is False
-

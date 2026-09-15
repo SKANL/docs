@@ -29,12 +29,12 @@ class TestApplyKeywordBold:
         assert apply_keyword_bold("**API** docs", ["api"]) == "**API** docs"
 
     def test_longest_term_processed_first_but_overlapping_shorter_term_still_matches(self):
-        # Verbatim legacy behavior: terms are sorted longest-first, but each term's
+        # Verbatim current behavior: terms are sorted longest-first, but each term's
         # substitution runs as an independent regex pass over the (so-far-substituted)
         # string. Bold-span protection only guards markup that existed BEFORE this
         # function ran — newly-inserted ** markers from an earlier (longer) term in
         # the same call are not re-protected, so a later (shorter) overlapping term
-        # can still match inside them. This is legacy's actual, verified behavior
+        # can still match inside them. This is current's actual, verified behavior
         # (not a bug introduced by this port) — see plan Slice 8 Task 1 review note.
         result = apply_keyword_bold("REST API client", ["api", "REST API"])
         assert result == "**REST **API**** client"
@@ -189,7 +189,7 @@ class TestRenderContractScaffold:
 
     def test_includes_apa_pendiente_when_citation_style_is_apa7_explicitly(self):
         # Positive: an apa7-citation-style template still gets the APA scaffold
-        # block (default citation_style stays "apa7" for backward compat with
+        # block (default citation_style stays "apa7" for stable with
         # every caller that doesn't pass it, e.g. estadia).
         body = render_contract_scaffold("Discusión", SectionContract(apa_required=True), {}, citation_style="apa7")
         assert "Fuentes APA 7" in body
@@ -285,8 +285,8 @@ class TestExtractHeadingBlock:
         assert _extract_heading_block(markdown, "Título") == "linea 1"
 
 
-class TestRenderContractScaffoldLegacyParity:
-    def test_matches_legacy_render_contract_scaffold_byte_for_byte(self):
+class TestRenderContractScaffoldCurrentParity:
+    def test_matches_current_render_contract_scaffold_byte_for_byte(self):
         # Transcribed line-by-line from tesina_harness.py:1342-1377's
         # render_contract_scaffold(config, section, context) for a synthetic
         # section exercising every optional block at once (context table row,

@@ -204,16 +204,16 @@ def test_parse_requests_mode_by_delimiter_not_tag():
     assert parsed == {"intro": {"nombre": "Ana"}}
 
 
-def test_render_requests_prose_block_always_blank_even_with_prior_value():
+def test_render_requests_prose_block_always_blank_even_with_current_value():
     schema = _requests_schema()
     statuses = [
         (
             TopicStatus(id="intro", title="Introducción", required=True, exists=False, missing=["(texto)"]),
-            "some stale prior text",
+            "some stale current text",
         ),
     ]
     text = render_requests(schema, statuses)
-    assert "some stale prior text" not in text
+    assert "some stale current text" not in text
 
     delim_match = re.search(r"<<<\s*\n(.*?)\n\s*>>>", text, re.DOTALL)
     assert delim_match is not None

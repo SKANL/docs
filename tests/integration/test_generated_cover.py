@@ -38,11 +38,11 @@ def test_assemble_composes_generated_academic_cover_from_declarative_slots(tmp_p
     assert text.index("Native Cover Report") < text.index("Body marker")
 
 
-def test_assemble_keeps_asset_cover_when_legacy_cover_part_is_declared(tmp_path):
-    legacy_cover = Document()
-    legacy_cover.add_paragraph("LEGACY COVER")
-    legacy_path = tmp_path / "legacy.docx"
-    legacy_cover.save(legacy_path)
+def test_assemble_keeps_asset_cover_when_current_cover_part_is_declared(tmp_path):
+    current_cover = Document()
+    current_cover.add_paragraph("CURRENT COVER")
+    current_path = tmp_path / "current.docx"
+    current_cover.save(current_path)
     body = Document()
     body.add_paragraph("Body marker")
     body_path = tmp_path / "body.docx"
@@ -53,12 +53,12 @@ def test_assemble_keeps_asset_cover_when_legacy_cover_part_is_declared(tmp_path)
         {"structure": [{"type": "cover_from_asset", "asset": "cover"}, {"type": "sections"}]},
         body_path,
         output,
-        cover_asset_path=legacy_path,
+        cover_asset_path=current_path,
         embed_front_paths=[],
         embed_back_paths=[],
     )
 
-    assert "LEGACY COVER" in "\n".join(p.text for p in Document(output).paragraphs)
+    assert "CURRENT COVER" in "\n".join(p.text for p in Document(output).paragraphs)
 
 
 def test_custom_cover_applies_content_page_visual_and_layout_contract(tmp_path):

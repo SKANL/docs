@@ -21,7 +21,7 @@ from docs.cli.main import app
 # `python -m docs.cli.main --help` and click introspection on main branch
 # tip caccb92, after PR2 merged).
 _EXPECTED_FLAT_COMMANDS = {
-    "doctor", "pipeline", "verify", "history", "stamp",
+    "doctor", "stamp",
     # `guide` added PR10 of agent-agnostic-real-world-usability (item B,
     # agent contract) -- deliberate surface growth, not drift.
     "guide",
@@ -40,7 +40,6 @@ _EXPECTED_FLAT_COMMANDS = {
     "format-audit-docx", "apply-corrections", "stamp-section",
 }
 _EXPECTED_GROUPS = {
-    "v2": {"create", "release", "status", "build", "verify", "plan", "inspect", "diff", "package", "publish", "ingest", "prepare", "baseline"},
     "source": {"ingest"},
     "document": {"create", "release", "status", "build", "verify", "plan", "inspect", "diff", "package", "publish", "ingest", "prepare", "baseline"},
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
@@ -50,10 +49,10 @@ _EXPECTED_GROUPS = {
     # `init` added PR2 of agent-agnostic-real-world-usability (item A,
     # workspace config + bootstrap); `status` added PR9 (item I, resumable
     # status summary); `revise` added PR4 of harness-generality-and-revision
-    # (item B, `doc revise` semantic-edit loop); `mark-final` added PR6 of
+    # (item B, `doc revise` semantic-edit loop); `document publish` added PR6 of
     # harness-generality-and-revision (item F, lifecycle) -- deliberate
     # surface growth, not drift.
-    "doc": {"current", "delete", "init", "list", "mark-final", "new", "rename", "revise", "show", "status", "use"},
+    "doc": {"current", "delete", "init", "list", "new", "rename", "revise", "show", "status", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
 }
@@ -81,7 +80,7 @@ def test_commands_package_splits_by_concern():
     def _names(sub_app: typer.Typer) -> set[str]:
         return set(typer.main.get_command(sub_app).commands.keys())
 
-    assert _names(core_app) == {"doctor", "pipeline", "verify", "history", "stamp", "guide", "explain"}
+    assert _names(core_app) == {"doctor", "stamp", "guide", "explain"}
     assert _names(collection_app) == {
         "collect-sources", "build-rules", "review-rules",
         "collect-issues", "collect-code-evidence", "build-ledger",
@@ -95,7 +94,7 @@ def test_commands_package_splits_by_concern():
     }
     assert _names(template_app) == {"list", "show", "init", "create", "validate", "use"}
     assert _names(doc_app) == {
-        "current", "delete", "init", "list", "mark-final", "new", "rename", "revise", "show", "status", "use",
+        "current", "delete", "init", "list", "new", "rename", "revise", "show", "status", "use",
     }
     assert _names(asset_app) == {"add", "list", "rm"}
     assert _names(context_app) == {"elicit", "ingest", "rm", "set", "show", "status"}

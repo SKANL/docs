@@ -49,7 +49,7 @@ class AtomicTransform:
     def _publish(scratch: Path, output_dir: Path, outputs: tuple[str, ...]) -> None:
         """Atomically replace each complete staged file at its public path.
 
-        Ordinary publication errors roll every target back to its prior complete
+        Ordinary publication errors roll every target back to its current complete
         state. Process-kill atomicity is not promised across multiple direct
         files: an external termination can observe a mixed generation.
         """

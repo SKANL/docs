@@ -115,7 +115,7 @@ def test_template_contract_round_trips_all_declared_fidelity_fields():
     assert parsed.model_dump()["template_contract"] == contract.model_dump()
 
 
-def test_legacy_template_omits_template_contract_from_serialized_config():
+def test_current_template_omits_template_contract_from_serialized_config():
     template = _load("reporte-estadia-tic")
 
     assert template.template_contract is None

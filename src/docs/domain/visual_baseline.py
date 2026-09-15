@@ -85,4 +85,3 @@ def compare_preview_baseline(
             )
         )
     return findings
-

@@ -10,7 +10,7 @@ from docs.infrastructure.persistence.json_repository import (
     JsonDocumentRepository,
 )
 
-LEGACY_TEMPLATES = Path(__file__).resolve().parents[1] / "fixtures" / "templates"
+CURRENT_TEMPLATES = Path(__file__).resolve().parents[1] / "fixtures" / "templates"
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def repo(tmp_path: Path) -> JsonDocumentRepository:
     templates = tmp_path / "templates"
     templates.mkdir()
     for name in ("reporte-estadia-tic", "documento-generico"):
-        shutil.copy(LEGACY_TEMPLATES / f"{name}.json", templates / f"{name}.json")
+        shutil.copy(CURRENT_TEMPLATES / f"{name}.json", templates / f"{name}.json")
     ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=templates)
     return JsonDocumentRepository(ws)
 
@@ -36,7 +36,7 @@ def test_register_sets_active_and_sorts(repo):
     assert registry.active == "alpha"
 
 
-def test_registry_file_format_matches_legacy(repo):
+def test_registry_file_format_matches_current(repo):
     repo.register(DocumentSummary(id="alpha", title="A", template="documento-generico", created_at="t"))
     text = repo.workspace.registry_path.read_text(encoding="utf-8")
     assert text.startswith("{\n  \"active\": \"alpha\",")  # sort_keys + indent 2

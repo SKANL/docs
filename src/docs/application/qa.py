@@ -40,7 +40,7 @@ class QaService:
     ) -> tuple[Path, ReviewResult]:
         """Return structured rendered QA findings as well as durable evidence.
 
-        qa_docx keeps its Path-returning compatibility API; staged review uses
+        qa_docx keeps its Path-returning native API; staged review uses
         these findings directly rather than parsing Markdown or dropping warnings.
         """
         if not docx_path.exists():

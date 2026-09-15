@@ -22,7 +22,7 @@ INTAKE_REPORT_NAME = "intake-report.md"
 # never conflated with a genuine user `_`-prefixed file. `intake-report.md`
 # (item G, PR8) joins this set too -- it is NOT `_`-prefixed (deliberately
 # discoverable via plain `ls`, design.md ADR-G/AGENTS.md item B), so it must
-# be named here explicitly or a rescan would re-ingest its own prior report.
+# be named here explicitly or a rescan would re-ingest its own current report.
 CLASSIFICATION_QUEUE_NAME = "_classification-queue.json"
 PLACEMENT_QUEUE_NAME = "_placement-queue.json"
 

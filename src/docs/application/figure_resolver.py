@@ -34,7 +34,7 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     lives here in `application/` -- never in `domain/`, which stays pure.
 
     Absent/malformed `figure-bindings.json` fails open to an empty resolver,
-    same pattern as `IngestService.read_prior_confirmed_roles`. A binding is
+    same pattern as `IngestService.read_current_confirmed_roles`. A binding is
     admitted only if BOTH hold: the resolved file exists under
     `assets_dir/figures/`, and the catalog row has non-null
     `width_px`/`height_px` (proof the image parsed cleanly at ingest -- the
@@ -68,7 +68,7 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     for label, catalog_id in bindings.items():
         row = catalog_by_id.get(catalog_id)
         if row is None:
-            row = _legacy_asset_row(catalog_id, assets_dir)
+            row = _current_asset_row(catalog_id, assets_dir)
             if row is not None:
                 resolved[label] = BoundFigure(
                     label=label,
@@ -121,8 +121,8 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     return resolved
 
 
-def _legacy_asset_row(catalog_id: str, assets_dir: Path) -> dict[str, Any] | None:
-    """Recover a valid legacy PNG when an older catalog was never generated."""
+def _current_asset_row(catalog_id: str, assets_dir: Path) -> dict[str, Any] | None:
+    """Recover a valid current PNG when an older catalog was never generated."""
     if not catalog_id.startswith("fig-"):
         return None
     figures_dir = assets_dir / "figures"

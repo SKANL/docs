@@ -43,4 +43,3 @@ def test_visual_baseline_reports_layout_change(tmp_path: Path):
     assert findings[0].code == "visual.baseline_changed"
     assert findings[0].page == 1
     assert findings[0].similarity is not None
-

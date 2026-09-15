@@ -401,7 +401,7 @@ def test_generated_cover_materializes_theme_and_variant_in_html(tmp_path, servic
     assert first.read_bytes() == second.read_bytes()
 
 
-def test_plain_html_preserves_legacy_output_without_theme(tmp_path):
+def test_plain_html_preserves_current_output_without_theme(tmp_path):
     class Runner:
         def run(self, args, **kwargs):
             Path(args[-1]).write_text("<html><head></head><body>Original</body></html>", encoding="utf-8")
@@ -431,4 +431,4 @@ def test_generated_cover_gets_layout_without_visual_theme():
     css = visual_theme_css({"cover": {"mode": "generated", "variant": "technical"}})
     assert ".cover--technical" in css and "border-left" in css
     assert "#0F766E" in css
-    assert "body {" not in css  # Cover opt-in does not restyle legacy body text.
+    assert "body {" not in css  # Cover opt-in does not restyle current body text.

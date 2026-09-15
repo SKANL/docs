@@ -15,7 +15,7 @@ from docs.domain.rules import review_rules
 
 
 class DocumentVerificationService:
-    """Application service for the legacy ``verify_all`` behavior."""
+    """Application service for the current ``verify_all`` behavior."""
 
     def __init__(self, review_service: ReviewService, evidence_repository: EvidenceRepository,
                  format_audit_service: FormatAuditService, qa_service: QaService) -> None:

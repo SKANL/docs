@@ -246,13 +246,13 @@ class DoctorService:
         )
 
     def _stale_finals_check(self, config: dict[str, Any]) -> Check:
-        """`output/final/` is the folder you deliver FROM.
+        """`output/published/` is the folder you deliver FROM.
 
         Same hazard as `_stale_drafts_check` and a worse blast radius, which
         is why checking only `draft/` guarded the cheaper half. A real
         workspace held five files here, three obsolete. One case is sharper
         than a stale name: a `*-draft.docx` inside `final/` is a copy
-        mistake, never an outdated configuration -- `doc mark-final` promotes
+        mistake, never an outdated configuration -- `docs document publish` promotes
         a build INTO this directory, so a draft landing here was moved by
         hand.
 
@@ -271,7 +271,7 @@ class DoctorService:
                 "stale_finals",
                 False,
                 f"Hay borrador(es) dentro de {final_dir}: {', '.join(drafts)}. "
-                f"`doc mark-final` promueve la build a esta carpeta; un "
+                f"`docs document publish` promueve la build a esta carpeta; un "
                 f"`-draft.docx` acá se copió a mano y no debería entregarse.",
                 required=False,
             )

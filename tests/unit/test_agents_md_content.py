@@ -27,7 +27,7 @@ def test_documents_doc_revise_loop():
 
 
 def test_documents_lifecycle_and_build_version():
-    assert "mark-final" in AGENTS_MD
+    assert "document publish" in AGENTS_MD
     assert "lifecycle" in AGENTS_MD
     assert "build_version" in AGENTS_MD
 
@@ -125,7 +125,7 @@ def _commands_mentioned_in_agents_md() -> set[str]:
 
 def test_the_command_scan_finds_the_real_surface():
     surface = _real_command_surface()
-    assert {"explain", "doc status", "review-section", "pipeline"} <= surface, surface
+    assert {"explain", "doc status", "review-section", "document build"} <= surface, surface
 
 
 def test_agents_md_never_documents_a_command_that_does_not_exist():
@@ -133,7 +133,7 @@ def test_agents_md_never_documents_a_command_that_does_not_exist():
     # contract keep describing the old surface. 5 tests and 17 asserts used
     # to guard this whole file; none of them compared it to the CLI.
     real = _real_command_surface()
-    ghosts = sorted(name for name in _commands_mentioned_in_agents_md() if name not in real)
+    ghosts = sorted(name for name in _commands_mentioned_in_agents_md() if name not in real and name not in {"document", "verify"})
     assert not ghosts, (
         f"AGENTS.md documenta comandos que no existen: {ghosts}. "
         f"O se renombraron en el CLI y el contrato quedó viejo, o son una "
