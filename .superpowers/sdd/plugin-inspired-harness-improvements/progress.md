@@ -206,3 +206,8 @@ source-only by design.
   extract its service-host dependency for stricter hexagonal isolation.
 - Focused architecture and pipeline tests: 100 passed, 3 skipped; ruff,
   mypy, and diff checks passed.
+## Stage evidence closure: complete
+- Added an integration contract journey that executes every `FULL_STAGE_IDS` operation through the native v2 DAG and asserts ordered success, quality-gate completion, and publication.
+- Updated `docs/migration-v2-traceability.json` to point all stage evidence at that executable journey; real external renderer coverage remains separately documented as capability-gated.
+- Corrected architecture documentation to distinguish the v2 `output/v2` publication boundary from the legacy lifecycle snapshot in `output/final`.
+- Focused integration tests: 38 passed; ruff and diff checks passed.

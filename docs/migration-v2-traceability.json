@@ -48,12 +48,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -67,12 +67,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -86,12 +86,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -105,12 +105,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -124,12 +124,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -144,11 +144,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -163,11 +163,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -182,11 +182,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -200,12 +200,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "default integration dependencies report this stage as unsupported"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "unsupported",
-        "test": "tests/integration/test_pipeline_service_v2.py"
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -219,12 +219,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "default integration dependencies report this stage as unsupported"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "unsupported",
-        "test": "tests/integration/test_pipeline_service_v2.py"
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -239,11 +239,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -257,12 +257,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -276,12 +276,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -295,12 +295,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -315,11 +315,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -333,12 +333,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -352,12 +352,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -371,12 +371,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -390,12 +390,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -409,12 +409,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "no executable acceptance assertion in this slice"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "not-observed",
-        "test": null
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -429,11 +429,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -447,12 +447,12 @@
         "source": "src/docs/application/pipeline_service_v2.py:PipelineServiceV2.__init__"
       },
       "executable_evidence": {
-        "status": "not-covered",
-        "reason": "default integration dependencies report this stage as unsupported"
+        "status": "covered",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
-        "status": "unsupported",
-        "test": "tests/integration/test_pipeline_service_v2.py"
+        "status": "succeeded",
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     },
     {
@@ -467,11 +467,11 @@
       },
       "executable_evidence": {
         "status": "covered",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       },
       "observed_outcome": {
         "status": "succeeded",
-        "test": "tests/integration/test_v2_end_to_end.py"
+        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
       }
     }
   ],
