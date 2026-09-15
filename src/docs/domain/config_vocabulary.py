@@ -114,6 +114,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "output_final_dir": {},
         "output_qa_dir": {},
         "visual_baseline_dir": {},
+        "workspace_root": {},
         "prompts_dir": {},
         "rules_manifest": {},
         "runs_dir": {},
