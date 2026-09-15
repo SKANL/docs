@@ -198,3 +198,11 @@ source-only by design.
   filenames as compatibility projections over the native v2 runtime.
 - Verification: focused architecture/CLI/composition suites 190 passed, 3
   skipped; full suite 2429 passed, 5 skipped; ruff and mypy passed; PR CI green.
+
+## Native stage planner naming: complete
+- Renamed LegacyStagePlanner to StageOperationPlanner and removed the stale
+  legacy module name from the active pipeline runtime.
+- The callable contract and ordering remain unchanged; a future slice can
+  extract its service-host dependency for stricter hexagonal isolation.
+- Focused architecture and pipeline tests: 100 passed, 3 skipped; ruff,
+  mypy, and diff checks passed.

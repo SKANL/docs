@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from docs.application.legacy_stage_planner import LegacyStagePlanner
 from docs.application.pipeline import PipelineService
 from docs.application.pipeline_metadata import PipelineMetadataService
+from docs.application.stage_operation_planner import StageOperationPlanner
 
 
 class _FakeEvidenceRepository:
@@ -118,7 +118,7 @@ def test_build_section_delegates_to_section_service():
     assert service.build_section("doc", "template", "intro", {"paths": {}}) == expected
 
 
-def test_stage_callables_delegates_to_legacy_stage_planner():
+def test_stage_callables_delegates_to_stage_operation_planner():
     service = _service(_FakeEvidenceRepository())
     expected = {"doctor": lambda: (True, "ok")}
 
@@ -192,12 +192,12 @@ def test_run_pipeline_honors_application_pipeline_stage_plan_patch(tmp_path, mon
     assert summary["stages"] == []
 
 
-def test_legacy_stage_planner_preserves_stage_callable_order():
+def test_stage_operation_planner_preserves_stage_callable_order():
     service = _service(_FakeEvidenceRepository())
     template = type("Template", (), {"sections": []})()
     renderer = type("Renderer", (), {})()
 
-    callables = LegacyStagePlanner().plan(service, "doc", template, {}, Path("repo"), False, renderer)
+    callables = StageOperationPlanner().plan(service, "doc", template, {}, Path("repo"), False, renderer)
 
     assert list(callables) == [
         "doctor",

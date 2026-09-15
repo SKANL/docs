@@ -1,4 +1,4 @@
-# src/docs/application/legacy_stage_planner.py
+# src/docs/application/stage_operation_planner.py
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -15,8 +15,8 @@ if TYPE_CHECKING:
     from docs.application.pipeline import PipelineService
 
 
-class LegacyStagePlanner:
-    """Build the legacy pipeline's ordered stage callable map."""
+class StageOperationPlanner:
+    """Build the pipeline's ordered stage callable map."""
 
     def plan(
         self,
@@ -265,4 +265,5 @@ class LegacyStagePlanner:
             "build-context-index": stage_build_context_index,
             "qa-docx": stage_qa_docx,
         }
+
 

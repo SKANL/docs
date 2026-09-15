@@ -14,12 +14,12 @@ from docs.application.flat_pipeline_v2 import FlatPipelineV2Adapter
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.ingest import IngestService
-from docs.application.legacy_stage_planner import LegacyStagePlanner
 from docs.application.pipeline_metadata import PipelineMetadataService
 from docs.application.qa import QaService
 from docs.application.review import ReviewService
 from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
+from docs.application.stage_operation_planner import StageOperationPlanner
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.cover import cover_provenance
 from docs.domain.models.template import Template
@@ -56,7 +56,7 @@ class PipelineService:
         section_service: SectionService | None = None,
         run_recorder: RunRecorderService | None = None,
         metadata_service: PipelineMetadataService | None = None,
-        stage_planner: LegacyStagePlanner | None = None,
+        stage_planner: StageOperationPlanner | None = None,
     ) -> None:
         self.doctor_service = doctor_service
         self.evidence_service = evidence_service
@@ -78,7 +78,7 @@ class PipelineService:
         self.run_recorder = run_recorder or RunRecorderService(workspace, source_repository)
         self.run_history = RunHistoryService(workspace)
         self.metadata_service = metadata_service or PipelineMetadataService(workspace)
-        self.stage_planner = stage_planner or LegacyStagePlanner()
+        self.stage_planner = stage_planner or StageOperationPlanner()
 
     def log_run(
         self, doc_id: str, config: dict[str, Any], repo_root: Path, command: str, payload: dict[str, Any]
