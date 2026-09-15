@@ -242,3 +242,33 @@ def test_pdf_invalid_embedded_image_is_reported_without_losing_page_checks(tmp_p
     assert any(f.code == "render.image.invalid" and f.page == 1 for f in report.findings)
     assert any(f.code == "render.page.valid" for f in report.findings)
     assert not report.passed
+
+
+def test_pdf_preview_baseline_reports_changed_missing_and_extra_pages(tmp_path):
+    import pypdfium2 as pdfium
+
+    pdf = tmp_path / "report.pdf"
+    with pdfium.PdfDocument.new() as document:
+        first = document.new_page(612, 792)
+        second = document.new_page(612, 792)
+        document.save(pdf)
+        first.close()
+        second.close()
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    Image.new("RGB", (1275, 1650), "black").save(baseline / "report-p01.png")
+    Image.new("RGB", (1275, 1650), "white").save(baseline / "report-p03.png")
+
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(
+        pdf,
+        RenderProfile(
+            format="pdf",
+            baseline_dir=baseline,
+            minimum_similarity=1.0,
+        ),
+        tmp_path / "previews",
+    )
+
+    assert {"visual.baseline_changed", "visual.baseline_missing", "visual.baseline_extra_page"} <= {
+        finding.code for finding in report.findings
+    }

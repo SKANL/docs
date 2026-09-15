@@ -6,6 +6,7 @@ from typing import Any
 from PIL import Image, ImageChops, UnidentifiedImageError
 
 from docs.domain.artifacts import ArtifactRef, RenderProfile, VerificationFinding, VerificationReport
+from docs.domain.visual_baseline import compare_preview_baseline
 from docs.infrastructure.verification.html_inspection import HtmlInspection
 
 
@@ -27,6 +28,8 @@ class RenderVerificationAdapter:
                 findings.extend(self._verify_html(path, profile, preview_dir))
             else:
                 findings.extend(self._verify_image(path, profile, preview_dir))
+            if suffix != ".docx" and profile.baseline_dir is not None and preview_dir is not None:
+                findings.extend(self._baseline_findings(preview_dir, profile))
         except (OSError, RuntimeError, UnidentifiedImageError, ValueError) as exc:
             findings.append(VerificationFinding("render.open", f"No se pudo abrir {path.name}: {exc}"))
         return VerificationReport(
@@ -154,6 +157,26 @@ class RenderVerificationAdapter:
             elif profile.require_previews:
                 findings.append(VerificationFinding("render.previews.required", "Se requieren previews, pero no se indicó directorio."))
             return findings
+
+    @staticmethod
+    def _baseline_findings(preview_dir: Path, profile: RenderProfile) -> list[VerificationFinding]:
+        assert profile.baseline_dir is not None
+        return [
+            VerificationFinding(
+                finding.code,
+                finding.message,
+                finding.severity,
+                page=finding.page,
+                dimension="visual",
+                evidence={} if finding.similarity is None else {"similarity": finding.similarity},
+            )
+            for finding in compare_preview_baseline(
+                preview_dir,
+                profile.baseline_dir,
+                minimum_similarity=profile.minimum_similarity,
+                strict=profile.baseline_strict,
+            )
+        ]
 
     @staticmethod
     def _dimensions(page: int, width: float, height: float, profile: RenderProfile) -> list[VerificationFinding]:

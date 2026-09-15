@@ -235,3 +235,8 @@ source-only by design.
 - Added actionable catalog entries for all newly emitted `render.*` findings.
 - Focused architecture and issue-code tests: 18 passed; ruff, mypy, and diff checks passed.
 - Full-suite run exposed exactly these two stale expectations; no production failures were observed.
+## Multiformat visual baselines: complete
+- Extended RenderProfile with opt-in baseline directory, similarity threshold, and strictness.
+- Reused the existing domain image-similarity comparator for PDF/HTML previews; verification never updates baselines.
+- Draft reports baseline drift as warnings; strict/release promote drift to blocking findings.
+- Focused baseline/render/review tests: 37 passed; ruff, mypy, and diff checks passed.

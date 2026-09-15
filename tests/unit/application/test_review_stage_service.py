@@ -244,3 +244,36 @@ def test_visual_profile_does_not_treat_false_string_as_permission_for_blank_page
         artifact, {"visual_qa": {"allow_blank_pages": "false"}}, PipelinePolicy(),
     )
     assert not result.ok and "profile" in result.detail.lower()
+
+
+def test_visual_stage_compares_configured_pdf_baseline_without_updating_it(tmp_path):
+    from PIL import Image
+
+    artifact = tmp_path / "document.pdf"
+    _write_blank_pdf(artifact)
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    baseline_page = baseline / "document-p01.png"
+    Image.new("RGB", (1275, 1650), "black").save(baseline_page)
+    original = baseline_page.read_bytes()
+    config = {
+        "paths": {"output_qa_dir": str(tmp_path / "qa")},
+        "visual_qa": {
+            "allow_blank_pages": True,
+            "baseline_dir": str(baseline),
+            "minimum_similarity": 1.0,
+        },
+    }
+
+    draft = _multiformat_service(tmp_path).visual_review(artifact, config, PipelinePolicy())
+    strict = _multiformat_service(tmp_path).visual_review(
+        artifact, config, PipelinePolicy(PipelineMode.strict)
+    )
+    release = _multiformat_service(tmp_path).visual_review(
+        artifact, config, PipelinePolicy(PipelineMode.release)
+    )
+
+    assert draft.ok and "visual.baseline_changed" in draft.detail
+    assert not strict.ok and "visual.baseline_changed" in strict.detail
+    assert not release.ok and "visual.baseline_changed" in release.detail
+    assert baseline_page.read_bytes() == original

@@ -224,6 +224,18 @@ class ReviewStageService:
                 "error", "Invalid visual QA profile: expected_page_size needs two positive finite dimensions.",
                 code="render.profile.invalid", dimension=dimension,
             )]), policy)
+        baseline_dir = settings.get("baseline_dir")
+        minimum_similarity = settings.get("minimum_similarity", 0.75)
+        if baseline_dir is not None and (not isinstance(baseline_dir, str) or not baseline_dir.strip()):
+            return self._outcome(ReviewResult([Issue(
+                "error", "Invalid visual QA profile: baseline_dir must be a nonempty path string.",
+                code="render.profile.invalid", dimension=dimension,
+            )]), policy)
+        if type(minimum_similarity) not in {int, float} or not math.isfinite(minimum_similarity) or not 0 <= minimum_similarity <= 1:
+            return self._outcome(ReviewResult([Issue(
+                "error", "Invalid visual QA profile: minimum_similarity must be between 0 and 1.",
+                code="render.profile.invalid", dimension=dimension,
+            )]), policy)
         preview_root = config.get("paths", {}).get("output_qa_dir") if visual else None
         previews = Path(preview_root) / path.stem / "previews" if preview_root else None
         profile = RenderProfile(
@@ -231,6 +243,10 @@ class ReviewStageService:
             expected_page_size=tuple(expected) if expected is not None else None,
             allow_blank_pages=settings.get("allow_blank_pages", False),
             require_previews=settings.get("require_previews", False),
+            baseline_dir=(path.parent / baseline_dir if baseline_dir is not None and not Path(baseline_dir).is_absolute()
+                          else Path(baseline_dir) if baseline_dir is not None else None),
+            minimum_similarity=float(minimum_similarity),
+            baseline_strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
         )
         try:
             report = self._render_verification.verify(path, profile, previews)

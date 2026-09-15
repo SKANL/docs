@@ -33,6 +33,9 @@ class RenderProfile:
     require_previews: bool = False
     allow_blank_pages: bool = False
     preview_dpi: int = 150
+    baseline_dir: Path | None = None
+    minimum_similarity: float = 0.75
+    baseline_strict: bool = False
 
 
 @dataclass(frozen=True)
