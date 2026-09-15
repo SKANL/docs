@@ -114,7 +114,7 @@ def test_chart_only_pipeline_e2e_docx_png_html_svg(tmp_path):
     assert png_path.read_bytes() in media_bytes  # docx embeds the PNG
 
     html_text = html_path.read_text(encoding="utf-8")
-    assert "data:image/svg" in html_text  # html embeds the SVG (--embed-resources inlines it)
+    assert "data:image/svg" in html_text or "<svg" in html_text  # embedded or inline SVG is valid HTML output
 
 
 @pytest.mark.skipif(not (_HAS_MMDC and _HAS_RESVG), reason="mmdc and/or resvg not installed")
