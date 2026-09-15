@@ -25,6 +25,7 @@ ISSUE_CODE_FAMILIES: dict[str, str] = {
     "evidence": "Respaldo verificable de lo que la sección afirma.",
     "privacy": "Secretos, credenciales o datos sensibles filtrados al texto.",
     "qa": "Auditoría visual del artefacto renderizado (PDF vía LibreOffice).",
+    "render": "Verificación y apertura de artefactos renderizados en formatos compatibles.",
     "reproducibility": "Reproducibilidad determinista de los artefactos generados.",
     "scope": "Delimitación del alcance declarado del documento.",
     "structure": "Existencia y forma de las secciones y sus títulos.",
@@ -134,6 +135,19 @@ ISSUE_CODES: dict[str, IssueCode] = {
     "qa.skipped": IssueCode(
         meaning="No se pudo hacer la auditoría visual porque falta LibreOffice; la de formato sí corrió.",
         fix="Instalá LibreOffice para habilitarla. No bloquea: la auditoría estructural del .docx ya se ejecutó.",
+    ),
+    # --- render ------------------------------------------------------------
+    "render.capability.unavailable": IssueCode(
+        meaning="La verificación de render multiformato no está configurada, por lo que la calidad del artefacto no pudo comprobarse.",
+        fix="Configurá e inyectá el puerto de verificación de render para el formato solicitado y repetí la etapa de revisión.",
+    ),
+    "render.open": IssueCode(
+        meaning="El artefacto renderizado no existe o no pudo abrirse para realizar la verificación solicitada.",
+        fix="Comprobá que el build generó el archivo esperado y que el formato, permisos y contenido permiten abrirlo; luego reconstruí y revisá de nuevo.",
+    ),
+    "render.profile.invalid": IssueCode(
+        meaning="La configuración del perfil de QA visual contiene opciones con tipos o dimensiones inválidas.",
+        fix="Corregí `visual_qa` para usar booleanos en sus opciones y dos dimensiones numéricas positivas en `expected_page_size`, luego repetí la revisión.",
     ),
     # --- reproducibility ---------------------------------------------------
     "reproducibility.failed": IssueCode(

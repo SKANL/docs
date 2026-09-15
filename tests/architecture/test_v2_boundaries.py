@@ -89,19 +89,19 @@ def test_pipeline_kernel_contains_no_nondeterministic_timestamp_calls() -> None:
                 if alias.name == "time":
                     time_module_names.add(alias.asname or "time")
 
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+    for ast_node in ast.walk(tree):
+        if not isinstance(ast_node, ast.Call) or not isinstance(ast_node.func, ast.Attribute):
             continue
-        attribute = node.func.attr
+        attribute = ast_node.func.attr
         if attribute not in nondeterministic_names:
             continue
-        receiver = node.func.value
+        receiver = ast_node.func.value
         if isinstance(receiver, ast.Name) and (
             receiver.id in {"datetime", "date"} or receiver.id in time_module_names
         ):
-            violations.append(f"{_display(node)} calls {receiver.id}.{attribute}()")
+            violations.append(f"{_display(ast_node)} calls {receiver.id}.{attribute}()")
         elif attribute in {"now", "utcnow", "today"}:
-            violations.append(f"{_display(node)} calls nondeterministic .{attribute}()")
+            violations.append(f"{_display(ast_node)} calls nondeterministic .{attribute}()")
 
     assert not violations, "pipeline_kernel must not read wall-clock time:\n" + "\n".join(violations)
 
@@ -182,8 +182,63 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     assert '"package-release": stage_provider.operation("package_release") or _native_package_release' in source
     assert '"evidence-review": _review_stage_operation(' in source
     assert '"consistency-review": _review_stage_operation(' in source
-    assert '"visual_review": _callable_stage("visual_review") or (' in source
-    assert 'lambda: _review_stage("visual-review")' in source
+    review_stage = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "_review_stage"
+    )
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "run_stage"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "review_stage_service"
+        for node in ast.walk(review_stage)
+    )
+
+    explicit_stages = next(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == "explicit_stages"
+        and isinstance(node.value, ast.Dict)
+    )
+    visual_stage = next(
+        value
+        for key, value in zip(explicit_stages.keys, explicit_stages.values, strict=True)
+        if isinstance(key, ast.Constant) and key.value == "visual_review"
+    )
+    assert isinstance(visual_stage, ast.IfExp)
+    assert any(
+        isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Name)
+        and node.left.id == "output_format"
+        and len(node.ops) == len(node.comparators) == 1
+        and isinstance(node.ops[0], ast.NotEq)
+        and isinstance(node.comparators[0], ast.Constant)
+        and node.comparators[0].value == "docx"
+        for node in ast.walk(visual_stage.test)
+    )
+    assert isinstance(visual_stage.body, ast.Lambda)
+    assert isinstance(visual_stage.body.body, ast.Call)
+    assert isinstance(visual_stage.body.body.func, ast.Name)
+    assert visual_stage.body.body.func.id == "_review_stage"
+    assert isinstance(visual_stage.body.body.args[0], ast.Constant)
+    assert visual_stage.body.body.args[0].value == "visual-review"
+    assert any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_callable_stage"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == "visual_review"
+        for node in ast.walk(visual_stage.orelse)
+    )
+    assert any(
+        isinstance(node, ast.Name) and node.id == "_native_visual_review"
+        for node in ast.walk(visual_stage.orelse)
+    )
 
 
 def test_workspace_bridge_keeps_audit_and_verify_fallbacks_callable() -> None:

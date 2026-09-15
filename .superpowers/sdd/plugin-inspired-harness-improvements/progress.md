@@ -230,3 +230,8 @@ source-only by design.
 - Added recovery-before-next-run coverage for a prepared interrupted transaction.
 - Documented the honest guarantee: multi-file publication is sequential but journaled, durable, idempotent, and never publishes an unvalidated scratch output.
 - Focused atomic-transform tests: 34 passed; ruff, mypy, and diff checks passed.
+## Regression closure after multiformat QA: complete
+- Updated the architecture guard to inspect the V2 review-stage AST instead of depending on formatting-sensitive source text.
+- Added actionable catalog entries for all newly emitted `render.*` findings.
+- Focused architecture and issue-code tests: 18 passed; ruff, mypy, and diff checks passed.
+- Full-suite run exposed exactly these two stale expectations; no production failures were observed.
