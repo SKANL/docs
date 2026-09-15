@@ -246,3 +246,8 @@ source-only by design.
 - Routed DOCX visual review through structured rendered QA, switched PDF reproducibility to semantic page/text/raster comparison, and stabilized preview names while removing stale previews.
 - Added catalog entries for the new render and visual findings after the full suite exposed undocumented diagnostics.
 - Focused regression tests: 184 passed, 2 skipped; issue-code tests: 9 passed; ruff, mypy, and diff checks passed. A full suite run before the catalog fix was 2489 passed, 1 failed, 5 skipped; the failure was limited to the newly emitted undocumented codes and was corrected.
+## Declarative cover contract closure: complete
+- Canonical cover slots now resolve standard `document.*`, `author.name`, `organization.name`, `course.name`, `advisor.name`, `date`, and `custom.*` paths with deterministic legacy aliases; explicit `content` values take precedence over legacy `slots`.
+- Added pre-render findings for missing/zero-dimension logo and hero assets and wired them into the `compose-cover` stage so strict/release policies can block invalid covers.
+- Valid configured cover images are embedded into DOCX and projected into accessible HTML image elements with alt text.
+- Added cover contract documentation and regression tests; focused cover/stage/render suite: 49 passed.

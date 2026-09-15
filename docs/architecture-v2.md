@@ -87,21 +87,22 @@ package-release
 publish-draft
 ```
 
-The published execution report preserves that plan sequence. `generate-visuals`
-and `compose-cover` are optional: when their adapters are unavailable, they
-remain visible as `unsupported` while satisfying their completion contracts so
-`build-docx` can proceed. A failed implemented visual stage instead blocks its
-dependent cover and document build. `package-release` is likewise reported as
-`unsupported` when its adapter is unavailable.
+The published execution report preserves that plan sequence. The composition
+root registers native handlers for visual generation, declarative cover
+validation/composition, multiformat rendering, review, provenance, packaging,
+and publication. A document without visual specs or a cover reports an
+intentional `skipped` stage; it is not an unsupported implementation. A
+configured cover is checked for unresolved slots and image assets before the
+renderer runs, and strict/release policies promote those findings to blocking
+errors. A failed visual stage blocks its dependent cover and document build.
 
 The kernel validates stage names, artifact contracts, dependency availability, duplicate producers, and cycles before execution. Each stage produces a named `<stage>-complete` contract in the current bridge. Execution is fail-fast for a failed required stage. Optional stages can report visible `skipped` or `unsupported` outcomes; policy decides whether those warnings are acceptable.
 
-The current workspace bridge wires the supported adapters through
+The current workspace bridge wires all public stage adapters through
 `StageProviderV2`, the single composition-root boundary for resolving stage
-services. Declared stages without a bridge handler are explicit no-op contract
-stages and are reported as `unsupported`; they are not silently claimed as
-fully implemented. This is the current runtime boundary and the migration
-seam for replacing compatibility services with native stage implementations.
+services. Tests may intentionally construct a partial service map to exercise
+dependency failure behavior, but the CLI composition root does not rely on
+that partial map for a normal document build.
 
 ## Policies and capabilities
 

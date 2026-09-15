@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from docs.domain.cover import CoverSpec, CoverVariant, resolve_cover_slots
+from docs.domain.cover import CoverSpec, CoverVariant, _cover_asset_path, resolve_cover_slots
 
 
 def _clear_initial_paragraph(document: Any) -> None:
@@ -209,6 +209,22 @@ def _compose_visual(document: Any, slots: dict[str, str], alignment: Any, accent
             )
 
 
+def _add_cover_images(document: Any, spec: CoverSpec, config: dict[str, Any], *, inches: Any) -> None:
+    """Embed declared cover images as editable DOCX relationships."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    for name in ("hero", "logo"):
+        path = _cover_asset_path(spec.visual.get(name), config)
+        if path is None or not path.is_file():
+            continue
+        paragraph = document.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        width = spec.layout.get(f"{name}_width_in", 6.25 if name == "hero" else 1.35)
+        if type(width) not in {int, float} or float(width) <= 0:
+            width = 6.25 if name == "hero" else 1.35
+        paragraph.add_run().add_picture(str(path), width=inches(float(width)))
+
+
 def compose_generated_cover(document: Any, spec: CoverSpec, config: dict[str, Any]) -> None:
     """Append one deterministic cover page using only python-docx primitives."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -234,6 +250,7 @@ def compose_generated_cover(document: Any, spec: CoverSpec, config: dict[str, An
     body_color = _valid_color(spec.visual.get("body_color"), "334155")
     _set_page_background(document, _valid_color(spec.page.get("background"), "F4F7FA"))
     _set_page_options(document, spec.page, cm=Cm, inches=Inches)
+    _add_cover_images(document, spec, config, inches=Inches)
 
     if variant is CoverVariant.INSTITUTIONAL:
         _compose_institutional(document, slots, alignment, accent)

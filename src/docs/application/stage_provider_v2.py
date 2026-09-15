@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from docs.domain.cover import CoverMode, resolve_cover_spec
+from docs.domain.cover import CoverMode, cover_asset_findings, cover_findings, resolve_cover_spec
 from docs.domain.pipeline_kernel import StageResult
 
 
@@ -67,9 +67,8 @@ class StageProviderV2:
         spec = resolve_cover_spec(dict(self._config))
         if spec is None or spec.mode is not CoverMode.GENERATED:
             return StageResult.skipped("compose-cover")
-        if self._output_format != "docx":
-            return True, f"cover composition delegated to {self._output_format} renderer"
-        return True, "cover composition delegated to native DOCX compositor"
+        findings = [*cover_findings(spec, dict(self._config)), *cover_asset_findings(spec, dict(self._config))]
+        return StageResult("compose-cover", True, warnings=tuple(findings))
 
     def _package_release(self) -> tuple[bool, str] | StageResult:
         service = self._services.get("package_release_service")

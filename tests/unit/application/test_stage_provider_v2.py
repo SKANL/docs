@@ -53,6 +53,32 @@ def test_compose_cover_operation_is_owned_by_the_application_provider():
     assert result.outcome == "skipped"
 
 
+def test_generated_cover_stage_validates_slots_and_assets_before_rendering(tmp_path):
+    provider = StageProviderV2(
+        {},
+        config={
+            "title": "Report",
+            "paths": {"assets_dir": str(tmp_path)},
+            "cover": {
+                "mode": "generated",
+                "content": {"title": "{{document.title}}", "author": "{{author.name}}"},
+                "visual": {"hero": "missing.png"},
+            },
+        },
+        output_format="docx",
+    )
+
+    result = provider.operation("compose_cover")()
+
+    assert isinstance(result, StageResult)
+    assert result.stage == "compose-cover"
+    assert result.outcome == "succeeded"
+    assert result.warnings == (
+        "cover.missing_slot: author",
+        "cover.missing_asset: hero",
+    )
+
+
 def test_package_release_operation_is_owned_by_the_application_provider():
     calls = []
 
