@@ -1,0 +1,34 @@
+{
+  "title": "Generated Journey Cover",
+  "document": {
+    "sections": [
+      {
+        "id": "brief-md-journey",
+        "order": 1,
+        "title": "Journey body"
+      }
+    ],
+    "cover": {
+      "mode": "generated",
+      "variant": "academic",
+      "content": {
+        "institution": "Harness Academy",
+        "title": "{{title}}",
+        "author": "Ada Lovelace"
+      },
+      "visual": {
+        "accent": "0F766E",
+        "secondary_accent": "D97706"
+      }
+    }
+  },
+  "source_markdown": "# Journey body\n\nJourney body with a generated visual.\n\n[[figure:journey-chart]] Revenue evidence.\n",
+  "visual_specs": [
+    {
+      "label": "journey-chart",
+      "type": "chart",
+      "source": "{\"kind\": \"bar\", \"labels\": [\"Q1\", \"Q2\"], \"series\": [{\"label\": \"Revenue\", \"values\": [1, 2]}]}",
+      "caption": "Journey revenue chart"
+    }
+  ]
+}

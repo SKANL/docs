@@ -7,10 +7,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from docs.infrastructure.tools.resolution import (
-    libreoffice_locations,
-    resolve_executable,
+from docs.domain.process_policy import (
+    DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+    LIBREOFFICE_CONVERSION_TIMEOUT_SECONDS,
 )
+from docs.infrastructure.tools.resolution import libreoffice_locations, resolve_executable
 
 
 def resolve_libreoffice_executable(paths: dict[str, Any]) -> str | None:
@@ -43,22 +44,29 @@ class LibreOfficeQaAdapter:
         expected_pdf = output_dir / f"{docx_path.stem}.pdf"
         if expected_pdf.exists():
             expected_pdf.unlink()
-        with tempfile.TemporaryDirectory(prefix="docs_lo_profile_") as profile:
-            subprocess.run(
-                [
-                    libreoffice,
-                    f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
-                    "--headless",
-                    "--convert-to",
-                    "pdf",
-                    "--outdir",
-                    str(output_dir),
-                    str(docx_path),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+        try:
+            with tempfile.TemporaryDirectory(prefix="docs_lo_profile_") as profile:
+                subprocess.run(
+                    [
+                        libreoffice,
+                        f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        "--outdir",
+                        str(output_dir),
+                        str(docx_path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=LIBREOFFICE_CONVERSION_TIMEOUT_SECONDS,
+                )
+        except Exception:
+            # LibreOffice may leave a non-empty partial PDF when it is
+            # interrupted.  Never let that file look like a valid QA result.
+            expected_pdf.unlink(missing_ok=True)
+            raise
         if not expected_pdf.exists() or expected_pdf.stat().st_size == 0:
             raise RuntimeError(f"LibreOffice no produjo el PDF esperado: {expected_pdf}")
         return expected_pdf
@@ -80,15 +88,36 @@ class LibreOfficeQaAdapter:
             # check=False on purpose: a failing audit script's stderr is
             # captured into the per-script report below, so a non-zero exit
             # is DATA here, not an exception.
-            proc = subprocess.run(
-                [sys.executable, str(script_path), str(docx_path.resolve())],
-                cwd=output_dir,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                check=False,
-            )
             out_path = output_dir / f"documents-{script.removesuffix('.py')}.txt"
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(script_path), str(docx_path.resolve())],
+                    cwd=output_dir,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                    timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+                )
+            except subprocess.TimeoutExpired as exc:
+                stdout = _timeout_stream(exc.output)
+                stderr = _timeout_stream(exc.stderr)
+                message = f"audit timed out after {DEFAULT_SUBPROCESS_TIMEOUT_SECONDS} seconds"
+                if stderr:
+                    message = f"{message}: {stderr}"
+                out_path.write_text(
+                    stdout + ("\nSTDERR:\n" + message if message else ""), encoding="utf-8"
+                )
+                results.append(
+                    {
+                        "name": script,
+                        "ok": False,
+                        "stdout": stdout[-2000:],
+                        "stderr": message[-2000:],
+                        "report": out_path.resolve().as_posix(),
+                    }
+                )
+                continue
             out_path.write_text(
                 (proc.stdout or "") + ("\nSTDERR:\n" + proc.stderr if proc.stderr else ""), encoding="utf-8"
             )
@@ -102,3 +131,9 @@ class LibreOfficeQaAdapter:
                 }
             )
         return results
+
+
+def _timeout_stream(stream: str | bytes | None) -> str:
+    if isinstance(stream, bytes):
+        return stream.decode(encoding="utf-8", errors="replace")
+    return stream or ""

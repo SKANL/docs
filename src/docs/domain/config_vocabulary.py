@@ -33,6 +33,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "citation_style": {},
     },
     "collect_facts_seed": {},
+    "context": {},
     "cover": {},
     "cross_consistency": {
         "contested_stack_terms": {},
@@ -72,6 +73,8 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "page_size": {},
     },
     "ledger_seed": {},
+    "lang": {},
+    "language": {},
     "normative": {
         "excluded_front_matter": {},
         "first_person_patterns": {},
@@ -85,6 +88,14 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "draft_name": {},
         "format": {},
         "html_name": {},
+    },
+    "visual_qa": {
+        "allow_blank_pages": {},
+        "expected_page_size": {},
+        "preview_stem": {},
+        "require_previews": {},
+        "baseline_dir": {},
+        "minimum_similarity": {},
     },
     "paths": {
         "assets_dir": {},
@@ -104,6 +115,8 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "output_draft_dir": {},
         "output_final_dir": {},
         "output_qa_dir": {},
+        "visual_baseline_dir": {},
+        "workspace_root": {},
         "prompts_dir": {},
         "rules_manifest": {},
         "runs_dir": {},
@@ -122,6 +135,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "sensitive_context_fields": {},
     },
     "project": {
+        "language": {},
         "scope_policy": {},
     },
     "section_contracts": {},

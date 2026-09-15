@@ -12,6 +12,7 @@ import pytest
 
 from docs.application.html_render import HtmlRendererAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 
 pytestmark = pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
 
@@ -36,7 +37,7 @@ def _write_sections(sections_dir):
 def test_build_produces_byte_identical_html_across_two_independent_runs(tmp_path):
     sections_dir = tmp_path / "sections"
     _write_sections(sections_dir)
-    service = HtmlRendererAdapter(SystemToolResolverAdapter())
+    service = HtmlRendererAdapter(SystemToolResolverAdapter(), SubprocessPandocRunner())
 
     first = service.build("doc-1", _config(tmp_path, sections_dir), output=tmp_path / "first.html")
     second = service.build("doc-1", _config(tmp_path, sections_dir), output=tmp_path / "second.html")
@@ -50,7 +51,7 @@ def test_build_is_byte_identical_across_a_real_wall_clock_gap(tmp_path):
     # for docx) this uses a real sleep rather than monkeypatching `time.time`.
     sections_dir = tmp_path / "sections"
     _write_sections(sections_dir)
-    service = HtmlRendererAdapter(SystemToolResolverAdapter())
+    service = HtmlRendererAdapter(SystemToolResolverAdapter(), SubprocessPandocRunner())
 
     first = service.build("doc-1", _config(tmp_path, sections_dir), output=tmp_path / "first.html")
     time_module.sleep(2.1)

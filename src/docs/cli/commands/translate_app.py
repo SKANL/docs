@@ -34,7 +34,10 @@ def translate(
     Escribe siempre un documento completo. Los bloques que aún no tienen
     traducción quedan en el idioma original, se cuentan en la salida y se
     listan en el archivo `.pending.json` que acompaña al resultado: rellená
-    ese archivo y volvé a ejecutar el mismo comando."""
+    ese archivo y volvé a ejecutar el mismo comando.
+
+    El idioma destino se indica con la opción --to.
+    """
     deps, _doc = _ctx(ctx)
 
     if not source.is_file():

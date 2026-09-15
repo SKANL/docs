@@ -40,7 +40,7 @@ def review_rules(ctx: typer.Context, strict: bool = typer.Option(False, "--stric
     Sale con código 1 si falta o no cumple. `--strict` endurece el criterio."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
+    manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
     result = domain_review_rules(resolved.template, manifest_exists, manifest_size, strict=strict)
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
@@ -72,6 +72,6 @@ def build_ledger(ctx: typer.Context) -> None:
     resolved = deps.resolve_context(doc)
     path = Path(resolved.config["paths"]["fact_ledger"])
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = deps.pipeline.context_confirmed_lines(resolved.doc_id, resolved.template)
+    lines = deps.context.confirmed_lines(resolved.doc_id, resolved.template)
     path.write_text(deps.evidence.render_fact_ledger(resolved.config, lines), encoding="utf-8")
     print(path)

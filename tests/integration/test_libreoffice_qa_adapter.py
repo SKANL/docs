@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -105,3 +106,33 @@ def test_run_documents_audits_runs_a_real_configured_script_and_captures_output(
     assert heading_result["ok"] is True
     assert "ok from heading_audit" in heading_result["stdout"]
     assert Path(heading_result["report"]).exists()
+
+
+def test_run_documents_audits_records_timeout_and_continues_with_remaining_scripts(
+    tmp_path, monkeypatch
+):
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    for name in ("heading_audit.py", "section_audit.py"):
+        (scripts_dir / name).write_text("print('ok')\n", encoding="utf-8")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    calls: list[str] = []
+
+    def run(command, **_kwargs):
+        script_name = Path(command[1]).name
+        calls.append(script_name)
+        if script_name == "heading_audit.py":
+            raise subprocess.TimeoutExpired(command, 60, output="partial", stderr="late")
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr("docs.infrastructure.docx.libreoffice_qa_adapter.subprocess.run", run)
+    result = LibreOfficeQaAdapter().run_documents_audits(
+        {"paths": {"documents_scripts_dir": str(scripts_dir)}}, tmp_path / "doc.docx", output_dir
+    )
+
+    timed_out = next(item for item in result if item["name"] == "heading_audit.py")
+    assert timed_out["ok"] is False
+    assert "timed out" in timed_out["stderr"]
+    assert Path(timed_out["report"]).exists()
+    assert "section_audit.py" in calls

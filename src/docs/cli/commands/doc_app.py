@@ -14,6 +14,7 @@ import typer
 
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
+from docs.cli.commands.v2_app import _capabilities_for
 from docs.domain.normative import resolve_normative_settings
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
@@ -161,7 +162,46 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
     result = deps.status.status_summary(resolved.doc_id, resolved.template, resolved.config, normative=normative)
-    emit_result(result, as_json)
+    payload = result.to_dict()
+    output = resolved.config.get("output", {})
+    output_format = output.get("format", "docx") if isinstance(output, dict) else "docx"
+    invalid_format_diagnostic: dict[str, str | bool | None] | None = None
+    try:
+        renderer = deps.resolve_renderer(resolved.config)
+    except (AttributeError, TypeError, ValueError):
+        renderer = None
+        invalid_format_diagnostic = {
+            "available": False,
+            "path": None,
+            "required": True,
+            "policy": "required",
+            "kind": "format",
+            "version": None,
+            "diagnostic": f"Formato de salida no registrado: '{output_format}'.",
+            "requirement": "a registered output renderer",
+            "degradation": "diagnostics only; rendering remains unavailable",
+        }
+    registry = _capabilities_for(
+        renderer,
+        str(output_format),
+        deps.workspace.doc_root(resolved.doc_id),
+    )
+    capabilities = registry.report()
+    capability_diagnostics = registry.diagnostics()
+    if invalid_format_diagnostic is not None:
+        capabilities["output_format"] = {"available": False, "path": None}
+        capability_diagnostics["output_format"] = invalid_format_diagnostic
+    v2 = payload.get("v2", {})
+    current_v2 = dict(v2) if isinstance(v2, dict) else {}
+    payload["v2"] = {
+        **current_v2,
+        "capabilities": capabilities,
+        "capability_diagnostics": capability_diagnostics,
+    }
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, indent=None, sort_keys=True))
+    else:
+        emit_result(result, False)
 
 
 @doc_app.command("revise")
@@ -186,7 +226,7 @@ def doc_revise(
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
     normative = resolve_normative_settings(resolved.config)
-    manifest_exists, manifest_size = deps.pipeline.rules_manifest_state(resolved.config)
+    manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
     new_content = Path(body_file).read_text(encoding="utf-8")
     now = datetime.now().isoformat(timespec="seconds")
 

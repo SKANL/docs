@@ -17,6 +17,7 @@ from docs.application.context import ContextService
 from docs.application.context_pack import ContextPackService
 from docs.application.corrections import CorrectionsService
 from docs.application.doctor import DoctorService
+from docs.application.document_verification import DocumentVerificationService
 from docs.application.documents import DocumentService
 from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
@@ -30,6 +31,8 @@ from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
+from docs.application.run_history import RunHistoryService, RunRecorderService
+from docs.application.section import SectionService
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.docx_structure import structure_parts
@@ -44,6 +47,7 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAsse
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.ingest.content_probe_adapter import FilesystemContentProbeAdapter
 from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
 from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetectorAdapter
@@ -57,6 +61,7 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
 
@@ -106,6 +111,39 @@ def build_workspace() -> Workspace:
 logger = logging.getLogger(__name__)
 
 
+def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
+    """Read the rules manifest without constructing the legacy pipeline."""
+    try:
+        path = Path(config["paths"]["rules_manifest"])
+        return (True, path.stat().st_size) if path.is_file() else (False, 0)
+    except (KeyError, OSError, TypeError):
+        return False, 0
+
+
+class _LazyPipelineService:
+    """Lazily construct the native application pipeline service."""
+
+    def __init__(self, factory: Any) -> None:
+        object.__setattr__(self, "_factory", factory)
+        object.__setattr__(self, "_instance", None)
+
+    def _resolve(self) -> Any:
+        instance = self._instance
+        if instance is None:
+            instance = self._factory()
+            object.__setattr__(self, "_instance", instance)
+        return instance
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._resolve(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in {"_factory", "_instance"}:
+            object.__setattr__(self, name, value)
+            return
+        setattr(self._resolve(), name, value)
+
+
 class Deps:
     """Composition root — builds every adapter + service exactly as the
     integration-test _service() helpers do, plus config assembly."""
@@ -128,7 +166,7 @@ class Deps:
         context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
         tool_resolver = SystemToolResolverAdapter()
         docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
-        html_renderer_service = HtmlRendererAdapter(tool_resolver)
+        html_renderer_service = HtmlRendererAdapter(tool_resolver, SubprocessPandocRunner())
         # Stateless (no instance state) -- one instance shared by QaService's
         # existing visual-QA PDF render and PdfRendererAdapter's `--format
         # pdf` conversion, never two separate adapter instances for the same
@@ -158,6 +196,8 @@ class Deps:
         pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
         pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
         md_ingest_adapter = MdNormalizeAdapter()
+        self.markdown_normalizer = md_ingest_adapter
+        self.atomic_file_writer = AtomicFileAdapter()
         ingest_handlers: dict[str, SourceIngestPort] = {
             "docx": pandoc_ingest_adapter,
             "odt": pandoc_ingest_adapter,
@@ -295,21 +335,34 @@ class Deps:
         self.context_pack = context_pack_service
         self.docx = docx_assembly_service
         self.format_audit = format_audit_service
+        self.render_verification = render_verification_service
         self.qa = qa_service
         self.doctor = doctor_service
         self.documents = DocumentService(document_repo, self.workspace)
         self.corrections = CorrectionsService(section_repo, evidence_repo)
         self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
+        self.section = SectionService(review_service, evidence_service, context_repo)
         self.status = StatusService(section_repo, self.context, review_service, document_repo)
         self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
-        self.pipeline = PipelineService(
-            doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
-            review_service, context_pack_service, context_repo, docx_assembly_service,
-            format_audit_service, qa_service, self.workspace, self.ingest,
-            context_service=self.context,
-            generate_visuals_service=self.generate_visuals_service,
-            structural_audit_service=structural_audit_service,
+        self.history = RunHistoryService(self.workspace)
+        self.run_recorder = RunRecorderService(self.workspace, source_repo)
+        self.verification = DocumentVerificationService(
+            review_service, evidence_repo, format_audit_service, qa_service
         )
+        def build_pipeline() -> PipelineService:
+            return PipelineService(
+                doctor_service, evidence_service, evidence_repo, collection_service, source_repo,
+                review_service, context_pack_service, context_repo, docx_assembly_service,
+                format_audit_service, qa_service, self.workspace, self.ingest,
+                context_service=self.context,
+                generate_visuals_service=self.generate_visuals_service,
+                structural_audit_service=structural_audit_service,
+                section_service=self.section,
+            )
+
+        self.pipeline = _LazyPipelineService(build_pipeline)
+        self.structural_audit_service = structural_audit_service
+        self.rules_manifest_state = _rules_manifest_state
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:
         """Build a `TranslateService` bound to this run's memory and slot file.

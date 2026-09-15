@@ -11,8 +11,13 @@ from pathlib import Path
 import pytest
 
 from docs.application.context import ContextService
+from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.application.review import ReviewService
 from docs.application.status import StatusService
+from docs.application.v2_status import V2Status, V2StatusReader
+from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
+from docs.domain.document_status import DocumentStatus
+from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Section, SectionContract, Template, Topic
 from docs.domain.normative import NormativeSettings
@@ -30,6 +35,16 @@ _NORMATIVE = NormativeSettings(
     subjective_terms=[],
     secret_patterns=[],
 )
+
+
+class _V2StatusReaderStub:
+    def __init__(self, status: V2Status) -> None:
+        self.status = status
+        self.document_roots: list[Path] = []
+
+    def read(self, document_root: Path) -> V2Status:
+        self.document_roots.append(document_root)
+        return self.status
 
 
 def _template() -> Template:
@@ -100,6 +115,7 @@ def test_status_summary_reports_fresh_document(tmp_path, service):
     assert status.output_final_exists is False
     assert status.lifecycle == "draft"
     assert status.build_version is None
+    assert "v2" not in status.to_dict()
 
 
 def test_status_summary_reports_partially_completed_document(tmp_path, workspace, service):
@@ -245,3 +261,195 @@ def test_status_summary_exposes_generated_cover_variant_and_missing_slots(tmp_pa
         "variant": "academic",
         "missing_slots": ["author"],
     }
+
+
+def test_document_status_serializes_optional_v2_observability() -> None:
+    status = DocumentStatus(
+        doc_id="alpha",
+        context_filled=0,
+        context_total=0,
+        v2_capabilities={"pandoc": {"available": True}},
+        v2_execution={"results": []},
+        v2_provenance={"run_id": "run-1"},
+        v2_succeeded=True,
+        unsupported_stages=["accessibility-review"],
+        publication_blockers=["publish disallowed by pipeline policy"],
+    )
+
+    assert status.to_dict()["v2"] == {
+        "capabilities": {"pandoc": {"available": True}},
+        "execution": {"results": []},
+        "provenance": {"run_id": "run-1"},
+        "succeeded": True,
+        "unsupported_stages": ["accessibility-review"],
+        "publication_blockers": ["publish disallowed by pipeline policy"],
+    }
+
+
+def test_status_summary_reads_v2_observability_through_reader(tmp_path, service, workspace):
+    reader = _V2StatusReaderStub(
+        V2Status(
+            execution={"schema": "docs.build/v2"},
+            provenance={"run_id": "run-1"},
+            succeeded=True,
+            unsupported_stages=["accessibility-review"],
+            publication_blockers=["required capability unavailable: soffice"],
+        )
+    )
+    service.v2_status_reader = reader
+
+    status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
+
+    assert reader.document_roots == [workspace.doc_root("alpha")]
+    assert status.v2_succeeded is True
+    assert status.v2_execution == {"schema": "docs.build/v2"}
+    assert status.v2_provenance == {"run_id": "run-1"}
+    assert status.unsupported_stages == ["accessibility-review"]
+    assert status.publication_blockers == ["required capability unavailable: soffice"]
+
+
+def test_v2_status_reader_loads_manifest_and_matching_provenance_from_document_root(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("artifact", encoding="utf-8")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), "a" * 64, ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-001",
+    )
+    artifact.with_suffix(".docx.manifest.json").write_text(manifest.to_json(), encoding="utf-8")
+    source = doc_root / "source.md"
+    source.write_text("source", encoding="utf-8")
+    provenance = ProvenanceLedgerV2(doc_root / "runs" / "v2-provenance.json")
+    expected_provenance = provenance.record_run("build-001", inputs=(source,), outputs=(artifact,))
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.manifest == manifest
+    assert snapshot.provenance == expected_provenance
+
+
+def test_v2_status_reader_derives_unsupported_stages_and_publication_blockers_from_runtime_results(
+    tmp_path: Path,
+) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("artifact", encoding="utf-8")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), "a" * 64, ArtifactState.READY),),
+        verification={"passed": False},
+    )
+    payload = manifest.to_dict()
+    payload["report"] = {
+        "execution": {
+            "results": [
+                {"stage": "accessibility-review", "outcome": "unsupported", "errors": []},
+                {"stage": "publish-draft", "outcome": "failed", "errors": ["publish disallowed by pipeline policy"]},
+                {"stage": "package-release", "outcome": "failed", "errors": ["release packaging failed"]},
+            ]
+        }
+    }
+    artifact.with_suffix(".docx.manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.unsupported_stages == ["accessibility-review"]
+    assert snapshot.publication_blockers == [
+        "publish disallowed by pipeline policy",
+        "release packaging failed",
+    ]
+
+
+def test_v2_status_reader_fails_open_for_invalid_manifest(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    manifest_path = doc_root / "output" / "v2" / "alpha.docx.manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("not-json", encoding="utf-8")
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.manifest is None
+    assert snapshot.provenance is None
+
+
+def test_v2_status_reader_blocks_tampered_provenance_artifact(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"original")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), sha256_file(artifact), ArtifactState.READY, size_bytes=artifact.stat().st_size),),
+        verification={"passed": True},
+        provenance_run="build-002",
+    )
+    manifest_path = artifact.with_suffix(".docx.manifest.json")
+    manifest_path.write_text(manifest.to_json(), encoding="utf-8")
+    ledger = ProvenanceLedgerV2(doc_root / "runs" / "v2-provenance.json")
+    source = doc_root / "source.md"
+    source.write_text("source", encoding="utf-8")
+    ledger.record_run("build-002", inputs=(source,), outputs=(artifact,))
+    ledger.record_attestation("build-002", manifest.attestation())
+
+    artifact.write_bytes(b"tampered")
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.succeeded is False
+    assert any("artifact hash mismatch" in finding for finding in snapshot.publication_blockers)
+    assert any("provenance run failed integrity" in finding for finding in snapshot.publication_blockers)
+
+
+def test_v2_status_reader_accepts_legacy_absolute_path_attestation(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"original")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), sha256_file(artifact), ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-legacy",
+    )
+    manifest_path = artifact.with_suffix(".docx.manifest.json")
+    manifest_path.write_text(manifest.to_json(), encoding="utf-8")
+    ledger = ProvenanceLedgerV2(doc_root / "runs" / "v2-provenance.json")
+    source = doc_root / "source.md"
+    source.write_text("source", encoding="utf-8")
+    ledger.record_run("build-legacy", inputs=(source,), outputs=(artifact,))
+    legacy = manifest.to_dict()
+    legacy["artifacts"][0]["media_type"] = "application/octet-stream"
+    legacy["artifacts"][0]["size_bytes"] = artifact.stat().st_size
+    ledger.record_attestation(
+        "build-legacy",
+        {
+            "schema": "docs.attestation/v2",
+            "manifest": legacy,
+            "sha256": sha256_content(legacy),
+        },
+    )
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.succeeded is True
+    assert not any("provenance attestation mismatch" in finding for finding in snapshot.publication_blockers)
+
+
+def test_v2_status_manifest_selection_ignores_mtime(tmp_path: Path) -> None:
+    output = tmp_path / "output" / "v2"
+    output.mkdir(parents=True)
+    first = BuildManifest(document_id="first")
+    second = BuildManifest(document_id="second")
+    first_path = output / "first.docx.manifest.json"
+    second_path = output / "second.docx.manifest.json"
+    first_path.write_text(first.to_json(), encoding="utf-8")
+    second_path.write_text(second.to_json(), encoding="utf-8")
+    expected = max((first.identity(), first_path.as_posix()), (second.identity(), second_path.as_posix()))[1]
+
+    first_path.touch()
+    second_path.touch()
+
+    assert V2StatusReader._latest_manifest_path(tmp_path) == Path(expected)

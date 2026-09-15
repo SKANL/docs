@@ -62,6 +62,38 @@ def test_doctor_json_emits_dict(workspace):
     assert "passed" in payload and "checks" in payload
 
 
+def test_doctor_json_exposes_deterministic_v2_capability_diagnostics(workspace):
+    _new_doc()
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert result.exit_code in (0, 2)
+    payload = json.loads(result.output)
+    assert list(payload["capabilities"]) == sorted(payload["capabilities"])
+    assert list(payload["capability_diagnostics"]) == sorted(payload["capability_diagnostics"])
+    assert set(payload["capabilities"]) == set(payload["capability_diagnostics"])
+    assert {"available", "path"} <= set(payload["capabilities"]["pillow"])
+    assert {
+        "available", "path", "version", "diagnostic", "policy"
+    } <= set(payload["capability_diagnostics"]["pillow"])
+
+
+def test_doctor_json_reports_unregistered_output_format_without_crashing(workspace):
+    invalid_template = dict(_TEMPLATE, output={"format": "epub"})
+    (workspace / "templates" / "tesina.json").write_text(
+        json.dumps(invalid_template), encoding="utf-8"
+    )
+    _new_doc()
+
+    result = runner.invoke(app, ["doctor", "--json"])
+
+    assert not isinstance(result.exception, ValueError)
+    assert result.exit_code in (0, 2)
+    payload = json.loads(result.output)
+    assert payload["capability_diagnostics"]["output_format"]["diagnostic"] == (
+        "Formato de salida no registrado: 'epub'."
+    )
+
+
 def test_resolve_context_errors_when_no_active_document(workspace):
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1

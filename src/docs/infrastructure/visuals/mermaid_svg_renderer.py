@@ -8,6 +8,7 @@ from typing import Any
 
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.domain.ports.visual_renderer_port import VisualSpec
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 from docs.infrastructure.ingest.atomic_ingest_write import scratch_dir
 
 
@@ -61,6 +62,7 @@ class MermaidSvgRenderer:
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
+                    timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
                 )
             except subprocess.CalledProcessError as exc:
                 # A raw CalledProcessError reads as `Command '[...long paths...]'

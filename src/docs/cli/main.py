@@ -1,9 +1,21 @@
 # src/docs/cli/main.py
 from __future__ import annotations
 
+import os
 import sys
 
+# Keep captured/CI help output machine-readable when CI forces terminal styling.
+# Interactive terminals retain Typer's normal rich presentation.
+if not sys.stdout.isatty():
+    os.environ.setdefault("TYPER_USE_RICH", "0")
+
 import typer
+
+if not sys.stdout.isatty():
+    # Typer reads TYPER_USE_RICH during import; another imported command may
+    # have loaded Typer first, so also update its already-loaded switches.
+    typer.core.HAS_RICH = False
+    typer.main.HAS_RICH = False
 
 from docs.cli._shared import Deps
 from docs.cli.commands.asset_app import asset_app
@@ -13,8 +25,10 @@ from docs.cli.commands.core_app import core_app
 from docs.cli.commands.doc_app import doc_app
 from docs.cli.commands.docx_app import docx_app
 from docs.cli.commands.section_app import section_app
+from docs.cli.commands.source_app import source_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
+from docs.cli.commands.v2_app import v2_app
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
@@ -30,6 +44,7 @@ def _root(ctx: typer.Context, doc: str = typer.Option("", "--doc", help="ID del 
 app.add_typer(core_app)
 app.add_typer(collection_app)
 app.add_typer(section_app)
+app.add_typer(source_app, name="source")
 app.add_typer(docx_app)
 app.add_typer(translate_app)
 
@@ -38,6 +53,8 @@ app.add_typer(template_app, name="template")
 app.add_typer(doc_app, name="doc")
 app.add_typer(asset_app, name="asset")
 app.add_typer(context_app, name="context")
+app.add_typer(v2_app, name="v2")
+app.add_typer(v2_app, name="document")
 
 
 def main(argv: list[str] | None = None) -> int:

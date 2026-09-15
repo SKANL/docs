@@ -1,7 +1,8 @@
 # src/docs/application/html_render.py
 from __future__ import annotations
 
-import subprocess
+import os
+import re
 import sys
 import tempfile
 from contextlib import nullcontext
@@ -10,11 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.figure_resolver import build_bound_figures_resolver
+from docs.application.html_theme import visual_theme_css
 from docs.application.output_names import resolve_html_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
 from docs.domain.cover import CoverMode, render_cover_html, resolve_cover_spec
 from docs.domain.figure_binding import BoundFigure
+from docs.domain.ports.pandoc_runner_port import PandocRunnerPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 
 
 def _prefer_sibling_svg(bound_figures: dict[str, BoundFigure]) -> dict[str, BoundFigure]:
@@ -37,6 +41,28 @@ def _prefer_sibling_svg(bound_figures: dict[str, BoundFigure]) -> dict[str, Boun
     return swapped
 
 
+def _ensure_accessible_document(html: str, language: str) -> str:
+    """Add semantic landmarks that Pandoc does not guarantee."""
+    def add_language(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        if re.search(r"\blang\s*=", tag, flags=re.IGNORECASE):
+            return tag
+        return tag[:-1] + f' lang="{language}">'
+
+    html = re.sub(r"<html\b[^>]*>", add_language, html, count=1, flags=re.IGNORECASE)
+    if not re.search(r"<main\b", html, flags=re.IGNORECASE):
+        html, opened = re.subn(
+            r"(<body\b[^>]*>)",
+            r'\1<main id="docs-main">',
+            html,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if opened:
+            html = re.sub(r"</body\s*>", "</main></body>", html, count=1, flags=re.IGNORECASE)
+    return html
+
+
 class HtmlRendererAdapter:
     """`DocumentRendererPort` implementation for single-file HTML output
     (design.md item C-html): pandoc markdown -> standalone, self-contained
@@ -47,8 +73,9 @@ class HtmlRendererAdapter:
 
     output_format = "html"
 
-    def __init__(self, tool_resolver: ToolResolverPort) -> None:
+    def __init__(self, tool_resolver: ToolResolverPort, pandoc_runner: PandocRunnerPort) -> None:
         self.tool_resolver = tool_resolver
+        self.pandoc_runner = pandoc_runner
 
     def stage_plan(self) -> list[tuple[str, bool]]:
         return [("build-html", True)]
@@ -123,19 +150,43 @@ class HtmlRendererAdapter:
         # passed explicitly -- without it pandoc's standalone HTML falls back
         # to the first input filename (a section stem like "010-overview")
         # for <title>, which is not the document's title.
-            subprocess.run(
-                [
-                    pandoc,
-                    "--from",
-                    "markdown",
-                    *map(str, stripped_sections),
-                    "--standalone",
-                    "--embed-resources",
-                    "--metadata",
-                    f"title={self._title(doc_id, config)}",
-                    "-o",
-                    str(output),
-                ],
-                check=True,
+            fd, temporary_output = tempfile.mkstemp(
+                prefix=f".{Path(output).stem}.", suffix=Path(output).suffix or ".html", dir=Path(output).parent
             )
+            os.close(fd)
+            temporary_path = Path(temporary_output)
+            try:
+                self.pandoc_runner.run(
+                    [
+                        pandoc,
+                        "--from",
+                        "markdown",
+                        *map(str, stripped_sections),
+                        "--standalone",
+                        "--embed-resources",
+                        "--metadata",
+                        f"title={self._title(doc_id, config)}",
+                        "-o",
+                        str(temporary_path),
+                    ],
+                    check=True,
+                    timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+                )
+                if not temporary_path.exists() or temporary_path.stat().st_size == 0:
+                    raise RuntimeError("Pandoc produjo un HTML vacío o inexistente")
+                css = visual_theme_css(config)
+                text = temporary_path.read_text(encoding="utf-8")
+                project = config.get("project")
+                project_language = project.get("language") if isinstance(project, dict) else None
+                language = str(config.get("language") or config.get("lang") or project_language or "en")
+                text = _ensure_accessible_document(text, language)
+                if css:
+                    style = f'<style id="docs-visual-theme">\n{css}\n</style>\n'
+                    text, count = re.subn(r"</head\s*>", lambda _: style + "</head>", text, count=1, flags=re.IGNORECASE)
+                    if not count:
+                        raise RuntimeError("Cannot apply HTML theme: generated document has no head element")
+                temporary_path.write_text(text, encoding="utf-8", newline="\n")
+                os.replace(temporary_path, output)
+            finally:
+                temporary_path.unlink(missing_ok=True)
         return output

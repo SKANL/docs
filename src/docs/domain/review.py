@@ -11,6 +11,7 @@ class ReviewDimension(str, Enum):
     STRUCTURAL = "structural"
     ACCESSIBILITY = "accessibility"
     VISUAL = "visual"
+    REPRODUCIBILITY = "reproducibility"
 
 
 @dataclass(frozen=True)
@@ -19,14 +20,30 @@ class Issue:
     message: str
     code: str = ""
     dimension: ReviewDimension = ReviewDimension.EDITORIAL
+    evidence: str | None = None
+    resolution_condition: str | None = None
+    section: str | None = None
+    file: str | None = None
+    page: int | None = None
+    stage_originator: str | None = None
 
-    def to_dict(self) -> dict[str, str]:
-        return {
+    def to_dict(self) -> dict[str, str | int]:
+        issue: dict[str, str | int] = {
             "severity": self.severity,
             "message": self.message,
             "code": self.code,
             "dimension": self.dimension.value,
         }
+        optional_fields = {
+            "evidence": self.evidence,
+            "resolution_condition": self.resolution_condition,
+            "section": self.section,
+            "file": self.file,
+            "page": self.page,
+            "stage_originator": self.stage_originator,
+        }
+        issue.update({key: value for key, value in optional_fields.items() if value is not None})
+        return issue
 
 
 @dataclass(frozen=True)

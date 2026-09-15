@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from defusedxml.ElementTree import parse as safe_parse
 from docs.domain.cover import CoverMode, resolve_cover_spec
 from docs.domain.docx_structure import resolve_part_text, sections_index, structure_parts
 from docs.domain.markdown_text import normalize_heading
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 from docs.infrastructure.docx.cover_compositor import compose_generated_cover
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.python_docx_audit_adapter import paragraph_has_numbering
@@ -660,8 +662,24 @@ class PythonDocxAssemblyAdapter:
         # Normalize immediately after the subprocess succeeds so the body
         # .docx is deterministic like every other artifact this adapter
         # produces.
-        subprocess.run([pandoc_path, *map(str, inputs), "-o", str(output)], check=True)
-        normalize_docx_zip_timestamps(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_output = tempfile.mkstemp(
+            prefix=f".{output.stem}.", suffix=output.suffix or ".docx", dir=output.parent
+        )
+        os.close(fd)
+        temporary_path = Path(temporary_output)
+        try:
+            subprocess.run(
+                [pandoc_path, *map(str, inputs), "-o", str(temporary_path)],
+                check=True,
+                timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+            )
+            if not temporary_path.exists() or temporary_path.stat().st_size == 0:
+                raise RuntimeError("Pandoc produjo un DOCX vacío o inexistente")
+            normalize_docx_zip_timestamps(temporary_path)
+            os.replace(temporary_path, output)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     def insert_toc_field(self, docx_path: Path, placeholder: str = "[[TOC]]", levels: str = "1-3") -> bool:
         return insert_toc_field(docx_path, placeholder=placeholder, levels=levels)
@@ -700,7 +718,13 @@ class PythonDocxAssemblyAdapter:
         body = Document(str(body_docx))
 
         self._configure_preliminary_pagination(cover, sections_part, config)
-        self._render_leading_parts(cover, config, leading)
+        effective_leading = leading
+        if generated_cover and generated_cover.mode in {CoverMode.GENERATED, CoverMode.NONE}:
+            # Explicit generated/none modes take precedence over a legacy
+            # cover_from_asset part; otherwise the old cover is appended after
+            # the generated one and silently wins the first-page visual QA.
+            effective_leading = [part for part in leading if part.get("type") != "cover_from_asset"]
+        self._render_leading_parts(cover, config, effective_leading)
         self._transfer_body_content(cover, body, sections_part, config)
 
         return cover

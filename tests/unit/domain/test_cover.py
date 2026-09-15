@@ -4,6 +4,7 @@ from docs.domain.cover import (
     CoverMode,
     CoverSpec,
     CoverVariant,
+    cover_asset_findings,
     cover_findings,
     resolve_cover_slots,
     resolve_cover_spec,
@@ -34,7 +35,8 @@ def test_generated_cover_html_escapes_slots_and_exposes_variant():
         {"title": "A < B"},
     )
 
-    assert 'class="docs-cover docs-cover--academic"' in html
+    assert '<header class="cover cover--academic" role="banner">' in html
+    assert 'class="cover__slot cover__title"' in html
     assert "A &lt; B" in html
 
 
@@ -94,3 +96,50 @@ def test_missing_standard_cover_paths_produce_clear_findings():
     spec = CoverSpec(content={"author": "{{project.owner}}", "title": "{{title}}"})
 
     assert cover_findings(spec, {"title": "Report"}) == ["cover.missing_slot: author"]
+
+
+def test_cover_content_wins_over_legacy_slots_and_resolves_standard_sources():
+    spec = CoverSpec(
+        content={"title": "{{document.title}}", "author": "{{author.name}}"},
+        slots={"title": "legacy title", "author": "legacy author"},
+    )
+
+    resolved = resolve_cover_slots(
+        spec,
+        {
+            "title": "Top-level title",
+            "metadata": {"title": "Metadata title"},
+            "context": {"alumno": {"nombre": "Ada Lovelace"}},
+        },
+    )
+
+    assert resolved == {"title": "Top-level title", "author": "Ada Lovelace"}
+
+
+def test_cover_asset_findings_report_missing_and_zero_dimension_assets(tmp_path):
+    empty = tmp_path / "empty.png"
+    empty.write_bytes(b"")
+    spec = CoverSpec(visual={"logo": "missing.png", "hero": "empty.png"})
+
+    findings = cover_asset_findings(spec, {"paths": {"assets_dir": str(tmp_path)}})
+
+    assert findings == [
+        "cover.missing_asset: logo",
+        "cover.invalid_asset: hero",
+    ]
+
+
+def test_cover_html_projects_valid_configured_images_with_alt_text(tmp_path):
+    logo = tmp_path / "logo.png"
+    from PIL import Image
+
+    Image.new("RGB", (12, 8), "navy").save(logo)
+    spec = CoverSpec(visual={"logo": "logo.png"}, content={"title": "Report"})
+
+    from docs.domain.cover import render_cover_html
+
+    html = render_cover_html(spec, {"paths": {"assets_dir": str(tmp_path)}})
+
+    assert 'class="cover__image cover__logo"' in html
+    assert 'alt="logo"' in html
+    assert str(logo).replace("\\", "/") in html

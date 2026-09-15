@@ -33,6 +33,9 @@ NORMALIZER = "normalize_docx_zip_timestamps"
 EXEMPT = {
     "infrastructure/docx/deterministic_zip.py",
     "infrastructure/verification/render_verification_adapter.py",
+    # v2 package creates a generic release ZIP, not a DOCX container; it does
+    # not author or mutate OOXML and therefore cannot use the DOCX normalizer.
+    "cli/commands/v2_app.py",
 }
 
 _ZIP_WRITE_MODES = {"w", "a", "x"}

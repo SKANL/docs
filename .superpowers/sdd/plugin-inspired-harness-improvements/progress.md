@@ -16,7 +16,15 @@ Task 1-3: complete
 Task 4-5: complete
 Task 6-7: complete
 Task 8: complete
-Task 9-10: pending
+Task 9: complete
+Task 10: complete in external CISSP workspace; the harness repository remains
+source-only by design.
+- Rebuilt `cissp-dominio-6-interno` and `cissp-dominio-6-entrega` through the
+  native v2 pipeline for DOCX, HTML, and PDF with release policy.
+- Verified matching v2 manifests/provenance sidecars and PDF rendering:
+  internal 15 pages / 0 blank pages; delivery 11 pages / 0 blank pages.
+- Preserved the separate internal/delivery source workspaces and labeled
+  SVG/PNG visual assets; no authored CISSP sources were copied into this repo.
 
 ## Atomic publication fix
 - Root cause: replacing a non-empty directory needs two renames on Windows; termination between them can leave no published target.
@@ -116,3 +124,134 @@ Task 9-10: pending
 - Added focused AGENTS.md assertions for the QA path and the boundary that Documents, PDF, and Template Creator plugins assist authoring/inspection but are not runtime dependencies.
 - Scope intentionally excludes CISSP documents.
 - Focused: `uv run pytest tests/unit/test_agents_md_content.py -q` — 12 passed.
+
+## V2 observability follow-up: complete
+- Added lazy capability diagnostics with module versions, capability kind,
+  requirement text, and draft degradation guidance; the compact capability
+  report remains backward compatible.
+- Added optional `duration_ms` telemetry to every executed `StageResult` while
+  keeping deterministic pipeline JSON free of wall-clock values.
+- Added repeatable `--dimension` filtering to `document verify`, aligned with
+  the existing legacy verification filter.
+- Focused verification: capability tests (7 passed), v2 CLI tests (42 passed),
+  pipeline executor/kernel/runtime tests (39 passed), ruff and mypy passed.
+
+## V2 stage boundary follow-up: complete
+- Added `StageProviderV2` so v2 composition resolves stage services through a
+  single adapter boundary instead of reaching into compatibility containers
+  from the CLI orchestration code.
+- Added unit coverage for direct-service precedence and missing services.
+- Updated architecture documentation to identify this as the migration seam
+  toward native stage implementations.
+- Focused verification: stage-provider plus v2 CLI tests (44 passed), ruff and
+  mypy passed.
+
+## V2 contract naming cleanup: complete
+- Renamed the v2 operation contract to `StageOperation` and the dependency
+  aggregate to `PipelineStageDependencies`; removed legacy terminology from
+  the v2 contract surface without changing compatibility behavior.
+- Focused verification: pipeline-service-v2 plus v2 CLI tests (52 passed),
+  ruff and mypy passed.
+
+## V2 operation injection: complete
+- Replaced the v2 service's named compatibility dependency aggregate with a
+  stage-ID-to-operation mapping and an independent publication contract.
+- The composition root now normalizes all operations to declarative stage IDs;
+  PipelineServiceV2 no longer knows legacy field names or container shape.
+- Focused verification: pipeline-service-v2 plus v2 CLI tests (52 passed),
+  ruff and mypy passed.
+
+## Legacy boundary isolation: complete
+- Moved the legacy `PipelineService` constructor behind the CLI-only
+  `LegacyPipelineBridge`; `Deps` keeps this bridge lazy so v2 commands do not
+  instantiate the legacy aggregate.
+- Documented the bridge as the single removable migration seam in
+  `docs/architecture-v2.md` and `docs/migration-v2.md`.
+- Regression coverage confirms creating `Deps` does not construct the bridge;
+  focused tests passed (10), full suite passed (2129 passed, 5 skipped), and
+  ruff/mypy/CodeGraph/CI passed.
+
+## Post-merge CI and runtime hardening: complete
+- Routed the normal flat pipeline service path through FlatPipelineV2Adapter
+  and removed the obsolete LegacyPipelineExecutor; the CLI compatibility
+  facade remains isolated for commands that still expose the historical
+  surface.
+- Made BuildManifest.identity() independent of workspace absolute paths while
+  retaining actual paths in persisted manifests for publication/status checks.
+  Legacy attestations are normalized only during comparison and still require
+  live artifact digest validation.
+- Fixed mutable renderer_versions validation on serialization.
+- CI initially exposed 25 path-serialization regressions and then one missed
+  mutation-validation regression; both were fixed and the succeeding run
+  passed architecture, check, and toolchains.
+- Verification: local full suite 2433 passed, 5 skipped; focused pipeline
+  service tests 16 passed; CodeGraph index current.
+
+## Legacy facade removal: complete
+- Removed the obsolete LegacyPipelineService and LegacyPipelineBridge modules
+  and their dedicated compatibility tests.
+- Deps now lazily constructs PipelineService directly; core pipeline commands
+  no longer expose or route through a legacy facade.
+- Added an architecture guard asserting the deleted modules cannot return to
+  the runtime.
+- Updated architecture/migration docs to describe historical summaries and
+  filenames as compatibility projections over the native v2 runtime.
+- Verification: focused architecture/CLI/composition suites 190 passed, 3
+  skipped; full suite 2429 passed, 5 skipped; ruff and mypy passed; PR CI green.
+
+## Native stage planner naming: complete
+- Renamed LegacyStagePlanner to StageOperationPlanner and removed the stale
+  legacy module name from the active pipeline runtime.
+- The callable contract and ordering remain unchanged; a future slice can
+  extract its service-host dependency for stricter hexagonal isolation.
+- Focused architecture and pipeline tests: 100 passed, 3 skipped; ruff,
+  mypy, and diff checks passed.
+## Stage evidence closure: complete
+- Added an integration contract journey that executes every `FULL_STAGE_IDS` operation through the native v2 DAG and asserts ordered success, quality-gate completion, and publication.
+- Updated `docs/migration-v2-traceability.json` to point all stage evidence at that executable journey; real external renderer coverage remains separately documented as capability-gated.
+- Corrected architecture documentation to distinguish the v2 `output/v2` publication boundary from the legacy lifecycle snapshot in `output/final`.
+- Focused integration tests: 38 passed; ruff and diff checks passed.
+## Manifest identity hardening: complete
+- BuildManifest identity now preserves canonical relative artifact paths while stripping workspace-specific absolute roots, preventing same-name path collisions across artifact directories.
+- Added RED/GREEN regression coverage and verified manifest/provenance tests.
+
+## Capability registry hardening: complete
+- Duplicate tool capabilities now reject incompatible executable/module/degradation definitions while preserving identical duplicate merging and required-policy OR semantics.
+- Added RED/GREEN regression coverage.
+
+## Multiformat QA and visual projection: complete
+- HTML now receives deterministic CSS from visual themes and generated-cover contracts.
+- HTML static inspection checks language, visible heading hierarchy, landmarks, image alt attributes, image validity, and declarative overflow/clipping.
+- PDF inspection reports tagged-structure limitations honestly and checks rendered pages, objects, images, dimensions, blank pages, and previews.
+- V2 HTML/PDF accessibility and visual stages now use ReviewStageService and RenderVerificationService instead of reopen-only fallbacks.
+- Focused integration: 171 passed; ruff, mypy, and diff checks passed.
+## Durable transform recovery: complete
+- Strengthened v2 publication durability by syncing backups, journals, replacements, and directory metadata where supported.
+- Added recovery-before-next-run coverage for a prepared interrupted transaction.
+- Documented the honest guarantee: multi-file publication is sequential but journaled, durable, idempotent, and never publishes an unvalidated scratch output.
+- Focused atomic-transform tests: 34 passed; ruff, mypy, and diff checks passed.
+## Regression closure after multiformat QA: complete
+- Updated the architecture guard to inspect the V2 review-stage AST instead of depending on formatting-sensitive source text.
+- Added actionable catalog entries for all newly emitted `render.*` findings.
+- Focused architecture and issue-code tests: 18 passed; ruff, mypy, and diff checks passed.
+- Full-suite run exposed exactly these two stale expectations; no production failures were observed.
+## Multiformat visual baselines: complete
+- Extended RenderProfile with opt-in baseline directory, similarity threshold, and strictness.
+- Reused the existing domain image-similarity comparator for PDF/HTML previews; verification never updates baselines.
+- Draft reports baseline drift as warnings; strict/release promote drift to blocking findings.
+- Focused baseline/render/review tests: 37 passed; ruff, mypy, and diff checks passed.
+## Final recovery and QA closure: complete
+- Fixed the atomic publication recovery boundary so a successful replacement followed by a sync/identity failure retains durable recovery evidence and retries safely.
+- Made batch publication recovery lock-aware, ownership-checked, copy-before-restore, and retryable when restoration fails; journals are retired only after complete recovery or successful publication.
+- Routed DOCX visual review through structured rendered QA, switched PDF reproducibility to semantic page/text/raster comparison, and stabilized preview names while removing stale previews.
+- Added catalog entries for the new render and visual findings after the full suite exposed undocumented diagnostics.
+- Focused regression tests: 184 passed, 2 skipped; issue-code tests: 9 passed; ruff, mypy, and diff checks passed. A full suite run before the catalog fix was 2489 passed, 1 failed, 5 skipped; the failure was limited to the newly emitted undocumented codes and was corrected.
+## Declarative cover contract closure: complete
+- Canonical cover slots now resolve standard `document.*`, `author.name`, `organization.name`, `course.name`, `advisor.name`, `date`, and `custom.*` paths with deterministic legacy aliases; explicit `content` values take precedence over legacy `slots`.
+- Added pre-render findings for missing/zero-dimension logo and hero assets and wired them into the `compose-cover` stage so strict/release policies can block invalid covers.
+- Valid configured cover images are embedded into DOCX and projected into accessible HTML image elements with alt text.
+- Added cover contract documentation and regression tests; focused cover/stage/render suite: 49 passed.
+## Runtime documentation closure: complete
+- Removed stale v2 documentation that described normal CLI stages as migration no-ops; the composition root is documented as the complete native runtime, with `skipped` reserved for inapplicable inputs and partial custom maps fail-closed.
+- Declared `paths.workspace_root` in the configuration vocabulary after the architecture scanner caught the new cover asset lookup key.
+- Full suite after these changes: 2494 passed, 5 skipped; CI for the preceding commit remained green.

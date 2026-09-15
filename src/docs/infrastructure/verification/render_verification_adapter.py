@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from PIL import Image, ImageChops, UnidentifiedImageError
 
 from docs.domain.artifacts import ArtifactRef, RenderProfile, VerificationFinding, VerificationReport
+from docs.domain.visual_baseline import compare_preview_baseline
+from docs.infrastructure.verification.html_inspection import HtmlInspection
 
 
 class RenderVerificationAdapter:
@@ -17,6 +20,15 @@ class RenderVerificationAdapter:
         suffix = path.suffix.lower()
         findings = self._format_findings(path, profile)
         try:
+            if preview_dir is not None:
+                if profile.baseline_dir is not None and (
+                    preview_dir.resolve().is_relative_to(profile.baseline_dir.resolve())
+                    or profile.baseline_dir.resolve().is_relative_to(preview_dir.resolve())
+                ):
+                    raise ValueError("Preview and baseline directories must not overlap")
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                for stale in preview_dir.glob("*.png"):
+                    stale.unlink()
             if suffix == ".pdf":
                 findings.extend(self._verify_pdf(path, profile, preview_dir))
             elif suffix == ".docx":
@@ -25,9 +37,15 @@ class RenderVerificationAdapter:
                 findings.extend(self._verify_html(path, profile, preview_dir))
             else:
                 findings.extend(self._verify_image(path, profile, preview_dir))
+            if suffix != ".docx" and profile.baseline_dir is not None and preview_dir is not None:
+                findings.extend(self._baseline_findings(preview_dir, profile))
         except (OSError, RuntimeError, UnidentifiedImageError, ValueError) as exc:
             findings.append(VerificationFinding("render.open", f"No se pudo abrir {path.name}: {exc}"))
-        return VerificationReport(artifact=artifact, findings=findings)
+        return VerificationReport(
+            artifact=artifact,
+            findings=findings,
+            checked_artifacts=[artifact],
+        )
 
     def _verify_pdf(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         import pypdfium2 as pdfium
@@ -37,6 +55,7 @@ class RenderVerificationAdapter:
         try:
             if len(document) == 0:
                 return [VerificationFinding("render.pages.empty", "El PDF no contiene páginas.")]
+            findings.extend(self._pdf_accessibility(document))
             rendered_previews = preview_dir is not None
             if preview_dir is not None:
                 preview_dir.mkdir(parents=True, exist_ok=True)
@@ -45,13 +64,17 @@ class RenderVerificationAdapter:
                 try:
                     width, height = page.get_size()
                     findings.extend(self._dimensions(index + 1, width, height, profile))
+                    findings.extend(self._pdf_objects(page, index + 1))
                     bitmap = page.render(scale=profile.preview_dpi / 72)
-                    image = bitmap.to_pil()
-                    findings.append(VerificationFinding("render.page.valid", f"Página {index + 1} válida.", "info"))
-                    if self._is_blank(image):
-                        findings.append(self._blank_finding(f"Página {index + 1} vacía.", profile))
-                    if preview_dir is not None:
-                        image.save(preview_dir / f"{path.stem}-p{index + 1:02d}.png")
+                    try:
+                        with bitmap.to_pil() as image:
+                            findings.append(VerificationFinding("render.page.valid", f"Página {index + 1} válida.", "info", page=index + 1))
+                            if self._is_blank(image):
+                                findings.append(self._blank_finding(f"Página {index + 1} vacía.", profile))
+                            if preview_dir is not None:
+                                image.save(preview_dir / f"{profile.preview_stem or path.stem}-p{index + 1:02d}.png")
+                    finally:
+                        bitmap.close()
                 finally:
                     page.close()
             if profile.require_previews and not rendered_previews:
@@ -59,6 +82,45 @@ class RenderVerificationAdapter:
             return findings
         finally:
             document.close()
+
+    @staticmethod
+    def _pdf_accessibility(document: object) -> list[VerificationFinding]:
+        import pypdfium2 as pdfium
+
+        try:
+            tagged = pdfium.raw.FPDFCatalog_IsTagged(document)
+        except (AttributeError, RuntimeError) as exc:
+            return [VerificationFinding("accessibility.pdf.tags_unverified", f"PDF tagged structure cannot be verified: {exc}", "warning", dimension="accessibility")]
+        if not tagged:
+            return [VerificationFinding("accessibility.pdf.untagged", "PDF has no declared tagged structure; reading order and alternatives cannot be verified.", "warning", dimension="accessibility")]
+        return [VerificationFinding("accessibility.pdf.tags_unverified", "PDF declares tags, but reading order and tag semantics are not validated by this technical check.", "warning", dimension="accessibility")]
+
+    @staticmethod
+    def _pdf_objects(page: Any, number: int) -> list[VerificationFinding]:
+        """Inspect top-level bounds, not arbitrary clip paths or semantic layout."""
+        import pypdfium2 as pdfium
+
+        findings: list[VerificationFinding] = []
+        left, bottom, right, top = page.get_bbox()
+        # Nested form coordinates need composed matrices; do not compare them
+        # directly with page coordinates (which would report false clipping).
+        for obj in page.get_objects(max_depth=1):
+            if obj.type in {pdfium.raw.FPDF_PAGEOBJ_TEXT, pdfium.raw.FPDF_PAGEOBJ_IMAGE}:
+                x0, y0, x1, y1 = obj.get_bounds()
+                if x0 < left - .5 or y0 < bottom - .5 or x1 > right + .5 or y1 > top + .5:
+                    findings.append(VerificationFinding("render.content.clipping", "PDF text/image bounds extend outside the page crop box.", "warning", page=number,
+                                                        evidence={"bounds": [x0, y0, x1, y1], "page_bounds": [left, bottom, right, top]}))
+            if obj.type == pdfium.raw.FPDF_PAGEOBJ_IMAGE:
+                try:
+                    bitmap = obj.get_bitmap()
+                    try:
+                        with bitmap.to_pil() as image:
+                            image.load()
+                    finally:
+                        bitmap.close()
+                except (OSError, RuntimeError, ValueError) as exc:
+                    findings.append(VerificationFinding("render.image.invalid", f"PDF image cannot be decoded: {exc}", page=number))
+        return findings
 
     def _verify_docx(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         from docx import Document
@@ -83,6 +145,9 @@ class RenderVerificationAdapter:
     def _verify_html(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         text = path.read_text(encoding="utf-8")
         findings = [VerificationFinding("render.open", "HTML abrible.", "info")]
+        inspection = HtmlInspection(text)
+        findings.extend(inspection.accessibility())
+        findings.extend(inspection.visual(path, profile))
         if not text.strip():
             findings.append(VerificationFinding("render.content.empty", "El HTML está vacío."))
         if profile.require_previews:
@@ -97,10 +162,30 @@ class RenderVerificationAdapter:
                 findings.append(self._blank_finding("Imagen vacía.", profile))
             if preview_dir is not None:
                 preview_dir.mkdir(parents=True, exist_ok=True)
-                image.copy().save(preview_dir / f"{path.stem}-p01.png")
+                image.copy().save(preview_dir / f"{profile.preview_stem or path.stem}-p01.png")
             elif profile.require_previews:
                 findings.append(VerificationFinding("render.previews.required", "Se requieren previews, pero no se indicó directorio."))
             return findings
+
+    @staticmethod
+    def _baseline_findings(preview_dir: Path, profile: RenderProfile) -> list[VerificationFinding]:
+        assert profile.baseline_dir is not None
+        return [
+            VerificationFinding(
+                finding.code,
+                finding.message,
+                finding.severity,
+                page=finding.page,
+                dimension="visual",
+                evidence={} if finding.similarity is None else {"similarity": finding.similarity},
+            )
+            for finding in compare_preview_baseline(
+                preview_dir,
+                profile.baseline_dir,
+                minimum_similarity=profile.minimum_similarity,
+                strict=profile.baseline_strict,
+            )
+        ]
 
     @staticmethod
     def _dimensions(page: int, width: float, height: float, profile: RenderProfile) -> list[VerificationFinding]:

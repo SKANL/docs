@@ -53,6 +53,26 @@ class ContextService:
             )
         return statuses
 
+    def confirmed_lines(self, doc_id: str, template: Template) -> list[str]:
+        """Return non-sensitive context values for evidence-ledger consumers.
+
+        Keeping this projection in the context service prevents pipeline
+        orchestration from reaching into repository details and ensures every
+        caller applies the same privacy rule.
+        """
+        self._require_document(doc_id)
+        lines: list[str] = []
+        for topic in template.context_schema.topics:
+            values = self.context_repo.read_topic(doc_id, topic)
+            if isinstance(values, dict):
+                for field in topic.fields:
+                    value = values.get(field.key, "")
+                    if value and not field.sensitive:
+                        lines.append(f"{field.label}: {value}")
+            elif isinstance(values, str) and values.strip():
+                lines.append(f"{topic.title or topic.id}: {values.strip()[:160]}")
+        return lines
+
     def set(self, doc_id: str, template: Template, topic_id: str, value: str, field: str = "") -> Path:
         self._require_document(doc_id)
         topic = self._find_topic(template, topic_id)

@@ -8,6 +8,7 @@ from typing import Any
 
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
+from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
 
 # pandoc's reader identifiers already match this harness's `kind` labels for
@@ -73,6 +74,7 @@ class PandocIngestAdapter:
                 ],
                 cwd=tmp_dir,
                 check=True,
+                timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
             )
             tmp_md = tmp_dir / f"{stem_tag}.md"
             tmp_media = tmp_dir / media_dirname

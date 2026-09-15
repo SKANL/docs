@@ -68,6 +68,17 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     for label, catalog_id in bindings.items():
         row = catalog_by_id.get(catalog_id)
         if row is None:
+            row = _legacy_asset_row(catalog_id, assets_dir)
+            if row is not None:
+                resolved[label] = BoundFigure(
+                    label=label,
+                    catalog_id=catalog_id,
+                    path=str(assets_dir / "figures" / row["filename"]),
+                    width_px=row["width_px"],
+                    height_px=row["height_px"],
+                    caption="",
+                )
+                continue
             print(
                 f"WARN: [[figure:{label}]] referencia el id de catálogo '{catalog_id}', que no "
                 f"existe en {_CATALOG_NAME}; se omite la imagen (no encontrada en el catálogo).",
@@ -108,3 +119,27 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
             caption=row.get("caption", ""),
         )
     return resolved
+
+
+def _legacy_asset_row(catalog_id: str, assets_dir: Path) -> dict[str, Any] | None:
+    """Recover a valid legacy PNG when an older catalog was never generated."""
+    if not catalog_id.startswith("fig-"):
+        return None
+    figures_dir = assets_dir / "figures"
+    stem = catalog_id[4:]
+    for suffix in (".png", ".jpg", ".jpeg"):
+        candidate = figures_dir / f"{stem}{suffix}"
+        if not candidate.is_file() or candidate.is_symlink():
+            continue
+        try:
+            from PIL import Image
+
+            with Image.open(candidate) as image:
+                image.verify()
+                width, height = image.size
+            if width <= 0 or height <= 0:
+                return None
+            return {"filename": candidate.name, "width_px": width, "height_px": height}
+        except (ImportError, OSError, SyntaxError, ValueError):
+            return None
+    return None
