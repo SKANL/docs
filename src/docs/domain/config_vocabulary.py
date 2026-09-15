@@ -73,6 +73,8 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "page_size": {},
     },
     "ledger_seed": {},
+    "lang": {},
+    "language": {},
     "normative": {
         "excluded_front_matter": {},
         "first_person_patterns": {},
@@ -133,6 +135,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "sensitive_context_fields": {},
     },
     "project": {
+        "language": {},
         "scope_policy": {},
     },
     "section_contracts": {},
