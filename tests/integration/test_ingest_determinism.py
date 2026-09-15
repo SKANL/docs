@@ -133,7 +133,7 @@ def test_pdf_ingest_is_byte_identical_across_repeated_runs(tmp_path: Path):
     assert output_path.read_bytes() == first_bytes
 
 
-def test_partially_processed_inbox_only_converts_new_files_without_corrupting_prior_output(
+def test_partially_processed_inbox_only_converts_new_files_without_corrupting_current_output(
     tmp_path: Path,
 ):
     inbox = tmp_path / "inbox"
@@ -151,7 +151,7 @@ def test_partially_processed_inbox_only_converts_new_files_without_corrupting_pr
     statuses = {e["file"]: e["status"] for e in second["files"]}
     assert statuses == {"already.md": "skipped", "brand-new.txt": "ingested"}
     assert already_output.exists()
-    assert already_output.read_bytes() == already_bytes, "prior output must not be touched"
+    assert already_output.read_bytes() == already_bytes, "current output must not be touched"
 
 
 # --- S2 (smart-figure-embedding): stable-path figure copy is deterministic

@@ -67,4 +67,3 @@ def test_write_json_cleans_up_temp_file_when_serialization_fails(tmp_path: Path)
     assert not path.exists()
     leftovers = list(tmp_path.iterdir())
     assert leftovers == [], "no orphaned .ingest-artifact-tmp-* file should survive a failed write"
-

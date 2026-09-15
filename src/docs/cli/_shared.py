@@ -98,7 +98,7 @@ def _load_workspace_config() -> dict[str, str] | None:
 def build_workspace() -> Workspace:
     """Workspace roots: `docs.config.json` (cwd) -> env vars (injectable in
     tests) -> cwd-relative defaults, in that precedence order (spec:
-    workspace-config "Config Precedence Resolution"). Legacy hardcoded
+    workspace-config "Config Precedence Resolution"). Current hardcoded
     HARNESS_ROOT/documents & templates; no library equivalent (Judgment call
     2)."""
     documents_dir, templates_dir = resolve_workspace_roots(
@@ -510,4 +510,3 @@ def emit_result(result: Any, as_json: bool) -> None:
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     else:
         print(result.to_markdown())
-

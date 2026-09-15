@@ -11,7 +11,7 @@ def test_review_fails_on_any_error():
     assert result.passed is False
 
 
-def test_issue_to_dict_matches_legacy_shape():
+def test_issue_to_dict_matches_current_shape():
     assert Issue(Severity.ERROR, "m", code="c").to_dict() == {
         "severity": "error", "message": "m", "code": "c",
     }

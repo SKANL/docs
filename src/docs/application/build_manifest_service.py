@@ -107,4 +107,3 @@ class BuildManifestService:
 
     def write_manifest(self, manifest: BuildManifest, destination: Path) -> None:
         self._write_text(destination, manifest.to_json() + "\n")
-

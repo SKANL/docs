@@ -34,4 +34,3 @@ def test_keeps_dimensions_at_or_above_threshold():
 
 def test_keeps_null_dimensions_fail_open():
     assert should_catalog_figure("evidence", None, None) is True
-

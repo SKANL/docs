@@ -154,7 +154,7 @@ def test_review_section_contract_missing_required_uses_raw_strict_not_strict_pol
     contract = SectionContract(required_content=["metodología"])
     text = "# Sección\n\nTexto sin relación alguna."
     # strict_policy says "warning" for everything, but `strict=True` should still
-    # force the missing_required issue to "error" — this is the legacy asymmetry.
+    # force the missing_required issue to "error" — this is the current asymmetry.
     issues = review_section_contract(
         text, "intro", contract, _policy(length_violations="warning"), strict=True
     )
@@ -722,7 +722,7 @@ def _estadia_extra() -> dict:
             "extracted_dir_policy": "rules_traceability_only",
             "extracted_dir": "docs/extracted",
         },
-        "project": {"source_priority": ["tesina/manual"]},
+        "project": {"source_currentity": ["tesina/manual"]},
         "preliminaries": {
             "roman_pagination": {"enabled": True},
             "body_pagination_start": {"section_id": "introduccion"},
@@ -751,7 +751,7 @@ from docs.domain.rules import (
     _check_extracted_dir_policy,
     _check_margins_and_cover_policy,
     _check_preliminaries_pagination,
-    _check_source_priority_excludes_extracted,
+    _check_source_currentity_excludes_extracted,
 )
 
 
@@ -763,13 +763,13 @@ def test_check_extracted_dir_policy_silent_when_extracted_dir_absent():
     assert _check_extracted_dir_policy(_generic_extra()) == []
 
 
-def test_check_source_priority_excludes_extracted_silent_when_extracted_dir_absent():
+def test_check_source_currentity_excludes_extracted_silent_when_extracted_dir_absent():
     # SUGGESTION-1 (fresh-context verify, PR1 fix batch): symmetry with the
     # other 3 "stays silent when block absent" tests -- this check gates on
     # `paths.extracted_dir`, same as `_check_extracted_dir_policy` above.
     extra = _generic_extra()
-    extra["project"] = {"source_priority": ["anything/at/all"]}
-    assert _check_source_priority_excludes_extracted(extra) == []
+    extra["project"] = {"source_currentity": ["anything/at/all"]}
+    assert _check_source_currentity_excludes_extracted(extra) == []
 
 
 def test_check_preliminaries_pagination_silent_when_preliminaries_absent():
@@ -845,12 +845,12 @@ def test_review_rules_extracted_dir_policy_any_declared_string_accepted():
     assert not any("extracted_dir_policy" in i.message for i in result.issues)
 
 
-def test_review_rules_docs_extracted_in_source_priority():
+def test_review_rules_docs_extracted_in_source_currentity():
     extra = _estadia_extra()
-    extra["project"]["source_priority"] = ["docs/extracted/foo"]
+    extra["project"]["source_currentity"] = ["docs/extracted/foo"]
     template = Template.model_validate({"type": "x", "title": "X", **extra})
     result = review_rules(template, manifest_exists=True, manifest_size=10)
-    assert any("source_priority" in i.message for i in result.issues)
+    assert any("source_currentity" in i.message for i in result.issues)
 
 
 def test_review_rules_apa7_disabled_is_not_forced_and_raises_no_issue():
@@ -1101,7 +1101,7 @@ def test_review_cross_consistency_duration_mismatch_skipped_when_not_declared():
 
 
 def test_review_cross_consistency_no_default_terms_when_none_provided():
-    # Compat gate (task 1.3): proves DEFAULT_CONTESTED_STACK_TERMS is gone --
+    # Invariant (task 1.3): proves DEFAULT_CONTESTED_STACK_TERMS is gone --
     # an unqualified mention of a formerly-hardcoded term (Laravel) raises no
     # issue when no contested_stack_terms are supplied by the caller.
     bodies = {"infraestructura": "El sistema usa Laravel como base de datos definitiva."}
@@ -1175,4 +1175,3 @@ def test_review_cross_consistency_contested_stack_evidence_in_other_clause_still
 def test_review_cross_consistency_no_issues_for_empty_bodies():
     result = review_cross_consistency(_template(), {}, strict=False)
     assert result.issues == []
-

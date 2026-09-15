@@ -69,5 +69,3 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
 def stamp() -> None:
     """Print a local ISO-8601 timestamp for authored section stamps."""
     print(datetime.now().isoformat(timespec="seconds"))
-
-

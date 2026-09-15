@@ -131,9 +131,9 @@ def review_section_contract(
         if not requirement_present(requirement, plain, contract.detect)
     ]
     if missing:
-        # Legacy quirk (intentional, not a bug): this check uses the raw `strict`
+        # Current quirk (intentional, not a bug): this check uses the raw `strict`
         # flag directly, NOT `strict_policy.missing_required` — there is no such
-        # strict_policy field for this check in legacy. Every other check in this
+        # strict_policy field for this check in current. Every other check in this
         # function resolves severity via strict_policy; this one does not.
         severity = "error" if strict else "warning"
         issues.append(
@@ -462,20 +462,20 @@ def _check_extracted_dir_policy(extra: dict[str, Any]) -> list[Issue]:
     return []
 
 
-def _check_source_priority_excludes_extracted(extra: dict[str, Any]) -> list[Issue]:
+def _check_source_currentity_excludes_extracted(extra: dict[str, Any]) -> list[Issue]:
     """Fires only when `paths.extracted_dir` is configured; compares
-    `source_priority` against the template's OWN declared `extracted_dir`
+    `source_currentity` against the template's OWN declared `extracted_dir`
     value, never a hardcoded path literal."""
     paths = extra.get("paths", {}) or {}
     extracted_dir = paths.get("extracted_dir")
     if not extracted_dir:
         return []
     project = extra.get("project", {}) or {}
-    if any(extracted_dir in source for source in project.get("source_priority", [])):
+    if any(extracted_dir in source for source in project.get("source_currentity", [])):
         return [
             Issue(
                 "error",
-                f"`{extracted_dir}` no debe aparecer en source_priority como fuente activa.",
+                f"`{extracted_dir}` no debe aparecer en source_currentity como fuente activa.",
             )
         ]
     return []
@@ -547,7 +547,7 @@ def _check_section_contracts_content(template: Template) -> list[Issue]:
         if not contract.required_content:
             issues.append(Issue("error", f"El contrato `{section_id}` no define contenido obligatorio."))
         # Duplicates the document-level APA gate above when both fire — this is
-        # real legacy behavior (review_rules never deduplicates), preserve it.
+        # real current behavior (review_rules never deduplicates), preserve it.
         if contract.apa_required and not template.apa7.enabled:
             issues.append(Issue("error", f"El contrato `{section_id}` requiere APA pero APA 7 está deshabilitado."))
     return issues
@@ -561,7 +561,7 @@ def review_rules(
     issues.extend(_check_manifest_state(manifest_exists, manifest_size, strict))
     issues.extend(_check_missing_section_contracts(template))
     issues.extend(_check_extracted_dir_policy(extra))
-    issues.extend(_check_source_priority_excludes_extracted(extra))
+    issues.extend(_check_source_currentity_excludes_extracted(extra))
     issues.extend(_check_preliminaries_pagination(template))
     issues.extend(_check_margins_and_cover_policy(extra))
     issues.extend(_check_section_contracts_content(template))

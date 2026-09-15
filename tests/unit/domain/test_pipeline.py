@@ -24,7 +24,7 @@ def test_pipeline_stage_plan_prep_has_ten_stages_in_order():
     ]
 
 
-def test_pipeline_stage_plan_prep_fail_fast_flags_match_legacy():
+def test_pipeline_stage_plan_prep_fail_fast_flags_match_current():
     stages = dict(pipeline_stage_plan("prep"))
     assert stages["doctor"] is True
     assert stages["review-rules"] is True
@@ -143,4 +143,3 @@ def test_pipeline_stage_plan_deterministic_across_repeated_calls():
         ("format-audit-docx", True),
         ("qa-docx", True),
     ]
-

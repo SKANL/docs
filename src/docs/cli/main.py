@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         result = app(args=argv, standalone_mode=False)
     except typer.Exit as exc:
         return exc.exit_code
-    except Exception as exc:  # legacy main() parity (3945-3947)
+    except Exception as exc:  # current main() parity (3945-3947)
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     return result if isinstance(result, int) else 0
@@ -82,6 +82,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-

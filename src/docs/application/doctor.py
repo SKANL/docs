@@ -246,7 +246,7 @@ class DoctorService:
         )
 
     def _stale_finals_check(self, config: dict[str, Any]) -> Check:
-        """`output/final/` is the folder you deliver FROM.
+        """`output/published/` is the folder you deliver FROM.
 
         Same hazard as `_stale_drafts_check` and a worse blast radius, which
         is why checking only `draft/` guarded the cheaper half. A real
@@ -473,4 +473,3 @@ class DoctorService:
             )
         )
         return checks
-

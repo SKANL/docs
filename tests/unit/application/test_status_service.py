@@ -268,10 +268,10 @@ def test_document_status_serializes_optional_v2_observability() -> None:
         doc_id="alpha",
         context_filled=0,
         context_total=0,
-        v2_capabilities={"pandoc": {"available": True}},
-        v2_execution={"results": []},
-        v2_provenance={"run_id": "run-1"},
-        v2_succeeded=True,
+        capabilities={"pandoc": {"available": True}},
+        execution={"results": []},
+        provenance={"run_id": "run-1"},
+        succeeded=True,
         unsupported_stages=["accessibility-review"],
         publication_blockers=["publish disallowed by pipeline policy"],
     )
@@ -301,9 +301,9 @@ def test_status_summary_reads_v2_observability_through_reader(tmp_path, service,
     status = service.status_summary("alpha", _template(), _config(tmp_path), normative=_NORMATIVE)
 
     assert reader.document_roots == [workspace.doc_root("alpha")]
-    assert status.v2_succeeded is True
-    assert status.v2_execution == {"schema": "docs.build/v2"}
-    assert status.v2_provenance == {"run_id": "run-1"}
+    assert status.succeeded is True
+    assert status.execution == {"schema": "docs.build/v2"}
+    assert status.provenance == {"run_id": "run-1"}
     assert status.unsupported_stages == ["accessibility-review"]
     assert status.publication_blockers == ["required capability unavailable: soffice"]
 
@@ -322,7 +322,7 @@ def test_status_reader_reader_loads_manifest_and_matching_provenance_from_docume
     artifact.with_suffix(".docx.manifest.json").write_text(manifest.to_json(), encoding="utf-8")
     source = doc_root / "source.md"
     source.write_text("source", encoding="utf-8")
-    provenance = ProvenanceLedger(doc_root / "runs" / "v2-provenance.json")
+    provenance = ProvenanceLedger(doc_root / "runs" / "provenance.json")
     expected_provenance = provenance.record_run("build-001", inputs=(source,), outputs=(artifact,))
 
     snapshot = StatusReader().read(doc_root)
@@ -389,7 +389,7 @@ def test_status_reader_reader_blocks_tampered_provenance_artifact(tmp_path: Path
     )
     manifest_path = artifact.with_suffix(".docx.manifest.json")
     manifest_path.write_text(manifest.to_json(), encoding="utf-8")
-    ledger = ProvenanceLedger(doc_root / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedger(doc_root / "runs" / "provenance.json")
     source = doc_root / "source.md"
     source.write_text("source", encoding="utf-8")
     ledger.record_run("build-002", inputs=(source,), outputs=(artifact,))
@@ -403,7 +403,7 @@ def test_status_reader_reader_blocks_tampered_provenance_artifact(tmp_path: Path
     assert any("provenance run failed integrity" in finding for finding in snapshot.publication_blockers)
 
 
-def test_status_reader_reader_accepts_legacy_absolute_path_attestation(tmp_path: Path) -> None:
+def test_status_reader_reader_accepts_current_absolute_path_attestation(tmp_path: Path) -> None:
     doc_root = tmp_path / "alpha"
     artifact = doc_root / "output" / "v2" / "alpha.docx"
     artifact.parent.mkdir(parents=True)
@@ -412,23 +412,23 @@ def test_status_reader_reader_accepts_legacy_absolute_path_attestation(tmp_path:
         document_id="alpha",
         artifacts=(ArtifactRef(str(artifact), sha256_file(artifact), ArtifactState.READY),),
         verification={"passed": True},
-        provenance_run="build-legacy",
+        provenance_run="build-current",
     )
     manifest_path = artifact.with_suffix(".docx.manifest.json")
     manifest_path.write_text(manifest.to_json(), encoding="utf-8")
-    ledger = ProvenanceLedger(doc_root / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedger(doc_root / "runs" / "provenance.json")
     source = doc_root / "source.md"
     source.write_text("source", encoding="utf-8")
-    ledger.record_run("build-legacy", inputs=(source,), outputs=(artifact,))
-    legacy = manifest.to_dict()
-    legacy["artifacts"][0]["media_type"] = "application/octet-stream"
-    legacy["artifacts"][0]["size_bytes"] = artifact.stat().st_size
+    ledger.record_run("build-current", inputs=(source,), outputs=(artifact,))
+    current = manifest.to_dict()
+    current["artifacts"][0]["media_type"] = "application/octet-stream"
+    current["artifacts"][0]["size_bytes"] = artifact.stat().st_size
     ledger.record_attestation(
-        "build-legacy",
+        "build-current",
         {
             "schema": "docs.attestation/v2",
-            "manifest": legacy,
-            "sha256": sha256_content(legacy),
+            "manifest": current,
+            "sha256": sha256_content(current),
         },
     )
 
@@ -453,6 +453,3 @@ def test_status_reader_manifest_selection_ignores_mtime(tmp_path: Path) -> None:
     second_path.touch()
 
     assert StatusReader._latest_manifest_path(tmp_path) == Path(expected)
-
-
-

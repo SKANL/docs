@@ -115,7 +115,7 @@ class ArtifactRecord:
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
-        # Keep the original compact record shape for legacy stage reports;
+        # Keep the original compact record shape for current stage reports;
         # richer contract fields are emitted only when the producer supplied
         # them.  This lets v2 add provenance without invalidating old logs.
         for key in ("media_type", "size_bytes", "state", "producer_stage", "run_id"):

@@ -21,7 +21,7 @@ docx_app = typer.Typer()
 def build_docx(ctx: typer.Context, output: str = typer.Option("", "--output")) -> None:
     """Arma el .docx del documento activo con las secciones ya redactadas.
 
-    Sin `--output` escribe el draft en `output/draft/`. Las mismas
+    Sin `--output` escribe el draft en `output/work/`. Las mismas
     entradas producen bytes idénticos (ver `docs guide`, §7)."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)

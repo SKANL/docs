@@ -31,7 +31,7 @@ def number_and_resolve(
     becomes `Ver Figura ?` plus a warning naming the label -- never a
     silent guess. Text with no markers
     (e.g. a section that already hand-writes `Figura N.`) passes through
-    unchanged -- backward compatible with documents authored before this
+    unchanged -- stable with documents authored before this
     feature existed.
 
     `bound_figures` (design.md ADR-4/ADR-5) is the application-resolved

@@ -21,7 +21,7 @@ _PROCESS_LOCK = threading.Lock()
 
 
 class ProvenanceLedger:
-    """Record and verify input and output hashes without touching legacy ledgers."""
+    """Record and verify input and output hashes without touching current ledgers."""
 
     def __init__(self, log_path: Path, *, trusted_root: Path | None = None) -> None:
         self._log_path = log_path
@@ -237,4 +237,3 @@ class ProvenanceLedger:
         except OSError:
             return False
         return True
-

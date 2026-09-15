@@ -126,4 +126,3 @@ def test_structurally_identical_svgs_differing_only_in_ids_comments_metadata_are
         hashlib.sha256(normalized_a.encode()).hexdigest()
         == hashlib.sha256(normalized_b.encode()).hexdigest()
     )
-

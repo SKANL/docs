@@ -235,4 +235,3 @@ def test_run_git_rev_parse_head_in_real_non_git_dir_never_leaks_raw_stderr(tmp_p
     assert "fatal" not in captured.err
     assert "fatal" not in captured.out
     assert not any(record.levelno == logging.WARNING for record in caplog.records)
-

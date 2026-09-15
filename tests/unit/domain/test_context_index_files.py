@@ -36,4 +36,3 @@ def test_filename_constants_are_the_expected_literal_values():
     # desync the writer (`context_files.py`) from the readers.
     assert TOPIC_QA_INDEX_FILENAME == "index.md"
     assert CURATED_INDEX_FILENAME == "curated-index.md"
-

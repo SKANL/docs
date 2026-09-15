@@ -23,4 +23,3 @@ def test_svg_rasterizer_port_declares_rasterize():
             return None
 
     assert isinstance(FakeRasterizer(), _Checkable)
-

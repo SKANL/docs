@@ -41,9 +41,3 @@ def test_deps_wires_a_resvg_rasterizer_regardless_of_resvg_availability(tmp_path
     # `rasterize()`, per design.md's fail-open contract).
     deps = _deps(tmp_path)
     assert isinstance(deps.svg_rasterizer, ResvgRasterizerAdapter)
-
-
-
-
-
-

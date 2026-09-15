@@ -651,5 +651,3 @@ def test_source_ingest_alias_uses_the_same_native_stage(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["source", "ingest", "--json"])
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout)["succeeded"] is True
-
-

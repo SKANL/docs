@@ -72,7 +72,7 @@ def test_unresolvable_ref_becomes_placeholder_and_reports_warning():
     assert "no-existe" in warnings[0]
 
 
-def test_leaves_hardcoded_captions_untouched_backward_compatible():
+def test_leaves_hardcoded_captions_untouched_stable():
     # Sections that already hand-write `Figura N.` (no markers) must build
     # unchanged -- the current generated document does exactly this.
     sections = [("a", "Figura 1. Ya está numerada a mano.")]
@@ -175,4 +175,3 @@ def test_bound_figures_omitted_reproduces_todays_output_byte_for_byte():
     assert body["intro"] == "Figura 1. texto Figura 2. mas"
     assert body["cierre"] == "Figura 3."
     assert warnings == []
-

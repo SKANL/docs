@@ -58,4 +58,3 @@ def test_template_repository_usable_independently():
     assert isinstance(fake, TemplateRepository)
     assert not isinstance(fake, RegistryRepository)
     assert not isinstance(fake, DocumentRepository)
-

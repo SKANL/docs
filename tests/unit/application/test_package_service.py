@@ -63,5 +63,3 @@ def test_package_service_does_not_import_infrastructure() -> None:
     }
 
     assert not any(name.startswith("docs.infrastructure") for name in imported_modules)
-
-

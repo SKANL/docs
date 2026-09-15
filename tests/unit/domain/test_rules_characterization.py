@@ -381,7 +381,7 @@ _EXPECTED_SECTION_ISSUES: dict[str, dict[str, list[dict[str, str]]]] = {
 
 
 def test_review_cross_consistency_reporte_estadia_tic_contested_stack_terms_snapshot():
-    # Compat gate (task 1.6): estadia's template-config-driven contested_stack_terms
+    # Invariant (task 1.6): estadia's template-config-driven contested_stack_terms
     # (resolved via NormativeSettings, no hardcoded DEFAULT_CONTESTED_STACK_TERMS)
     # MUST reproduce the exact judgment the deleted constant produced pre-refactor.
     raw = _load_raw()
@@ -407,7 +407,7 @@ def test_review_cross_consistency_reporte_estadia_tic_contested_stack_terms_snap
 
 
 def test_review_cross_consistency_reporte_estadia_tic_duration_mismatch_snapshot():
-    # Compat gate: estadia's template declares `cross_consistency.duration_consistency`
+    # Invariant: estadia's template declares `cross_consistency.duration_consistency`
     # (resolved via NormativeSettings) so the check -- and its exact wording --
     # MUST reproduce the pre-refactor always-on behavior byte-for-byte.
     raw = _load_raw()
@@ -447,4 +447,3 @@ def test_review_section_text_reporte_estadia_tic_corpus_snapshot():
             actual = [issue.to_dict() for issue in issues]
             expected = _EXPECTED_SECTION_ISSUES[section_id][key]
             assert actual == expected, f"{section_id} ({key}) drifted from characterization snapshot"
-

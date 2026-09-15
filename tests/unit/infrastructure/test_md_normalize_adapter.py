@@ -95,4 +95,3 @@ def test_reingesting_unchanged_source_produces_byte_identical_output(tmp_path: P
     second = MdNormalizeAdapter().ingest(src, tmp_path / "ingested2", "md")
 
     assert second.read_bytes() == first_bytes
-

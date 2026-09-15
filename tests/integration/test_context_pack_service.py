@@ -158,7 +158,7 @@ def test_pack_context_notes_missing_draft_when_section_absent(tmp_path, workspac
 
 
 def test_pack_context_section_contract_model_dump_surfaces_extra_keys(tmp_path, workspace, service):
-    """Parity risk vs legacy raw json.dumps(contract_dict, ...): confirm pydantic
+    """Parity risk vs current raw json.dumps(contract_dict, ...): confirm pydantic
     extra="allow" fields on SectionContract survive model_dump() into the
     rendered contract JSON block, not just the typed fields."""
     template = Template(
@@ -167,7 +167,7 @@ def test_pack_context_section_contract_model_dump_surfaces_extra_keys(tmp_path, 
         sections=[Section(id="introduccion", title="Introducción", order=1, required=True)],
         section_contracts={
             "introduccion": SectionContract.model_validate(
-                {"required_content": ["alcance"], "custom_legacy_key": "valor-no-tipado"}
+                {"required_content": ["alcance"], "custom_current_key": "valor-no-tipado"}
             )
         },
     )
@@ -175,7 +175,7 @@ def test_pack_context_section_contract_model_dump_surfaces_extra_keys(tmp_path, 
         "doc-1", template, "introduccion", _config(tmp_path), normative=_NORMATIVE
     )
     text = out_path.read_text(encoding="utf-8")
-    assert '"custom_legacy_key": "valor-no-tipado"' in text
+    assert '"custom_current_key": "valor-no-tipado"' in text
 
 
 def test_pack_context_document_lists_missing_section_as_no(tmp_path, workspace, service):

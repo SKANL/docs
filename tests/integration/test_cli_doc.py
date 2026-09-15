@@ -298,5 +298,3 @@ def test_doc_revise_rejects_unknown_id_as_structural_change(revise_ws):
 
     assert result.exit_code != 0
     assert "revise" in (result.output + str(result.exception or ""))
-
-

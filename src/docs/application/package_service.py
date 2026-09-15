@@ -174,4 +174,3 @@ def _rollback(
     rollback.write_bytes(previous_content)
     with directory_guard(output.parent):
         os.replace(rollback, output)
-

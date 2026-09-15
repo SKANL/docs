@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import docs.infrastructure.transform.v2_atomic_transform as atomic_module
+import docs.infrastructure.transform.system_transform as atomic_module
 from docs.application.atomic_transform import AtomicTransform, TransformResult, TransformSpec
 
 
@@ -803,5 +803,3 @@ def test_sync_failure_after_publishing_new_destination_removes_owned_output(tmp_
     result = AtomicTransform().run(spec, lambda scratch: (scratch / "result").write_text("new"))
     assert not result.ok
     assert not destination.exists()
-
-

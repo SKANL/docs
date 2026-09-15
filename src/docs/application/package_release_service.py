@@ -109,4 +109,3 @@ class PackageReleaseService:
                 continue
             shutil.copyfile(existing, staging / existing.name)
             shutil.copyfile(manifest_path, staging / manifest_path.name)
-

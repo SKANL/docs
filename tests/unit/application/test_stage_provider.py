@@ -2,7 +2,7 @@ from docs.application.stage_provider import StageProvider
 from docs.domain.pipeline_kernel import StageResult
 
 
-def test_explicit_stage_service_takes_precedence_over_compatibility_container():
+def test_explicit_stage_service_takes_precedence_over_native_container():
     direct = object()
     provider = StageProvider({"example": direct})
 
@@ -91,5 +91,3 @@ def test_package_release_operation_is_owned_by_the_application_provider():
 
     assert provider.operation("package_release")() == (True, "package ready")
     assert calls == ["package"]
-
-

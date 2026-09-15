@@ -153,11 +153,11 @@ def test_near_miss_keys_are_reported_at_every_nesting_level():
 
 
 def test_a_deliberate_passthrough_key_is_left_alone():
-    # `custom_legacy_key` resembles no real field, so it is an intentional
+    # `custom_current_key` resembles no real field, so it is an intentional
     # untyped passthrough — it survives into the rendered context pack and
     # must not be nagged about. Precision is what makes this net usable.
     raw = copy.deepcopy(_MINIMAL_VALID)
-    raw["section_contracts"]["introduccion"]["custom_legacy_key"] = "valor"
+    raw["section_contracts"]["introduccion"]["custom_current_key"] = "valor"
 
     assert [i for i in validate_template(raw) if i.code == "template.unknown_key"] == []
 
@@ -271,4 +271,3 @@ def test_template_contract_allows_deliberate_nested_extensions():
     }
 
     assert validate_template(raw) == []
-

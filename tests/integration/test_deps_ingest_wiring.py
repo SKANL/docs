@@ -52,7 +52,3 @@ def test_deps_wires_pdf_render_adapter_when_toolchain_available(tmp_path: Path):
 
     deps = _deps(tmp_path)
     assert isinstance(deps.ingest.pdf_render, Pdfium2PdfRenderAdapter)
-
-
-
-

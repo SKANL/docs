@@ -160,5 +160,3 @@ def test_the_determinism_promise_is_scoped_to_a_toolchain():
     prose = " ".join(AGENTS_MD.split())
     assert "not across toolchain versions" in prose
     assert "docs doctor" in prose
-
-

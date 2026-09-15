@@ -15,5 +15,3 @@ def source_ingest(
 ) -> None:
     """Ingest source material through the native v2 source stage."""
     _run_source_command(ctx, "ingest", json_output)
-
-

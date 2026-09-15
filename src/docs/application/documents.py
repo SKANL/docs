@@ -23,7 +23,7 @@ class DocumentLifecycleRepository(RegistryRepository, DocumentRepository, Templa
 
 _SUBDIRS = (
     "context", "assets", "sections",
-    "output/draft", "output/final", "output/qa",
+    "output/work", "output/published", "output/qa",
     "runs", "corrections/inbox",
     # spec: document-pipeline "Document Workspace Creation Includes Ingest
     # Inbox" -- inbox/assets/ is created here too (front:assets-figures owns
@@ -90,6 +90,3 @@ class DocumentService:
     def delete(self, doc_id: str) -> None:
         validate_slug(doc_id)
         self.repository.remove(doc_id)
-
-
-

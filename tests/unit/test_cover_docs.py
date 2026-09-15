@@ -7,4 +7,3 @@ def test_agent_guide_documents_native_generated_cover_config():
     assert '"cover"' in guide
     assert '"mode": "generated"' in guide
     assert '"variant": "academic"' in guide
-

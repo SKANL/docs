@@ -36,7 +36,7 @@ def test_infer_section_id_leaves_id_unchanged_when_no_leading_digits():
 
 
 def test_infer_section_id_only_strips_one_leading_digit_run():
-    # Legacy regex `^\d+-` only matches a single leading run-of-digits-then-hyphen;
+    # Current regex `^\d+-` only matches a single leading run-of-digits-then-hyphen;
     # a section id that itself starts with digits after the order prefix is
     # preserved verbatim (no second strip pass).
     path = Path("/repo/sections/003-2024-resultados.md")
@@ -207,4 +207,3 @@ def test_section_by_id_raises_value_error_with_known_ids_when_missing():
     sections = [{"id": "intro", "order": 1}, {"id": "methods", "order": 2}]
     with pytest.raises(ValueError, match=re.escape("Sección desconocida: bogus. Secciones disponibles: intro, methods")):
         section_by_id(sections, "bogus")
-

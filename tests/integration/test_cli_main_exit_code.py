@@ -64,5 +64,3 @@ def test_main_propagates_a_nonzero_nonone_exit_code(workspace, monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     Deps().documents.create("doc1", "tesina")
     assert main(["doctor", "--strict"]) == 2
-
-

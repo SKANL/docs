@@ -132,4 +132,3 @@ def test_optional_capability_policy_degrades_only_in_draft(
         separators=(",", ":"),
         sort_keys=True,
     )
-

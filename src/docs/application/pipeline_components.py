@@ -239,4 +239,3 @@ class RunReporter:
 
     def report(self, results: Iterable[StageResult]) -> PipelineReport:
         return PipelineReport(tuple(results))
-

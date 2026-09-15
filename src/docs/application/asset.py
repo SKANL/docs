@@ -6,7 +6,7 @@ from docs.domain.ports.asset_repository import AssetRepository
 from docs.domain.workspace import Workspace
 
 # Default asset-kind configuration: kind name -> allowed extensions (with dot).
-# Preserves prior DOCX-only behavior when no configuration is supplied.
+# Preserves current DOCX-only behavior when no configuration is supplied.
 _DEFAULT_ASSET_KINDS: dict[str, tuple[str, ...]] = {"docx": (".docx",)}
 
 

@@ -30,3 +30,4 @@ uv run pytest tests/integration/test_v2_source_commands.py tests/integration/tes
 ```
 
 Do not make CI depend on an authoring plugin. Install only the declared executable toolchains when a job is intended to exercise optional capability paths; the product runtime remains native and reports missing tools through capabilities and policy.
+

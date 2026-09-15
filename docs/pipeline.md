@@ -12,9 +12,9 @@ uv run docs document prepare --json
 # author section Markdown under the document's sections/ directory
 uv run docs document build --format docx --policy strict --json
 uv run docs document verify --format docx --policy strict --json
-uv run docs document inspect documents/report/output/v2/report.docx --json
-uv run docs document package documents/report/output/v2 release.zip --json
-uv run docs document publish documents/report/output/v2/report.docx published/report.docx --policy release --json
+uv run docs document inspect documents/report/output/current/report.docx --json
+uv run docs document package documents/report/output/current release.zip --json
+uv run docs document publish documents/report/output/current/report.docx published/report.docx --policy release --json
 ```
 
 `document ingest` converts inbox material. `document prepare` repeats ingest, normalizes ingested Markdown, and writes the compiled source structure. Both commands persist `docs.sources/v2` reports below `runs/`; they do not author section prose.
@@ -28,14 +28,14 @@ uv run docs document publish documents/report/output/v2/report.docx published/re
 
 Each report has `schema: "docs.sources/v2"`, `document_id`, `succeeded`, ordered `stages`, and `artifacts`. This shape is also mandatory for failure reports: construction, invocation, malformed-result, and empty-stage failures retain the selected document's `document_id`. A source command exits non-zero when its report is unsuccessful.
 
-The flat compatibility command routes `pipeline ingest` to
+The flat native command routes `pipeline ingest` to
 `SourcePipeline.ingest` and `pipeline prepare` to
 `SourcePipeline.prepare`. It projects each v2 stage into the existing
-legacy summary shape (`stage_set`, `strict`, `passed`, and `stages`) while
+current summary shape (`stage_set`, `strict`, `passed`, and `stages`) while
 retaining the complete v2 report, including warnings, errors, and artifacts,
 in each stage's `detail`. It forwards `--strict` when the selected callable
 accepts `strict`; `prepare` currently reports strict as advisory because its
-native operation does not accept that argument. The legacy `pipeline prep`
+native operation does not accept that argument. The current `pipeline prep`
 route remains unchanged.
 
 ## Stage results
@@ -105,7 +105,7 @@ resolve-config -> resolve-template -> resolve-context -> resolve-assets
 -> package-release -> publish-draft
 ```
 
-`build` runs the full `document` pipeline by default and writes successful formats to `output/v2/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The CLI composition root supplies handlers for every declared stage; a stage is `skipped` only when its document has no applicable input (for example, no visual specs or no cover). Partial programmatic service maps are intentionally fail-closed and are not the normal runtime.
+`build` runs the full `document` pipeline by default and writes successful formats to `output/current/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The CLI composition root supplies handlers for every declared stage; a stage is `skipped` only when its document has no applicable input (for example, no visual specs or no cover). Partial programmatic service maps are intentionally fail-closed and are not the normal runtime.
 
 ## Format selection
 
@@ -133,17 +133,17 @@ Use `docs document plan --pipeline document-build --json` to inspect the ordered
 
 ## Flat CLI migration boundary
 
-The compatibility policy for the unprefixed `retired pipeline command` command
+The native policy for the unprefixed `retired pipeline command` command
 is intentionally explicit and finite. `ingest` and `prepare` are routed through the
-native v2 source pipeline and its result is adapted back to the legacy summary
+native v2 source pipeline and its result is adapted back to the current summary
 shape (`stage_set`, `strict`, `passed`, and `stages`). `assemble` now routes
 through the native v2 build runtime and projects its execution report back to
-the legacy summary shape. `prep` and `all` now execute through the native
+the current summary shape. `prep` and `all` now execute through the native
 `FlatPipelineV2Adapter`, which reuses injected stage operations while
 owning ordering, fail-fast behavior, and the stable flat summary. Unknown stage
-sets remain on the legacy service until their output and publication semantics
+sets remain on the current service until their output and publication semantics
 have equivalent v2 coverage. This policy is declared in
-`removed compatibility module`; it is not inferred from
+`removed native module`; it is not inferred from
 the public v2 catalog. Consequently, existing exit codes and JSON/human output
 contracts remain stable while migration proceeds incrementally.
 
@@ -151,5 +151,4 @@ For the flat `ingest` route, `--strict` is forwarded when the selected v2
 operation declares that keyword. If the adapter does not accept it, the command
 does not silently discard the flag: it keeps the result degradable and emits a
 structured `pipeline.strict_advisory` warning in JSON. A v2 report without any
-stage is always a compatibility failure with `pipeline.empty_v2_report`.
-
+stage is always a native failure with `pipeline.empty_v2_report`.

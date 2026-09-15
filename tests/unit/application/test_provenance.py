@@ -79,15 +79,15 @@ def test_record_run_replaces_log_atomically(tmp_path: Path, monkeypatch) -> None
     assert not list(tmp_path.glob(".provenance-v2-*.tmp"))
 
 
-def test_record_run_leaves_legacy_files_untouched(tmp_path: Path) -> None:
-    legacy = tmp_path / "provenance.json"
+def test_record_run_leaves_current_files_untouched(tmp_path: Path) -> None:
+    current = tmp_path / "provenance.json"
     source = tmp_path / "source.md"
-    legacy.write_text('{"legacy":true}', encoding="utf-8")
+    current.write_text('{"current":true}', encoding="utf-8")
     source.write_text("source body", encoding="utf-8")
 
     ProvenanceLedger(tmp_path / "provenance-v2.json").record_run("build-001", inputs=(source,), outputs=())
 
-    assert legacy.read_text(encoding="utf-8") == '{"legacy":true}'
+    assert current.read_text(encoding="utf-8") == '{"current":true}'
 
 def test_verify_run_uses_paths_relative_to_the_ledger(tmp_path: Path) -> None:
     source = tmp_path / "inputs" / "source.md"
@@ -198,7 +198,7 @@ def test_record_run_can_verify_final_destinations_after_publication(tmp_path: Pa
     source.write_text("source", encoding="utf-8")
     destination.parent.mkdir()
     destination.write_bytes(b"published")
-    ledger = ProvenanceLedger(tmp_path / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedger(tmp_path / "runs" / "provenance.json")
 
     ledger.record_run("build-1", inputs=(source,), outputs=(destination,))
 
@@ -214,7 +214,7 @@ def test_record_run_can_attest_destination_using_prepublication_source(tmp_path:
     source.parent.mkdir()
     destination.parent.mkdir()
     source.write_bytes(b"published")
-    ledger = ProvenanceLedger(tmp_path / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedger(tmp_path / "runs" / "provenance.json")
     ledger.record_run("build-1", inputs=(), outputs=(source,), output_identities={source: destination})
     destination.write_bytes(b"published")
     assert ledger.verify_run("build-1") is True
@@ -275,7 +275,7 @@ def test_verify_run_rejects_untrusted_external_path_from_tampered_ledger(tmp_pat
         linked.symlink_to(outside)
     except (OSError, NotImplementedError):
         __import__("pytest").skip("symlinks unavailable")
-    log = tmp_path / "runs" / "v2-provenance.json"
+    log = tmp_path / "runs" / "provenance.json"
     log.parent.mkdir()
     log.write_text(json.dumps({
         "runs": {"tampered": {"run_id": "tampered", "inputs": {str(linked): hashlib.sha256(b"outside").hexdigest()}, "outputs": {}}},
@@ -293,5 +293,3 @@ def test_release_verification_rejects_absolute_paths_without_trusted_root(tmp_pa
     ledger.record_run("build-001", inputs=(source,), outputs=())
 
     assert ledger.verify_run("build-001", require_trusted_root=True) is False
-
-

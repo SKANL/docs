@@ -186,7 +186,7 @@ def test_structure_parts_inserts_generated_cover_before_sections():
     assert [part["type"] for part in parts].count("cover_generated") == 1
 
 
-def test_structure_parts_removes_legacy_cover_when_mode_none_is_explicit():
+def test_structure_parts_removes_current_cover_when_mode_none_is_explicit():
     parts = structure_parts(
         {
             "format": {"cover": {"mode": "none"}},
@@ -195,4 +195,3 @@ def test_structure_parts_removes_legacy_cover_when_mode_none_is_explicit():
     )
 
     assert parts == [{"type": "sections"}]
-

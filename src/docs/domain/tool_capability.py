@@ -106,7 +106,7 @@ class ToolCapabilityRegistry:
                 for field_name in ("executable", "module", "degradation"):
                     if getattr(existing, field_name) != getattr(capability, field_name):
                         raise ValueError(
-                            f"incompatible duplicate capability {capability.name!r}: "
+                            f"distinct duplicate capability {capability.name!r}: "
                             f"{field_name} differs"
                         )
             merged[capability.name] = capability if existing is None else ToolCapability(

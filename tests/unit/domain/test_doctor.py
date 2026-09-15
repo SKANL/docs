@@ -104,4 +104,3 @@ def test_match_normalized_is_deterministic_across_several_candidates():
     first = match_normalized("Ñ.pdf", same)
     assert first == match_normalized("Ñ.pdf", list(reversed(same)))
     assert first is not None
-

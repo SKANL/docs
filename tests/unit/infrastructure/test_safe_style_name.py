@@ -99,4 +99,3 @@ def test_safe_style_name_returns_none_when_nothing_is_addressable():
         styles = _FakeStyles()
 
     assert safe_style_name(_FakeDocument(), "Heading 1") is None
-

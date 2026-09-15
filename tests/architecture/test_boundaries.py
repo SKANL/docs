@@ -12,7 +12,7 @@ V2_MODULES = tuple(
         path
         for root in V2_ROOTS
         for path in root.rglob("*.py")
-        if path.name.endswith("_legacy.py") or path.name in {"pipeline_kernel.py", "tool_capability.py"}
+        if path.name.endswith("_current.py") or path.name in {"pipeline_kernel.py", "tool_capability.py"}
     )
 )
 
@@ -107,7 +107,7 @@ def test_pipeline_kernel_contains_no_nondeterministic_timestamp_calls() -> None:
 
 
 def test_application_atomic_transform_does_not_import_system_boundaries_directly() -> None:
-    """The v2 application compatibility port must not own process or filesystem mechanics."""
+    """The v2 application native port must not own process or filesystem mechanics."""
     path = SRC_ROOT / "application" / "atomic_transform.py"
     tree = _parse(path)
     violations: list[str] = []
@@ -211,7 +211,7 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     )
     assert isinstance(visual_stage, ast.IfExp)
     # DOCX must use the injected rendered QA too. Runtime routing is covered by
-    # test_v2_docx_visual_review_routes_real_qa_despite_compatibility_callback.
+    # test_v2_docx_visual_review_routes_real_qa_despite_native_callback.
     assert isinstance(visual_stage.body, ast.Lambda)
     assert isinstance(visual_stage.body.body, ast.Call)
     assert isinstance(visual_stage.body.body.func, ast.Name)
@@ -240,9 +240,7 @@ def test_workspace_bridge_keeps_audit_and_verify_fallbacks_callable() -> None:
     assert '"editorial-review": _review_stage_operation("editorial-review", verify)' in source
 
 
-def test_v2_composition_does_not_reach_through_legacy_pipeline_aggregate():
+def test_v2_composition_does_not_reach_through_current_pipeline_aggregate():
     source = (SRC_ROOT / "cli" / "commands" / "document_app.py").read_text(encoding="utf-8")
     assert "deps.pipeline" not in source
-    assert 'v2_compatibility' not in source
-
-
+    assert 'v2_native' not in source

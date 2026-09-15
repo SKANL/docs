@@ -114,5 +114,3 @@ def test_the_normalizer_still_exists_where_the_rule_says_it_does():
     home = SRC_ROOT / "infrastructure" / "docx" / "deterministic_zip.py"
     assert home.is_file()
     assert f"def {NORMALIZER}(" in home.read_text(encoding="utf-8")
-
-

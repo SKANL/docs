@@ -203,4 +203,3 @@ class PipelineRuntime:
             provenance=provenance,
             succeeded=succeeded,
         )
-

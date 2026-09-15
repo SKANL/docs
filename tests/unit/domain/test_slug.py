@@ -12,4 +12,3 @@ def test_accepts_valid_slugs(good):
 def test_rejects_invalid_slugs(bad):
     with pytest.raises(InvalidSlugError):
         validate_slug(bad)
-

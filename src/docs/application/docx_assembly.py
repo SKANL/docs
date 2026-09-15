@@ -103,7 +103,7 @@ class DocxRendererAdapter:
         output = output or output_dir / self._draft_docx_name(doc_id, config)
         body_docx = output_dir / self._body_docx_name(doc_id, config)
 
-        # Legacy strips YAML/JSON frontmatter from each section before invoking
+        # Current strips YAML/JSON frontmatter from each section before invoking
         # pandoc. `split_frontmatter` (docs.domain.markdown_text) already matches
         # that behavior byte-for-byte; reused here rather than re-derived.
         bound_figures = self._resolve_bound_figures(config)

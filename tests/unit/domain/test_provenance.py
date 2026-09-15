@@ -14,12 +14,11 @@ def test_ledger_emits_a_deterministic_v1_payload_and_verifies_its_entries():
     assert ledger.verify() == []
 
 
-def test_ledger_reads_legacy_log_entries_and_reports_tampering():
-    """Breaks if legacy logs stop being readable or hashes stop detecting edits."""
+def test_ledger_reads_current_log_entries_and_reports_tampering():
+    """Breaks if current logs stop being readable or hashes stop detecting edits."""
     ledger = ProvenanceLedger.from_dict({"events": [{"action": "render", "input": "section.md", "output": "report.docx"}]})
 
     payload = ledger.to_dict()
     payload["entries"][0]["operation"] = "tampered"
 
     assert ledger.verify(payload) == ["entries[0].sha256 does not match entry content"]
-

@@ -1,4 +1,4 @@
-"""Compatibility port for v2 transactional transforms.
+"""Application port for transactional transforms.
 
 Concrete implementations are resolved by the composition root at runtime;
 the application package intentionally has no static infrastructure import.
@@ -21,5 +21,5 @@ def __getattr__(name: str) -> Any:
         raise AttributeError(name)
     from importlib import import_module
 
-    implementation = import_module("docs.infrastructure.transform.v2_atomic_transform")
+    implementation = import_module("docs.infrastructure.transform.system_transform")
     return getattr(implementation, name)

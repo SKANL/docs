@@ -82,4 +82,3 @@ def test_missing_required_field_raises_documented_error():
 
     with pytest.raises(ValueError, match="labels"):
         ChartSvgRenderer().render(spec)
-

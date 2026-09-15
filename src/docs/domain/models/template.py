@@ -14,7 +14,7 @@ from docs.domain.cover import CoverSpec
 #   1. `$comment` siblings. Templates document themselves inline, at the top
 #      level and inside `sections[]` entries alike
 #      (`test_comment_sibling_keys_are_never_treated_as_incomplete`).
-#   2. Untyped passthrough on `SectionContract`. Legacy contract keys survive
+#   2. Untyped passthrough on `SectionContract`. Current contract keys survive
 #      `model_dump()` into the rendered context pack, so the agent still sees
 #      them (`test_pack_context_section_contract_model_dump_surfaces_extra_keys`).
 #
@@ -75,7 +75,7 @@ class SectionContract(BaseModel):
     required_content: list[str] = []
     evidence_required: bool = False
     apa_required: bool = False
-    # Parity fix: legacy reads `contract.get("pending_allowed_in_draft", True)` —
+    # Parity fix: current reads `contract.get("pending_allowed_in_draft", True)` —
     # an absent key is permissive. The previous `False` default here was a parity
     # bug (see Slice 3 plan, Task 4) and is corrected to `True`.
     pending_allowed_in_draft: bool = True
@@ -127,7 +127,7 @@ class TemplateContract(BaseModel):
     """Declarative fidelity constraints for a template-derived document.
 
     Every field is optional so the existing hand-written templates retain
-    their legacy behavior until they explicitly opt in to this contract.
+    their current behavior until they explicitly opt in to this contract.
     Individual entries stay data-shaped rather than prescriptive because the
     renderer and template plugins own their component-specific vocabularies.
     """
@@ -147,7 +147,7 @@ class Template(BaseModel):
     type: str
     title: str
     project_defaults: dict = {}
-    # Optional native declarative cover. Absent keeps legacy structure parts.
+    # Optional native declarative cover. Absent keeps current structure parts.
     cover: CoverSpec | None = None
     structure: list[dict] = []
     sections: list[Section] = []
@@ -155,7 +155,7 @@ class Template(BaseModel):
     context_schema: ContextSchema = ContextSchema()
     apa7: Apa7Config = Apa7Config()
     strict_policy: StrictPolicy = StrictPolicy()
-    # An absent contract must remain absent in serialized legacy templates.
+    # An absent contract must remain absent in serialized current templates.
     # `None` (rather than an empty model) keeps the old config and provenance
     # bytes intact until a template explicitly opts into fidelity constraints.
     template_contract: TemplateContract | None = None

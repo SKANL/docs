@@ -92,7 +92,3 @@ def test_documento_generico_doctor_rules_config_check_passes(tmp_path: Path, mon
 
     rules_check = next(c for c in result.checks if c.name == "rules_config")
     assert rules_check.ok is True, rules_check.detail
-
-
-
-

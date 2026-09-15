@@ -102,7 +102,7 @@ def _number(value: Any, default: float) -> float:
 
 
 def resolve_visual_theme(config: dict[str, Any]) -> VisualTheme:
-    """Resolve the optional document visual theme while retaining legacy defaults."""
+    """Resolve the optional document visual theme while retaining current defaults."""
     raw = _mapping(_mapping(config.get("format")).get("visual_theme"))
     colors = _mapping(raw.get("colors"))
     typography = _mapping(raw.get("typography"))
@@ -282,7 +282,7 @@ def apply_non_cover_section_layout(section: Any, config: dict[str, Any]) -> None
 
 
 def apply_header_theme(header: Any, theme: VisualTheme) -> None:
-    """Render an optional title-only header without changing legacy documents."""
+    """Render an optional title-only header without changing current documents."""
     if not theme.header.title:
         return
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -720,7 +720,7 @@ class PythonDocxAssemblyAdapter:
         self._configure_preliminary_pagination(cover, sections_part, config)
         effective_leading = leading
         if generated_cover and generated_cover.mode in {CoverMode.GENERATED, CoverMode.NONE}:
-            # Explicit generated/none modes take precedence over a legacy
+            # Explicit generated/none modes take precedence over a current
             # cover_from_asset part; otherwise the old cover is appended after
             # the generated one and silently wins the first-page visual QA.
             effective_leading = [part for part in leading if part.get("type") != "cover_from_asset"]

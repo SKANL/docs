@@ -5,7 +5,7 @@ The only consumer of this harness is an agent, and an agent that cannot
 learn a command from `--help` has to load the whole 4k-word `AGENTS.md`
 into context to discover that `pack-context` exists. 38 of 46 commands
 shipped with no help text at all -- not by decision, but because the Slice
-15 port from the legacy monolith preserved exit codes byte-for-byte and the
+15 port from the current monolith preserved exit codes byte-for-byte and the
 monolith had no help either. Nothing failed, so nobody noticed.
 
 This is the check that would have noticed.

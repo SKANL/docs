@@ -21,7 +21,7 @@ from docs.domain.markdown_text import dedupe_strings, extract_markdown_headings,
 # review): the pre-existing, unrelated `JsonContextRepository.regenerate_index`
 # (Topic/Q&A context-schema subsystem) already writes `context/index.md` (a
 # topic-status table) plus `context/index.json`. This module's progressive-
-# disclosure index is a different, incompatible format for a different
+# disclosure index is a different, distinct format for a different
 # purpose (curated ingest-source summary, not per-document Q&A status) --
 # consolidating the two was explicitly ruled out of scope in 7.6's own
 # additive note. Namespaced under a distinct filename so neither writer can
@@ -189,7 +189,7 @@ def build_context_files(
 
     Regeneration is idempotent per concern: an existing file with
     agent-authored `AGENT-FILL` content keeps that content; a concern
-    with no prior file (or no agent content yet) gets a fresh skeleton.
+    with no current file (or no agent content yet) gets a fresh skeleton.
     """
     existing_files = existing_files or {}
     return {

@@ -180,10 +180,10 @@ class GenerateVisualsService:
             if not isinstance(existing_bindings, dict):
                 existing_bindings = {}
             for label, catalog_id in bindings_additions.items():
-                prior = existing_bindings.get(label)
-                if prior is not None and prior != catalog_id:
+                current = existing_bindings.get(label)
+                if current is not None and current != catalog_id:
                     print(
-                        f"WARN: el label '{label}' ya tiene un binding manual a '{prior}' en "
+                        f"WARN: el label '{label}' ya tiene un binding manual a '{current}' en "
                         f"{_BINDINGS_NAME}; se conserva (no se sobrescribe con '{catalog_id}').",
                         file=sys.stderr,
                     )

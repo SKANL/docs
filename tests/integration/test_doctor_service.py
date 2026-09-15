@@ -659,7 +659,7 @@ def test_a_real_docx_still_passes_its_check(tmp_path):
 
 
 def test_doctor_warns_when_two_drafts_share_the_output_directory(tmp_path):
-    # Found in a real workspace: `output/draft/` held `reporte-estadia-draft.docx`
+    # Found in a real workspace: `output/work/` held `reporte-estadia-draft.docx`
     # next to `tesina-draft.docx`, left behind when the output name changed.
     # Two files called "draft", nothing saying which is current, and the wrong
     # one is one careless copy away from being delivered.
@@ -725,7 +725,7 @@ def test_an_accented_filename_stored_decomposed_is_found(tmp_path):
 
 
 def test_stale_outputs_are_reported_in_the_final_directory_too(tmp_path):
-    # My own fix, done by halves. `output/final/` is the folder you deliver
+    # My own fix, done by halves. `output/published/` is the folder you deliver
     # FROM, and the real workspace had five files in it -- three obsolete,
     # including the same `tesina-*` pair. Checking only `draft/` guarded the
     # cheaper half.
@@ -791,5 +791,3 @@ def test_the_libreoffice_check_names_everything_its_absence_costs(tmp_path):
     detail = next(c for c in result.checks if c.name == "libreoffice").detail
     assert "pdf" in detail.lower(), "debe decir que se pierde la salida PDF"
     assert "qa" in detail.lower(), "y también el QA visual"
-
-

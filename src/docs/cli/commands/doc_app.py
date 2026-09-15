@@ -232,5 +232,3 @@ def doc_revise(
             normative=normative, now=now,
         )
     emit_result(result, as_json)
-
-

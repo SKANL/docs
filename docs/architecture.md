@@ -13,7 +13,7 @@ Run from the harness checkout or use the installed `docs` entry point. The `docu
 | `document ingest [--json]` | Convert the active document's inbox sources through the native v2 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
 | `document prepare [--json]` | Run ingest, normalization, and structure compilation in order. | Prepared sources, `sections/v2-structure.json`, and `runs/v2-prepare.json`. |
 | `document status [--json]` | Report domain status plus v2 capabilities, manifests, and provenance details. | No source changes; status may read existing run data. |
-| `document build [--format F]... [--policy P] [--json]` | Run the v2 plan and publish verified requested formats into `output/v2/`. | Derived artifacts, sidecar manifests, QA data, and v2 provenance. |
+| `document build [--format F]... [--policy P] [--json]` | Run the v2 plan and publish verified requested formats into `output/current/`. | Derived artifacts, sidecar manifests, QA data, and v2 provenance. |
 | `document verify [--format F]... [--policy P] [--json]` | Run format checks without publishing. | Verification output only; it does not create a build attestation for `cli-verify-*`. |
 | `document inspect <artifact> [--json]` | Report path, media type, size, and SHA-256. | Nothing. |
 | `document diff <left> <right> [--json]` | Compare identities and, for UTF-8 files, return a text diff. | Nothing. |
@@ -26,7 +26,7 @@ Run from the harness checkout or use the installed `docs` entry point. The `docu
 
 Durable source inputs are `document.json`, section Markdown, resolved context, template/configuration, and workspace assets. Rendered DOCX/HTML/PDF files, manifests, QA reports, ZIP packages, and published copies are derived artifacts. Derived artifacts never replace source Markdown.
 
-The native runtime does not silently fall back to a alternate pipeline. Its build and publication boundary writes verified artifacts under `output/v2/`; it never promotes those artifacts into unverified output. `docs document publish` remains a separate document-lifecycle operation that snapshots legacy `output/draft/` into `output/final/`, and does not consume or promote v2 artifacts. The normal CLI and flat pipeline commands now use the native v2 boundary directly. Published artifacts are the only supported outputs. V2 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
+The native runtime does not silently fall back to a alternate pipeline. Its build and publication boundary writes verified artifacts under `output/current/`; it never promotes those artifacts into unverified output. `docs document publish` remains a separate document-lifecycle operation that snapshots current `output/work/` into `output/published/`, and does not consume or promote v2 artifacts. The normal CLI and flat pipeline commands now use the native v2 boundary directly. Published artifacts are the only supported outputs. V2 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
 
 ## Pipeline kernel
 
@@ -116,10 +116,8 @@ Capabilities are local executable checks supplied by the composition root and re
 
 ## Attested publication
 
-A publishable artifact must be under `output/v2/`, have a matching `<artifact>.<suffix>.manifest.json`, pass `BuildManifest.validate_for_publication()`, and have a verifiable ledger attestation for the exact manifest and run. The current source/template/config/context/assets/renderer identities must still match. Publication rejects arbitrary paths, missing or failed manifests, draft policy, changed bytes, path escapes, and missing attestations. Temporary files and atomic replacement prevent a failed copy from replacing an existing destination.
+A publishable artifact must be under `output/current/`, have a matching `<artifact>.<suffix>.manifest.json`, pass `BuildManifest.validate_for_publication()`, and have a verifiable ledger attestation for the exact manifest and run. The current source/template/config/context/assets/renderer identities must still match. Publication rejects arbitrary paths, missing or failed manifests, draft policy, changed bytes, path escapes, and missing attestations. Temporary files and atomic replacement prevent a failed copy from replacing an existing destination.
 
 ## Format boundaries
 
 DOCX uses the existing format audit and QA adapters. HTML is decoded as UTF-8 and must contain exactly one HTML root and one body root. PDF must start with `%PDF-` and reopen with the available PDF reader with at least one page and valid render dimensions. Non-DOCX formats are not silently treated as DOCX. PDF is derived and therefore not byte-deterministic.
-
-

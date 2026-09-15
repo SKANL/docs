@@ -49,4 +49,3 @@ def test_a_configured_fallback_is_honoured(tmp_path, monkeypatch):
     resolved = resolve_pandoc_executable({"pandoc_fallbacks": [str(fallback)]})
 
     assert resolved == str(fallback)
-

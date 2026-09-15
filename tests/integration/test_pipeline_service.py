@@ -188,7 +188,7 @@ def _replace_dependencies(dependencies: SimpleNamespace, **changes: object) -> S
     return SimpleNamespace(**{**vars(dependencies), **changes})
 
 
-def test_runs_legacy_adapters_in_order_and_publishes_atomically_after_verification(tmp_path: Path) -> None:
+def test_runs_current_adapters_in_order_and_publishes_atomically_after_verification(tmp_path: Path) -> None:
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
@@ -389,7 +389,7 @@ def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: 
     assert "publish" not in calls
 
 
-def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_changing_legacy_execution(tmp_path: Path) -> None:
+def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_changing_current_execution(tmp_path: Path) -> None:
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
@@ -463,7 +463,7 @@ def test_strict_and_release_package_failure_never_runs_publish_side_effect(tmp_p
         assert not (tmp_path / mode.value / "published" / "document.txt").exists()
 
 
-def test_explicit_legacy_handlers_cover_safe_migration_stages(tmp_path: Path) -> None:
+def test_explicit_current_handlers_cover_safe_migration_stages(tmp_path: Path) -> None:
     calls: list[str] = []
     dependencies = _replace_dependencies(
         _dependencies(tmp_path, calls),
@@ -526,7 +526,7 @@ def test_failed_visual_generation_blocks_dependent_cover_and_document_build(tmp_
     assert next(result for result in report.execution.results if result.stage == "generate-visuals").ok is False
 
 
-def test_failed_run_rolls_back_legacy_completion_artifacts_without_losing_previous_evidence(
+def test_failed_run_rolls_back_current_completion_artifacts_without_losing_previous_evidence(
     tmp_path: Path,
 ) -> None:
     calls: list[str] = []
@@ -549,7 +549,7 @@ def test_failed_run_rolls_back_legacy_completion_artifacts_without_losing_previo
 
 
 
-def test_adapt_does_not_fabricate_completion_artifacts_for_legacy_stage_results():
+def test_adapt_does_not_fabricate_completion_artifacts_for_current_stage_results():
     handler = PipelineService._adapt(
         "resolve-config",
         lambda: (True, "resolved configuration"),
@@ -666,6 +666,3 @@ def test_materializes_durable_records_for_successful_non_skipped_stages(tmp_path
         (Path(record.path) if Path(record.path).is_absolute() else tmp_path / "stage-records" / record.path).is_file()
         for record in records
     )
-
-
-

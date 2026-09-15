@@ -28,4 +28,3 @@ def test_resolve_mmdc_executable_falls_back_to_fallback_list(monkeypatch, tmp_pa
 def test_resolve_mmdc_executable_returns_none_when_nothing_found(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert resolve_mmdc_executable({}) is None
-

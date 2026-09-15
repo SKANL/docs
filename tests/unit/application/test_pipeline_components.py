@@ -243,5 +243,3 @@ def test_artifact_store_writes_deterministic_stage_receipts(tmp_path: Path) -> N
     assert (tmp_path / record.path).read_text(encoding="utf-8") == (
         '{"detail":"resolved configuration","stage":"resolve-config"}\n'
     )
-
-

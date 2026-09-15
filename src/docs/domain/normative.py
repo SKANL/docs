@@ -54,7 +54,7 @@ class NormativeSettings:
 
 def resolve_normative_settings(config: dict[str, Any]) -> NormativeSettings:
     """Extrae las kwargs normativas que review_section_text/review_document/
-    pack_context(_document) requieren, con los mismos defaults que legacy
+    pack_context(_document) requieren, con los mismos defaults que current
     review_section (1455-1458, 1473, 1477-1478). is_policy_file no se
     resuelve aquí: en este código base siempre es False en este punto de
     llamada (confirmado en la revisión previa a la ejecución de Slice 5)."""

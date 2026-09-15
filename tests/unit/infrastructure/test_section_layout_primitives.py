@@ -113,4 +113,3 @@ def test_set_section_page_number_start_reuses_existing_pg_num_type_element():
     pg_num_type = section._sectPr.find(qn("w:pgNumType"))
     assert pg_num_type.get(qn("w:start")) == "3"
     assert pg_num_type.get(qn("w:fmt")) == "lowerRoman"
-

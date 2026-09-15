@@ -103,5 +103,3 @@ def test_commands_package_splits_by_concern():
 def test_no_dead_root_main_py():
     repo_root = Path(__file__).resolve().parents[2]
     assert not (repo_root / "main.py").exists()
-
-

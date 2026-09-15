@@ -1,4 +1,4 @@
-"""Application-facing provenance v2 compatibility port."""
+"""Application-facing provenance v2 native port."""
 
 from functools import lru_cache
 from pathlib import Path
@@ -14,7 +14,7 @@ def _provenance_class() -> type[Any]:
     ledger_type = import_module("docs.infrastructure.provenance.ledger").ProvenanceLedger
 
     class ProvenanceLedger(ledger_type):  # type: ignore[misc, valid-type]
-        """Keep legacy raw-manifest callers compatible with v2 attestations."""
+        """Keep current raw-manifest callers aligned with v2 attestations."""
 
         def verify_attestation(self, run_id: str, manifest: dict[str, Any]) -> bool:
             recorded = self.load_attestation(run_id)
@@ -59,7 +59,7 @@ def _without_optional_artifact_metadata(payload: dict[str, Any]) -> dict[str, An
             if isinstance(item, dict) and isinstance(item.get("path"), str):
                 # Early v2 manifests stored absolute workspace paths.  Path
                 # identity is now content-addressed by artifact name, so
-                # normalize only this legacy comparison field; publication
+                # normalize only this current comparison field; publication
                 # still validates the live source path and digest separately.
                 item["path"] = Path(item["path"]).name
     return normalized
@@ -71,4 +71,3 @@ def __getattr__(name: str) -> Any:
     return _provenance_class()
 
 __all__ = ["ProvenanceLedger"]  # noqa: F822
-

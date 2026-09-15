@@ -151,7 +151,7 @@ def test_visual_theme_merges_defaults_and_normalizes_hex_colors():
     assert theme.spacing.heading_1_after_pt == 10
     assert theme.header.title == "CISSP DOMAIN 6"
     assert theme.footer.font_size_pt == 9
-    # Partial themes retain legacy behavior for every unspecified value.
+    # Partial themes retain current behavior for every unspecified value.
     assert theme.typography.heading_font == "Times New Roman"
     assert theme.spacing.body_after_pt == 18
 
@@ -203,12 +203,12 @@ def test_visual_theme_applies_body_heading_caption_header_and_footer_styles(tmp_
     assert document.sections[-1].footer.paragraphs[0].runs[0].font.size.pt == 9
 
 
-def test_no_visual_theme_preserves_legacy_table_and_footer_run_ooxml(tmp_path):
+def test_no_visual_theme_preserves_current_table_and_footer_run_ooxml(tmp_path):
     """A theme-free document must not acquire explicit visual overrides."""
     body_path = tmp_path / "body.docx"
     body = Document()
     body.add_paragraph("DOMAIN 6", style="Heading 1")
-    body.add_table(rows=1, cols=1).cell(0, 0).text = "Legacy table value"
+    body.add_table(rows=1, cols=1).cell(0, 0).text = "Current table value"
     body.save(str(body_path))
 
     config = {
@@ -250,4 +250,3 @@ def test_visual_theme_uses_configured_semantic_heading_colors(tmp_path):
     assert str(headings[0].runs[0].font.color.rgb) == "D97706"
     assert str(headings[1].runs[0].font.color.rgb) == "2563EB"
     assert str(headings[2].runs[0].font.color.rgb) == "BE123C"
-

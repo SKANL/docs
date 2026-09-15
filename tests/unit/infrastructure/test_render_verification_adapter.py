@@ -315,4 +315,3 @@ def test_preview_cleanup_never_mutates_explicit_baseline_directory(tmp_path):
     assert not report.passed
     assert page.read_bytes() == before
     assert [path.name for path in baseline.iterdir()] == ["precious.png"]
-

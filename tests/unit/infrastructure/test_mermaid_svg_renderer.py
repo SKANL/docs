@@ -87,4 +87,3 @@ def test_render_plus_normalize_svg_is_byte_identical_across_two_runs(tmp_path):
         second = normalize_svg(renderer.render(spec))
 
     assert hashlib.sha256(first.encode()).hexdigest() == hashlib.sha256(second.encode()).hexdigest()
-

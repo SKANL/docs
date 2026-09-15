@@ -59,7 +59,7 @@ class FigureIngestPipeline:
     ) -> None:
         self.writer = writer
         # Role resolution stays with the classifier: the figure
-        # pipeline needs prior confirmed roles, it does not own them.
+        # pipeline needs current confirmed roles, it does not own them.
         self.classifier = classifier
         self.image_metadata = image_metadata
         self.pdf_render = pdf_render
@@ -82,7 +82,7 @@ class FigureIngestPipeline:
         # only PROPOSED, never auto-routed -- and excluded from `sources` by
         # `_walk_inbox` so they are never flattened to markdown before a
         # human confirms a placement either way.
-        prior_confirmed = self._read_prior_confirmed_placements(inbox_dir)
+        current_confirmed = self._read_current_confirmed_placements(inbox_dir)
         candidates: dict[str, str] = {}  # relative_path -> proposed_kind ("" if none)
         for _path, rel in declared_assets:
             candidates[rel] = guess_asset_kind(rel) or ""
@@ -96,7 +96,7 @@ class FigureIngestPipeline:
         placements: list[dict[str, Any]] = []
         for rel in sorted(candidates):
             proposed_kind = candidates[rel] or None
-            confirmed_placement = prior_confirmed.get(rel)
+            confirmed_placement = current_confirmed.get(rel)
             # A heuristic candidate with no proposed kind has nothing to
             # confirm: it is a figure (it lands in the figure catalog), not a
             # document-structure asset. Queueing it floods the confirmation
@@ -158,7 +158,7 @@ class FigureIngestPipeline:
             Path(tmp_name).unlink(missing_ok=True)
             raise
 
-    def _read_prior_confirmed_placements(self, inbox_dir: Path) -> dict[str, str]:
+    def _read_current_confirmed_placements(self, inbox_dir: Path) -> dict[str, str]:
         queue_path = inbox_dir / PLACEMENT_QUEUE_NAME
         if not queue_path.exists():
             return {}
@@ -185,7 +185,7 @@ class FigureIngestPipeline:
 
     def _effective_role(self, rel: str, confirmed_roles: dict[str, str]) -> str:
         # ADR-1 role resolution: a validated confirmed role (already
-        # filtered against `_VALID_ROLES` by `read_prior_confirmed_roles`)
+        # filtered against `_VALID_ROLES` by `read_current_confirmed_roles`)
         # wins over raw `classify()` -- a human/agent confirmation beats
         # the folder/filename heuristic.
         role = confirmed_roles.get(rel)
@@ -217,7 +217,7 @@ class FigureIngestPipeline:
         # `config["paths"]["assets_dir"]` (`cli/_shared.py:_computed_paths`,
         # `doc_root / "assets"`) -- confirmed at the composition root, no
         # new accessor needed.
-        confirmed_roles = self.classifier.read_prior_confirmed_roles(inbox_dir)
+        confirmed_roles = self.classifier.read_current_confirmed_roles(inbox_dir)
         image_candidates = [
             (path, rel)
             for path, rel in (*declared_assets, *heuristic_candidates)

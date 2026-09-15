@@ -258,4 +258,3 @@ def test_folder_filename_and_content_signals_combine_in_stable_order():
     assert role == "normative"
     assert confidence == "high"
     assert signals == ["folder:normativa", "filename:manual", "content:normativa"]
-

@@ -53,9 +53,9 @@ Use `uv run docs doctor` to see optional executables and their versions. For a d
 The CLI injects the existing `RenderVerificationAdapter` for HTML/PDF and
 `qa=QaService(...)` for DOCX visual review. `QaService.inspect_docx` returns
 structured findings and a durable report; `qa_docx` retains its Path-returning
-compatibility API. DOCX visual review keeps format audit and cannot silently
+native API. DOCX visual review keeps format audit and cannot silently
 skip configured baselines or required previews. Without injected services,
-legacy fallback callbacks remain technical reopen checks, not rendered QA.
+current fallback callbacks remain technical reopen checks, not rendered QA.
 
 `pdf_reproducibility` injects the same comparator used by the CLI fallback:
 PDF page count, geometry, extracted text, and rendered page content at 150 DPI
@@ -101,7 +101,7 @@ Accessibility and visual findings are gated separately.
 HTML rendering also embeds deterministic CSS from `format.visual_theme` and
 generated cover variants. Colors, typography, spacing, cover accents and variant
 layout are explicit; an absent theme and absent generated cover preserve the
-legacy HTML bytes. This styling is not a visual-accessibility certification.
+current HTML bytes. This styling is not a visual-accessibility certification.
 
 ## Degradation rules
 
@@ -109,7 +109,7 @@ Draft mode may preserve permitted optional gaps as warnings and never publishes.
 
 ## CI evidence
 
-The repository workflow runs lint, type checks, tests, architecture invariants, and a full optional-toolchain job. The toolchain job is important because the normal check job intentionally exercises degradation without every optional tool. See [ci-v2.md](ci-v2.md) for the exact workflow.
+The repository workflow runs lint, type checks, tests, architecture invariants, and a full optional-toolchain job. The toolchain job is important because the normal check job intentionally exercises degradation without every optional tool. See [ci.md](ci.md) for the exact workflow.
 
 ## Visual baseline snapshots
 
@@ -125,4 +125,5 @@ docs document baseline <preview-dir> --destination <baseline-dir> --update
 The command validates every PNG, stages the complete set in a scratch directory,
 and publishes the directory atomically. An existing baseline is preserved unless
 `--update` is supplied; incomplete or corrupt previews are never published.
+
 

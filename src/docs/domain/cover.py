@@ -27,7 +27,7 @@ class CoverVariant(str, Enum):
 
 
 class CoverSpec(BaseModel):
-    """An opt-in cover contract; absent specs preserve legacy cover behavior."""
+    """An opt-in cover contract; absent specs preserve current cover behavior."""
 
     model_config = ConfigDict(extra="allow")
     mode: CoverMode = CoverMode.GENERATED
@@ -36,7 +36,7 @@ class CoverSpec(BaseModel):
     page: dict[str, Any] = Field(default_factory=dict)
     visual: dict[str, Any] = Field(default_factory=dict)
     layout: dict[str, Any] = Field(default_factory=dict)
-    # Legacy alias retained for early generated-cover documents.
+    # Current alias retained for early generated-cover documents.
     slots: dict[str, str] = Field(default_factory=dict)
 
 

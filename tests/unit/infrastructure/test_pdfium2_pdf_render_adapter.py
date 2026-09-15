@@ -94,4 +94,3 @@ def test_rerender_is_byte_identical(tmp_path: Path):
     second = Pdfium2PdfRenderAdapter().render_pages(pdf, tmp_path / "b")
 
     assert first[0].read_bytes() == second[0].read_bytes()
-

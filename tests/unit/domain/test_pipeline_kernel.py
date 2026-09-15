@@ -132,4 +132,3 @@ def test_artifact_contract_rejects_non_string_record_paths_with_actionable_error
 
     with pytest.raises(ValueError, match=r"path.*string"):
         contract.validate_record(record)
-

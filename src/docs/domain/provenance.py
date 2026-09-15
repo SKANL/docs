@@ -62,7 +62,7 @@ class ProvenanceLedger:
     def from_dict(cls, payload: dict[str, Any]) -> ProvenanceLedger:
         if payload.get("schema") == _SCHEMA:
             return cls.from_entries(list(payload.get("entries", [])))
-        return cls(entries=[cls._parse_legacy_entry(entry) for entry in payload.get("events", [])])
+        return cls(entries=[cls._parse_current_entry(entry) for entry in payload.get("events", [])])
 
     @staticmethod
     def _parse_entry(value: dict[str, Any]) -> ProvenanceEntry:
@@ -73,7 +73,7 @@ class ProvenanceLedger:
         return ProvenanceEntry(operation, inputs, outputs, str(value.get("sha256", expected)))
 
     @staticmethod
-    def _parse_legacy_entry(value: dict[str, Any]) -> ProvenanceEntry:
+    def _parse_current_entry(value: dict[str, Any]) -> ProvenanceEntry:
         inputs = [ArtifactRef(path=str(value["input"]), sha256="", state=ArtifactState.READY)] if "input" in value else []
         outputs = [ArtifactRef(path=str(value["output"]), sha256="", state=ArtifactState.PUBLISHED)] if "output" in value else []
         return ProvenanceEntry.create(str(value.get("action", value.get("operation", ""))), inputs, outputs)

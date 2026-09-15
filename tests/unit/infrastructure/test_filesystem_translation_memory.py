@@ -63,4 +63,3 @@ def test_the_stored_entry_is_deterministic_on_disk(tmp_path):
     FilesystemTranslationMemory(a).put("k1", "Hello", "Hola")
     FilesystemTranslationMemory(b).put("k1", "Hello", "Hola")
     assert (a / "k1.json").read_bytes() == (b / "k1.json").read_bytes()
-

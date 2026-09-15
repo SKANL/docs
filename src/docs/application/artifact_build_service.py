@@ -109,4 +109,3 @@ class ArtifactBuildService:
             raise ArtifactBuildError(
                 "unsafe", "renderer wrote outside the v2 render scratch directory"
             ) from exc
-

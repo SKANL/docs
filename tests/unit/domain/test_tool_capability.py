@@ -128,14 +128,11 @@ def test_capability_diagnostics_exposes_policy_metadata_without_changing_report(
         }
     }
 
-def test_registry_rejects_incompatible_duplicate_declarations():
-    with pytest.raises(ValueError, match=r"incompatible duplicate capability.*pandoc"):
+def test_registry_rejects_distinct_duplicate_declarations():
+    with pytest.raises(ValueError, match=r"distinct duplicate capability.*pandoc"):
         ToolCapabilityRegistry(
             (
                 ToolCapability("pandoc", "pandoc"),
                 ToolCapability("pandoc", "other-pandoc"),
             )
         )
-
-
-

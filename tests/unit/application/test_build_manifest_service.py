@@ -134,5 +134,3 @@ def test_build_manifest_identity_ignores_workspace_absolute_path(tmp_path: Path)
     )
 
     assert first.identity() == second.identity()
-
-

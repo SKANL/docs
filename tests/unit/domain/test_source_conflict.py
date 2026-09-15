@@ -46,4 +46,3 @@ def test_detect_conflicts_output_sorted_regardless_of_input_order():
     assert result_a[0].group == "database"
     assert result_a[0].members == ("mongodb", "postgresql")
     assert result_a[0].sources == ("a-source.md", "z-source.md")
-

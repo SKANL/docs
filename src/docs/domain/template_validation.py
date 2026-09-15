@@ -117,7 +117,7 @@ _CONFIG_ENVELOPE_BLOCKS = frozenset(
 
 # How close an unknown key must be to a real field before it is called a
 # typo. 0.8 accepts `required_contents`/`required_content` and
-# `ordre`/`order` while leaving `custom_legacy_key` alone.
+# `ordre`/`order` while leaving `custom_current_key` alone.
 # ponytail: one difflib ratio, no edit-distance table. Tighten only if a
 # real passthrough key ever gets flagged.
 _NEAR_MISS_CUTOFF = 0.8

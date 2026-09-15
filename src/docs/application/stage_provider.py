@@ -75,4 +75,3 @@ class StageProvider:
         if service is None or not hasattr(service, "release"):
             return StageResult.skipped("package-release")
         return service.release()
-

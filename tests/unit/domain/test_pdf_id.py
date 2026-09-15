@@ -34,4 +34,3 @@ def test_pdf_without_id_array_is_returned_unchanged():
 def test_normalization_is_idempotent():
     once = normalize_pdf_id(_pdf(b"A" * 32, b"A" * 32))
     assert normalize_pdf_id(once) == once
-

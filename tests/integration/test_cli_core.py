@@ -135,5 +135,3 @@ def test_explain_an_unknown_code_suggests_near_matches_and_exits_nonzero():
 
     assert result.exit_code == 2
     assert "content.pending_not_allowed" in result.stdout
-
-

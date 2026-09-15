@@ -28,4 +28,3 @@ def test_release_keeps_optional_browser_qa_degradations_as_warnings():
     assert policy.severity("render.layout.unavailable", "warning") == "warning"
     assert policy.severity("render.image.unverified", "warning") == "warning"
     assert PipelinePolicy(PipelineMode.strict).severity("render.layout.unavailable", "warning") == "error"
-

@@ -117,4 +117,3 @@ def test_extract_github_repo_returns_empty_string_for_non_github_remote():
 
 def test_extract_github_repo_returns_empty_string_for_empty_input():
     assert extract_github_repo("") == ""
-

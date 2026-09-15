@@ -82,4 +82,3 @@ def test_render_qa_report_includes_manual_checklist_items(tmp_path):
     report = render_qa_report(docx_path, pdf_path, [], ReviewResult())
     assert "- [ ] Sin texto cortado o solapado." in report
     assert "- [ ] Figuras con caption inferior." in report
-

@@ -377,5 +377,3 @@ def test_runtime_preserves_authoritative_provenance_recorded_by_stage(tmp_path: 
         "inputs": {"source.md": "".join(__import__("hashlib").sha256(b"source").hexdigest())},
         "outputs": {"report.docx": __import__("hashlib").sha256(b"output").hexdigest()},
     }
-
-

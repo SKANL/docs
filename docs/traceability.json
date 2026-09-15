@@ -566,4 +566,3 @@
     "document_release": "src/docs/cli/commands/document_app.py::release"
   }
 }
-

@@ -81,4 +81,3 @@ def test_v2_real_toolchain_journey(tmp_path: Path) -> None:
     subprocess.run([pdftoppm, "-png", str(rendered_pdf), str(preview / "page")], check=True)
     assert b"Pages:" in info.stdout.encode()
     assert list(preview.glob("page-*.png"))
-

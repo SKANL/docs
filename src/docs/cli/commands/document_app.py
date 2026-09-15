@@ -202,7 +202,7 @@ def _minimal_structural_audit(artifact: Path, output_format: str) -> tuple[bool,
 
 
 def _fallback_structural_audit(artifact: Path, output_format: str) -> tuple[bool, str]:
-    """Compatibility name for the native structural stage."""
+    """Native name for the native structural stage."""
     return _minimal_structural_audit(artifact, output_format)
 
 
@@ -287,7 +287,7 @@ def _manifest_for(
     run_id: str,
     verification: dict[str, Any] | None = None,
 ) -> BuildManifest:
-    """Compatibility seam for callers that construct a v2 manifest directly."""
+    """Native seam for callers that construct a v2 manifest directly."""
     service = BuildManifestService(
         input_identities=_current_input_identities,
         build_inputs=_build_inputs,
@@ -485,7 +485,7 @@ def create_document_service(
         state["renderer"] = deps.resolve_renderer(config)
         return resolved
 
-    # Keep publication outside output/final so verification can never promote
+    # Keep publication outside output/published so verification can never promote
     # an artifact, even when the runtime has no explicit no-publish mode.
     initial = active_context()
     initial_root = deps.workspace.doc_root(initial.doc_id)
@@ -514,7 +514,7 @@ def create_document_service(
         candidate = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
         if candidate.is_file():
             state["package_candidate"] = candidate
-    ledger = ProvenanceLedger(initial_root / "runs" / "v2-provenance.json", trusted_root=initial_root)
+    ledger = ProvenanceLedger(initial_root / "runs" / "provenance.json", trusted_root=initial_root)
     stage_artifact_root = initial_root / "runs" / "v2-stage-artifacts"
     artifact_store = ArtifactStore(
         stage_artifact_root,
@@ -577,7 +577,7 @@ def create_document_service(
         ),
         candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
         # A standalone package boundary receives the persisted
-        # artifact/manifest pair from the prior build and must verify that
+        # artifact/manifest pair from the current build and must verify that
         # pair against provenance before it can produce a release candidate.
         # The full build already attests the in-memory generation in its
         # provenance stage; rechecking it here would duplicate the ledger
@@ -654,7 +654,7 @@ def create_document_service(
             return _fallback_structural_audit(state["artifact"], output_format)
         template = state["resolved"].template
         contract = getattr(template, "template_contract", None)
-        # Legacy templates predate the declarative contract.  They still need
+        # Current templates predate the declarative contract.  They still need
         # the generic structural checks (readability, tables, relationships),
         # so an absent contract means "no additional requirements", not "skip
         # the audit".  This keeps migration finite while preserving the v2
@@ -776,7 +776,7 @@ def create_document_service(
         source_dir = initial_root / "output" / "v2"
         source_dir.mkdir(parents=True, exist_ok=True)
         candidate = destination.with_name(f".{destination.name}.candidate")
-        # A package stage runs before this format reaches output/v2.  Stage a
+        # A package stage runs before this format reaches output/current.  Stage a
         # complete snapshot of the already-published formats plus this run's
         # attested artifact, so repeatable --format builds accumulate one
         # release archive instead of replacing it format by format.
@@ -1341,7 +1341,7 @@ def _run(
                 ):
                     artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
                     if artifact.is_file():
-                        ledger = ProvenanceLedger(resolved_root / "runs" / "v2-provenance.json", trusted_root=resolved_root)
+                        ledger = ProvenanceLedger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
                         recorded = ledger.load_attestation(provenance_run_id or "")
                         if recorded is None:
                             raise RuntimeError("missing pre-publication build attestation")
@@ -1420,11 +1420,11 @@ def _record_batch_outputs(journal: Path, doc_id: str, output_format: str) -> Non
     """Record only the known publication paths, never adopt unrelated outputs.
 
     A crash before this checkpoint fails closed: publication ownership cannot
-    be inferred from a legacy batch journal or from unrecorded output bytes.
+    be inferred from a current batch journal or from unrecorded output bytes.
     """
     payload = json.loads(journal.read_text(encoding="utf-8"))
     owned = {
-        "output/v2": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
+        "output/current": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
         "output/release": (f"{doc_id}.zip",),
     }
     for relative, names in owned.items():
@@ -1446,7 +1446,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     payload = json.loads(journal.read_text(encoding="utf-8"))
     root = journal.parent.parent.resolve()
     backup = Path(payload["backup"])
-    paths = (Path("output/v2"), Path("output/release"))
+    paths = (Path("output/current"), Path("output/release"))
     if (Path(payload["root"]).resolve() != root
             or journal.resolve() != _batch_journal_path(root)
             or backup.parent.resolve() != root or not backup.name.startswith(".v2-batch-")
@@ -1710,7 +1710,7 @@ def _package_files(
         and source_dir.parent.name == "output"
     )
     if not (valid_source or valid_staging):
-        raise typer.BadParameter("package requires an output/v2 source directory")
+        raise typer.BadParameter("package requires an output/current source directory")
     if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):
         raise typer.BadParameter("package refuses a symlinked source boundary")
     candidates = tuple(sorted(source_dir.rglob("*"), key=lambda path: path.relative_to(source_dir).as_posix()))
@@ -1722,7 +1722,7 @@ def _package_files(
     if not artifacts:
         raise typer.BadParameter("package requires at least one v2 artifact")
     document_root = source_dir.parent.parent
-    ledger = ProvenanceLedger(document_root / "runs" / "v2-provenance.json", trusted_root=document_root)
+    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
     expected_manifests: set[Path] = set()
     snapshots: dict[str, bytes] = {}
     generation_identity: tuple[tuple[object, ...], dict[str, tuple[tuple[str, str], ...]]] | None = None
@@ -1990,7 +1990,7 @@ def publish(
     ):
         if current[field] != getattr(manifest, field):
             raise typer.BadParameter(f"publish requires unchanged {label} identity")
-    ledger = ProvenanceLedger(document_root / "runs" / "v2-provenance.json", trusted_root=document_root)
+    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
     if not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
         raise typer.BadParameter("publish requires a present, verifiable provenance attestation")
     destination_manifest = destination.with_suffix(destination.suffix + ".manifest.json")
@@ -2014,6 +2014,3 @@ def publish(
         "warnings": list(publication.warnings),
     }
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
-
-
-

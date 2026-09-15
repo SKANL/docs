@@ -312,7 +312,7 @@ def test_template_contract_is_bound_into_manifest_while_section_provenance_remai
     assert service.contract_hash(config, "intro") == service.repository.hash_json(contracts["intro"])
 
 
-def test_legacy_template_serialization_preserves_section_only_provenance(tmp_path, service):
+def test_current_template_serialization_preserves_section_only_provenance(tmp_path, service):
     raw = json.loads((_FIXTURES_DIR / "reporte-estadia-tic.json").read_text(encoding="utf-8"))
     config = Template.model_validate(raw).model_dump(exclude_none=True)
     config["paths"] = {"rules_manifest": str(tmp_path / "manual-rules.json")}

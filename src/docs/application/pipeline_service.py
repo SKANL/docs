@@ -483,4 +483,3 @@ class PipelineService:
             stages=stages,
             external_artifacts=frozenset(dependency_artifacts - produced_names),
         )
-

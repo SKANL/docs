@@ -47,4 +47,3 @@ def test_visual_renderer_port_declares_type_and_render():
             return "<svg></svg>"
 
     assert isinstance(FakeRenderer(), _Checkable)
-

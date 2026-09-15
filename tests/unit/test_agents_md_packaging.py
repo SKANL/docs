@@ -64,4 +64,3 @@ def test_docs_guide_prints_agents_md_from_an_installed_wheel_with_no_repo_checko
     assert result.returncode == 0, result.stderr
     repo_root_text = (REPO_ROOT / "AGENTS.md").read_text(encoding="utf-8")
     assert result.stdout.strip() == repo_root_text.strip()
-

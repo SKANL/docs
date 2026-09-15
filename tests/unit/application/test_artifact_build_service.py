@@ -165,5 +165,3 @@ def test_rejects_lexically_escaping_scratch_before_creating_it(tmp_path: Path) -
         )
 
     assert not outside_scratch.exists()
-
-

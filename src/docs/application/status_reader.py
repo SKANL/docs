@@ -76,7 +76,7 @@ class StatusReader:
             passed = manifest.verification.get("passed")
             succeeded = passed if isinstance(passed, bool) else None
         if provenance is None and manifest.provenance_run:
-            provenance = ProvenanceLedger(document_root / "runs" / "v2-provenance.json").load_run(
+            provenance = ProvenanceLedger(document_root / "runs" / "provenance.json").load_run(
                 manifest.provenance_run
             )
         unsupported_stages, publication_blockers = _runtime_status_details(execution)
@@ -97,14 +97,14 @@ class StatusReader:
 def _integrity_blockers(document_root: Path, manifest: BuildManifest) -> list[str]:
     """Validate the immutable evidence behind a v2 status snapshot.
 
-    Legacy manifests without a provenance run remain readable.  Once a
+    Current manifests without a provenance run remain readable.  Once a
     manifest claims v2 provenance, however, status must not report a healthy
     build when its evidence or output bytes no longer match.
     """
     if not manifest.provenance_run:
         return []
     blockers: list[str] = []
-    ledger = ProvenanceLedger(document_root / "runs" / "v2-provenance.json")
+    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json")
     run = ledger.load_run(manifest.provenance_run)
     if run is None:
         blockers.append(f"provenance run missing: {manifest.provenance_run}")
@@ -160,4 +160,3 @@ def _runtime_status_details(execution: dict[str, Any]) -> tuple[list[str], list[
             if isinstance(error, str) and error not in publication_blockers:
                 publication_blockers.append(error)
     return unsupported_stages, publication_blockers
-

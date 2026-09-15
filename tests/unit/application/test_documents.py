@@ -88,7 +88,7 @@ def test_create_still_creates_previously_existing_subdirectories(tmp_path: Path)
 
     service.create("alpha", "fake")
 
-    for sub in ("context", "assets", "sections", "output/draft", "output/final", "output/qa", "runs", "corrections/inbox"):
+    for sub in ("context", "assets", "sections", "output/work", "output/published", "output/qa", "runs", "corrections/inbox"):
         assert (ws.doc_root("alpha") / sub).is_dir()
 
 
@@ -102,15 +102,3 @@ def test_create_defaults_lifecycle_to_draft(tmp_path: Path):
     document = service.create("alpha", "fake")
 
     assert document.lifecycle == "draft"
-
-
-
-
-
-
-
-
-
-
-
-

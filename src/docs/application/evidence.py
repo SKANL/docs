@@ -30,12 +30,12 @@ _MANIFEST_PATH_KEYS = ["source_manifest", "issues_manifest", "code_evidence_mani
 
 
 def _declared_template_contract(config: dict[str, Any]) -> dict[str, Any] | None:
-    """Return a non-empty contract in canonical form, else preserve legacy."""
+    """Return a non-empty contract in canonical form, else preserve current."""
     raw = config.get("template_contract")
     if not isinstance(raw, dict):
         return None
     # `exclude_defaults` means an absent contract, `{}`, and older serializations
-    # containing only empty model defaults all retain legacy evidence bytes.
+    # containing only empty model defaults all retain current evidence bytes.
     # `extra="allow"` preserves contract-specific extension keys recursively.
     contract = TemplateContract.model_validate(raw).model_dump(exclude_defaults=True)
     return contract or None
@@ -83,7 +83,7 @@ class EvidenceService:
         traceability: list[TraceabilityFact] = []
         for key, source_type in _TRACEABILITY_PATH_KEYS:
             path_str = config["paths"].get(key, "")
-            # Legacy reads Path("").exists() when the key is absent/empty, which is
+            # Current reads Path("").exists() when the key is absent/empty, which is
             # always False — skip the empty-string case directly rather than making
             # a pointless file_exists() call through the port.
             if not path_str:

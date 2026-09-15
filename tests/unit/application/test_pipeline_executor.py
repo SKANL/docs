@@ -153,24 +153,24 @@ def test_unsupported_stage_result_is_deterministic_and_keeps_pipeline_running_in
         artifacts=(ArtifactContract("migration-output"), ArtifactContract("output")),
         stages=(
             StageSpec("migration-gap", produces=("migration-output",), optional=True),
-            StageSpec("legacy", requires=("migration-output",), produces=("output",)),
+            StageSpec("current", requires=("migration-output",), produces=("output",)),
         ),
     )
     calls = []
     handlers = {
-        "legacy": lambda: (calls.append("legacy") or StageResult("legacy", True)),
+        "current": lambda: (calls.append("current") or StageResult("current", True)),
     }
 
     report = PipelineExecutor(definition, handlers).run()
 
-    assert calls == ["legacy"]
+    assert calls == ["current"]
     assert report.results[0].outcome == "unsupported"
     assert report.results[0].warnings == ("stage unsupported: migration-gap",)
     assert report.to_json() == (
         '{"results":[{"artifacts":[],"errors":[],"ok":true,"outcome":"unsupported",'
         '"stage":"migration-gap","warnings":["stage unsupported: migration-gap"]},'
         '{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded",'
-        '"stage":"legacy","warnings":[]}]}'
+        '"stage":"current","warnings":[]}]}'
     )
 
 
@@ -450,5 +450,3 @@ def test_executor_preserves_durable_contract_records_in_stage_reports() -> None:
     ).run()
 
     assert report.results[0].artifacts == (record,)
-
-

@@ -96,4 +96,3 @@ def test_vertical_room_ignores_the_same_visual_line():
     label = _block(700.0, x=108.0, width=42.0)
     speech = _block(699.6, x=126.0, width=397.0)
     assert vertical_room(label, [label, speech]) is None
-

@@ -590,3 +590,4 @@ class AtomicTransform:
             actual = hashlib.sha256(destination.read_bytes()).hexdigest()
             if actual != expected:
                 raise RuntimeError(f"post-publication verification failed for {destination}")
+

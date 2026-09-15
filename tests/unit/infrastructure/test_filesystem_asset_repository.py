@@ -100,4 +100,3 @@ def test_file_exists_true_for_existing_file(tmp_path: Path):
 def test_file_exists_false_for_missing_file(tmp_path: Path):
     repo = FilesystemAssetRepository()
     assert repo.file_exists(tmp_path / "missing.docx") is False
-

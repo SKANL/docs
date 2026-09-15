@@ -159,7 +159,7 @@ class IngestService:
             )
             # Pre-scan snapshot (design.md Decision 3): captured ONCE, before
             # any conversion this scan, so status resolution can distinguish
-            # "already present from a prior run" (skipped) from "produced
+            # "already present from a current run" (skipped) from "produced
             # during THIS scan by something else" (batched) -- whether that
             # "something else" is a JVM look-ahead batch sibling or simply an
             # earlier byte-identical source reached first in sort order.
@@ -182,7 +182,7 @@ class IngestService:
             )
 
             # Front D (design.md Decision 4): classify every real source
-            # entry, merge any externally-confirmed role from the PRIOR
+            # entry, merge any externally-confirmed role from the CURRENT
             # classification queue (the interface where confirmation
             # enters), resolve the draft/strict gate, then (re)write the
             # queue. Front E (Decision 5): near-duplicate pass over the
@@ -393,7 +393,7 @@ class IngestService:
         # alone -- so "produced by something else during this same scan"
         # (a JVM look-ahead batch sibling, or simply an earlier
         # byte-identical source reached first in sort order) is always
-        # "batched", distinct from "already present from a prior run"
+        # "batched", distinct from "already present from a current run"
         # ("skipped"). Returns None when the file must actually be converted.
         if candidate in existing_before:
             return "skipped"
@@ -493,10 +493,10 @@ class IngestService:
         # zero randomness at runtime (spec: document-ingest "Source-Role
         # Classification" / item D "Content-Based Source Classification").
         # External confirmation enters ONLY through the classification
-        # queue file (an agent/human edits it); a prior confirmation
+        # queue file (an agent/human edits it); a current confirmation
         # round-trips forward into this run's manifest AND the
         # freshly-rewritten queue.
-        prior_confirmed = self.classifier.read_prior_confirmed_roles(inbox_dir)
+        current_confirmed = self.classifier.read_current_confirmed_roles(inbox_dir)
         sources: list[dict[str, Any]] = []
         for entry in entries:
             if entry.get("status") == "empty_dir":
@@ -504,7 +504,7 @@ class IngestService:
             relative_path = entry["relative_path"]
             signals = self._probe_content(inbox_dir, relative_path)
             role, confidence, role_signals = classify(relative_path, signals=signals)
-            confirmed_role = prior_confirmed.get(relative_path)
+            confirmed_role = current_confirmed.get(relative_path)
             manifest_entry = dict(entry)
             manifest_entry["proposed_role"] = role
             manifest_entry["confidence"] = confidence
@@ -585,10 +585,3 @@ class IngestService:
     # handles. Embedded-raster-inside-a-PDF/DOCX extraction is deferred
     # (design.md "Approved LEAN scope"); no third arrival mode reaches this
     # method today, so no fixture/branch for it is added here.
-
-
-
-
-
-
-

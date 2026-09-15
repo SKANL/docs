@@ -22,6 +22,3 @@ def test_structural_fallback_reports_missing_artifact(tmp_path: Path) -> None:
 
     assert passed is False
     assert "missing" in detail
-
-
-

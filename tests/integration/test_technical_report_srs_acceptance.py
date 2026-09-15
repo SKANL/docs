@@ -109,7 +109,7 @@ def test_technical_report_srs_review_document_reflects_its_own_rules_not_estadia
     for section in template.sections:
         body = f"# {section.title}\n\nThis section documents {section.id} for the project.\n"
         if section.id == "implementation":
-            body = "# IMPLEMENTATION\n\nThe service layer is built on jQuery for legacy DOM glue code.\n"
+            body = "# IMPLEMENTATION\n\nThe service layer is built on jQuery for current DOM glue code.\n"
         section_repo.write_section("doc1", section.order, section.id, body)
 
     normative = resolve_normative_settings(config)
@@ -147,5 +147,3 @@ def test_technical_report_srs_review_document_no_duration_mismatch_for_generic_h
     )
 
     assert not any(issue.code == "coherence.duration_mismatch" for issue in result.issues)
-
-

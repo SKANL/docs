@@ -25,7 +25,7 @@ ISSUE_CODE_FAMILIES: dict[str, str] = {
     "evidence": "Respaldo verificable de lo que la sección afirma.",
     "privacy": "Secretos, credenciales o datos sensibles filtrados al texto.",
     "qa": "Auditoría visual del artefacto renderizado (PDF vía LibreOffice).",
-    "render": "Verificación y apertura de artefactos renderizados en formatos compatibles.",
+    "render": "Verificación y apertura de artefactos renderizados en formatos admitidos.",
     "reproducibility": "Reproducibilidad determinista de los artefactos generados.",
     "scope": "Delimitación del alcance declarado del documento.",
     "structure": "Existencia y forma de las secciones y sus títulos.",
@@ -85,7 +85,7 @@ ISSUE_CODES: dict[str, IssueCode] = {
         fix="Delimitá la afirmación (para qué componente, bajo qué criterio) o marcala como `PENDIENTE:`.",
     ),
     "coherence.duration_mismatch": IssueCode(
-        meaning="Distintas secciones declaran duraciones incompatibles para el mismo período.",
+        meaning="Distintas secciones declaran duraciones distincts para el mismo período.",
         fix="Unificá el valor. Si viene del contexto, corregilo con `context set` y regenerá las secciones afectadas.",
     ),
     "coherence.missing_flow": IssueCode(
@@ -263,4 +263,3 @@ def explain_code(code: str | None) -> str:
         f"Código desconocido: `{code}`.{suggestion}\n\n"
         f"Corré `docs explain` sin argumentos para ver el catálogo completo.\n"
     )
-

@@ -73,11 +73,11 @@ The harness owns the document lifecycle; external plugins are not runtime depend
 - **Atomic transforms.** Builds happen in a private scratch directory, validate every declared output, then publish. Failed ordinary publication restores the previous files; temporary files are cleaned.
 - **Three verification layers.** Editorial review checks prose and section rules; structural verification checks document mechanics and template requirements; visual verification checks rendered pages. A green editorial review does not replace the other layers.
 - **Draft versus strict.** Draft mode reports permitted missing tools/evidence as warnings or skips. Strict mode requests complete evidence and promotes applicable failures to errors.
-- **Template fidelity.** `template_contract` can declare page geometry, styles, components, editable slots, required assets, `fidelity_checks`, and `allowed_degradations`. It is validated and provenance-bound; legacy templates without it retain existing behavior.
+- **Template fidelity.** `template_contract` can declare page geometry, styles, components, editable slots, required assets, `fidelity_checks`, and `allowed_degradations`. It is validated and provenance-bound; current templates without it retain existing behavior.
 
 #### Inspecting QA evidence
 
-After assembly, inspect `output/draft/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+After assembly, inspect `output/work/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
 
 #### Extending renderers and templates
 
@@ -100,7 +100,7 @@ docs review-section <id> --json     # 11. iterate to green (see loop below)
 docs document build              # 12. render the final output(s), --format html|pdf|docx
 docs document verify                         # 13. structural + audit verification
 # 14. optional, after a first assemble: docs doc revise <id> "<request>" <file>
-docs document publish                 # 15. optional: flip lifecycle draft -> final, snapshot draft build into output/final/
+docs document publish                 # 15. optional: flip lifecycle draft -> final, snapshot draft build into output/published/
 ```
 
 **WARNING — `build-section` vs `stamp-section`: not interchangeable.**
@@ -237,7 +237,7 @@ The native runtime exposes `docs document build --json` and
 existing callers. These commands resolve the active document, execute
 the contract-driven stage DAG, run DOCX audit/visual QA adapters, record
 provenance only after successful verification, and publish verified copies
-under `output/v2/`. They never promote to `output/final/` and never silently
+under `output/current/`. They never promote to `output/published/` and never silently
 use an alternate pipeline. See `docs/architecture.md` and
 `docs/pipeline.md` for the migration contract.
 
@@ -313,9 +313,9 @@ scaffold-only section that later fails `review-section`.
 
 ### Native declarative covers
 
-Legacy `cover_from_asset` and `cover_from_template` structure parts remain
+Current `cover_from_asset` and `cover_from_template` structure parts remain
 supported. For a native generated cover, add this optional `cover` block to a
-template or document configuration; it replaces the legacy cover source while
+template or document configuration; it replaces the current cover source while
 leaving the rest of the structure unchanged:
 
 ```json
@@ -579,18 +579,18 @@ user-driven signal with no effect on build mechanics; it exists so an agent
 or reviewer can tell, from `docs doc status --json`, whether a document is
 still being iterated on or considered done.
 
-**`document publish` also promotes the current draft build into `output/final/`.**
+**`document publish` also promotes the current draft build into `output/published/`.**
 Beyond flipping the lifecycle flag, `docs document publish` copies every file
-currently in `output/draft/` into `output/final/` — a **point-in-time
+currently in `output/work/` into `output/published/` — a **point-in-time
 snapshot**, not a live mirror: it reflects whatever was last built at the
 moment `document publish` ran. If you edit a section and re-assemble afterward,
-`output/draft/` moves ahead and `output/final/` is now stale — **re-run
+`output/work/` moves ahead and `output/published/` is now stale — **re-run
 `docs document publish` to re-sync it** after any further edit+assemble cycle.
-If `output/draft/` is empty when `document publish` runs (nothing has been
+If `output/work/` is empty when `document publish` runs (nothing has been
 assembled yet), it WARNs and promotes nothing — `document publish` never fails,
-but `output/final/` stays empty until at least one `document build` has
+but `output/published/` stays empty until at least one `document build` has
 run. `docs doc status --json`'s `output.final_exists` reflects whether
-`output/final/` currently has any file in it (see the table below).
+`output/published/` currently has any file in it (see the table below).
 
 Each `docs document build`/`all` run appends a `build_version` (an
 incrementing integer, starting at `1`) to the document's `runs/` history —
@@ -615,7 +615,7 @@ this is a wall-clock log, not part of the deterministic build artifact
 | `figures.count` | Number of entries in `sections/figure-catalog.json`, built by `document ingest` from image assets found under `inbox/` (declared + heuristically-detected images, plus rendered vector-PDF pages). It is **not** a count of inline `[[figure:label]]` markers (§3) — those are independent, resolved/numbered only at build time, and never increment this field; a section can reference figures via `[[figure:...]]` with `figures.count` still `0` if no image ever went through `document ingest`. |
 | `lifecycle` | `"draft"` or `"final"`, set by `docs document publish` (above). |
 | `build_version` | Highest `build_version` recorded under `runs/`, or `null` before the first `document build`. |
-| `output.final_exists` | Whether `output/final/` currently contains any file — becomes `true` after a `docs document publish` run that had a non-empty `output/draft/` to promote (above); stays `false` before the first successful promotion. |
+| `output.final_exists` | Whether `output/published/` currently contains any file — becomes `true` after a `docs document publish` run that had a non-empty `output/work/` to promote (above); stays `false` before the first successful promotion. |
 
 ## 7. Reproducibility boundary (read this before worrying about "identical output")
 
@@ -671,7 +671,7 @@ This means:
     _revisions/             # docs doc revise: per-edit .diff snapshots + revision-log.json
   context/                # per-topic context fields (docs context set/status)
   assets/                 # figures/images referenced by sections
-  output/draft|final/     # rendered .docx/html/pdf output; draft/ is always the current build, final/ is a snapshot copy `docs document publish` promotes it into (see §6)
+  output/work|final/     # rendered .docx/html/pdf output; draft/ is always the current build, final/ is a snapshot copy `docs document publish` promotes it into (see §6)
   runs/                   # command history + build_version (document runs, document status)
 ```
 
@@ -685,14 +685,12 @@ harness's own suite asserts the installed copy never drifts from it.
 
 ### Current v2 public contract
 
-The public document command set is `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` . `document release` runs the complete verified build/package/publication pipeline for the active document. Build publishes verified requested formats under `output/v2`; verify runs without publication. The native runtime does not fall back to an alternate pipeline or promote to `output/final`.
+The public document command set is `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` . `document release` runs the complete verified build/package/publication pipeline for the active document. Build publishes verified requested formats under `output/current`; verify runs without publication. The native runtime does not fall back to an alternate pipeline or promote to `output/published`.
 
-`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete legacy migration.
+`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete current migration.
 
 Policies are `draft`, `strict`, and `release`. Draft may warn for permitted optional capability gaps and cannot publish. Strict and release promote warnings and missing required capabilities to errors and permit publication only after verification. Capabilities are local executable checks injected through the composition root; plugins are not runtime dependencies.
 
 Publication requires a matching v2 manifest and verifiable v2 ledger attestation for the exact artifact bytes. The manifest must include SHA-256 identities for source/template/config/context, assets, and outputs, renderer versions, passed verification, and a provenance run. HTML and PDF have independent structural checks; non-DOCX verification is not a DOCX fallback. PDF is a derived, toolchain-dependent artifact and is not byte-deterministic.
 
 Current source inputs are `document.json`, section Markdown, resolved context, template/configuration, and assets. Rendered outputs, manifests, QA reports, packages, and published copies are derived artifacts. The separate v2 ledger records provenance only after successful stages.
-
-

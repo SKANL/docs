@@ -73,5 +73,3 @@ def test_package_release_service_rejects_a_manifest_not_attested_for_the_current
     )
 
     assert service.release() == (False, "package-release manifest is not attested for the current build")
-
-

@@ -406,4 +406,3 @@ class SourcePipeline:
         except (TypeError, ValueError):
             return False
         return parameter is not None and parameter.kind is inspect.Parameter.POSITIONAL_ONLY
-

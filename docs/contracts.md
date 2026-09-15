@@ -51,4 +51,5 @@ Publication requires non-empty document identity, SHA-256 source/template/config
 
 ## Atomicity and path rules
 
-Rendered and published outputs are built in temporary locations and replaced only after expected outputs exist and validation succeeds. Publication requires the source and manifest to be contained by the document's `output/v2/`; destination must remain inside the document root. Packaging rejects symlinked or escaped source entries. Existing destinations are not replaced by a failed transform.
+Rendered and published outputs are built in temporary locations and replaced only after expected outputs exist and validation succeeds. Publication requires the source and manifest to be contained by the document's `output/current/`; destination must remain inside the document root. Packaging rejects symlinked or escaped source entries. Existing destinations are not replaced by a failed transform.
+

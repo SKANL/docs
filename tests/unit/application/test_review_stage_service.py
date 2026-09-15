@@ -381,6 +381,3 @@ def test_pdf_reproducibility_rejects_changed_image_with_identical_geometry(tmp_p
             page.close()
     ok, detail = _verify_pdf_reproducibility(*paths)
     assert not ok, detail
-
-
-

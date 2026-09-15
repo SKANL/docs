@@ -114,10 +114,10 @@ class StatusService:
             lifecycle=self.document_repository.read_document(doc_id).lifecycle,
             build_version=self._latest_build_version(paths),
             cover=cover_provenance(config),
-            v2_capabilities=v2.capabilities,
-            v2_execution=v2.execution,
-            v2_provenance=v2.provenance,
-            v2_succeeded=v2.succeeded,
+            capabilities=v2.capabilities,
+            execution=v2.execution,
+            provenance=v2.provenance,
+            succeeded=v2.succeeded,
             unsupported_stages=v2.unsupported_stages,
             publication_blockers=v2.publication_blockers,
         )
@@ -171,4 +171,3 @@ class StatusService:
         except json.JSONDecodeError:
             return 0
         return len(data.get("figures", []))
-
