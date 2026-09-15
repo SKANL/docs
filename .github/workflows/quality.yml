@@ -15,11 +15,32 @@ concurrency:
 
 jobs:
   quality:
-    uses: ./.github/workflows/reusable-python.yml
-    with:
-      command: >-
-        uv run ruff check src tests &&
-        uv run mypy src tools &&
-        uv run pytest -q --junitxml=junit.xml --cov=src --cov-report=xml:coverage.xml
-        --cov-report=html:coverage-html --cov-report=term --cov-fail-under=86 &&
-        uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=80
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4.7.0
+        with:
+          version: '0.8.22'
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --locked
+      - run: uv run ruff check src tests
+      - run: uv run mypy src tools
+      - name: Tests and coverage
+        run: uv run pytest -q --junitxml=junit.xml --cov=src --cov-report=xml:coverage.xml --cov-report=html:coverage-html --cov-report=term --cov-fail-under=86
+      - name: Differential coverage
+        run: uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=80
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: quality-${{ github.run_id }}
+          path: |
+            coverage.xml
+            coverage-html/
+            junit.xml
+          if-no-files-found: error
+          retention-days: 14
