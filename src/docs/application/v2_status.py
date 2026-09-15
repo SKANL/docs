@@ -115,7 +115,7 @@ def _integrity_blockers(document_root: Path, manifest: BuildManifest) -> list[st
     expected_attestation = manifest.attestation()
     if recorded is None:
         blockers.append(f"provenance attestation missing: {manifest.provenance_run}")
-    elif recorded != expected_attestation:
+    elif not ledger.verify_attestation(manifest.provenance_run, expected_attestation):
         blockers.append(f"provenance attestation mismatch: {manifest.provenance_run}")
     elif recorded.get("sha256") != sha256_content(recorded.get("manifest")):
         blockers.append(f"provenance attestation hash mismatch: {manifest.provenance_run}")

@@ -17,7 +17,7 @@ from docs.application.status import StatusService
 from docs.application.v2_status import V2Status, V2StatusReader
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.document_status import DocumentStatus
-from docs.domain.identity import sha256_file
+from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Section, SectionContract, Template, Topic
 from docs.domain.normative import NormativeSettings
@@ -401,6 +401,41 @@ def test_v2_status_reader_blocks_tampered_provenance_artifact(tmp_path: Path) ->
     assert snapshot.succeeded is False
     assert any("artifact hash mismatch" in finding for finding in snapshot.publication_blockers)
     assert any("provenance run failed integrity" in finding for finding in snapshot.publication_blockers)
+
+
+def test_v2_status_reader_accepts_legacy_absolute_path_attestation(tmp_path: Path) -> None:
+    doc_root = tmp_path / "alpha"
+    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"original")
+    manifest = BuildManifest(
+        document_id="alpha",
+        artifacts=(ArtifactRef(str(artifact), sha256_file(artifact), ArtifactState.READY),),
+        verification={"passed": True},
+        provenance_run="build-legacy",
+    )
+    manifest_path = artifact.with_suffix(".docx.manifest.json")
+    manifest_path.write_text(manifest.to_json(), encoding="utf-8")
+    ledger = ProvenanceLedgerV2(doc_root / "runs" / "v2-provenance.json")
+    source = doc_root / "source.md"
+    source.write_text("source", encoding="utf-8")
+    ledger.record_run("build-legacy", inputs=(source,), outputs=(artifact,))
+    legacy = manifest.to_dict()
+    legacy["artifacts"][0]["media_type"] = "application/octet-stream"
+    legacy["artifacts"][0]["size_bytes"] = artifact.stat().st_size
+    ledger.record_attestation(
+        "build-legacy",
+        {
+            "schema": "docs.attestation/v2",
+            "manifest": legacy,
+            "sha256": sha256_content(legacy),
+        },
+    )
+
+    snapshot = V2StatusReader().read(doc_root)
+
+    assert snapshot.succeeded is True
+    assert not any("provenance attestation mismatch" in finding for finding in snapshot.publication_blockers)
 
 
 def test_v2_status_manifest_selection_ignores_mtime(tmp_path: Path) -> None:
