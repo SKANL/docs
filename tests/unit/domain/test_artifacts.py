@@ -110,3 +110,27 @@ def test_build_manifest_round_trips_rich_artifact_identity_fields():
     restored = BuildManifest.from_dict(manifest.to_dict())
 
     assert restored.artifacts[0] == manifest.artifacts[0]
+
+
+def test_build_manifest_identity_distinguishes_relative_artifact_paths():
+    """Breaks if identity reduces a relative artifact path to its filename."""
+    common = {
+        "document_id": "report",
+        "source_hash": "a" * 64,
+        "template_hash": "b" * 64,
+        "config_hash": "c" * 64,
+        "context_hash": "d" * 64,
+        "renderer_versions": {"renderer": "1"},
+        "verification": {"passed": True},
+    }
+
+    alpha = BuildManifest(
+        **common,
+        artifacts=(ArtifactRef("alpha/report.docx", "e" * 64, ArtifactState.READY),),
+    )
+    beta = BuildManifest(
+        **common,
+        artifacts=(ArtifactRef("beta/report.docx", "e" * 64, ArtifactState.READY),),
+    )
+
+    assert alpha.identity() != beta.identity()

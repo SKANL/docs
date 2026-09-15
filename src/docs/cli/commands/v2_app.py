@@ -585,12 +585,13 @@ def create_v2_service(
     )
     source_pipeline = _source_pipeline(deps)
     review_stage_service = None
-    if output_format == "docx" and all(
+    if all(
         service is not None
         for service in (
             getattr(deps, "structural_audit_service", None),
             getattr(deps, "format_audit", None),
             getattr(deps, "review", None),
+            getattr(deps, "render_verification", None),
         )
     ):
         review_stage_service = ReviewStageService(
@@ -598,6 +599,7 @@ def create_v2_service(
             format_audit=deps.format_audit,
             document_review=deps.review,
             rules_manifest_state=getattr(deps, "rules_manifest_state", lambda _config: (False, 0)),
+            render_verification=deps.render_verification,
         )
 
     def _stage_service(name: str) -> Any:
@@ -963,15 +965,17 @@ def create_v2_service(
         "generate_visuals": stage_provider.operation("generate_visuals"),
         "compose_cover": stage_provider.operation("compose_cover"),
         "structural_audit": _structural_audit if _stage_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
-        "accessibility_review": _callable_stage("accessibility_review") or (
+        "accessibility_review": (
             (lambda: _review_stage("accessibility-review"))
-            if review_stage_service is not None
-            else _native_accessibility_review
+            if review_stage_service is not None and output_format != "docx"
+            else _callable_stage("accessibility_review")
+            or ((lambda: _review_stage("accessibility-review")) if review_stage_service is not None else _native_accessibility_review)
         ),
-        "visual_review": _callable_stage("visual_review") or (
+        "visual_review": (
             (lambda: _review_stage("visual-review"))
-            if review_stage_service is not None
-            else _native_visual_review
+            if review_stage_service is not None and output_format != "docx"
+            else _callable_stage("visual_review")
+            or ((lambda: _review_stage("visual-review")) if review_stage_service is not None else _native_visual_review)
         ),
         "reproducibility_check": _callable_stage("reproducibility_check") or (
             (lambda: _review_stage("reproducibility-check"))

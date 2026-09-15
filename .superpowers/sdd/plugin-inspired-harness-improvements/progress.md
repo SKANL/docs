@@ -211,3 +211,17 @@ source-only by design.
 - Updated `docs/migration-v2-traceability.json` to point all stage evidence at that executable journey; real external renderer coverage remains separately documented as capability-gated.
 - Corrected architecture documentation to distinguish the v2 `output/v2` publication boundary from the legacy lifecycle snapshot in `output/final`.
 - Focused integration tests: 38 passed; ruff and diff checks passed.
+## Manifest identity hardening: complete
+- BuildManifest identity now preserves canonical relative artifact paths while stripping workspace-specific absolute roots, preventing same-name path collisions across artifact directories.
+- Added RED/GREEN regression coverage and verified manifest/provenance tests.
+
+## Capability registry hardening: complete
+- Duplicate tool capabilities now reject incompatible executable/module/degradation definitions while preserving identical duplicate merging and required-policy OR semantics.
+- Added RED/GREEN regression coverage.
+
+## Multiformat QA and visual projection: complete
+- HTML now receives deterministic CSS from visual themes and generated-cover contracts.
+- HTML static inspection checks language, visible heading hierarchy, landmarks, image alt attributes, image validity, and declarative overflow/clipping.
+- PDF inspection reports tagged-structure limitations honestly and checks rendered pages, objects, images, dimensions, blank pages, and previews.
+- V2 HTML/PDF accessibility and visual stages now use ReviewStageService and RenderVerificationService instead of reopen-only fallbacks.
+- Focused integration: 171 passed; ruff, mypy, and diff checks passed.

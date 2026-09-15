@@ -136,3 +136,111 @@ def test_evidence_review_applies_pipeline_policy_to_evidence_findings(tmp_path: 
     assert outcome.ok is False
     assert outcome.errors == ("evidence needs support",)
     assert not outcome.warnings
+
+
+def _multiformat_service(tmp_path: Path) -> ReviewStageService:
+    from docs.application.render_verification import RenderVerificationService
+    from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
+
+    workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    return ReviewStageService(
+        structural_audit=StructuralAuditService(StructuralAuditAdapter()),
+        format_audit=FormatAuditService(PythonDocxAuditAdapter()),
+        document_review=ReviewService(JsonSectionRepository(workspace)),
+        rules_manifest_state=lambda _: (True, 1),
+        render_verification=RenderVerificationService(RenderVerificationAdapter()),
+    )
+
+
+def test_html_accessibility_stage_uses_static_checks_not_docx_audit(tmp_path):
+    artifact = tmp_path / "document.html"
+    artifact.write_text('<html><body><h2>Content</h2></body></html>')
+    outcome = _multiformat_service(tmp_path).accessibility_review(artifact, {}, PipelinePolicy())
+    assert not outcome.ok
+    assert "language" in outcome.detail and "h1" in outcome.detail and "landmark" in outcome.detail
+
+
+def test_accessibility_and_visual_dimensions_are_independent(tmp_path):
+    artifact = tmp_path / "document.html"
+    artifact.write_text('<html lang="en"><body><header><h1>Title</h1></header>'
+                        '<main><h2>Content</h2><p>Text.</p></main></body></html>')
+    service = _multiformat_service(tmp_path)
+    accessibility = service.accessibility_review(artifact, {}, PipelinePolicy(PipelineMode.strict))
+    visual = service.visual_review(artifact, {}, PipelinePolicy(PipelineMode.strict))
+    assert accessibility.ok and not accessibility.warnings
+    assert not visual.ok and "Browser renderer unavailable" in visual.detail
+    assert "WARNING" not in visual.detail  # Report and gate must reflect the same policy.
+
+
+def test_pdf_tag_warning_degrades_only_according_to_policy(tmp_path):
+
+
+    artifact = tmp_path / "document.pdf"
+    _write_blank_pdf(artifact)
+    service = _multiformat_service(tmp_path)
+    draft = service.accessibility_review(artifact, {}, PipelinePolicy())
+    assert draft.ok and any("tagged structure" in message for message in draft.warnings)
+    for policy in (PipelinePolicy(PipelineMode.strict), PipelinePolicy(PipelineMode.release),
+                   PipelinePolicy(warning_codes=("accessibility.pdf.untagged",))):
+        assert not service.accessibility_review(artifact, {}, policy).ok
+    artifact.write_bytes(b"not a pdf")
+    assert not service.accessibility_review(artifact, {}, PipelinePolicy()).ok
+
+
+def test_visual_stage_reuses_pdf_renderer_and_preview_directory(tmp_path):
+
+
+    artifact = tmp_path / "document.pdf"
+    _write_blank_pdf(artifact)
+    previews = tmp_path / "qa"
+    result = _multiformat_service(tmp_path).visual_review(
+        artifact, {"paths": {"output_qa_dir": str(previews)}}, PipelinePolicy(),
+    )
+    assert not result.ok and "vacía" in result.detail
+    assert list(previews.rglob("*.png"))
+
+
+def test_visual_stage_honors_blank_page_profile(tmp_path):
+
+
+    artifact = tmp_path / "document.pdf"
+    _write_blank_pdf(artifact)
+    config = {"visual_qa": {"allow_blank_pages": True, "expected_page_size": [612, 792]}}
+    service = _multiformat_service(tmp_path)
+    assert service.visual_review(artifact, config, PipelinePolicy()).ok
+    assert not service.visual_review(artifact, config, PipelinePolicy(PipelineMode.strict)).ok
+    config["visual_qa"]["expected_page_size"] = [100, 100]
+    assert not service.visual_review(artifact, config, PipelinePolicy()).ok
+
+
+def test_multiformat_stage_without_render_port_reports_capability_gap(tmp_path):
+    artifact = tmp_path / "document.html"
+    artifact.write_text('<html><body>text</body></html>')
+    for operation in (_service(tmp_path).accessibility_review, _service(tmp_path).visual_review):
+        draft = operation(artifact, {}, PipelinePolicy())
+        strict = operation(artifact, {}, PipelinePolicy(PipelineMode.strict))
+        assert draft.ok and "not configured" in draft.detail
+        assert not strict.ok
+
+
+def _write_blank_pdf(path):
+    import pypdfium2 as pdfium
+
+    with pdfium.PdfDocument.new() as document:
+        page = document.new_page(612, 792)
+        document.save(path)
+        page.close()
+
+
+def test_missing_artifact_is_not_degraded_as_missing_renderer(tmp_path):
+    result = _service(tmp_path).visual_review(tmp_path / "missing.pdf", {}, PipelinePolicy())
+    assert not result.ok
+
+
+def test_visual_profile_does_not_treat_false_string_as_permission_for_blank_pages(tmp_path):
+    artifact = tmp_path / "document.pdf"
+    _write_blank_pdf(artifact)
+    result = _multiformat_service(tmp_path).visual_review(
+        artifact, {"visual_qa": {"allow_blank_pages": "false"}}, PipelinePolicy(),
+    )
+    assert not result.ok and "profile" in result.detail.lower()

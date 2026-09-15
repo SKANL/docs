@@ -335,6 +335,7 @@ class Deps:
         self.context_pack = context_pack_service
         self.docx = docx_assembly_service
         self.format_audit = format_audit_service
+        self.render_verification = render_verification_service
         self.qa = qa_service
         self.doctor = doctor_service
         self.documents = DocumentService(document_repo, self.workspace)

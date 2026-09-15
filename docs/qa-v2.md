@@ -45,6 +45,51 @@ Use `uv run docs doctor` to see optional executables and their versions. For a d
 - **Provenance QA:** source/output hashes and manifest attestation are recorded only after accepted execution.
 - **Publication QA:** strict/release policy, manifest identity, current input identity, attestation, containment, and atomic transform all pass.
 
+### Injectable multiformat review service
+
+`ReviewStageService` accepts `render_verification=RenderVerificationService(port)`.
+Use the existing `RenderVerificationAdapter` for this port; DOCX keeps its
+existing format-audit path. The HTML/PDF CLI fallback callbacks still perform
+the reopen checks listed above until the composition root injects and routes
+this service. A passing CLI fallback is **not** evidence that these additional
+checks ran.
+
+- **HTML accessibility:** declared nonempty `html[lang]`, a visible nonempty
+  `h1`, basic heading-level progression, main/header landmarks (or equivalent
+  roles), and image `alt` attributes. Empty alt is allowed for decorative images.
+  Hidden/template content does not satisfy these checks. This is not WCAG
+  conformance, contrast, keyboard, or assistive-technology testing.
+- **PDF accessibility:** retains technical reopen/page checks and reports
+  `accessibility.pdf.untagged` if the catalog does not declare tagged structure.
+  Declared tags or an unavailable tag probe yield `accessibility.pdf.tags_unverified`:
+  semantic tags, reading order, and text alternatives are not validated.
+- **Visual inspection:** PDFium reuses the existing page renderer and checks
+  blank pages, expected dimensions, decodability of top-level images, and
+  text/image bounds outside the crop box. Arbitrary clipping paths, nested-form
+  transforms, overlap, and intentional bleed are not inferred. Bounds extending
+  outside the crop box are warnings, not proof of accidental clipping.
+  HTML checks static body content, embedded/local images, and declared pixel
+  dimensions exceeding ancestor dimensions. Such declared overflow/clipping is
+  a warning requiring browser confirmation, not computed-layout evidence.
+- **Capability boundary:** no browser is launched or installed. HTML always
+  reports `render.layout.unavailable`; requested HTML previews additionally
+  report `render.previews.unavailable`. SVG XML can be inspected but its rendered
+  appearance remains unverified. External image URLs are not fetched.
+
+The service uses `visual_qa.allow_blank_pages` (default false),
+`visual_qa.require_previews` (default false), and optional
+`visual_qa.expected_page_size` (PDF points; two positive finite numbers).
+With `paths.output_qa_dir`, PDF previews go under `<artifact-stem>/previews/`.
+Without that directory pages are still rasterized and inspected in memory.
+Draft permits warnings; strict/release and matching `warning_codes` promote
+them to errors. Missing artifacts and corrupt images remain errors in draft.
+Accessibility and visual findings are gated separately.
+
+HTML rendering also embeds deterministic CSS from `format.visual_theme` and
+generated cover variants. Colors, typography, spacing, cover accents and variant
+layout are explicit; an absent theme and absent generated cover preserve the
+legacy HTML bytes. This styling is not a visual-accessibility certification.
+
 ## Degradation rules
 
 Draft mode may preserve permitted optional gaps as warnings and never publishes. Strict and release promote warnings or required capability gaps to errors. `unsupported` is always visible in stage results; it is not silently converted into a completed implementation. Missing optional previews or tools must remain visible in reports.

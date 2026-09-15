@@ -88,3 +88,157 @@ def test_render_verification_reports_profile_format_mismatch(tmp_path):
 
     assert report.passed is False
     assert any(finding.code == "render.format_mismatch" and finding.severity == "error" for finding in report.findings)
+
+# Static HTML checks are deliberately narrower than a WCAG conformance audit.
+def test_html_verification_reports_accessibility_gaps(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html><body><h2>Start</h2><h4>Jump</h4><img src="bad.png"></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    codes = {finding.code for finding in report.findings}
+    assert {
+        "accessibility.html.lang", "accessibility.html.h1", "accessibility.html.heading_order",
+        "accessibility.html.main", "accessibility.html.header", "accessibility.html.alt",
+    } <= codes
+
+
+def test_html_valid_static_accessibility_does_not_claim_layout_verified(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header>'
+                    '<main><h2>Section</h2><p>Content</p></main></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    assert not [f for f in report.findings if f.dimension == "accessibility" and f.severity == "error"]
+    assert any(f.code == "render.layout.unavailable" and f.severity == "warning" for f in report.findings)
+
+
+def test_html_detects_empty_body_not_nonempty_source(tmp_path):
+    html = tmp_path / "empty.html"
+    html.write_text('<html><head><title>Title</title><style>body{color:red}</style></head>'
+                    '<body><script>hello()</script><!-- comment --></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    assert any(f.code == "render.page.blank" for f in report.findings)
+
+
+def test_html_detects_invalid_images_and_declared_clipping(tmp_path):
+    html = tmp_path / "report.html"
+    (tmp_path / "broken.png").write_bytes(b"not an image")
+    html.write_text('<html><body><div style="width:40px; height:30px; overflow:hidden">'
+                    '<img src="broken.png" width="80" height="60" alt="Chart"></div></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    assert {"render.image.invalid", "render.content.clipping"} <= {f.code for f in report.findings}
+
+
+def test_pdf_reports_absence_of_tags_in_addition_to_technical_findings(tmp_path):
+    pdf = tmp_path / "report.pdf"
+    _write_blank_pdf(pdf)
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
+    assert any(f.code == "accessibility.pdf.untagged" and f.severity == "warning" for f in report.findings)
+    assert any(f.code == "render.page.blank" for f in report.findings)
+
+
+def test_pdf_detects_objects_outside_page_bounds(tmp_path):
+    import pypdfium2 as pdfium
+
+    pdf = tmp_path / "clipped.pdf"
+    document = pdfium.PdfDocument.new()
+    page = document.new_page(100, 100)
+    bitmap = pdfium.PdfBitmap.from_pil(Image.new("RGB", (10, 10), "black"))
+    obj = pdfium.PdfImage.new(document)
+    obj.set_bitmap(bitmap)
+    obj.set_matrix(pdfium.PdfMatrix(80, 0, 0, 40, 60, 10))
+    page.insert_obj(obj)
+    page.gen_content()
+    document.save(pdf)
+    bitmap.close()
+    page.close()
+    document.close()
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
+    assert any(f.code == "render.content.clipping" and f.page == 1 for f in report.findings)
+
+
+def test_html_templates_do_not_satisfy_accessibility_or_visible_content(tmp_path):
+    html = tmp_path / "template.html"
+    html.write_text('<html lang="en"><body><template><header><h1>Invisible</h1></header>'
+                    '<main><img src="unused.png" alt=""></main></template></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    codes = {finding.code for finding in report.findings}
+    assert {"render.page.blank", "accessibility.html.main", "accessibility.html.header"} <= codes
+    assert "render.image.invalid" not in codes
+
+
+def test_html_inline_vector_content_is_not_reported_as_empty(tmp_path):
+    html = tmp_path / "vector.html"
+    html.write_text('<html lang="en"><body><svg width="100" height="100">'
+                    '<rect width="100" height="100" fill="black"/></svg></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    assert not any(f.code == "render.page.blank" for f in report.findings)
+    assert any(f.code == "render.layout.unavailable" for f in report.findings)
+
+
+def test_corrupt_html_encoding_becomes_technical_finding(tmp_path):
+    html = tmp_path / "encoding.html"
+    html.write_bytes(b"\xff\xfe<html>")
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    assert not report.passed and any(f.code == "render.open" for f in report.findings)
+
+
+def test_html_image_alternatives_allow_decorative_but_reject_missing(tmp_path):
+    import base64
+    import io
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (10, 10), "black").save(buffer, format="PNG")
+    source = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+    html = tmp_path / "images.html"
+    html.write_text(f'<html lang="en"><body><header><h1>Title</h1></header><main>'
+                    f'<img src="{source}" alt=""><img src="{source}" alt="Chart"></main></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(html, RenderProfile(format="html"))
+    assert not any(f.code in {"render.page.blank", "render.image.invalid", "accessibility.html.alt"} for f in report.findings)
+
+
+def test_pdf_tag_capability_failure_is_explicit(tmp_path, monkeypatch):
+    import pypdfium2 as pdfium
+
+    pdf = tmp_path / "report.pdf"
+    _write_blank_pdf(pdf)
+    monkeypatch.delattr(pdfium.raw, "FPDFCatalog_IsTagged")
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
+    assert any(f.code == "accessibility.pdf.tags_unverified" and f.severity == "warning" for f in report.findings)
+    assert any(f.code == "render.page.valid" for f in report.findings)
+
+
+def test_html_required_previews_do_not_silently_pass(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(
+        html, RenderProfile(format="html", require_previews=True), tmp_path / "previews",
+    )
+    assert not report.passed
+    assert any(f.code == "render.previews.unavailable" for f in report.findings)
+    assert not list(tmp_path.glob("previews/*.png"))
+
+
+def test_pdf_invalid_embedded_image_is_reported_without_losing_page_checks(tmp_path):
+    pdf = tmp_path / "broken-image.pdf"
+    stream = b"q 50 0 0 50 10 10 cm /Image1 Do Q"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Contents 4 0 R /Resources << /XObject << /Image1 5 0 R >> >> >>",
+        f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream",
+        b"<< /Type /XObject /Subtype /Image /Width 10 /Height 10 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length 6 >>\nstream\nbroken\nendstream",
+    ]
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(data))
+        data.extend(f"{number} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref = len(data)
+    data.extend(b"xref\n0 6\n0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        data.extend(f"{offset:010d} 00000 n \n".encode())
+    data.extend(f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode())
+    pdf.write_bytes(data)
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
+    assert any(f.code == "render.image.invalid" and f.page == 1 for f in report.findings)
+    assert any(f.code == "render.page.valid" for f in report.findings)
+    assert not report.passed

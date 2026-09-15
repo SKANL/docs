@@ -287,3 +287,95 @@ def test_build_delegates_pandoc_execution_to_injected_runner(tmp_path):
 
     assert result.read_text(encoding="utf-8") == "<html>delegated</html>"
     assert calls and calls[0][1:] == (True, 60)
+
+
+@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+@pytest.mark.parametrize("variant,layout", [
+    ("academic", "border-top"), ("institutional", "border-bottom"),
+    ("technical", "border-left"), ("minimal", "border: none"),
+    ("visual", "background"), ("custom", "text-align: right"),
+])
+def test_generated_cover_materializes_theme_and_variant_in_html(tmp_path, service, variant, layout):
+    from html.parser import HTMLParser
+
+    class Styles(HTMLParser):
+        def __init__(self, text):
+            super().__init__()
+            self.active = False
+            self.css = ""
+            self.feed(text)
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "style" and dict(attrs).get("id") == "docs-visual-theme":
+                self.active = True
+
+        def handle_endtag(self, tag):
+            if tag == "style":
+                self.active = False
+
+        def handle_data(self, text):
+            if self.active:
+                self.css += text
+
+    sections = tmp_path / "sections"
+    sections.mkdir()
+    (sections / "001-overview.md").write_text("# OVERVIEW\n\nBody text.", encoding="utf-8")
+    config = {
+        "title": "Theme & slots",
+        "sections": [{"id": "overview", "order": 1}],
+        "paths": {"sections_dir": str(sections), "output_draft_dir": str(tmp_path / "draft")},
+        "format": {
+            "visual_theme": {
+                "colors": {"navy": "#112233", "teal": "445566", "heading_1": "#778899"},
+                "typography": {"body_font": "Georgia", "body_size_pt": 11,
+                               "heading_font": "Arial", "heading_1_size_pt": 22},
+            },
+            "cover": {"mode": "generated", "variant": variant,
+                      "content": {"title": "{{title}}", "author": "Ada"},
+                      "visual": {"accent": "#AA5500"},
+                      "layout": {"alignment": "right", "title_size_pt": 30}},
+        },
+    }
+    first = service.build("theme", config, output=tmp_path / "first.html")
+    second = service.build("theme", config, output=tmp_path / "second.html")
+    text = first.read_text(encoding="utf-8")
+    css = Styles(text).css
+    assert 'font-family: "Georgia"' in css and 'font-size: 11pt' in css
+    assert 'font-family: "Arial"' in css and 'font-size: 22pt' in css
+    assert '#112233' in css and '#778899' in css and '#AA5500' in css
+    assert f'.cover--{variant}' in css and layout in css
+    assert 'cover__title' in text and 'Theme &amp; slots' in text and 'cover__author' in text and 'Ada' in text
+    assert first.read_bytes() == second.read_bytes()
+
+
+def test_plain_html_preserves_legacy_output_without_theme(tmp_path):
+    class Runner:
+        def run(self, args, **kwargs):
+            Path(args[-1]).write_text("<html><head></head><body>Original</body></html>", encoding="utf-8")
+
+    (tmp_path / "001-overview.md").write_text("Body")
+    config = {"sections": [{"id": "overview", "order": 1}],
+              "paths": {"sections_dir": str(tmp_path), "output_draft_dir": str(tmp_path / "draft")}}
+    result = HtmlRendererAdapter(_FakeToolResolver("pandoc"), Runner()).build("plain", config)
+    assert result.read_text() == "<html><head></head><body>Original</body></html>"
+
+
+def test_theme_css_escapes_font_values_and_normalizes_invalid_colors():
+    from docs.application.html_theme import visual_theme_css
+
+    css = visual_theme_css({"format": {"visual_theme": {
+        "typography": {"body_font": '</style><script>alert("x")</script>', "body_size_pt": float("nan")},
+        "colors": {"navy": "red; background:url(https://example.com)"},
+    }}})
+    assert "</style>" not in css and "<script>" not in css
+    assert "url(" not in css and "NaN" not in css and "nan" not in css
+    assert "color: #000000" in css and "font-size: 12pt" in css
+
+
+def test_generated_cover_gets_layout_without_visual_theme():
+    from docs.application.html_theme import visual_theme_css
+
+    css = visual_theme_css({"cover": {"mode": "generated", "variant": "technical"}})
+    assert ".cover--technical" in css and "border-left" in css
+    assert "#0F766E" in css
+    assert "body {" not in css  # Cover opt-in does not restyle legacy body text.

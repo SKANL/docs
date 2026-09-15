@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from docs.application.provenance_v2 import ProvenanceLedgerV2
+from docs.application.render_verification import RenderVerificationService
 from docs.cli.commands.v2_app import (
     _batch_journal_path,
     _minimal_structural_audit,
@@ -26,6 +27,7 @@ from docs.cli.commands.v2_app import (
 from docs.cli.main import app
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.review import Issue, ReviewDimension, ReviewResult
+from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
 
 def _minimal_pdf() -> bytes:
@@ -147,6 +149,11 @@ class _Review:
 
     def review_document(self, doc_id, template, *, strict, manifest_exists, manifest_size, normative):
         self.calls.append((doc_id, strict))
+        return ReviewResult()
+
+
+class _StructuralAudit:
+    def audit(self, path: Path, contract: dict[str, object]) -> ReviewResult:
         return ReviewResult()
 
 
@@ -824,6 +831,41 @@ def test_v2_native_accessibility_review_blocks_strict_findings(monkeypatch, tmp_
     )
     assert accessibility["ok"] is False
     assert accessibility["errors"] == ["image is missing a caption"]
+
+
+@pytest.mark.parametrize(
+    ("output_format", "expected_code"),
+    [
+        ("html", "render.layout.unavailable"),
+        ("pdf", "render.page.blank"),
+    ],
+)
+def test_v2_non_docx_review_stages_use_render_verification_service(
+    monkeypatch, tmp_path, output_format, expected_code
+):
+    """Catch a regression to the legacy technical-reopen fallbacks."""
+    deps = _deps(tmp_path)
+    deps.pipeline.accessibility_review = None
+    deps.pipeline.visual_review = None
+    deps.structural_audit_service = _StructuralAudit()
+    deps.render_verification = RenderVerificationService(RenderVerificationAdapter())
+    if output_format == "html":
+        deps.renderers["html"].payload = (
+            b"<!doctype html><html lang=\"en\"><head><title>active</title></head>"
+            b"<body><header><h1>Active</h1></header><main><p>Report</p></main></body></html>"
+        )
+    monkeypatch.setattr("shutil.which", lambda name: f"{name}.test")
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(app, ["v2", "verify", "--format", output_format, "--json"])
+
+    payload = json.loads(result.stdout)
+    stages = {item["stage"]: item for item in payload["report"]["execution"]["results"]}
+    visual = stages["visual-review"]
+    assert "reopen" not in " ".join([*visual["warnings"], *visual["errors"]]).lower()
+    assert expected_code in " ".join([*visual["warnings"], *visual["errors"]])
+    if output_format == "pdf":
+        assert list((tmp_path / "documents" / "active" / "output" / "qa").rglob("*.png"))
 
 
 def test_v2_native_reproducibility_check_requires_output_in_draft(monkeypatch, tmp_path):

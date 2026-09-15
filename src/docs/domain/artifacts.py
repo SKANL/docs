@@ -212,9 +212,14 @@ class BuildManifest:
             {
                 **artifact.to_dict(),
                 # Workspace-specific absolute paths are publication metadata,
-                # not build identity.  Keep only the stable artifact name so
-                # equivalent builds in different checkouts hash identically.
-                "path": Path(artifact.path).name,
+                # not build identity. Keep only their stable artifact name;
+                # preserve relative paths so distinct artifact locations do
+                # not collapse to the same identity.
+                "path": (
+                    Path(artifact.path).name
+                    if Path(artifact.path).is_absolute()
+                    else Path(artifact.path).as_posix()
+                ),
             }
             for artifact in self.artifacts
         ]

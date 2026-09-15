@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
 from docs.application.format_audit import FormatAuditService
+from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.structural_audit import StructuralAuditService
+from docs.domain.artifacts import RenderProfile
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
@@ -33,11 +36,13 @@ class ReviewStageService:
         format_audit: FormatAuditService,
         document_review: ReviewService,
         rules_manifest_state: Callable[[dict[str, Any]], tuple[bool, int]],
+        render_verification: RenderVerificationService | None = None,
     ) -> None:
         self._structural_audit = structural_audit
         self._format_audit = format_audit
         self._document_review = document_review
         self._rules_manifest_state = rules_manifest_state
+        self._render_verification = render_verification
 
     def run_all(
         self,
@@ -128,6 +133,8 @@ class ReviewStageService:
     def accessibility_review(
         self, artifact_path: Path, config: dict[str, Any], policy: PipelinePolicy
     ) -> ReviewStageOutcome:
+        if artifact_path.suffix.lower() in {".html", ".htm", ".pdf"}:
+            return self._render_review(artifact_path, config, policy, ReviewDimension.ACCESSIBILITY)
         result = self._format_audit.audit_format(
             artifact_path,
             config,
@@ -179,12 +186,68 @@ class ReviewStageService:
     def visual_review(
         self, artifact_path: Path, config: dict[str, Any], policy: PipelinePolicy
     ) -> ReviewStageOutcome:
+        if artifact_path.suffix.lower() in {".html", ".htm", ".pdf"}:
+            return self._render_review(artifact_path, config, policy, ReviewDimension.VISUAL)
         result = self._format_audit.audit_format(
             artifact_path,
             config,
             strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
         )
         return self._outcome(result.filter_dimensions({ReviewDimension.VISUAL}), policy)
+
+    def _render_review(
+        self, path: Path, config: dict[str, Any], policy: PipelinePolicy, dimension: ReviewDimension
+    ) -> ReviewStageOutcome:
+        if not path.is_file():
+            return self._outcome(ReviewResult([Issue(
+                "error", f"Artifact is missing: {path}", code="render.open", dimension=dimension,
+            )]), policy)
+        if self._render_verification is None:
+            return self._outcome(ReviewResult([Issue(
+                "warning", "Multiformat render verification port is not configured; QA is unverified.",
+                code="render.capability.unavailable", dimension=dimension,
+            )]), policy)
+        visual = dimension is ReviewDimension.VISUAL
+        settings = config.get("visual_qa", {}) if visual else {}
+        if not isinstance(settings, dict) or any(
+            not isinstance(settings.get(key, False), bool) for key in ("allow_blank_pages", "require_previews")
+        ):
+            return self._outcome(ReviewResult([Issue(
+                "error", "Invalid visual QA profile: preview and blank-page options must be booleans.",
+                code="render.profile.invalid", dimension=dimension,
+            )]), policy)
+        expected = settings.get("expected_page_size")
+        if expected is not None and (not isinstance(expected, (list, tuple)) or len(expected) != 2 or any(
+            type(value) not in {int, float} or not math.isfinite(value) or value <= 0 for value in expected
+        )):
+            return self._outcome(ReviewResult([Issue(
+                "error", "Invalid visual QA profile: expected_page_size needs two positive finite dimensions.",
+                code="render.profile.invalid", dimension=dimension,
+            )]), policy)
+        preview_root = config.get("paths", {}).get("output_qa_dir") if visual else None
+        previews = Path(preview_root) / path.stem / "previews" if preview_root else None
+        profile = RenderProfile(
+            format="html" if path.suffix.lower() in {".html", ".htm"} else "pdf",
+            expected_page_size=tuple(expected) if expected is not None else None,
+            allow_blank_pages=settings.get("allow_blank_pages", False),
+            require_previews=settings.get("require_previews", False),
+        )
+        try:
+            report = self._render_verification.verify(path, profile, previews)
+        except (OSError, RuntimeError, ValueError) as exc:
+            return self._outcome(ReviewResult([Issue(
+                "error", f"Artifact QA failed: {exc}", code="render.open", dimension=dimension,
+            )]), policy)
+        technical = {"render.open", "render.format_mismatch", "render.pages.empty", "render.dimensions", "artifact.identity_changed"}
+        issues = [Issue(
+            finding.severity, f"[{finding.code}] {finding.message}", code=finding.code,
+            dimension=dimension, page=finding.page, file=finding.path,
+            stage_originator=f"{dimension.value}-review",
+        ) for finding in report.findings if finding.severity != "info" and (
+            (visual and finding.dimension != "accessibility")
+            or (not visual and (finding.dimension == "accessibility" or finding.code in technical))
+        )]
+        return self._outcome(ReviewResult(issues), policy)
 
     def reproducibility_check(
         self,
@@ -220,13 +283,14 @@ class ReviewStageService:
 
     @staticmethod
     def _outcome(result: ReviewResult, policy: PipelinePolicy) -> ReviewStageOutcome:
+        result = ReviewResult([replace(issue, severity=policy.severity(issue.code, issue.severity)) for issue in result.issues])
         warnings: list[str] = []
         errors: list[str] = []
         for issue in result.issues:
             severity = policy.severity(issue.code, issue.severity)
             if severity == "error":
                 errors.append(issue.message)
-            else:
+            elif severity == "warning":
                 warnings.append(issue.message)
         detail = result.to_markdown()
         return ReviewStageOutcome(not errors, detail, tuple(warnings), tuple(errors))

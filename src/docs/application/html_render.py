@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 from contextlib import nullcontext
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.figure_resolver import build_bound_figures_resolver
+from docs.application.html_theme import visual_theme_css
 from docs.application.output_names import resolve_html_name
 from docs.application.section_markdown import resolve_existing_section_paths, strip_frontmatter_to_temp
 from docs.domain.cover import CoverMode, render_cover_html, resolve_cover_spec
@@ -150,6 +152,14 @@ class HtmlRendererAdapter:
                 )
                 if not temporary_path.exists() or temporary_path.stat().st_size == 0:
                     raise RuntimeError("Pandoc produjo un HTML vacío o inexistente")
+                css = visual_theme_css(config)
+                if css:
+                    text = temporary_path.read_text(encoding="utf-8")
+                    style = f'<style id="docs-visual-theme">\n{css}\n</style>\n'
+                    text, count = re.subn(r"</head\s*>", lambda _: style + "</head>", text, count=1, flags=re.IGNORECASE)
+                    if not count:
+                        raise RuntimeError("Cannot apply HTML theme: generated document has no head element")
+                    temporary_path.write_text(text, encoding="utf-8", newline="\n")
                 os.replace(temporary_path, output)
             finally:
                 temporary_path.unlink(missing_ok=True)
