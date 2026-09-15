@@ -102,3 +102,4 @@ def test_every_name_is_tried_on_path(tmp_path, monkeypatch):
 
     assert resolved == "/usr/bin/libreoffice"
     assert seen == ["soffice", "libreoffice"]
+

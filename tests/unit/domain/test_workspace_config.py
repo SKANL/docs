@@ -34,3 +34,4 @@ def test_config_partial_falls_back_per_field():
     documents_dir, templates_dir = resolve_workspace_roots(config, env, _DEFAULTS)
     assert documents_dir == Path("cfg-documents")
     assert templates_dir == Path("env-templates")
+

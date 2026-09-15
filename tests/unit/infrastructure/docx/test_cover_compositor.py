@@ -54,3 +54,4 @@ def test_declared_variants_compose_distinct_semantic_layouts():
     assert len(custom.tables) == 0
     assert _paragraph(custom, "Native Cover Report").runs[0].font.size.pt == 24
     assert str(_paragraph(custom, "Native Cover Report").runs[0].font.color.rgb) == "404040"
+

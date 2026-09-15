@@ -744,7 +744,7 @@ def test_stale_outputs_are_reported_in_the_final_directory_too(tmp_path):
 
 def test_a_draft_inside_the_final_directory_is_always_wrong(tmp_path):
     # Distinct from an outdated name: a `*-draft.docx` in `final/` is a copy
-    # mistake, never a stale configuration. `doc mark-final` promotes a build
+    # mistake, never a stale configuration. `document publish` promotes a build
     # INTO `final/`; a draft landing there means something was copied by hand.
     final = tmp_path / "final"
     final.mkdir()
@@ -791,3 +791,5 @@ def test_the_libreoffice_check_names_everything_its_absence_costs(tmp_path):
     detail = next(c for c in result.checks if c.name == "libreoffice").detail
     assert "pdf" in detail.lower(), "debe decir que se pierde la salida PDF"
     assert "qa" in detail.lower(), "y también el QA visual"
+
+

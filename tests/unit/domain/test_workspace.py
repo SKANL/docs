@@ -20,3 +20,4 @@ def test_document_to_json_is_sorted_and_unicode():
     text = doc.to_json()
     assert text.index('"id"') < text.index('"title"')  # sort_keys
     assert "Área" in text  # ensure_ascii=False
+

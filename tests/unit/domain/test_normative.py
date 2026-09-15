@@ -107,3 +107,4 @@ def test_resolve_normative_settings_citation_style_rejects_unknown_value():
     config = {"apa7": {"citation_style": "mla9"}}
     with pytest.raises(ValueError, match="citation_style"):
         resolve_normative_settings(config)
+

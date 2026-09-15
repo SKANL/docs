@@ -179,3 +179,4 @@ def test_write_raw_text_creates_parent_directories_and_writes_content(repo: Json
     path = tmp_path / "nested" / "dir" / "file.md"
     repo.write_raw_text(path, "hello")
     assert path.read_text(encoding="utf-8") == "hello"
+

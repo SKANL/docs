@@ -250,3 +250,4 @@ def test_visual_theme_uses_configured_semantic_heading_colors(tmp_path):
     assert str(headings[0].runs[0].font.color.rgb) == "D97706"
     assert str(headings[1].runs[0].font.color.rgb) == "2563EB"
     assert str(headings[2].runs[0].font.color.rgb) == "BE123C"
+

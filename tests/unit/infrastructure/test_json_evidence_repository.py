@@ -134,3 +134,4 @@ def test_hash_text_matches_hash_file_for_same_bytes(tmp_path, repo):
     path = tmp_path / "f.md"
     path.write_text(text, encoding="utf-8")
     assert repo.hash_text(text) == repo.hash_file(path)
+

@@ -22,3 +22,4 @@ def test_ledger_reads_legacy_log_entries_and_reports_tampering():
     payload["entries"][0]["operation"] = "tampered"
 
     assert ledger.verify(payload) == ["entries[0].sha256 does not match entry content"]
+

@@ -47,3 +47,4 @@ def test_set_bullet_numbering_round_trips_through_save_and_reopen(tmp_path):
     target = next(p for p in reopened.paragraphs if p.text == "Item")
     num_pr = target._p.pPr.find(qn("w:numPr"))
     assert num_pr.find(qn("w:numId")).get(qn("w:val")) == "42"
+

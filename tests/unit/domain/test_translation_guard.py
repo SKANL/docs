@@ -99,3 +99,4 @@ def test_the_safe_default_is_to_reject_an_echo():
     """A LIVE engine echoing its input did not translate, it repeated."""
     outcome = guarded_translate("Hello", "en", "es", lambda text: text)
     assert outcome.translated is False
+

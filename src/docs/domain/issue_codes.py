@@ -183,7 +183,7 @@ ISSUE_CODES: dict[str, IssueCode] = {
     ),
     "structure.missing_sections_dir": IssueCode(
         meaning="No existe el directorio `sections/` del documento.",
-        fix="Corré `docs pipeline prep`, que lo crea junto con los scaffolds de todas las secciones.",
+        fix="Corré `docs document prepare`, que lo crea junto con los scaffolds de todas las secciones.",
     ),
     "structure.missing_title": IssueCode(
         meaning="El cuerpo de la sección no arranca con un título Markdown de primer nivel.",
@@ -263,3 +263,4 @@ def explain_code(code: str | None) -> str:
         f"Código desconocido: `{code}`.{suggestion}\n\n"
         f"Corré `docs explain` sin argumentos para ver el catálogo completo.\n"
     )
+

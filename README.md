@@ -47,11 +47,11 @@ Assembly writes `qa-report.md` plus available render previews below the configur
 uv sync
 uv run docs doc init                 # bootstrap a workspace
 uv run docs doc new mi-informe       # create a document
-uv run docs pipeline ingest          # convert whatever is in inbox/
-uv run docs pipeline prep            # rules, evidence, section scaffolds
+uv run docs document ingest          # convert whatever is in inbox/
+uv run docs document prepare            # rules, evidence, section scaffolds
 #   ...author the section bodies under sections/NNN-<id>.md...
 uv run docs review-section intro --json   # iterate until "passed": true
-uv run docs pipeline assemble        # build the output
+uv run docs document build        # build the output
 ```
 
 ### Pipeline v2
@@ -77,14 +77,14 @@ pipeline and it never writes `output/final/`.
 
 The v2 reference is split by reader need:
 
-- [Architecture](docs/architecture-v2.md) — boundaries, stages, policies, and publication.
-- [Pipeline](docs/pipeline-v2.md) — command path and stage results.
+- [Architecture](docs/architecture.md) — boundaries, stages, policies, and publication.
+- [Pipeline](docs/pipeline.md) — command path and stage results.
 - [Contracts](docs/contracts-v2.md) — artifact, manifest, and report schemas.
 - [Templates](docs/templates-v2.md) — template inputs and portability rules.
 - [Covers](docs/covers-v2.md) — declarative variants, slots, and cover assets.
 - [QA](docs/qa-v2.md) — verification, degradation, and CI evidence.
 - [Provenance](docs/provenance-v2.md) — hashes, ledger attestations, and publication proof.
-- [Migration](docs/migration-v2.md) — legacy-to-v2 adoption without overwriting legacy output.
+- [Migration](docs/runtime.md) — canonical runtime architecture and release workflow.
 - [CI](docs/ci-v2.md) — local and GitHub Actions checks.
 
 `docs guide` prints the full agent contract — the end-to-end workflow,
@@ -156,7 +156,7 @@ CI runs all three on every push and pull request, with a coverage floor.
 
 ## Current v2 contract
 
-The public v2 commands are `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` (`v2` is the compatibility alias). `release` executes the complete verified build/package/publication pipeline for the active document. `build` publishes verified requested formats under `output/v2/`; `verify` performs the same format checks without publishing. Inspection and diff are read-only; packaging and publication use temporary files and atomic replacement. V2 does not silently fall back to the legacy pipeline or write legacy `output/final/`.
+The public document commands are `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` . `release` executes the complete verified build/package/publication pipeline for the active document. `build` publishes verified requested formats under `output/v2/`; `verify` performs the same format checks without publishing. Inspection and diff are read-only; packaging and publication use temporary files and atomic replacement. The native runtime does not silently fall back to an alternate pipeline or write unverified output.
 
 The authoritative 23-stage `FULL_STAGE_IDS` flow is: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `package-release`, `publish-draft`. The CLI composition root wires native handlers for every stage; stages without applicable input are explicit `skipped` results, not unsupported implementation gaps. Publication failures appear under `v2.publication_blockers`. Use `document plan --pipeline <id>` to inspect stage contracts. Build and verify also accept `--pipeline <id>` to execute a registered public boundary such as `document-build` or `document-verify`.
 
@@ -165,4 +165,5 @@ Policies are `draft`, `strict`, and `release`: draft may warn for permitted opti
 Publication requires a matching v2 manifest and verifiable ledger attestation for the exact artifact bytes. The manifest must include SHA-256 source/template/config/context, asset and artifact identities, renderer versions, passed verification, and a provenance run. HTML verification checks UTF-8 and one HTML/body root; PDF verification checks its header and readable page structure; DOCX uses format audit and QA. PDF is derived and not byte-deterministic.
 
 V2 sources are `document.json`, sections, context, template/configuration, and assets. Rendered files, manifests, QA reports, packages, and published copies are derived. The separate v2 provenance ledger records hashes only after successful stages.
+
 

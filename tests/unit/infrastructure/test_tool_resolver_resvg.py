@@ -28,3 +28,4 @@ def test_resolve_resvg_executable_falls_back_to_fallback_list(monkeypatch, tmp_p
 def test_resolve_resvg_executable_returns_none_when_nothing_found(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert resolve_resvg_executable({}) is None
+

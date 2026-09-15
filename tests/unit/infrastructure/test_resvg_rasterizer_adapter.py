@@ -90,3 +90,4 @@ def test_rasterize_failure_removes_scratch_and_preserves_destination(tmp_path):
 
     assert png_path.read_bytes() == b"old"
     assert not list(tmp_path.glob("*.tmp"))
+

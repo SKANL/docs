@@ -102,3 +102,4 @@ def test_topic_status_to_dict():
         "id": "alumno", "title": "Alumno", "required": True,
         "exists": False, "missing": ["Nombre"], "complete": False,
     }
+

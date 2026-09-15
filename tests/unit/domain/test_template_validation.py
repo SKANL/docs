@@ -271,3 +271,4 @@ def test_template_contract_allows_deliberate_nested_extensions():
     }
 
     assert validate_template(raw) == []
+

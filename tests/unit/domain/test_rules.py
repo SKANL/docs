@@ -1175,3 +1175,4 @@ def test_review_cross_consistency_contested_stack_evidence_in_other_clause_still
 def test_review_cross_consistency_no_issues_for_empty_bodies():
     result = review_cross_consistency(_template(), {}, strict=False)
     assert result.issues == []
+

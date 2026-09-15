@@ -35,7 +35,7 @@ EXEMPT = {
     "infrastructure/verification/render_verification_adapter.py",
     # v2 package creates a generic release ZIP, not a DOCX container; it does
     # not author or mutate OOXML and therefore cannot use the DOCX normalizer.
-    "cli/commands/v2_app.py",
+    "cli/commands/document_app.py",
 }
 
 _ZIP_WRITE_MODES = {"w", "a", "x"}
@@ -114,3 +114,5 @@ def test_the_normalizer_still_exists_where_the_rule_says_it_does():
     home = SRC_ROOT / "infrastructure" / "docx" / "deterministic_zip.py"
     assert home.is_file()
     assert f"def {NORMALIZER}(" in home.read_text(encoding="utf-8")
+
+

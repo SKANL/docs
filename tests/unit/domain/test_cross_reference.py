@@ -175,3 +175,4 @@ def test_bound_figures_omitted_reproduces_todays_output_byte_for_byte():
     assert body["intro"] == "Figura 1. texto Figura 2. mas"
     assert body["cierre"] == "Figura 3."
     assert warnings == []
+

@@ -56,3 +56,4 @@ def test_unknown_extension_with_no_magic_bytes_returns_empty_string_not_none(tmp
     result = FiletypeDetectorAdapter().detect(path)
     assert result == ""
     assert isinstance(result, str)
+

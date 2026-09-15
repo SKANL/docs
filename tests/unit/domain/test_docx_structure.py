@@ -195,3 +195,4 @@ def test_structure_parts_removes_legacy_cover_when_mode_none_is_explicit():
     )
 
     assert parts == [{"type": "sections"}]
+

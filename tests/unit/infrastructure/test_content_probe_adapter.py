@@ -185,3 +185,4 @@ def test_a_file_with_no_container_format_is_left_alone(tmp_path):
 
 def test_a_missing_file_stays_fail_open(tmp_path):
     assert FilesystemContentProbeAdapter().probe(tmp_path / "no-existe.docx").container_ok is True
+

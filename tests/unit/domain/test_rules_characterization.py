@@ -447,3 +447,4 @@ def test_review_section_text_reporte_estadia_tic_corpus_snapshot():
             actual = [issue.to_dict() for issue in issues]
             expected = _EXPECTED_SECTION_ISSUES[section_id][key]
             assert actual == expected, f"{section_id} ({key}) drifted from characterization snapshot"
+

@@ -121,3 +121,4 @@ def test_render_intake_report_no_gaps_says_all_clear():
 
     assert "No se detectaron brechas." in report
     assert "No quedan pasos pendientes." in report
+

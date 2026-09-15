@@ -230,3 +230,4 @@ def test_render_then_parse_requests_round_trip():
     parsed = parse_requests(schema, rendered)
     assert parsed["alumno"]["nombre"] == "Ana"
     assert parsed["intro"] == ""
+

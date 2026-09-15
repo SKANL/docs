@@ -26,3 +26,4 @@ def test_parse_simple_yaml_ignores_lines_without_a_colon():
 def test_parse_simple_yaml_handles_colons_inside_the_value():
     text = "find: time: 10:30\n"
     assert parse_simple_yaml(text) == {"find": "time: 10:30"}
+

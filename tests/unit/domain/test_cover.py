@@ -143,3 +143,4 @@ def test_cover_html_projects_valid_configured_images_with_alt_text(tmp_path):
     assert 'class="cover__image cover__logo"' in html
     assert 'alt="logo"' in html
     assert str(logo).replace("\\", "/") in html
+

@@ -213,3 +213,4 @@ def test_merge_safe_to_rerun():
     assert once == twice
     ids = [f["id"] for f in twice["figures"]]
     assert len(ids) == len(set(ids))
+

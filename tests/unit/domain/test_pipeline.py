@@ -143,3 +143,4 @@ def test_pipeline_stage_plan_deterministic_across_repeated_calls():
         ("format-audit-docx", True),
         ("qa-docx", True),
     ]
+

@@ -23,12 +23,12 @@ from docs.cli.commands.collection_app import collection_app
 from docs.cli.commands.context_app import context_app
 from docs.cli.commands.core_app import core_app
 from docs.cli.commands.doc_app import doc_app
+from docs.cli.commands.document_app import document_app
 from docs.cli.commands.docx_app import docx_app
 from docs.cli.commands.section_app import section_app
 from docs.cli.commands.source_app import source_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
-from docs.cli.commands.v2_app import v2_app
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
@@ -53,8 +53,7 @@ app.add_typer(template_app, name="template")
 app.add_typer(doc_app, name="doc")
 app.add_typer(asset_app, name="asset")
 app.add_typer(context_app, name="context")
-app.add_typer(v2_app, name="v2")
-app.add_typer(v2_app, name="document")
+app.add_typer(document_app, name="document")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         # return value and unconditionally fell through to `return 0`, so
         # every command signaling failure via `raise typer.Exit(code=1)`
         # (doctor, pipeline, docx/section build, ...) silently exited 0 --
-        # including `docs pipeline ingest --strict`, which AGENTS.md §1
+        # including `docs document ingest --strict`, which AGENTS.md §1
         # documents as restoring hard-fail for CI. A command that completes
         # without raising `typer.Exit` returns `None` here, not an int --
         # normalized to 0 (success).
@@ -83,3 +82,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+

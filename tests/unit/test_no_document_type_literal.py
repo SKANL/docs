@@ -108,3 +108,4 @@ def test_guard_catches_bare_2_5_margin_value_without_named_constant():
 def test_guard_stays_silent_on_unrelated_source():
     synthetic_source = "def add(a, b):\n    return a + b\n"
     assert _find_banished_literals(synthetic_source) == []
+

@@ -1,6 +1,6 @@
 import pytest
 
-from docs.cli.commands.v2_app import _renderer_capabilities
+from docs.cli.commands.document_app import _renderer_capabilities
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
@@ -136,3 +136,6 @@ def test_registry_rejects_incompatible_duplicate_declarations():
                 ToolCapability("pandoc", "other-pandoc"),
             )
         )
+
+
+

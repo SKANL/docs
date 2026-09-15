@@ -89,3 +89,4 @@ def test_merge_bindings_output_is_sorted_and_deterministic():
     merged = merge_bindings(existing, additions)
 
     assert list(merged.keys()) == sorted(merged.keys())
+

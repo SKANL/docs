@@ -94,3 +94,4 @@ def test_docx_structural_audit_classifies_missing_captions_as_accessibility(tmp_
     assert [(issue.code, issue.dimension) for issue in result.issues] == [
         ("structure.captions.missing", ReviewDimension.ACCESSIBILITY)
     ]
+

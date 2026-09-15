@@ -57,3 +57,4 @@ def test_the_pandoc_minimum_is_the_one_the_code_actually_requires():
     # `html_render` passes `--embed-resources`, which pandoc added in 2.19.
     # The floor is derived from what the harness uses, not from taste.
     assert MINIMUM_VERSIONS["pandoc"] == (2, 19)
+

@@ -254,3 +254,4 @@ def test_distinct_sources_are_not_falsely_merged_regardless_of_fidelity():
         SourceDoc(relative_path="b.md", kind="pdf", text="Un tema completamente distinto sobre astronomía."),
     ]
     assert find_duplicates(docs) == []
+

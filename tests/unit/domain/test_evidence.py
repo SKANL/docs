@@ -244,3 +244,4 @@ def test_build_prompt_hash_payload_preserves_order():
     second = PromptHashFileFact(name="b.md", sha256="b" * 64)
     payload = build_prompt_hash_payload(files=[first, second])
     assert [entry["path"] for entry in payload] == ["a.md", "b.md"]
+

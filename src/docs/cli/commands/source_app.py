@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import typer
 
-from docs.cli.commands.v2_app import _run_source_command
+from docs.cli.commands.document_app import _run_source_command
 
 source_app = typer.Typer(help="Source ingestion and normalization commands.")
 
@@ -15,3 +15,5 @@ def source_ingest(
 ) -> None:
     """Ingest source material through the native v2 source stage."""
     _run_source_command(ctx, "ingest", json_output)
+
+

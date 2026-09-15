@@ -14,3 +14,4 @@ def test_sha256_hex_matches_hashlib_reference():
 def test_ingested_output_path_builds_stem_kind_sha8_name():
     result = ingested_output_path(Path("/out"), "readme", "docx", "abcd1234")
     assert result == Path("/out/readme-docx-abcd1234.md")
+
