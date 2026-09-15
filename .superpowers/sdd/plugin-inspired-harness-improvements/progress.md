@@ -186,3 +186,15 @@ source-only by design.
   passed architecture, check, and toolchains.
 - Verification: local full suite 2433 passed, 5 skipped; focused pipeline
   service tests 16 passed; CodeGraph index current.
+
+## Legacy facade removal: complete
+- Removed the obsolete LegacyPipelineService and LegacyPipelineBridge modules
+  and their dedicated compatibility tests.
+- Deps now lazily constructs PipelineService directly; core pipeline commands
+  no longer expose or route through a legacy facade.
+- Added an architecture guard asserting the deleted modules cannot return to
+  the runtime.
+- Updated architecture/migration docs to describe historical summaries and
+  filenames as compatibility projections over the native v2 runtime.
+- Verification: focused architecture/CLI/composition suites 190 passed, 3
+  skipped; full suite 2429 passed, 5 skipped; ruff and mypy passed; PR CI green.
