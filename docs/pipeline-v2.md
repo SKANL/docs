@@ -105,7 +105,7 @@ resolve-config -> resolve-template -> resolve-context -> resolve-assets
 -> package-release -> publish-draft
 ```
 
-`build` runs the full `document` pipeline by default and writes successful formats to `output/v2/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The workspace bridge may leave selected stages as explicit no-op contract stages until their adapter is migrated.
+`build` runs the full `document` pipeline by default and writes successful formats to `output/v2/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The CLI composition root supplies handlers for every declared stage; a stage is `skipped` only when its document has no applicable input (for example, no visual specs or no cover). Partial programmatic service maps are intentionally fail-closed and are not the normal runtime.
 
 ## Format selection
 

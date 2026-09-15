@@ -251,3 +251,7 @@ source-only by design.
 - Added pre-render findings for missing/zero-dimension logo and hero assets and wired them into the `compose-cover` stage so strict/release policies can block invalid covers.
 - Valid configured cover images are embedded into DOCX and projected into accessible HTML image elements with alt text.
 - Added cover contract documentation and regression tests; focused cover/stage/render suite: 49 passed.
+## Runtime documentation closure: complete
+- Removed stale v2 documentation that described normal CLI stages as migration no-ops; the composition root is documented as the complete native runtime, with `skipped` reserved for inapplicable inputs and partial custom maps fail-closed.
+- Declared `paths.workspace_root` in the configuration vocabulary after the architecture scanner caught the new cover asset lookup key.
+- Full suite after these changes: 2494 passed, 5 skipped; CI for the preceding commit remained green.
