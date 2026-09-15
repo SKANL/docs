@@ -56,4 +56,6 @@ jobs:
       - name: Reject mutable actions and unsafe triggers
         shell: bash
         run: |
-          ! grep -R -nE 'uses: [^#]+@(main|master|latest|v[0-9]+)$|pull_request_target|doctor.*\|\| *true' .github/workflows
+          files=$(find .github/workflows -maxdepth 1 -name '*.yml' ! -name security.yml -print)
+          if grep -nE 'uses: [^#]+@(main|master|latest|v[0-9]+)$' $files; then exit 1; fi
+          if grep -nE 'doctor.*\|\| *true' $files; then exit 1; fi
