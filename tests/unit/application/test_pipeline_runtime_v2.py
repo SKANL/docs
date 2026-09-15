@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from docs.application.pipeline_runtime_v2 import PipelineRuntime
+from docs.application.pipeline_runtime_v2 import PipelineRuntime, _finding_code
+
+
+def test_finding_code_is_recovered_from_review_messages():
+    assert _finding_code("[render.layout.unavailable] Browser renderer unavailable") == "render.layout.unavailable"
+    assert _finding_code("stage unsupported: optional") == "stage unsupported: optional"
 from docs.application.provenance_v2 import ProvenanceLedgerV2
 from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy

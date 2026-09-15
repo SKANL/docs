@@ -12,6 +12,15 @@ class PipelineMode(StrEnum):
     release = "release"
 
 
+_DEGRADABLE_WARNING_CODES = frozenset(
+    {
+        "accessibility.pdf.tags_unverified",
+        "render.image.unverified",
+        "render.layout.unavailable",
+    }
+)
+
+
 @dataclass(frozen=True)
 class PipelinePolicy:
     mode: PipelineMode = PipelineMode.draft
@@ -28,6 +37,8 @@ class PipelinePolicy:
         return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
     def severity(self, code: str, severity: str) -> str:
+        if severity == "warning" and self.mode is PipelineMode.release and code in _DEGRADABLE_WARNING_CODES:
+            return "warning"
         if severity == "warning" and (self.mode in {PipelineMode.strict, PipelineMode.release} or code in self.warning_codes):
             return "error"
         return severity

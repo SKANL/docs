@@ -241,6 +241,59 @@ def test_build_creates_the_parent_of_a_custom_output_path(tmp_path, monkeypatch)
     assert seen["output"].parent.is_dir()
 
 
+def test_build_emits_accessible_language_and_main_landmark(tmp_path, monkeypatch):
+    def fake_run(args, **kwargs):
+        Path(args[-1]).write_text(
+            "<!doctype html><html><head></head><body><h1>Title</h1>"
+            "<p>Content.</p></body></html>",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/pandoc")
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nCuerpo.\n", encoding="utf-8")
+    config = {
+        "language": "es",
+        "sections": [{"id": "resumen", "order": 1}],
+        "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")},
+    }
+
+    output = HtmlRendererAdapter(SystemToolResolverAdapter(), SubprocessPandocRunner()).build(
+        "doc-1", config
+    )
+
+    assert output is not None
+    html = output.read_text(encoding="utf-8")
+    assert '<html lang="es">' in html
+    assert "<main" in html
+
+
+def test_build_uses_project_language_when_top_level_language_is_absent(tmp_path, monkeypatch):
+    def fake_run(args, **kwargs):
+        Path(args[-1]).write_text(
+            "<html><head></head><body><h1>Title</h1></body></html>", encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/pandoc")
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    (sections_dir / "001-resumen.md").write_text("# Resumen\n\nCuerpo.\n", encoding="utf-8")
+
+    output = HtmlRendererAdapter(SystemToolResolverAdapter(), SubprocessPandocRunner()).build(
+        "doc-1",
+        {"project": {"language": "es-MX"}, "sections": [{"id": "resumen", "order": 1}],
+         "paths": {"sections_dir": str(sections_dir), "output_draft_dir": str(tmp_path / "draft")}},
+    )
+
+    assert output is not None
+    assert '<html lang="es-MX">' in output.read_text(encoding="utf-8")
+
+
 def test_build_preserves_previous_html_when_pandoc_fails(tmp_path, monkeypatch):
     sections_dir = tmp_path / "sections"
     sections_dir.mkdir()
@@ -285,7 +338,7 @@ def test_build_delegates_pandoc_execution_to_injected_runner(tmp_path):
 
     result = HtmlRendererAdapter(_FakeToolResolver("pandoc"), pandoc_runner=FakePandocRunner()).build("doc-1", config)
 
-    assert result.read_text(encoding="utf-8") == "<html>delegated</html>"
+    assert result.read_text(encoding="utf-8") == '<html lang="en">delegated</html>'
     assert calls and calls[0][1:] == (True, 60)
 
 
@@ -357,7 +410,7 @@ def test_plain_html_preserves_legacy_output_without_theme(tmp_path):
     config = {"sections": [{"id": "overview", "order": 1}],
               "paths": {"sections_dir": str(tmp_path), "output_draft_dir": str(tmp_path / "draft")}}
     result = HtmlRendererAdapter(_FakeToolResolver("pandoc"), Runner()).build("plain", config)
-    assert result.read_text() == "<html><head></head><body>Original</body></html>"
+    assert result.read_text() == '<html lang="en"><head></head><body><main id="docs-main">Original</main></body></html>'
 
 
 def test_theme_css_escapes_font_values_and_normalizes_invalid_colors():

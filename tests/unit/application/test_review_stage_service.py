@@ -173,6 +173,19 @@ def test_accessibility_and_visual_dimensions_are_independent(tmp_path):
     assert "WARNING" not in visual.detail  # Report and gate must reflect the same policy.
 
 
+def test_release_allows_static_html_qa_when_browser_renderer_is_unavailable(tmp_path):
+    artifact = tmp_path / "document.html"
+    artifact.write_text('<html lang="en"><body><header><h1>Title</h1></header>'
+                        '<main><p>Text.</p></main></body></html>')
+
+    outcome = _multiformat_service(tmp_path).visual_review(
+        artifact, {}, PipelinePolicy(PipelineMode.release)
+    )
+
+    assert outcome.ok
+    assert any("Browser renderer unavailable" in warning for warning in outcome.warnings)
+
+
 def test_pdf_tag_warning_degrades_only_according_to_policy(tmp_path):
 
 

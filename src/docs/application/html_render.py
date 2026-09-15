@@ -41,6 +41,28 @@ def _prefer_sibling_svg(bound_figures: dict[str, BoundFigure]) -> dict[str, Boun
     return swapped
 
 
+def _ensure_accessible_document(html: str, language: str) -> str:
+    """Add semantic landmarks that Pandoc does not guarantee."""
+    def add_language(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        if re.search(r"\blang\s*=", tag, flags=re.IGNORECASE):
+            return tag
+        return tag[:-1] + f' lang="{language}">'
+
+    html = re.sub(r"<html\b[^>]*>", add_language, html, count=1, flags=re.IGNORECASE)
+    if not re.search(r"<main\b", html, flags=re.IGNORECASE):
+        html, opened = re.subn(
+            r"(<body\b[^>]*>)",
+            r'\1<main id="docs-main">',
+            html,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        if opened:
+            html = re.sub(r"</body\s*>", "</main></body>", html, count=1, flags=re.IGNORECASE)
+    return html
+
+
 class HtmlRendererAdapter:
     """`DocumentRendererPort` implementation for single-file HTML output
     (design.md item C-html): pandoc markdown -> standalone, self-contained
@@ -153,13 +175,17 @@ class HtmlRendererAdapter:
                 if not temporary_path.exists() or temporary_path.stat().st_size == 0:
                     raise RuntimeError("Pandoc produjo un HTML vacío o inexistente")
                 css = visual_theme_css(config)
+                text = temporary_path.read_text(encoding="utf-8")
+                project = config.get("project")
+                project_language = project.get("language") if isinstance(project, dict) else None
+                language = str(config.get("language") or config.get("lang") or project_language or "en")
+                text = _ensure_accessible_document(text, language)
                 if css:
-                    text = temporary_path.read_text(encoding="utf-8")
                     style = f'<style id="docs-visual-theme">\n{css}\n</style>\n'
                     text, count = re.subn(r"</head\s*>", lambda _: style + "</head>", text, count=1, flags=re.IGNORECASE)
                     if not count:
                         raise RuntimeError("Cannot apply HTML theme: generated document has no head element")
-                    temporary_path.write_text(text, encoding="utf-8", newline="\n")
+                temporary_path.write_text(text, encoding="utf-8", newline="\n")
                 os.replace(temporary_path, output)
             finally:
                 temporary_path.unlink(missing_ok=True)

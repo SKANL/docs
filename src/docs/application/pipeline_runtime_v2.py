@@ -14,6 +14,13 @@ from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapabilityRegistry
 
 
+def _finding_code(message: str) -> str:
+    """Recover a structured finding code from a human-readable stage message."""
+    if message.startswith("[") and "]" in message:
+        return message[1:message.index("]")]
+    return message
+
+
 @dataclass(frozen=True)
 class PipelineRuntimeReport:
     """Stable execution, capability, and provenance report for one pipeline run."""
@@ -110,12 +117,12 @@ class PipelineRuntime:
                     and stage_specs.get(result.stage) is not None
                     and stage_specs[result.stage].optional
                 )
-                or self._policy.severity(warning, "warning") == "warning"
+                or self._policy.severity(_finding_code(warning), "warning") == "warning"
             )
             errors = tuple(result.errors) + tuple(
                 warning
                 for warning in result.warnings
-                if self._policy.severity(warning, "warning") == "error"
+                if self._policy.severity(_finding_code(warning), "warning") == "error"
                 and not (
                     (
                         warning.startswith("stage unsupported:")
