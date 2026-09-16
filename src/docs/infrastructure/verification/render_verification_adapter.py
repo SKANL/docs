@@ -74,6 +74,10 @@ class RenderVerificationAdapter:
                 for finding in findings
             ],
         }
+        screenshot_artifacts, screenshot_metadata = self._screenshot_artifacts(findings)
+        checked_artifacts.extend(screenshot_artifacts)
+        if screenshot_metadata:
+            metadata["browser_screenshots"] = screenshot_metadata
         if config is not None:
             metadata["config_hash"] = sha256_content(config)
             if "template_contract" in config and config["template_contract"] is not None:
@@ -380,6 +384,41 @@ class RenderVerificationAdapter:
             })
             enriched.append(replace(finding, evidence=evidence))
         return enriched
+
+    @staticmethod
+    def _screenshot_artifacts(
+        findings: list[VerificationFinding],
+    ) -> tuple[list[ArtifactRef], list[dict[str, Any]]]:
+        artifacts: list[ArtifactRef] = []
+        evidence: list[dict[str, Any]] = []
+        for finding in findings:
+            if finding.code != "render.browser.checked":
+                continue
+            screenshot_path = finding.evidence.get("screenshot_path")
+            screenshot_sha256 = finding.evidence.get("screenshot_sha256")
+            screenshot_size = finding.evidence.get("screenshot_size_bytes")
+            viewport = finding.evidence.get("viewport")
+            if not (
+                isinstance(screenshot_path, str)
+                and isinstance(screenshot_sha256, str)
+                and isinstance(screenshot_size, int)
+                and isinstance(viewport, list)
+                and len(viewport) == 2
+            ):
+                continue
+            artifact = ArtifactRef(
+                path=screenshot_path,
+                sha256=screenshot_sha256,
+                media_type=mimetypes.guess_type(screenshot_path)[0] or "image/png",
+                size_bytes=screenshot_size,
+            )
+            artifacts.append(artifact)
+            evidence.append({
+                **artifact.to_dict(),
+                "viewport": viewport,
+                "result": finding.evidence.get("result", "passed"),
+            })
+        return artifacts, evidence
 
     def _verify_image(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         with Image.open(path) as image:
