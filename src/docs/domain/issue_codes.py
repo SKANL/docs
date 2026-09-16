@@ -159,6 +159,30 @@ ISSUE_CODES: dict[str, IssueCode] = {
         meaning="El PDF declara etiquetas, pero esta verificación no inspecciona su semántica ni el orden de lectura.",
         fix="Usá una herramienta especializada de accesibilidad PDF para revisar la estructura y las alternativas.",
     ),
+    "accessibility.pdf.structure_unverified": IssueCode(
+        meaning="No se pudo inspeccionar el árbol lógico del PDF, por lo que esta señal técnica quedó sin verificar; no representa una conclusión de conformidad.",
+        fix="Instalá o repará el parser PDF opcional y repetí la verificación; después usá una herramienta especializada para evaluar la estructura completa.",
+    ),
+    "accessibility.pdf.structure_missing": IssueCode(
+        meaning="El PDF no contiene un árbol de estructura lógica detectable para relacionar encabezados, figuras o tablas.",
+        fix="Generá el PDF conservando una estructura lógica etiquetada y repetí la verificación; confirmá el resultado con una herramienta especializada.",
+    ),
+    "accessibility.pdf.heading_missing": IssueCode(
+        meaning="El árbol lógico inspeccionado no contiene elementos básicos de encabezado, así que no se pudo confirmar su jerarquía.",
+        fix="Marcá los encabezados con roles estructurales PDF apropiados y revisá nuevamente el árbol lógico generado.",
+    ),
+    "accessibility.pdf.figure_alt_missing": IssueCode(
+        meaning="Una figura estructurada no tiene texto alternativo ni descripción detectable en el PDF.",
+        fix="Agregá texto alternativo o una descripción equivalente a la figura en la fuente y reconstruí el PDF.",
+    ),
+    "accessibility.pdf.table_semantics_missing": IssueCode(
+        meaning="Una tabla estructurada no expone filas o celdas detectables, por lo que su semántica básica requiere revisión.",
+        fix="Generá la tabla con roles de fila y celda apropiados y validá el árbol resultante con una herramienta especializada.",
+    ),
+    "accessibility.pdf.structure_checked": IssueCode(
+        meaning="Se inspeccionó el árbol lógico para buscar encabezados, alternativas de figuras y semántica de tablas; es evidencia técnica, no una conclusión de conformidad.",
+        fix="Tomalo como evidencia informativa y complementalo con auditorías estructurales y visuales especializadas si necesitás evaluar accesibilidad PDF.",
+    ),
     "render.browser.unavailable": IssueCode(
         meaning="No se pudo ejecutar el navegador headless; la verificación HTML quedó limitada a evidencia estática.",
         fix="Instalá Playwright y su navegador Chromium, o tratá el hallazgo como una degradación explícita del entorno.",

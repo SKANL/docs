@@ -141,7 +141,52 @@ class RenderVerificationAdapter:
                 message=f"PDF language and title metadata could not be inspected: {exc}",
                 severity="warning", dimension="accessibility",
             ))
+        findings.extend(RenderVerificationAdapter._pdf_structure_checks(path))
         return findings
+
+    @staticmethod
+    def _pdf_structure_checks(path: Path) -> list[VerificationFinding]:
+        """Inspect logical structure signals, never claim PDF conformance."""
+        try:
+            from pypdf import PdfReader  # type: ignore[import-not-found]
+        except ImportError as exc:
+            return [VerificationFinding(code="accessibility.pdf.structure_unverified", message=f"PDF logical structure could not be inspected; optional pypdf is unavailable: {exc}", severity="warning", dimension="accessibility")]
+        try:
+            catalog = PdfReader(str(path)).root_object
+            struct_root = catalog.get("/StructTreeRoot")
+            if struct_root is None:
+                return [VerificationFinding(code="accessibility.pdf.structure_missing", message="PDF has no structure tree; headings, figure alternatives, and table semantics cannot be verified.", severity="warning", dimension="accessibility")]
+            nodes = RenderVerificationAdapter._pdf_structure_nodes(struct_root)
+            findings: list[VerificationFinding] = []
+            headings = {"/H", "/H1", "/H2", "/H3", "/H4", "/H5", "/H6"}
+            if not any(str(node.get("/S", "")) in headings for node in nodes):
+                findings.append(VerificationFinding(code="accessibility.pdf.heading_missing", message="PDF structure tree contains no basic heading element; heading presence could not be confirmed.", severity="warning", dimension="accessibility"))
+            for node in nodes:
+                role = str(node.get("/S", ""))
+                if role == "/Figure" and not str(node.get("/Alt") or node.get("/ActualText") or "").strip():
+                    findings.append(VerificationFinding(code="accessibility.pdf.figure_alt_missing", message="A Figure structure element has no alternative text or description.", severity="warning", dimension="accessibility"))
+                if role == "/Table":
+                    children = RenderVerificationAdapter._pdf_structure_nodes(node.get("/K"))
+                    if not any(str(child.get("/S", "")) in {"/TR", "/TH", "/TD"} for child in children):
+                        findings.append(VerificationFinding(code="accessibility.pdf.table_semantics_missing", message="A Table structure element has no detectable row/cell semantics; table structure may require specialized review.", severity="warning", dimension="accessibility"))
+            findings.append(VerificationFinding(code="accessibility.pdf.structure_checked", message="PDF structure tree was inspected for basic headings, figure alternatives, and table semantics; this is not a conformance verdict.", severity="info", dimension="accessibility"))
+            return findings
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            return [VerificationFinding(code="accessibility.pdf.structure_unverified", message=f"PDF logical structure could not be inspected: {exc}", severity="warning", dimension="accessibility")]
+
+    @staticmethod
+    def _pdf_structure_nodes(value: Any) -> list[Any]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            return [node for item in value for node in RenderVerificationAdapter._pdf_structure_nodes(item)]
+        try:
+            node = value.get_object()
+        except AttributeError:
+            node = value
+        if not hasattr(node, "get"):
+            return []
+        return [node, *RenderVerificationAdapter._pdf_structure_nodes(node.get("/K"))]
 
     @staticmethod
     def _pdf_objects(page: Any, number: int) -> list[VerificationFinding]:

@@ -90,6 +90,9 @@ def test_browser_qa_disables_scripts_blocks_external_resources_and_bounds_naviga
     external = Route("https://example.test/track.js")
     state["route_handler"](external)
     assert external.action == "abort"
+    local = Route((tmp_path / "style.css").resolve().as_uri())
+    state["route_handler"](local)
+    assert local.action == "continue"
     assert any(f.code == "render.browser.checked" for f in findings)
 
 
