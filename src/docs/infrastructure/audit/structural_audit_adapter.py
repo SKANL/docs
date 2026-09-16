@@ -67,7 +67,7 @@ class StructuralAuditAdapter:
         contract: dict[str, Any] = self._mapping(rules.get("template_contract"))
         if not contract:
             contract = cast(dict[str, Any], rules) if any(key in rules for key in (
-                "page_geometry", "components", "editable_slots", "required_assets",
+                "page_geometry", "style_contract", "components", "editable_slots", "required_assets",
                 "fidelity_checks", "allowed_degradations",
             )) else {}
         if not contract:
@@ -99,6 +99,9 @@ class StructuralAuditAdapter:
         geometry = self._mapping(contract.get("page_geometry"))
         if geometry:
             self._audit_geometry(issues, artifact_path, geometry)
+        style = self._mapping(contract.get("style_contract"))
+        if style and artifact_path.suffix.lower() == ".docx":
+            self._audit_style(issues, document, style)
         for component in contract.get("components", []):
             if isinstance(component, dict):
                 kind = str(component.get("kind", "")).casefold()
@@ -151,7 +154,7 @@ class StructuralAuditAdapter:
         """Project contract components into the legacy rule vocabulary."""
         result = dict(rules)
         contract: dict[str, Any] = StructuralAuditAdapter._mapping(rules.get("template_contract"))
-        if not contract and any(key in rules for key in ("page_geometry", "components", "editable_slots", "required_assets", "fidelity_checks")):
+        if not contract and any(key in rules for key in ("page_geometry", "style_contract", "components", "editable_slots", "required_assets", "fidelity_checks", "allowed_degradations")):
             contract = cast(dict[str, Any], rules)
         for component in contract.get("components", []):
             if not isinstance(component, dict):
@@ -191,6 +194,63 @@ class StructuralAuditAdapter:
                 if any(key in margins and abs(float(cast(Any, value)) / 360000 - float(margins[key])) > 0.1 for key, value in actual.items()):
                     issues.append(Issue("error", "Page margins do not match the declared geometry.", "contract.page_geometry.margins", ReviewDimension.STRUCTURAL))
                     break
+
+    @staticmethod
+    def _audit_style(issues: list[Issue], document: Any, style: dict[str, Any]) -> None:
+        """Execute the small, format-neutral DOCX style contract vocabulary."""
+        body_font = style.get("body_font")
+        heading_font = style.get("heading_font")
+        body_color = StructuralAuditAdapter._normalise_color(style.get("body_color"))
+        heading_color = StructuralAuditAdapter._normalise_color(style.get("heading_color"))
+        body_alignment = style.get("body_alignment", style.get("alignment"))
+        body_spacing = style.get("body_line_spacing", style.get("line_spacing"))
+        body_after = style.get("body_after_pt", style.get("space_after_pt"))
+        for paragraph in document.paragraphs:
+            if not paragraph.text.strip():
+                continue
+            is_heading = bool(paragraph.style and paragraph.style.name.startswith("Heading"))
+            expected_font = heading_font if is_heading else body_font
+            expected_color = heading_color if is_heading else body_color
+            if isinstance(expected_font, str) and expected_font.strip():
+                actual_fonts = {run.font.name for run in paragraph.runs if run.text and run.font.name}
+                if actual_fonts and actual_fonts != {expected_font}:
+                    issues.append(Issue("error", f"Paragraph font does not match `{expected_font}`.",
+                                        "contract.style.heading_font" if is_heading else "contract.style.body_font",
+                                        ReviewDimension.STRUCTURAL))
+            if expected_color is not None:
+                actual_colors = {
+                    str(run.font.color.rgb).upper()
+                    for run in paragraph.runs
+                    if run.text and run.font.color and run.font.color.rgb
+                }
+                if actual_colors and actual_colors != {expected_color}:
+                    issues.append(Issue("error", "Paragraph color does not match the style contract.",
+                                        "contract.style.heading_color" if is_heading else "contract.style.body_color",
+                                        ReviewDimension.STRUCTURAL))
+            if not is_heading:
+                if isinstance(body_alignment, str):
+                    actual_alignment = getattr(paragraph.alignment, "name", None)
+                    if not isinstance(actual_alignment, str):
+                        actual_alignment = str(paragraph.alignment).split(".")[-1].split(" (")[0]
+                    actual_alignment = actual_alignment.casefold()
+                    if actual_alignment != body_alignment.casefold():
+                        issues.append(Issue("error", f"Paragraph alignment does not match `{body_alignment}`.",
+                                            "contract.style.body_alignment", ReviewDimension.STRUCTURAL))
+                if isinstance(body_spacing, (int, float)) and paragraph.paragraph_format.line_spacing != body_spacing:
+                    issues.append(Issue("error", "Paragraph line spacing does not match the style contract.",
+                                        "contract.style.body_line_spacing", ReviewDimension.STRUCTURAL))
+                if isinstance(body_after, (int, float)):
+                    actual_after = paragraph.paragraph_format.space_after
+                    actual_points = float(actual_after.pt) if actual_after is not None else 0.0
+                    if abs(actual_points - float(body_after)) > 0.01:
+                        issues.append(Issue("error", "Paragraph spacing after does not match the style contract.",
+                                            "contract.style.body_after_pt", ReviewDimension.STRUCTURAL))
+
+    @staticmethod
+    def _normalise_color(value: object) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        return value.strip().lstrip("#").upper()
 
     @staticmethod
     def _audit_component(issues: list[Issue], kind: str, component: dict[str, Any], actual: int) -> None:

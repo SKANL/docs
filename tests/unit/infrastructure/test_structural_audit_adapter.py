@@ -148,3 +148,59 @@ def test_docx_structural_audit_executes_assets_slots_fidelity_and_degradations(t
     assert findings["contract.required_assets.logo"].severity == "warning"
     assert findings["contract.editable_slots.title"].severity == "info"
     assert findings["contract.fidelity_checks.page-count"].severity == "warning"
+
+
+def test_docx_structural_audit_executes_template_style_contract(tmp_path):
+    docx_path = tmp_path / "styled.docx"
+    document = Document()
+    heading = document.add_heading("INTRODUCTION", level=1)
+    heading.runs[0].font.name = "Arial"
+    paragraph = document.add_paragraph("Body text")
+    paragraph.runs[0].font.name = "Times New Roman"
+    document.save(docx_path)
+
+    result = StructuralAuditService(StructuralAuditAdapter()).audit(docx_path, {
+            "style_contract": {
+                "body_font": "Aptos",
+                "heading_font": "Aptos",
+                "body_color": "000000",
+                "heading_color": "000000",
+                "body_alignment": "justify",
+                "body_line_spacing": 1.5,
+                "body_after_pt": 12,
+            }
+    })
+
+    codes = {issue.code for issue in result.issues}
+    assert "contract.style.body_font" in codes
+    assert "contract.style.heading_font" in codes
+    assert "contract.style.body_alignment" in codes
+    assert "contract.style.body_line_spacing" in codes
+
+def test_docx_structural_audit_accepts_matching_template_style_contract(tmp_path):
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt, RGBColor
+
+    docx_path = tmp_path / "matching.docx"
+    document = Document()
+    heading = document.add_heading("INTRODUCTION", level=1)
+    heading.runs[0].font.name = "Aptos"
+    heading.runs[0].font.color.rgb = RGBColor.from_string("000000")
+    paragraph = document.add_paragraph("Body text")
+    paragraph.runs[0].font.name = "Aptos"
+    paragraph.runs[0].font.color.rgb = RGBColor.from_string("000000")
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    paragraph.paragraph_format.line_spacing = 1.5
+    paragraph.paragraph_format.space_after = Pt(12)
+    document.save(docx_path)
+
+    result = StructuralAuditService(StructuralAuditAdapter()).audit(docx_path, {
+        "template_contract": {"style_contract": {
+            "body_font": "Aptos", "heading_font": "Aptos",
+            "body_color": "#000000", "heading_color": "000000",
+            "body_alignment": "justify", "body_line_spacing": 1.5,
+            "body_after_pt": 12,
+        }}
+    })
+
+    assert not {issue.code for issue in result.issues if issue.code.startswith("contract.style")}
