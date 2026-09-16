@@ -171,6 +171,7 @@ class VerificationReport:
     artifact: ArtifactRef
     findings: list[VerificationFinding] = field(default_factory=list)
     checked_artifacts: list[ArtifactRef] = field(default_factory=list)
+    preview_hashes: dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -186,6 +187,8 @@ class VerificationReport:
             payload["checked_artifacts"] = [
                 artifact.to_dict() for artifact in self.checked_artifacts
             ]
+        if self.preview_hashes:
+            payload["preview_hashes"] = dict(sorted(self.preview_hashes.items()))
         return payload
 
 
