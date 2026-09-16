@@ -90,6 +90,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "html_name": {},
     },
     "visual_qa": {
+        "browser_viewports": {},
         "allow_blank_pages": {},
         "expected_page_size": {},
         "preview_stem": {},

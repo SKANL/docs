@@ -13,6 +13,8 @@ class FigureEntry:
     caption: str = ""
     source_role: str = ""
     origin_kind: str = ""
+    accessible_name: str = ""
+    accessible_description: str = ""
 
 
 def build(entries: list[FigureEntry]) -> dict:
@@ -30,6 +32,8 @@ def build(entries: list[FigureEntry]) -> dict:
             "caption": entry.caption,
             "source_role": entry.source_role,
             "origin_kind": entry.origin_kind,
+            "accessible_name": entry.accessible_name,
+            "accessible_description": entry.accessible_description,
         }
         for entry in entries
     ]

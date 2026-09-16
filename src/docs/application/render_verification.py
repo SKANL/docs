@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from docs.domain.artifacts import ArtifactRef, ArtifactState, RenderProfile, VerificationFinding, VerificationReport
 from docs.domain.ports.render_verification_port import RenderVerificationPort
@@ -15,7 +17,11 @@ class RenderVerificationService:
         self.port = port
 
     def verify(
-        self, artifact_path: Path, profile: RenderProfile, preview_dir: Path | None = None
+        self,
+        artifact_path: Path,
+        profile: RenderProfile,
+        preview_dir: Path | None = None,
+        config: Mapping[str, Any] | None = None,
     ) -> VerificationReport:
         artifact_path = Path(artifact_path)
         if not artifact_path.is_file():
@@ -29,7 +35,10 @@ class RenderVerificationService:
             or "application/octet-stream",
             size_bytes=artifact_path.stat().st_size,
         )
-        report = self.port.verify(artifact, profile, preview_dir)
+        if config is None:
+            report = self.port.verify(artifact, profile, preview_dir)
+        else:
+            report = self.port.verify(artifact, profile, preview_dir, config)
         if self._sha256(artifact_path) != digest:
             return VerificationReport(
                 artifact=artifact,

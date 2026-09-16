@@ -17,6 +17,7 @@ _DEGRADABLE_WARNING_CODES = frozenset(
         "accessibility.pdf.tags_unverified",
         "render.image.unverified",
         "render.layout.unavailable",
+        "render.browser.unavailable",
     }
 )
 

@@ -57,8 +57,7 @@ def _parse_spec(raw: Any) -> VisualSpec | None:
     warns and is skipped, others still process")."""
     if not isinstance(raw, dict):
         print(
-            "WARN: una entrada de visual-specs.json no es un objeto {label, type, source, "
-            "caption}; se omite.",
+            "WARN: una entrada de visual-specs.json no es un objeto {label, type, source, caption}; se omite.",
             file=sys.stderr,
         )
         return None
@@ -67,15 +66,22 @@ def _parse_spec(raw: Any) -> VisualSpec | None:
         if not isinstance(value, str) or not value:
             label = raw.get("label", "?")
             print(
-                f"WARN: entrada de visual-specs.json (label '{label}') sin campo requerido "
-                f"'{field_name}'; se omite.",
+                f"WARN: entrada de visual-specs.json (label '{label}') sin campo requerido '{field_name}'; se omite.",
                 file=sys.stderr,
             )
             return None
     caption = raw.get("caption", "")
     if not isinstance(caption, str):
         caption = ""
-    return VisualSpec(label=raw["label"], type=raw["type"], source=raw["source"], caption=caption)
+    name = caption.strip() or raw["label"]
+    return VisualSpec(
+        label=raw["label"],
+        type=raw["type"],
+        source=raw["source"],
+        caption=caption,
+        accessible_name=name,
+        accessible_description=f"Generated visual: {name}.",
+    )
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -98,6 +104,16 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 class GenerateVisualsResult:
     generated: int
     skipped: int
+    generated_labels: tuple[str, ...] = ()
+    skipped_labels: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "generated": self.generated,
+            "skipped": self.skipped,
+            "generated_labels": list(self.generated_labels),
+            "skipped_labels": list(self.skipped_labels),
+        }
 
 
 class GenerateVisualsService:
@@ -129,14 +145,20 @@ class GenerateVisualsService:
 
         raw_specs = _read_specs_fail_open(sections_dir / _SPECS_NAME)
         if not raw_specs:
+            self.writer.write_json(
+                sections_dir / "visual-generation-report.json",
+                GenerateVisualsResult(generated=0, skipped=0).to_dict(),
+            )
             return GenerateVisualsResult(generated=0, skipped=0)
 
         skipped = 0
+        skipped_labels: list[str] = []
         specs: list[VisualSpec] = []
         for raw in raw_specs:
             spec = _parse_spec(raw)
             if spec is None:
                 skipped += 1
+                skipped_labels.append(str(raw.get("label", "?")) if isinstance(raw, dict) else "?")
                 continue
             specs.append(spec)
 
@@ -158,6 +180,7 @@ class GenerateVisualsService:
                 entry = None
             if entry is None:
                 skipped += 1
+                skipped_labels.append(spec.label)
                 continue
             entries.append(entry)
             catalog_id = f"fig-{entry.sha256[:8]}"
@@ -192,7 +215,14 @@ class GenerateVisualsService:
             output_doc["bindings"] = merged_bindings
             self.writer.write_json(sections_dir / _BINDINGS_NAME, output_doc)
 
-        return GenerateVisualsResult(generated=len(entries), skipped=skipped)
+        result = GenerateVisualsResult(
+            generated=len(entries),
+            skipped=skipped,
+            generated_labels=tuple(sorted(spec.label for spec in specs if spec.label in bindings_additions)),
+            skipped_labels=tuple(sorted(skipped_labels)),
+        )
+        self.writer.write_json(sections_dir / "visual-generation-report.json", result.to_dict())
+        return result
 
     def _render_one(self, spec: VisualSpec, figures_dir: Path) -> FigureEntry | None:
         renderer = self.visual_renderers.get(spec.type)
@@ -208,8 +238,7 @@ class GenerateVisualsService:
             raw_svg = renderer.render(spec)
         except Exception as exc:
             print(
-                f"WARN: no se pudo renderizar el visual '{spec.label}' (tipo '{spec.type}'): {exc}; "
-                "se omite.",
+                f"WARN: no se pudo renderizar el visual '{spec.label}' (tipo '{spec.type}'): {exc}; se omite.",
                 file=sys.stderr,
             )
             return None
@@ -251,4 +280,6 @@ class GenerateVisualsService:
             caption=spec.caption,
             source_role="",
             origin_kind="generated",
+            accessible_name=spec.accessible_name,
+            accessible_description=spec.accessible_description,
         )

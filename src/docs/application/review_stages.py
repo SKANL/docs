@@ -244,6 +244,16 @@ class ReviewStageService:
             )]), policy)
         baseline_dir = settings.get("baseline_dir")
         minimum_similarity = settings.get("minimum_similarity", 0.75)
+        browser_viewports = settings.get("browser_viewports", ((1280, 800), (390, 844)))
+        if not isinstance(browser_viewports, (list, tuple)) or not browser_viewports or any(
+            not isinstance(viewport, (list, tuple)) or len(viewport) != 2
+            or any(type(value) is not int or value <= 0 for value in viewport)
+            for viewport in browser_viewports
+        ):
+            return self._outcome(ReviewResult([Issue(
+                "error", "Invalid visual QA profile: browser_viewports needs positive width/height pairs.",
+                code="render.profile.invalid", dimension=dimension,
+            )]), policy)
         if baseline_dir is not None and (not isinstance(baseline_dir, str) or not baseline_dir.strip()):
             return self._outcome(ReviewResult([Issue(
                 "error", "Invalid visual QA profile: baseline_dir must be a nonempty path string.",
@@ -266,9 +276,10 @@ class ReviewStageService:
             minimum_similarity=float(minimum_similarity),
             baseline_strict=policy.mode in {PipelineMode.strict, PipelineMode.release},
             preview_stem=settings.get("preview_stem"),
+            browser_viewports=tuple(tuple(viewport) for viewport in browser_viewports),
         )
         try:
-            report = self._render_verification.verify(path, profile, previews)
+            report = self._render_verification.verify(path, profile, previews, config)
         except (OSError, RuntimeError, ValueError) as exc:
             return self._outcome(ReviewResult([Issue(
                 "error", f"Artifact QA failed: {exc}", code="render.open", dimension=dimension,

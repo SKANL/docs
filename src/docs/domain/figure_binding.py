@@ -20,6 +20,8 @@ class BoundFigure:
     width_px: int | None
     height_px: int | None
     caption: str
+    accessible_name: str = ""
+    accessible_description: str = ""
 
 
 def figure_width_attr(width_px: int | None) -> str:
@@ -40,7 +42,11 @@ def figure_image_markdown(number: int, fig: BoundFigure) -> str:
     prefix as the unbound text-only path -- embedding never changes
     numbering, only the marker's replacement."""
     caption = f"Figura {number}. {fig.caption}".rstrip()
-    return f"![{caption}]({fig.path}){figure_width_attr(fig.width_px)}"
+    alt_text = fig.accessible_name.strip() or caption
+    description = fig.accessible_description.strip()
+    escaped_description = description.replace('"', '\\"')
+    title = f' "{escaped_description}"' if description else ""
+    return f"![{alt_text}]({fig.path}{title}){figure_width_attr(fig.width_px)}"
 
 
 def merge_bindings(existing: dict, additions: dict) -> dict:

@@ -94,3 +94,57 @@ def test_docx_structural_audit_classifies_missing_captions_as_accessibility(tmp_
     assert [(issue.code, issue.dimension) for issue in result.issues] == [
         ("structure.captions.missing", ReviewDimension.ACCESSIBILITY)
     ]
+
+
+def test_docx_structural_audit_executes_template_contract_geometry_and_components(tmp_path):
+    docx_path = tmp_path / "report.docx"
+    document = Document()
+    document.add_heading("METHODS", level=1)
+    section = document.sections[0]
+    section.page_width = Inches(11)
+    section.page_height = Inches(8.5)
+    section.top_margin = Inches(0.5)
+    document.save(docx_path)
+
+    result = StructuralAuditService(StructuralAuditAdapter()).audit(docx_path, {
+        "page_geometry": {
+            "size": "letter",
+            "orientation": "portrait",
+            "margins_cm": {"top": 2.5, "right": 2.5, "bottom": 2.5, "left": 2.5},
+        },
+        "components": [
+            {"kind": "headings", "items": ["INTRODUCTION"]},
+            {"kind": "tables", "minimum": 1},
+            {"kind": "references", "required": True},
+            {"kind": "metadata", "required": ["title"]},
+        ],
+    })
+
+    assert {issue.code for issue in result.issues} >= {
+        "contract.page_geometry.orientation",
+        "contract.page_geometry.margins",
+        "structure.headings.order",
+        "structure.tables.minimum",
+        "structure.references.missing",
+        "structure.metadata.missing",
+    }
+
+
+def test_docx_structural_audit_executes_assets_slots_fidelity_and_degradations(tmp_path):
+    docx_path = tmp_path / "report.docx"
+    document = Document()
+    document.add_heading("INTRODUCTION", level=1)
+    document.add_paragraph("[[slot:title]]")
+    document.save(docx_path)
+
+    result = StructuralAuditService(StructuralAuditAdapter()).audit(docx_path, {
+        "required_assets": [{"id": "logo", "path": "missing-logo.png", "required": True}],
+        "editable_slots": [{"id": "title", "required": True}],
+        "fidelity_checks": [{"id": "page-count", "minimum": 2}],
+        "allowed_degradations": ["required asset logo", "fidelity page-count"],
+    })
+
+    findings = {issue.code: issue for issue in result.issues}
+    assert findings["contract.required_assets.logo"].severity == "warning"
+    assert findings["contract.editable_slots.title"].severity == "info"
+    assert findings["contract.fidelity_checks.page-count"].severity == "warning"

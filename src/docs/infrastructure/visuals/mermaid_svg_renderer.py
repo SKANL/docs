@@ -9,6 +9,7 @@ from typing import Any
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.domain.ports.visual_renderer_port import VisualSpec
 from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+from docs.domain.svg_normalize import ensure_accessibility_metadata
 from docs.infrastructure.ingest.atomic_ingest_write import scratch_dir
 
 
@@ -72,7 +73,8 @@ class MermaidSvgRenderer:
                 # has to say what is wrong with THEIR diagram.
                 detail = (exc.stderr or exc.stdout or "").strip()
                 raise RuntimeError(
-                    f"mmdc no pudo renderizar el diagrama «{spec.label}»."
-                    + (f" Detalle:\n{detail}" if detail else "")
+                    f"mmdc no pudo renderizar el diagrama «{spec.label}»." + (f" Detalle:\n{detail}" if detail else "")
                 ) from exc
-            return tmp_svg.read_text(encoding="utf-8")
+            return ensure_accessibility_metadata(
+                tmp_svg.read_text(encoding="utf-8"), spec.accessible_name, spec.accessible_description
+            )

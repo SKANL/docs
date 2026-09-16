@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import mimetypes
+import tempfile
+from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image, ImageChops, UnidentifiedImageError
 
 from docs.domain.artifacts import ArtifactRef, RenderProfile, VerificationFinding, VerificationReport
 from docs.domain.visual_baseline import compare_preview_baseline
+from docs.infrastructure.verification.html_browser_qa import PlaywrightHtmlBrowserQa
 from docs.infrastructure.verification.html_inspection import HtmlInspection
 
 
@@ -14,11 +20,16 @@ class RenderVerificationAdapter:
     """Best-effort, format-neutral verification using installed render adapters."""
 
     def verify(
-        self, artifact: ArtifactRef, profile: RenderProfile, preview_dir: Path | None = None
+        self,
+        artifact: ArtifactRef,
+        profile: RenderProfile,
+        preview_dir: Path | None = None,
+        config: Mapping[str, Any] | None = None,
     ) -> VerificationReport:
         path = Path(artifact.path)
         suffix = path.suffix.lower()
         findings = self._format_findings(path, profile)
+        checked_artifacts = [artifact]
         try:
             if preview_dir is not None:
                 if profile.baseline_dir is not None and (
@@ -32,19 +43,22 @@ class RenderVerificationAdapter:
             if suffix == ".pdf":
                 findings.extend(self._verify_pdf(path, profile, preview_dir))
             elif suffix == ".docx":
-                findings.extend(self._verify_docx(path, profile, preview_dir))
+                docx_findings, rendered_artifact = self._verify_docx(path, profile, preview_dir, config)
+                findings.extend(docx_findings)
+                if rendered_artifact is not None:
+                    checked_artifacts.append(rendered_artifact)
             elif suffix in {".html", ".htm"}:
                 findings.extend(self._verify_html(path, profile, preview_dir))
             else:
                 findings.extend(self._verify_image(path, profile, preview_dir))
-            if suffix != ".docx" and profile.baseline_dir is not None and preview_dir is not None:
+            if profile.baseline_dir is not None and preview_dir is not None:
                 findings.extend(self._baseline_findings(preview_dir, profile))
         except (OSError, RuntimeError, UnidentifiedImageError, ValueError) as exc:
             findings.append(VerificationFinding("render.open", f"No se pudo abrir {path.name}: {exc}"))
         return VerificationReport(
             artifact=artifact,
             findings=findings,
-            checked_artifacts=[artifact],
+            checked_artifacts=checked_artifacts,
         )
 
     def _verify_pdf(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
@@ -55,7 +69,11 @@ class RenderVerificationAdapter:
         try:
             if len(document) == 0:
                 return [VerificationFinding("render.pages.empty", "El PDF no contiene páginas.")]
-            findings.extend(self._pdf_accessibility(document))
+            findings.append(VerificationFinding(
+                "render.pages.count", f"El documento contiene {len(document)} página(s).", "info",
+                evidence={"count": len(document)},
+            ))
+            findings.extend(self._pdf_accessibility(document, path))
             rendered_previews = preview_dir is not None
             if preview_dir is not None:
                 preview_dir.mkdir(parents=True, exist_ok=True)
@@ -84,16 +102,46 @@ class RenderVerificationAdapter:
             document.close()
 
     @staticmethod
-    def _pdf_accessibility(document: object) -> list[VerificationFinding]:
+    def _pdf_accessibility(document: object, path: Path) -> list[VerificationFinding]:
         import pypdfium2 as pdfium
 
+        findings: list[VerificationFinding] = []
         try:
             tagged = pdfium.raw.FPDFCatalog_IsTagged(document)
         except (AttributeError, RuntimeError) as exc:
-            return [VerificationFinding("accessibility.pdf.tags_unverified", f"PDF tagged structure cannot be verified: {exc}", "warning", dimension="accessibility")]
-        if not tagged:
-            return [VerificationFinding("accessibility.pdf.untagged", "PDF has no declared tagged structure; reading order and alternatives cannot be verified.", "warning", dimension="accessibility")]
-        return [VerificationFinding("accessibility.pdf.tags_unverified", "PDF declares tags, but reading order and tag semantics are not validated by this technical check.", "warning", dimension="accessibility")]
+            findings.append(VerificationFinding(code="accessibility.pdf.tags_unverified", message=f"PDF tagged structure cannot be verified: {exc}", severity="warning", dimension="accessibility"))
+        else:
+            if not tagged:
+                findings.append(VerificationFinding(code="accessibility.pdf.untagged", message="PDF has no declared tagged structure; reading order and alternatives cannot be verified.", severity="warning", dimension="accessibility"))
+            else:
+                findings.append(VerificationFinding(code="accessibility.pdf.tags_unverified", message="PDF declares tags, but reading order and tag semantics are not validated by this technical check.", severity="warning", dimension="accessibility"))
+
+        # PDFium exposes the catalog language and document-info title without
+        # adding another parser dependency. These are remediation signals, not
+        # a conformance verdict.
+        try:
+            pdf_document = cast(Any, document)
+            language = pdf_document.get_metadata_value("Lang")
+            title = pdf_document.get_metadata_value("Title")
+            if not str(language or "").strip():
+                findings.append(VerificationFinding(
+                    code="accessibility.pdf.language_missing",
+                    message="PDF catalog does not declare a document language; language metadata requires author review.",
+                    severity="warning", dimension="accessibility",
+                ))
+            if not str(title or "").strip():
+                findings.append(VerificationFinding(
+                    code="accessibility.pdf.title_missing",
+                    message="PDF metadata does not declare a title; document title metadata requires author review.",
+                    severity="warning", dimension="accessibility",
+                ))
+        except (AttributeError, OSError, RuntimeError, ValueError, TypeError) as exc:
+            findings.append(VerificationFinding(
+                code="accessibility.pdf.metadata_unverified",
+                message=f"PDF language and title metadata could not be inspected: {exc}",
+                severity="warning", dimension="accessibility",
+            ))
+        return findings
 
     @staticmethod
     def _pdf_objects(page: Any, number: int) -> list[VerificationFinding]:
@@ -122,7 +170,13 @@ class RenderVerificationAdapter:
                     findings.append(VerificationFinding("render.image.invalid", f"PDF image cannot be decoded: {exc}", page=number))
         return findings
 
-    def _verify_docx(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
+    def _verify_docx(
+        self,
+        path: Path,
+        profile: RenderProfile,
+        preview_dir: Path | None,
+        config: Mapping[str, Any] | None = None,
+    ) -> tuple[list[VerificationFinding], ArtifactRef | None]:
         from docx import Document
 
         document = Document(str(path))
@@ -133,14 +187,52 @@ class RenderVerificationAdapter:
                     index, float(section.page_width or 0) / 12700, float(section.page_height or 0) / 12700, profile
                 )
             )
-        findings.append(
-            VerificationFinding("render.pages.unavailable", "El conteo de páginas DOCX requiere renderizador opcional.", "warning")
-        )
-        if profile.require_previews:
-            findings.append(
-                VerificationFinding("render.previews.unavailable", "Los previews DOCX requieren LibreOffice y no están cableados aún.")
-            )
-        return findings
+        renderer = cast(Any, self.docx_renderer)
+        if renderer is None:
+            findings.append(VerificationFinding(
+                "render.pages.unavailable", "El conteo de páginas DOCX requiere LibreOffice.", "warning",
+            ))
+            if profile.require_previews:
+                findings.append(VerificationFinding(
+                    "render.previews.unavailable", "Los previews DOCX requieren LibreOffice.", "error",
+                ))
+            return findings, None
+
+        with tempfile.TemporaryDirectory(prefix="docs_docx_qa_") as temporary:
+            try:
+                pdf = Path(renderer.render_docx_to_pdf(config or {}, path, Path(temporary)))
+                if preview_dir is not None:
+                    # Keep the rendered derivative next to the preview set so
+                    # checked-artifact evidence remains readable after the
+                    # private renderer workspace is cleaned up.
+                    durable_pdf = preview_dir.parent / f"{path.stem}.pdf"
+                    if durable_pdf.resolve() != pdf.resolve():
+                        durable_pdf.parent.mkdir(parents=True, exist_ok=True)
+                        durable_pdf.write_bytes(pdf.read_bytes())
+                    pdf = durable_pdf
+                findings.append(VerificationFinding(
+                    "render.toolchain", "DOCX renderizado mediante el adaptador LibreOffice.", "info",
+                    evidence={"renderer": type(renderer).__name__, "path": pdf.resolve().as_posix()},
+                ))
+                pdf_profile = replace(profile, format="pdf")
+                findings.extend(self._verify_pdf(pdf, pdf_profile, preview_dir))
+                rendered_artifact = None
+                if preview_dir is not None:
+                    with pdf.open("rb") as rendered_file:
+                        rendered_digest = hashlib.file_digest(rendered_file, "sha256").hexdigest()
+                    rendered_artifact = ArtifactRef(
+                        path=pdf.resolve().as_posix(),
+                        sha256=rendered_digest,
+                        media_type=mimetypes.guess_type(pdf.name)[0] or "application/pdf",
+                        size_bytes=pdf.stat().st_size,
+                    )
+                return findings, rendered_artifact
+            except (OSError, RuntimeError, ValueError) as exc:
+                findings.append(VerificationFinding(
+                    "render.toolchain.unavailable", f"No se pudo renderizar el DOCX: {exc}",
+                    "error" if profile.require_previews else "warning",
+                ))
+                return findings, None
 
     def _verify_html(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         text = path.read_text(encoding="utf-8")
@@ -148,11 +240,59 @@ class RenderVerificationAdapter:
         inspection = HtmlInspection(text)
         findings.extend(inspection.accessibility())
         findings.extend(inspection.visual(path, profile))
+        try:
+            browser_findings = cast(Any, self.browser_qa).verify(path, profile, preview_dir)
+        except Exception as exc:
+            findings.append(VerificationFinding(
+                code="render.browser.unavailable",
+                message=f"Browser renderer unavailable; static HTML checks only: {exc}",
+                severity="warning", dimension="visual",
+            ))
+        else:
+            checked_viewports = sum(
+                finding.code == "render.browser.checked" for finding in browser_findings
+            )
+            if checked_viewports == len(profile.browser_viewports):
+                findings = [finding for finding in findings if finding.code != "render.layout.unavailable"]
+            findings.extend(self._screenshot_evidence(browser_findings, path, profile, preview_dir))
         if not text.strip():
             findings.append(VerificationFinding("render.content.empty", "El HTML está vacío."))
-        if profile.require_previews:
+        if profile.require_previews and not any(
+            finding.code == "render.browser.checked" and finding.evidence.get("screenshot_sha256")
+            for finding in findings
+        ):
             findings.append(VerificationFinding("render.previews.unavailable", "Los previews HTML requieren navegador opcional."))
         return findings
+
+    @staticmethod
+    def _screenshot_evidence(
+        findings: list[VerificationFinding], path: Path, profile: RenderProfile, preview_dir: Path | None
+    ) -> list[VerificationFinding]:
+        if preview_dir is None:
+            return findings
+        enriched: list[VerificationFinding] = []
+        for finding in findings:
+            if finding.code != "render.browser.checked":
+                enriched.append(finding)
+                continue
+            viewport = finding.evidence.get("viewport")
+            screenshot: Path | None
+            if isinstance(viewport, list) and len(viewport) == 2:
+                screenshot = preview_dir / f"{profile.preview_stem or path.stem}-browser-{viewport[0]}x{viewport[1]}.png"
+            else:
+                candidates = sorted(preview_dir.glob(f"{profile.preview_stem or path.stem}-browser-*.png"))
+                screenshot = candidates[0] if len(candidates) == 1 else None
+            if screenshot is None or not screenshot.is_file():
+                enriched.append(finding)
+                continue
+            evidence = dict(finding.evidence)
+            evidence.update({
+                "screenshot_path": screenshot.resolve().as_posix(),
+                "screenshot_sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest(),
+                "screenshot_size_bytes": screenshot.stat().st_size,
+            })
+            enriched.append(replace(finding, evidence=evidence))
+        return enriched
 
     def _verify_image(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         with Image.open(path) as image:
@@ -247,3 +387,10 @@ class RenderVerificationAdapter:
         if suffix == ".pdf":
             return "pdf"
         return "image"
+    def __init__(self, browser_qa: object | None = None, docx_renderer: object | None = None) -> None:
+        self.browser_qa = browser_qa if browser_qa is not None else PlaywrightHtmlBrowserQa()
+        if docx_renderer is None:
+            from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
+
+            docx_renderer = LibreOfficeQaAdapter()
+        self.docx_renderer = docx_renderer

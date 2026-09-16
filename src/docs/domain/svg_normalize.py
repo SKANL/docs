@@ -2,10 +2,25 @@
 from __future__ import annotations
 
 import re
+from xml.sax.saxutils import escape
 
 _COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _METADATA_RE = re.compile(r"<metadata>.*?</metadata>", re.DOTALL)
 _ID_DEF_RE = re.compile(r'id="([^"]+)"')
+
+
+def ensure_accessibility_metadata(text: str, name: str, description: str) -> str:
+    """Add deterministic, escaped SVG title/description elements."""
+    if not name and not description:
+        return text
+    title = f"<title>{escape(name)}</title>"
+    desc = f"<desc>{escape(description)}</desc>"
+    text = re.sub(r"<title>.*?</title>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<desc>.*?</desc>", "", text, flags=re.DOTALL)
+    match = re.search(r"<svg\b[^>]*>", text, flags=re.IGNORECASE)
+    if match is None:
+        return text
+    return text[: match.end()] + title + desc + text[match.end() :]
 
 
 def normalize_svg(text: str) -> str:
