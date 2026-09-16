@@ -97,3 +97,16 @@ def test_codes_are_grouped_by_a_documented_prefix():
 
 def test_reproducibility_failure_is_documented():
     assert "reproducibility.failed" in ISSUE_CODES
+
+
+def test_pdf_structure_diagnostics_are_documented_without_claiming_wcag_conformance():
+    codes = {
+        "accessibility.pdf.structure_unverified",
+        "accessibility.pdf.structure_missing",
+        "accessibility.pdf.heading_missing",
+        "accessibility.pdf.figure_alt_missing",
+        "accessibility.pdf.table_semantics_missing",
+        "accessibility.pdf.structure_checked",
+    }
+    assert codes <= set(ISSUE_CODES)
+    assert all("WCAG" not in ISSUE_CODES[code].meaning for code in codes)
