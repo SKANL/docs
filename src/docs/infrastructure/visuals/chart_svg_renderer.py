@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import io
 import json
+import math
+from numbers import Real
 
 import matplotlib
 
@@ -37,6 +39,11 @@ plt.close(_warmup_fig)
 # rest (id rewriting, comment/metadata stripping).
 _SVG_HASHSALT = "docs-chart-svg-renderer"
 _SUPPORTED_KINDS = {"bar", "line", "pie"}
+_MAX_SOURCE_LENGTH = 1_000_000
+_MAX_LABELS = 1_000
+_MAX_SERIES = 100
+_MAX_VALUES = 100_000
+_MAX_OUTPUT_LENGTH = 4_000_000
 
 
 class ChartSvgRenderer:
@@ -52,6 +59,8 @@ class ChartSvgRenderer:
     type = "chart"
 
     def render(self, spec: VisualSpec) -> str:
+        if len(spec.source) > _MAX_SOURCE_LENGTH:
+            raise ValueError(f"Chart spec source exceeds {_MAX_SOURCE_LENGTH} characters.")
         data = _parse_source(spec.source)
         kind = data.get("kind")
         if kind not in _SUPPORTED_KINDS:
@@ -78,13 +87,20 @@ class ChartSvgRenderer:
         ):
             fig, ax = plt.subplots()
             try:
-                _RENDER_BY_KIND[kind](ax, labels, series)
+                _validate_chart_data(labels, series)
+                _RENDER_BY_KIND[kind](ax, labels, series, spec.unit)
                 buf = io.BytesIO()
                 fig.savefig(buf, format="svg", metadata={"Date": None})
             finally:
                 plt.close(fig)
+        raw_svg = buf.getvalue()
+        if len(raw_svg) > _MAX_OUTPUT_LENGTH:
+            raise ValueError(f"Chart SVG output exceeds {_MAX_OUTPUT_LENGTH} bytes.")
         return ensure_accessibility_metadata(
-            buf.getvalue().decode("utf-8"), spec.accessible_name, spec.accessible_description
+            raw_svg.decode("utf-8"),
+            spec.accessible_name,
+            spec.accessible_description,
+            decorative=spec.decorative,
         )
 
 
@@ -101,10 +117,30 @@ def _parse_source(source: str) -> dict:
 def _series_values(entry: object) -> list:
     if not isinstance(entry, dict) or "values" not in entry:
         raise ValueError("Each chart series entry must be an object with a 'values' field.")
-    return entry["values"]
+    values = entry["values"]
+    if not isinstance(values, list):
+        raise ValueError("Each chart series 'values' field must be a list of numeric values.")
+    return values
 
 
-def _render_bar(ax, labels: list, series: list) -> None:
+def _validate_chart_data(labels: list, series: list) -> None:
+    if len(labels) > _MAX_LABELS:
+        raise ValueError(f"Chart spec has too many labels; maximum is {_MAX_LABELS}.")
+    if len(series) > _MAX_SERIES:
+        raise ValueError(f"Chart spec has too many series; maximum is {_MAX_SERIES}.")
+    total_values = 0
+    for entry in series:
+        values = _series_values(entry)
+        total_values += len(values)
+        if total_values > _MAX_VALUES:
+            raise ValueError(f"Chart spec has too many values; maximum is {_MAX_VALUES}.")
+        if len(values) != len(labels):
+            raise ValueError("Each chart series must have the same number of values as labels.")
+        if any(isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) for value in values):
+            raise ValueError("Chart series values must be finite numeric values.")
+
+
+def _render_bar(ax, labels: list, series: list, unit: str = "") -> None:
     x = list(range(len(labels)))
     width = 0.8 / max(len(series), 1)
     handles, names = [], []
@@ -122,18 +158,22 @@ def _render_bar(ax, labels: list, series: list) -> None:
     # agent-authored label that happens to start with `__` (e.g. dunder-
     # looking text) would otherwise vanish from the rendered chart.
     ax.legend(handles, names)
+    if unit.strip():
+        ax.set_ylabel(unit.strip())
 
 
-def _render_line(ax, labels: list, series: list) -> None:
+def _render_line(ax, labels: list, series: list, unit: str = "") -> None:
     handles, names = [], []
     for entry in series:
         (line,) = ax.plot([str(label) for label in labels], _series_values(entry))
         handles.append(line)
         names.append(str(entry.get("label", "")))
     ax.legend(handles, names)
+    if unit.strip():
+        ax.set_ylabel(unit.strip())
 
 
-def _render_pie(ax, labels: list, series: list) -> None:
+def _render_pie(ax, labels: list, series: list, unit: str = "") -> None:
     ax.pie(_series_values(series[0]), labels=[str(label) for label in labels])
 
 

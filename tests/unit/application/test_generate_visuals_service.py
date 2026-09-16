@@ -13,11 +13,17 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
-from docs.application.generate_visuals import GenerateVisualsService, _parse_spec
+from docs.application.generate_visuals import (
+    _MAX_TEXT_LENGTH,
+    GenerateVisualsService,
+    _parse_spec,
+    _read_specs_fail_open,
+)
 from docs.domain.ingest_naming import sha256_hex
-from docs.domain.ports.visual_renderer_port import VisualSpec
-from docs.domain.svg_normalize import normalize_svg
+from docs.domain.ports.visual_renderer_port import VisualRendererPort, VisualSpec
+from docs.domain.svg_normalize import ensure_accessibility_metadata, normalize_svg
 
 
 @dataclass
@@ -99,11 +105,107 @@ def test_parse_spec_preserves_accessibility_metadata():
     assert spec.data_fallback == "Q1: 10 USD; Q2: 20 USD"
 
 
+def test_parse_spec_warns_and_skips_oversized_metadata(capsys):
+    metadata_fields = (
+        "caption",
+        "accessible_name",
+        "accessible_description",
+        "semantic_summary",
+        "unit",
+        "data_fallback",
+    )
+
+    for field_name in metadata_fields:
+        raw = {"label": "oversized", "type": "chart", "source": "source", field_name: "x" * (_MAX_TEXT_LENGTH + 1)}
+
+        assert _parse_spec(raw) is None
+
+    captured = capsys.readouterr()
+    assert captured.err.count("supera el límite de entrada") == len(metadata_fields)
+
+
+def test_specs_file_raw_byte_limit_rejects_before_json_load(tmp_path, monkeypatch, capsys):
+    import docs.application.generate_visuals as gv
+
+    specs = tmp_path / "visual-specs.json"
+    specs.write_bytes(b"x" * (gv._MAX_SPECS_BYTES + 1))
+
+    monkeypatch.setattr(gv.json, "loads", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("oversized input must be rejected before parsing")
+    ))
+
+    assert _read_specs_fail_open(specs) == []
+    assert "bytes" in capsys.readouterr().err
+
+
+def test_specs_cumulative_text_limit_rejects_whole_input_without_partial_writes(
+    tmp_path, monkeypatch, capsys
+):
+    import docs.application.generate_visuals as gv
+
+    monkeypatch.setattr(gv, "_MAX_TOTAL_TEXT_LENGTH", 10)
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(
+        sections_dir,
+        [
+            {"label": "one", "type": "chart", "source": "12345"},
+            {"label": "two", "type": "chart", "source": "67890"},
+        ],
+    )
+    renderer = FakeRenderer(type="chart")
+
+    result = _service({"chart": renderer}, FakeRasterizer()).generate(sections_dir, assets_dir)
+
+    assert result.generated == 0
+    assert result.skipped == 0
+    assert renderer.calls == []
+    assert not (assets_dir / "figures").exists()
+    assert not (sections_dir / "figure-catalog.json").exists()
+    assert not (sections_dir / "figure-bindings.json").exists()
+    assert "acumulado" in capsys.readouterr().err
+
+
+def test_chart_fallback_includes_series_names_and_units(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(
+        sections_dir,
+        [{"label": "revenue", "type": "chart", "source": json.dumps({
+            "kind": "line", "labels": ["Q1", "Q2"],
+            "series": [{"label": "Revenue", "values": [10, 20]}],
+        }), "unit": "USD"}],
+    )
+    service = _service({"chart": FakeRenderer(type="chart")}, FakeRasterizer())
+
+    service.generate(sections_dir, assets_dir)
+
+    catalog = _read_json(sections_dir / "figure-catalog.json")
+    assert catalog["figures"][0]["data_fallback"] == "Q1: Revenue=10 USD; Q2: Revenue=20 USD"
+
+
+def test_generation_report_records_content_bound_visual_provenance(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    source = "source"
+    _write_specs(sections_dir, [{"label": "arch", "type": "chart", "source": source}])
+    service = _service({"chart": FakeRenderer(type="chart")}, FakeRasterizer())
+
+    service.generate(sections_dir, assets_dir)
+
+    report = _read_json(sections_dir / "visual-generation-report.json")
+    visual = report["generated_visuals"][0]
+    assert visual["label"] == "arch"
+    assert visual["type"] == "chart"
+    assert visual["source_sha256"] == sha256_hex(source.encode("utf-8"))
+    assert len(visual["asset_sha256"]) == 64
+
+
 def _service(
     renderers: dict[str, FakeRenderer], rasterizer: FakeRasterizer, dims: tuple[int, int] | None = (300, 200)
 ) -> GenerateVisualsService:
     return GenerateVisualsService(
-        visual_renderers=renderers,
+        visual_renderers=cast(dict[str, VisualRendererPort], renderers),
         svg_rasterizer=rasterizer,
         image_metadata=FakeImageMetadata(dims),
     )
@@ -221,12 +323,13 @@ def test_well_formed_entry_writes_sibling_svg_and_png_with_shared_stem(tmp_path)
 
     service.generate(sections_dir, assets_dir)
 
-    expected_stem = f"visual-{sha256_hex(normalize_svg(raw_svg).encode('utf-8'))[:8]}"
+    final_svg = normalize_svg(ensure_accessibility_metadata(normalize_svg(raw_svg), "Arch", "Generated visual: Arch."))
+    expected_stem = f"visual-{sha256_hex(final_svg.encode('utf-8'))[:8]}"
     svg_path = assets_dir / "figures" / f"{expected_stem}.svg"
     png_path = assets_dir / "figures" / f"{expected_stem}.png"
     assert svg_path.exists()
     assert png_path.exists()
-    assert svg_path.read_text(encoding="utf-8") == normalize_svg(raw_svg)
+    assert svg_path.read_text(encoding="utf-8") == final_svg
 
     catalog = _read_json(sections_dir / "figure-catalog.json")
     assert len(catalog["figures"]) == 1
@@ -487,3 +590,140 @@ def test_determinism_same_specs_twice_is_byte_identical(tmp_path):
     run1 = _run(tmp_path / "run1")
     run2 = _run(tmp_path / "run2")
     assert run1 == run2
+
+
+def test_unreadable_specs_fail_open_with_warning(tmp_path, capsys, monkeypatch):
+    sections_dir = tmp_path / "sections"
+    sections_dir.mkdir()
+    specs = sections_dir / "visual-specs.json"
+    specs.write_text("[]", encoding="utf-8")
+    original_read_bytes = Path.read_bytes
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda self, **kwargs: (_ for _ in ()).throw(OSError("denied"))
+        if self == specs
+        else original_read_bytes(self, **kwargs),
+    )
+
+    result = _service({}, FakeRasterizer()).generate(sections_dir, tmp_path / "assets")
+
+    assert result.generated == 0
+    assert "denied" in capsys.readouterr().err
+
+
+def test_malformed_catalog_and_bindings_are_preserved(tmp_path, capsys):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    sections_dir.mkdir()
+    catalog = sections_dir / "figure-catalog.json"
+    bindings = sections_dir / "figure-bindings.json"
+    catalog.write_text("{not-json", encoding="utf-8")
+    bindings.write_text("{not-json", encoding="utf-8")
+    _write_specs(sections_dir, [{"label": "x", "type": "chart", "source": "s"}])
+
+    _service({"chart": FakeRenderer(type="chart")}, FakeRasterizer()).generate(sections_dir, assets_dir)
+
+    assert catalog.read_text(encoding="utf-8") == "{not-json"
+    assert bindings.read_text(encoding="utf-8") == "{not-json"
+    assert "preserva" in capsys.readouterr().err
+
+
+def test_partial_png_and_metadata_failures_clean_both_outputs(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(sections_dir, [{"label": "x", "type": "chart", "source": "s"}])
+
+    class PartialRasterizer(FakeRasterizer):
+        def rasterize(self, svg_path: Path, png_path: Path) -> None:
+            png_path.write_bytes(b"partial")
+            raise OSError("interrupted")
+
+    _service({"chart": FakeRenderer(type="chart")}, PartialRasterizer()).generate(sections_dir, assets_dir)
+    assert list((assets_dir / "figures").glob("*")) == []
+
+
+def test_metadata_read_failure_cleans_both_outputs(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(sections_dir, [{"label": "x", "type": "chart", "source": "s"}])
+
+    class BrokenMetadata(FakeImageMetadata):
+        def read_dimensions(self, path: Path) -> tuple[int, int] | None:
+            raise OSError("unreadable PNG")
+
+    service = GenerateVisualsService(
+        {"chart": FakeRenderer(type="chart")}, FakeRasterizer(), BrokenMetadata()
+    )
+    service.generate(sections_dir, assets_dir)
+    assert list((assets_dir / "figures").glob("*")) == []
+
+
+def test_failed_rerun_preserves_existing_valid_outputs(tmp_path):
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(sections_dir, [{"label": "x", "type": "chart", "source": "s"}])
+
+    renderer = FakeRenderer(type="chart", svg="<svg><rect/></svg>")
+    _service({"chart": renderer}, FakeRasterizer()).generate(sections_dir, assets_dir)
+    figures_dir = assets_dir / "figures"
+    before = {path.name: path.read_bytes() for path in figures_dir.iterdir()}
+
+    result = _service(
+        {"chart": renderer}, FakeRasterizer(exc=OSError("resvg failed on rerun"))
+    ).generate(sections_dir, assets_dir)
+
+    assert result.generated == 0
+    assert result.skipped == 1
+    assert {path.name: path.read_bytes() for path in figures_dir.iterdir()} == before
+
+
+def test_png_publish_failure_rolls_back_svg_and_preserves_existing_pair(tmp_path, monkeypatch):
+    import docs.application.generate_visuals as gv
+
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(sections_dir, [{"label": "x", "type": "chart", "source": "s"}])
+    renderer = FakeRenderer(type="chart", svg="<svg><rect/></svg>")
+    service = _service({"chart": renderer}, FakeRasterizer())
+    service.generate(sections_dir, assets_dir)
+
+    figures_dir = assets_dir / "figures"
+    before = {path.name: path.read_bytes() for path in figures_dir.iterdir()}
+    original_atomic_write = gv._atomic_write_bytes
+
+    def fail_png_publish(path: Path, data: bytes) -> None:
+        if path.suffix == ".png":
+            raise OSError("PNG publish failed")
+        original_atomic_write(path, data)
+
+    monkeypatch.setattr(gv, "_atomic_write_bytes", fail_png_publish)
+
+    result = _service(
+        {"chart": FakeRenderer(type="chart", svg="<svg><circle/></svg>")}, FakeRasterizer()
+    ).generate(sections_dir, assets_dir)
+
+    assert result.generated == 0
+    assert result.skipped == 1
+    assert {path.name: path.read_bytes() for path in figures_dir.iterdir()} == before
+
+
+def test_post_metadata_svg_byte_limit_is_enforced(tmp_path, monkeypatch, capsys):
+    import docs.application.generate_visuals as gv
+
+    monkeypatch.setattr(gv, "_MAX_RENDERED_SVG_BYTES", 100)
+    sections_dir = tmp_path / "sections"
+    assets_dir = tmp_path / "assets"
+    _write_specs(
+        sections_dir,
+        [{"label": "oversized-final", "type": "chart", "source": "s", "caption": "é" * 50}],
+    )
+
+    result = _service({"chart": FakeRenderer(type="chart", svg="<svg/>")}, FakeRasterizer()).generate(
+        sections_dir, assets_dir
+    )
+
+    assert result.generated == 0
+    assert result.skipped == 1
+    assert "exceeds 100 bytes" in capsys.readouterr().err
+    assert not (assets_dir / "figures").exists()

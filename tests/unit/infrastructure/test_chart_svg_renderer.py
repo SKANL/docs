@@ -82,3 +82,34 @@ def test_missing_required_field_raises_documented_error():
 
     with pytest.raises(ValueError, match="labels"):
         ChartSvgRenderer().render(spec)
+
+
+def test_chart_rejects_series_with_wrong_value_count():
+    source = json.dumps(
+        {"kind": "line", "labels": ["Q1", "Q2"], "series": [{"label": "Revenue", "values": [1]}]}
+    )
+
+    with pytest.raises(ValueError, match="same number of values"):
+        ChartSvgRenderer().render(VisualSpec(label="fig", type="chart", source=source))
+
+
+def test_chart_renders_unit_as_axis_label_and_validates_numeric_values():
+    source = json.dumps(
+        {"kind": "line", "labels": ["Q1", "Q2"], "series": [{"label": "Revenue", "values": [1, 2]}]}
+    )
+    svg = ChartSvgRenderer().render(VisualSpec(label="fig", type="chart", source=source, unit="USD"))
+    assert "USD" in svg
+
+    invalid = json.dumps(
+        {"kind": "line", "labels": ["Q1"], "series": [{"label": "Revenue", "values": ["one"]}]}
+    )
+    with pytest.raises(ValueError, match="numeric"):
+        ChartSvgRenderer().render(VisualSpec(label="fig", type="chart", source=invalid))
+
+
+def test_chart_rejects_bounded_input_overflow():
+    source = json.dumps({"kind": "line", "labels": ["x"], "series": [{"values": [1]}]})
+    oversized = VisualSpec(label="fig", type="chart", source=source + (" " * 1_000_001))
+
+    with pytest.raises(ValueError, match="exceeds"):
+        ChartSvgRenderer().render(oversized)

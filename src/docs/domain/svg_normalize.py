@@ -2,87 +2,176 @@
 from __future__ import annotations
 
 import re
-from xml.sax.saxutils import escape
+import xml.etree.ElementTree as ET
 
-_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
-_METADATA_RE = re.compile(r"<metadata>.*?</metadata>", re.DOTALL)
-_ID_DEF_RE = re.compile(r'id="([^"]+)"')
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import fromstring as safe_fromstring
+
+_SVG_NS = "http://www.w3.org/2000/svg"
+_XLINK_NS = "http://www.w3.org/1999/xlink"
+_CSS_URL_RE = re.compile(r"url\s*\(\s*([\"']?)#([\w:.-]+)\1\s*\)", re.IGNORECASE)
+_CSS_ID_RE = re.compile(r"(?<![\w.-])#([\w:.-]+)(?![\w.-])")
 
 
-def ensure_accessibility_metadata(text: str, name: str, description: str) -> str:
-    """Add deterministic, escaped SVG title/description elements and link them."""
-    if not name and not description:
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _parse(text: str) -> ET.Element:
+    try:
+        return safe_fromstring(text)
+    except DefusedXmlException as exc:
+        raise ValueError("Unsafe SVG XML: DTD and entity declarations are not allowed") from exc
+    except ET.ParseError as exc:
+        raise ValueError(f"Invalid SVG XML: {exc}") from exc
+
+
+def _serialize(root: ET.Element) -> str:
+    ET.register_namespace("", _SVG_NS)
+    ET.register_namespace("xlink", _XLINK_NS)
+    return ET.tostring(root, encoding="unicode", short_empty_elements=True)
+
+
+def _rewrite_css_references(css: str, mapping: dict[str, str]) -> str:
+    """Rewrite SVG references in CSS while leaving comments and strings intact."""
+    if not mapping:
+        return css
+
+    rewritten: list[str] = []
+    position = 0
+    while position < len(css):
+        if css.startswith("/*", position):
+            end = css.find("*/", position + 2)
+            end = len(css) if end == -1 else end + 2
+            rewritten.append(css[position:end])
+            position = end
+            continue
+        if css[position] in {"'", '\"'}:
+            quote = css[position]
+            end = position + 1
+            while end < len(css):
+                if css[end] == "\\":
+                    end += 2
+                elif css[end] == quote:
+                    end += 1
+                    break
+                else:
+                    end += 1
+            rewritten.append(css[position:end])
+            position = end
+            continue
+
+        url_match = _CSS_URL_RE.match(css, position)
+        if url_match:
+            old = url_match.group(2)
+            rewritten.append(
+                css[position:url_match.start(2)]
+                + mapping.get(old, old)
+                + css[url_match.end(2):url_match.end()]
+            )
+            position = url_match.end()
+            continue
+
+        id_match = _CSS_ID_RE.match(css, position)
+        if id_match and _is_css_selector_reference(css, position):
+            old = id_match.group(1)
+            rewritten.append(css[position:id_match.start(1)] + mapping.get(old, old))
+            position = id_match.end(1)
+            continue
+
+        rewritten.append(css[position])
+        position += 1
+    return "".join(rewritten)
+
+
+def _is_css_selector_reference(css: str, position: int) -> bool:
+    """Distinguish a selector ID from a color or other declaration value."""
+    cursor = position
+    while cursor < len(css):
+        if css.startswith("/*", cursor):
+            end = css.find("*/", cursor + 2)
+            cursor = len(css) if end == -1 else end + 2
+            continue
+        if css[cursor] in {"'", '\"'}:
+            quote = css[cursor]
+            cursor += 1
+            while cursor < len(css):
+                if css[cursor] == "\\":
+                    cursor += 2
+                elif css[cursor] == quote:
+                    cursor += 1
+                    break
+                else:
+                    cursor += 1
+            continue
+        if css[cursor] in "{};":
+            return css[cursor] == "{"
+        cursor += 1
+    return False
+
+
+def ensure_accessibility_metadata(
+    text: str, name: str, description: str, *, decorative: bool = False
+) -> str:
+    """Replace SVG accessibility semantics using the XML tree, not tag regexes."""
+    if not name and not description and not decorative:
         return text
-    title = f"<title>{escape(name)}</title>"
-    desc = f"<desc>{escape(description)}</desc>"
-    text = re.sub(r"<title>.*?</title>", "", text, flags=re.DOTALL)
-    text = re.sub(r"<desc>.*?</desc>", "", text, flags=re.DOTALL)
-    match = re.search(r"<svg\b[^>]*>", text, flags=re.IGNORECASE)
-    if match is None:
+    root = _parse(text)
+    if _local_name(root.tag).lower() != "svg":
         return text
-    root = match.group(0)
-    labelled_root = re.sub(
-        r'\saria-labelledby="[^"]*"',
-        ' aria-labelledby="visual-title visual-desc"',
-        root,
-        flags=re.IGNORECASE,
-    )
-    if labelled_root == root:
-        labelled_root = root[:-1] + ' aria-labelledby="visual-title visual-desc">'
-    title = f'<title id="visual-title">{escape(name)}</title>'
-    desc = f'<desc id="visual-desc">{escape(description)}</desc>'
-    return text[: match.start()] + labelled_root + title + desc + text[match.end() :]
+    for child in list(root):
+        if _local_name(child.tag).lower() in {"title", "desc"}:
+            root.remove(child)
+    if decorative:
+        for attr in list(root.attrib):
+            if _local_name(attr).lower() in {"aria-labelledby", "aria-describedby", "role", "hidden"}:
+                del root.attrib[attr]
+        root.set("role", "presentation")
+        root.set("aria-hidden", "true")
+    else:
+        root.set("aria-labelledby", "visual-title visual-desc")
+        namespace = root.tag.split("}", 1)[0][1:] if root.tag.startswith("{") else ""
+        title_tag = f"{{{namespace}}}title" if namespace else "title"
+        desc_tag = f"{{{namespace}}}desc" if namespace else "desc"
+        title = ET.Element(title_tag, {"id": "visual-title"})
+        title.text = name
+        desc = ET.Element(desc_tag, {"id": "visual-desc"})
+        desc.text = description
+        root.insert(0, desc)
+        root.insert(0, title)
+    return _serialize(root)
 
 
 def normalize_svg(text: str) -> str:
-    """The determinism spike (design.md Decision "normalize_svg lives in
-    domain"): makes two renderer-produced SVGs of the same diagram
-    byte-identical despite tool-generated ids/comments/metadata timestamps
-    that vary run-to-run. Pure, order-preserving, byte-stable.
-
-    1. strip XML comments (tool-version/wall-clock banners).
-    2. strip `<metadata>...</metadata>` (matplotlib RDF `dc:date`).
-    3. collect every `id="X"` in first-appearance order, map to `n0, n1, ...`
-       and rewrite each definition and reference (`#X`, `url(#X)`,
-       `href="X"`/`href="#X"`, `xlink:href="#X"`, `aria-labelledby="X"`,
-       `aria-describedby="X"`),
-       replacing LONGEST-id-first: a longer id containing a shorter id as a
-       substring (e.g. "abc" containing "a") is fully replaced away before
-       the shorter id's own replacement runs, so a bare `#X` reference (the
-       one form with no closing delimiter, e.g. a mermaid CSS id selector)
-       can never partially match inside a longer id's text.
-
-    # ponytail: regex over ids, not a full XML parser -- upgrade to
-    # defusedxml if an id ever leaks past this anchored pattern.
-    """
-    text = _COMMENT_RE.sub("", text)
-    text = _METADATA_RE.sub("", text)
-
+    """Normalize valid SVG XML and rewrite IDs by first appearance."""
+    root = _parse(text)
     ids: list[str] = []
     seen: set[str] = set()
-    for match in _ID_DEF_RE.finditer(text):
-        old_id = match.group(1)
-        if old_id not in seen:
-            seen.add(old_id)
-            ids.append(old_id)
-
-    mapping = {old_id: f"n{i}" for i, old_id in enumerate(ids)}
-
-    for old_id in sorted(ids, key=len, reverse=True):
-        new_id = mapping[old_id]
-        text = text.replace(f'id="{old_id}"', f'id="{new_id}"')
-        text = text.replace(f'href="{old_id}"', f'href="{new_id}"')
-        text = text.replace(f'aria-labelledby="{old_id}"', f'aria-labelledby="{new_id}"')
-        # `aria-describedby` (mermaid's accDescr helper) is a bare-id reference
-        # with no leading `#`, so it needs its own rule -- without it the raw
-        # run-varying id leaks and breaks determinism.
-        # ponytail: single-id match, matching real mermaid/matplotlib output;
-        # if a renderer ever emits a space-separated multi-id aria-*by list,
-        # tokenize per-id here.
-        text = text.replace(f'aria-describedby="{old_id}"', f'aria-describedby="{new_id}"')
-        # Covers every remaining reference form sharing the `#X` substring:
-        # `url(#X)`, `href="#X"`, `xlink:href="#X"`, and bare `#X` (e.g. a
-        # mermaid CSS id selector `#X{...}`).
-        text = text.replace(f"#{old_id}", f"#{new_id}")
-
-    return text
+    for element in root.iter():
+        value = element.get("id")
+        if value is not None and value not in seen:
+            seen.add(value)
+            ids.append(value)
+    mapping = {old: f"n{i}" for i, old in enumerate(ids)}
+    for element in root.iter():
+        for attr, original_value in list(element.attrib.items()):
+            value = original_value
+            if attr == "id" and value in mapping:
+                element.set(attr, mapping[value])
+                continue
+            if attr in {"aria-labelledby", "aria-describedby"}:
+                element.set(attr, " ".join(mapping.get(token, token) for token in value.split()))
+                continue
+            for old in sorted(mapping, key=len, reverse=True):
+                value = value.replace(f"url(#{old})", f"url(#{mapping[old]})")
+                value = re.sub(rf"(?<![\w.-])#{re.escape(old)}(?![\w.-])", f"#{mapping[old]}", value)
+                if value == old:
+                    value = mapping[old]
+            element.set(attr, value)
+        if _local_name(element.tag).lower() == "style" and element.text:
+            element.text = _rewrite_css_references(element.text, mapping)
+    for parent in root.iter():
+        for child in list(parent):
+            if _local_name(child.tag).lower() == "metadata":
+                parent.remove(child)
+    return _serialize(root)

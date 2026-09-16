@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,9 @@ from docs.domain.ports.visual_renderer_port import VisualSpec
 from docs.domain.process_policy import DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
 from docs.domain.svg_normalize import ensure_accessibility_metadata
 from docs.infrastructure.ingest.atomic_ingest_write import scratch_dir
+
+_MAX_SOURCE_LENGTH = 1_000_000
+_MAX_OUTPUT_LENGTH = 4_000_000
 
 
 class MermaidSvgRenderer:
@@ -46,6 +50,14 @@ class MermaidSvgRenderer:
         self.scratch_root = Path(scratch_root) if scratch_root else Path(tempfile.gettempdir())
 
     def render(self, spec: VisualSpec) -> str:
+        if len(spec.source) > _MAX_SOURCE_LENGTH:
+            raise ValueError(f"Mermaid source exceeds {_MAX_SOURCE_LENGTH} characters.")
+        if not spec.decorative and not spec.semantic_summary.strip() and not spec.data_fallback.strip():
+            print(
+                f"WARN: el diagrama mermaid '{spec.label}' no tiene resumen semántico ni alternativa de datos; "
+                "su accesibilidad depende de la semántica emitida por mmdc.",
+                file=sys.stderr,
+            )
         mmdc = self.tool_resolver.resolve_mmdc(self.paths)
         if not mmdc:
             raise RuntimeError(
@@ -75,6 +87,14 @@ class MermaidSvgRenderer:
                 raise RuntimeError(
                     f"mmdc no pudo renderizar el diagrama «{spec.label}»." + (f" Detalle:\n{detail}" if detail else "")
                 ) from exc
+            if tmp_svg.stat().st_size > _MAX_OUTPUT_LENGTH:
+                raise ValueError(f"Mermaid SVG output exceeds {_MAX_OUTPUT_LENGTH} bytes.")
+            svg_text = tmp_svg.read_text(encoding="utf-8")
+            if len(svg_text) > _MAX_OUTPUT_LENGTH:
+                raise ValueError(f"Mermaid SVG output exceeds {_MAX_OUTPUT_LENGTH} characters.")
             return ensure_accessibility_metadata(
-                tmp_svg.read_text(encoding="utf-8"), spec.accessible_name, spec.accessible_description
+                svg_text,
+                spec.accessible_name,
+                spec.accessible_description,
+                decorative=spec.decorative,
             )
