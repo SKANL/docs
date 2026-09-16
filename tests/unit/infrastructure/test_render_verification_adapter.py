@@ -298,6 +298,47 @@ def test_html_browser_screenshot_evidence_is_hashed(tmp_path):
     assert finding.evidence["screenshot_path"].endswith("report-browser-800x600.png")
 
 
+def test_html_browser_screenshots_are_durable_checked_artifacts_with_viewport_results(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+
+    class BrowserQa:
+        def verify(self, _path, _profile, preview_dir):
+            assert preview_dir is not None
+            (preview_dir / "report-browser-800x600.png").write_bytes(b"desktop")
+            (preview_dir / "report-browser-390x844.png").write_bytes(b"mobile")
+            return [
+                VerificationFinding(
+                    "render.browser.checked", "Desktop checked.", "info", dimension="visual",
+                    evidence={"viewport": [800, 600], "result": "passed"},
+                ),
+                VerificationFinding(
+                    "render.browser.checked", "Mobile checked.", "info", dimension="visual",
+                    evidence={"viewport": [390, 844], "result": "passed"},
+                ),
+            ]
+
+    report = RenderVerificationService(RenderVerificationAdapter(browser_qa=BrowserQa())).verify(
+        html,
+        RenderProfile(format="html", browser_viewports=((800, 600), (390, 844))),
+        tmp_path / "previews",
+    )
+
+    screenshots = report.metadata["browser_screenshots"]
+    assert [item["viewport"] for item in screenshots] == [[800, 600], [390, 844]]
+    assert [item["result"] for item in screenshots] == ["passed", "passed"]
+    assert all(item["media_type"] == "image/png" for item in screenshots)
+    assert all(
+        item["size_bytes"] == len(content)
+        for item, content in zip(screenshots, (b"desktop", b"mobile"), strict=True)
+    )
+    assert {artifact.path for artifact in report.checked_artifacts} == {
+        html.resolve().as_posix(),
+        *[item["path"] for item in screenshots],
+    }
+    assert report.to_dict()["checked_artifacts"][1]["media_type"] == "image/png"
+
+
 def test_html_detects_empty_body_not_nonempty_source(tmp_path):
     html = tmp_path / "empty.html"
     html.write_text('<html><head><title>Title</title><style>body{color:red}</style></head>'
