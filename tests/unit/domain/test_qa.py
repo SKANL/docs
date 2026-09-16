@@ -54,6 +54,22 @@ def test_render_qa_report_includes_render_hash_evidence(tmp_path):
     assert "- Preview `doc-p01.png` SHA-256: " + "b" * 64 in report
 
 
+def test_render_qa_report_includes_render_provenance_metadata(tmp_path):
+    docx_path = tmp_path / "doc.docx"
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    verification = VerificationReport(
+        ArtifactRef(docx_path.as_posix(), "a" * 64),
+        metadata={"config_hash": "b" * 64, "preview_dpi": 150},
+    )
+
+    report = render_qa_report(docx_path, pdf_path, [], ReviewResult(), render_verification=verification)
+
+    assert "### Provenance metadata" in report
+    assert "config_hash" in report
+    assert "preview_dpi" in report
+
+
 def test_render_qa_report_reports_missing_pdf_as_zero_bytes(tmp_path):
     docx_path = tmp_path / "doc.docx"
     pdf_path = tmp_path / "missing.pdf"

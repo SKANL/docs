@@ -172,6 +172,7 @@ class VerificationReport:
     findings: list[VerificationFinding] = field(default_factory=list)
     checked_artifacts: list[ArtifactRef] = field(default_factory=list)
     preview_hashes: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] | None = None
 
     @property
     def passed(self) -> bool:
@@ -189,6 +190,8 @@ class VerificationReport:
             ]
         if self.preview_hashes:
             payload["preview_hashes"] = dict(sorted(self.preview_hashes.items()))
+        if self.metadata:
+            payload["metadata"] = self.metadata
         return payload
 
 

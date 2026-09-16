@@ -72,6 +72,16 @@ def test_verification_report_serializes_preview_hashes():
     assert report.to_dict()["preview_hashes"] == {"report-p01.png": "b" * 64}
 
 
+def test_verification_report_serializes_optional_provenance_metadata():
+    artifact = ArtifactRef("output/report.pdf", "a" * 64)
+    report = VerificationReport(
+        artifact=artifact,
+        metadata={"config_hash": "c" * 64, "preview_dpi": 150},
+    )
+
+    assert report.to_dict()["metadata"] == {"config_hash": "c" * 64, "preview_dpi": 150}
+
+
 @pytest.mark.parametrize("media_type", ["", 123, [], {}])
 def test_artifact_ref_rejects_invalid_media_type_metadata(media_type):
     with pytest.raises(ValueError, match="media_type"):

@@ -11,6 +11,7 @@ from typing import Any, cast
 from PIL import Image, ImageChops, UnidentifiedImageError
 
 from docs.domain.artifacts import ArtifactRef, RenderProfile, VerificationFinding, VerificationReport
+from docs.domain.identity import sha256_content
 from docs.domain.visual_baseline import compare_preview_baseline
 from docs.infrastructure.verification.html_browser_qa import PlaywrightHtmlBrowserQa
 from docs.infrastructure.verification.html_inspection import HtmlInspection
@@ -55,6 +56,28 @@ class RenderVerificationAdapter:
                 findings.extend(self._baseline_findings(preview_dir, profile))
         except (OSError, RuntimeError, UnidentifiedImageError, ValueError) as exc:
             findings.append(VerificationFinding("render.open", f"No se pudo abrir {path.name}: {exc}"))
+        metadata: dict[str, Any] = {
+            "preview_dpi": profile.preview_dpi,
+            "baseline_path": (
+                profile.baseline_dir.resolve().as_posix() if profile.baseline_dir is not None else None
+            ),
+            "baseline_threshold": profile.minimum_similarity if profile.baseline_dir is not None else None,
+            "renderer": type(self).__name__,
+            "toolchain": self._toolchain_identity(suffix),
+            "finding_evidence": [
+                {
+                    "code": finding.code,
+                    "page": finding.page,
+                    "viewport": finding.evidence.get("viewport"),
+                    "evidence": dict(finding.evidence),
+                }
+                for finding in findings
+            ],
+        }
+        if config is not None:
+            metadata["config_hash"] = sha256_content(config)
+            if "template_contract" in config and config["template_contract"] is not None:
+                metadata["template_contract_hash"] = sha256_content(config["template_contract"])
         return VerificationReport(
             artifact=artifact,
             findings=findings,
@@ -68,7 +91,17 @@ class RenderVerificationAdapter:
                 if preview_dir is not None and preview_dir.is_dir()
                 else {}
             ),
+            metadata=metadata,
         )
+
+    def _toolchain_identity(self, suffix: str) -> str:
+        if suffix == ".docx":
+            return type(self.docx_renderer).__name__
+        if suffix in {".html", ".htm"}:
+            return type(self.browser_qa).__name__
+        if suffix == ".pdf":
+            return "pypdfium2"
+        return "Pillow"
 
     def _verify_pdf(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:
         import pypdfium2 as pdfium
