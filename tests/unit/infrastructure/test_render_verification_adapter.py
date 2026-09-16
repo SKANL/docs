@@ -51,6 +51,30 @@ def test_pdf_verification_emits_preview_and_page_findings(tmp_path):
     assert report.passed is True
 
 
+def test_pdf_verification_persists_provenance_and_finding_viewport_evidence(tmp_path):
+    pdf = tmp_path / "report.pdf"
+    _write_blank_pdf(pdf)
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    config = {"title": "Report", "template_contract": {"page_width": 612}}
+
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(
+        pdf,
+        RenderProfile(format="pdf", allow_blank_pages=True, preview_dpi=96, baseline_dir=baseline, minimum_similarity=0.9),
+        tmp_path / "previews",
+        config,
+    )
+
+    assert report.metadata is not None
+    assert report.metadata["config_hash"]
+    assert report.metadata["template_contract_hash"]
+    assert report.metadata["preview_dpi"] == 96
+    assert report.metadata["baseline_path"] == baseline.resolve().as_posix()
+    assert report.metadata["baseline_threshold"] == 0.9
+    assert report.metadata["renderer"]
+    assert any(item["page"] == 1 for item in report.metadata["finding_evidence"])
+
+
 def test_docx_verification_uses_shared_renderer_for_pages_previews_and_baseline(tmp_path):
     docx = tmp_path / "report.docx"
     Document().save(docx)
