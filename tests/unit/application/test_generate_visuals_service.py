@@ -14,7 +14,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from docs.application.generate_visuals import GenerateVisualsService
+from docs.application.generate_visuals import GenerateVisualsService, _parse_spec
 from docs.domain.ingest_naming import sha256_hex
 from docs.domain.ports.visual_renderer_port import VisualSpec
 from docs.domain.svg_normalize import normalize_svg
@@ -77,6 +77,26 @@ def _write_bindings(sections_dir: Path, bindings: dict[str, str]) -> None:
 
 def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_parse_spec_preserves_accessibility_metadata():
+    spec = _parse_spec(
+        {
+            "label": "revenue",
+            "type": "chart",
+            "source": "{}",
+            "unit": "USD",
+            "semantic_summary": "Revenue rises each quarter.",
+            "decorative": False,
+            "data_fallback": "Q1: 10 USD; Q2: 20 USD",
+        }
+    )
+
+    assert spec is not None
+    assert spec.unit == "USD"
+    assert spec.semantic_summary == "Revenue rises each quarter."
+    assert spec.decorative is False
+    assert spec.data_fallback == "Q1: 10 USD; Q2: 20 USD"
 
 
 def _service(

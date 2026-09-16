@@ -17,6 +17,10 @@ class VisualSpec:
     caption: str = ""
     accessible_name: str = ""
     accessible_description: str = ""
+    unit: str = ""
+    semantic_summary: str = ""
+    decorative: bool = False
+    data_fallback: str = ""
 
     def __post_init__(self) -> None:
         # Keep direct renderer calls backwards-compatible when no accessibility

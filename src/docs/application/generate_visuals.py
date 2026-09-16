@@ -81,6 +81,18 @@ def _parse_spec(raw: Any) -> VisualSpec | None:
         caption=caption,
         accessible_name=name,
         accessible_description=f"Generated visual: {name}.",
+        unit=raw.get("unit", "") if isinstance(raw.get("unit", ""), str) else "",
+        semantic_summary=(
+            raw.get("semantic_summary", "")
+            if isinstance(raw.get("semantic_summary", ""), str)
+            else ""
+        ),
+        decorative=raw.get("decorative", False) if isinstance(raw.get("decorative", False), bool) else False,
+        data_fallback=(
+            raw.get("data_fallback", "")
+            if isinstance(raw.get("data_fallback", ""), str)
+            else ""
+        ),
     )
 
 
