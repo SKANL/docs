@@ -10,6 +10,7 @@ from docs.infrastructure.verification.html_browser_qa import PlaywrightHtmlBrows
 def test_browser_qa_disables_scripts_blocks_external_resources_and_bounds_navigation(tmp_path, monkeypatch):
     html = tmp_path / "report.html"
     html.write_text("<html><body><h1>Title</h1></body></html>")
+    target_url = html.resolve().as_uri()
     state = {}
 
     class Route:
@@ -93,6 +94,12 @@ def test_browser_qa_disables_scripts_blocks_external_resources_and_bounds_naviga
     local = Route((tmp_path / "style.css").resolve().as_uri())
     state["route_handler"](local)
     assert local.action == "continue"
+    same_origin = Route(target_url)
+    state["route_handler"](same_origin)
+    assert same_origin.action == "continue"
+    sibling = Route((tmp_path.parent / f"{tmp_path.name}-other" / "style.css").resolve().as_uri())
+    state["route_handler"](sibling)
+    assert sibling.action == "abort"
     assert any(f.code == "render.browser.checked" for f in findings)
 
 
@@ -170,3 +177,44 @@ def test_browser_qa_reports_browser_only_accessibility_and_layout_failures(tmp_p
         "render.browser.clipping",
         "render.browser.overlap",
     } <= {finding.code for finding in findings}
+
+
+def test_browser_qa_reports_bounded_playwright_exceptions(tmp_path, monkeypatch):
+    html = tmp_path / "report.html"
+    html.write_text("<html><body><h1>Title</h1></body></html>")
+
+    class PlaywrightError(Exception):
+        pass
+
+    class Browser:
+        def new_context(self, **_kwargs):
+            raise PlaywrightError("browser context failed")
+
+        def close(self):
+            pass
+
+    class SyncPlaywright:
+        chromium = types.SimpleNamespace(launch=lambda **_kwargs: Browser())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+    monkeypatch.setitem(sys.modules, "playwright", types.ModuleType("playwright"))
+    api = types.ModuleType("playwright.sync_api")
+    api.Error = PlaywrightError
+    def sync_playwright():
+        return SyncPlaywright()
+
+    api.sync_playwright = sync_playwright
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", api)
+
+    findings = PlaywrightHtmlBrowserQa().verify(
+        html, RenderProfile(format="html", browser_viewports=((800, 600),)), None
+    )
+
+    assert [(finding.code, finding.severity) for finding in findings] == [
+        ("render.browser.exception", "warning")
+    ]
