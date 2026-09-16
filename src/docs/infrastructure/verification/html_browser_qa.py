@@ -36,7 +36,8 @@ class PlaywrightHtmlBrowserQa:
                         page.set_default_timeout(BROWSER_TIMEOUT_MS)
 
                         def restrict_resources(route: Any) -> None:
-                            if route.request.url == target_url:
+                            local_root = path.resolve().parent.as_uri().rstrip("/") + "/"
+                            if route.request.url == target_url or route.request.url.startswith(local_root):
                                 route.continue_()
                             else:
                                 route.abort()
@@ -56,6 +57,52 @@ class PlaywrightHtmlBrowserQa:
                               visibleText: document.body?.innerText?.trim().length > 0,
                               visibleH1: [...document.querySelectorAll('h1')].some(e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length) && e.textContent.trim()),
                               missingAlt: [...document.images].filter(e => (e.offsetWidth || e.offsetHeight || e.getClientRects().length) && !e.hasAttribute('alt')).length,
+                              missingFocusIndicators: (() => {
+                                const focusable = [...document.querySelectorAll('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])')]
+                                  .filter(e => e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+                                return focusable.filter(e => {
+                                  e.focus({preventScroll: true});
+                                  const style = getComputedStyle(e);
+                                  return (style.outlineStyle === 'none' || parseFloat(style.outlineWidth) === 0) && style.boxShadow === 'none';
+                                }).length;
+                              })(),
+                              missingLandmarks: ['main', 'banner'].filter(role => {
+                                const selector = role === 'main' ? 'main,[role="main"]' : 'header,[role="banner"]';
+                                return ![...document.querySelectorAll(selector)].some(e => e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+                              }),
+                              inaccessibleContent: (() => {
+                                const visible = e => e.offsetWidth || e.offsetHeight || e.getClientRects().length;
+                                const name = e => (e.getAttribute('aria-label') || e.getAttribute('aria-labelledby') || e.getAttribute('title') || e.innerText || e.value || '').trim();
+                                const interactive = [...document.querySelectorAll('a[href],button,input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[tabindex]:not([tabindex="-1"])')];
+                                return interactive.filter(e => visible(e) && (e.getAttribute('aria-hidden') === 'true' || !name(e))).length;
+                              })(),
+                              brokenImages: [...document.images].filter(e => (e.offsetWidth || e.offsetHeight || e.getClientRects().length) && (!e.complete || e.naturalWidth === 0)).length,
+                              unloadedFonts: document.fonts ? [...document.fonts].filter(font => font.status !== 'loaded').length : 0,
+                              clippedElements: (() => {
+                                const visible = e => e.offsetWidth || e.offsetHeight || e.getClientRects().length;
+                                const clipped = [];
+                                for (const e of [...document.querySelectorAll('body *')]) {
+                                  if (!visible(e)) continue;
+                                  const child = e.getBoundingClientRect();
+                                  for (const parent of e.parentElement ? [e.parentElement] : []) {
+                                    const style = getComputedStyle(parent);
+                                    const box = parent.getBoundingClientRect();
+                                    if ((style.overflow === 'hidden' || style.overflow === 'clip' || style.overflowX === 'hidden' || style.overflowY === 'hidden') &&
+                                      (child.left < box.left || child.right > box.right || child.top < box.top || child.bottom > box.bottom)) clipped.push(e);
+                                  }
+                                }
+                                return clipped.length;
+                              })(),
+                              overlappingElements: (() => {
+                                const boxes = [...document.querySelectorAll('body *')].filter(e => e.offsetWidth || e.offsetHeight || e.getClientRects().length).map(e => ({element: e, box: e.getBoundingClientRect()}));
+                                let overlaps = 0;
+                                for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+                                  const a = boxes[i].box, b = boxes[j].box;
+                                  if (boxes[i].element.contains(boxes[j].element) || boxes[j].element.contains(boxes[i].element)) continue;
+                                  if (Math.min(a.right, b.right) > Math.max(a.left, b.left) && Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top)) overlaps++;
+                                }
+                                return overlaps;
+                              })(),
                             })"""
                             )
                             if metrics["scrollWidth"] > metrics["viewportWidth"]:
@@ -82,6 +129,28 @@ class PlaywrightHtmlBrowserQa:
                                     f"Browser found {metrics['missingAlt']} visible image(s) without alt text.",
                                     dimension="accessibility",
                                 ))
+                            browser_metrics = (
+                                ("accessibility.html.focus", metrics.get("missingFocusIndicators", 0),
+                                 "Browser found visible focusable element(s) without a visible focus indicator.", "accessibility"),
+                                ("accessibility.html.landmarks", len(metrics.get("missingLandmarks", [])),
+                                 "Browser found required landmark(s) missing or not visible.", "accessibility"),
+                                ("accessibility.html.inaccessible", metrics.get("inaccessibleContent", 0),
+                                 "Browser found visible interactive content without an accessible name or with aria-hidden focusability.", "accessibility"),
+                                ("render.browser.broken_image", metrics.get("brokenImages", 0),
+                                 "Browser found visible image(s) that did not load.", "visual"),
+                                ("render.browser.unloaded_font", metrics.get("unloadedFonts", 0),
+                                 "Browser found font face(s) that did not finish loading.", "visual"),
+                                ("render.browser.clipping", metrics.get("clippedElements", 0),
+                                 "Browser found visible content clipped by an ancestor.", "visual"),
+                                ("render.browser.overlap", metrics.get("overlappingElements", 0),
+                                 "Browser found intersecting visible layout boxes; inspect for unintended overlap.", "visual"),
+                            )
+                            for code, count, message, dimension in browser_metrics:
+                                if count:
+                                    findings.append(VerificationFinding(
+                                        code, f"{message} Count: {count}.", "warning",
+                                        dimension=dimension, evidence={"count": count, "viewport": [width, height]},
+                                    ))
                             screenshot = None
                             if preview_dir is not None:
                                 screenshot = preview_dir / f"{profile.preview_stem or path.stem}-browser-{width}x{height}.png"
