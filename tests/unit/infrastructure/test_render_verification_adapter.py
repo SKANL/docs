@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from docx import Document
@@ -45,6 +46,8 @@ def test_pdf_verification_emits_preview_and_page_findings(tmp_path):
     assert (tmp_path / "previews" / "report-p01.png").is_file()
     assert any(finding.code == "render.page.valid" for finding in report.findings)
     assert any(finding.code == "render.page.blank" for finding in report.findings)
+    preview = tmp_path / "previews" / "report-p01.png"
+    assert report.preview_hashes == {preview.name: hashlib.sha256(preview.read_bytes()).hexdigest()}
     assert report.passed is True
 
 

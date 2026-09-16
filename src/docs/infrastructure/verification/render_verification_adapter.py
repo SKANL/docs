@@ -59,6 +59,15 @@ class RenderVerificationAdapter:
             artifact=artifact,
             findings=findings,
             checked_artifacts=checked_artifacts,
+            preview_hashes=(
+                {
+                    preview.name: hashlib.sha256(preview.read_bytes()).hexdigest()
+                    for preview in sorted(preview_dir.glob("*.png"), key=lambda item: item.name)
+                    if preview.is_file()
+                }
+                if preview_dir is not None and preview_dir.is_dir()
+                else {}
+            ),
         )
 
     def _verify_pdf(self, path: Path, profile: RenderProfile, preview_dir: Path | None) -> list[VerificationFinding]:

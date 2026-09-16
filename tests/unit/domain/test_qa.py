@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from docs.domain.artifacts import ArtifactRef, VerificationReport
 from docs.domain.qa import ensure_child_path, render_qa_report
 from docs.domain.review import Issue, ReviewResult
 
@@ -36,6 +37,21 @@ def test_render_qa_report_includes_pdf_size_and_png_count(tmp_path):
     report = render_qa_report(docx_path, pdf_path, [], ReviewResult())
     assert f"- PDF: {pdf_path} ({pdf_path.stat().st_size} bytes)" in report
     assert "- PNG pages: 0" in report
+
+
+def test_render_qa_report_includes_render_hash_evidence(tmp_path):
+    docx_path = tmp_path / "doc.docx"
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake")
+    verification = VerificationReport(
+        ArtifactRef(docx_path.as_posix(), "a" * 64),
+        preview_hashes={"doc-p01.png": "b" * 64},
+    )
+
+    report = render_qa_report(docx_path, pdf_path, [], ReviewResult(), render_verification=verification)
+
+    assert "- Artifact SHA-256: " + "a" * 64 in report
+    assert "- Preview `doc-p01.png` SHA-256: " + "b" * 64 in report
 
 
 def test_render_qa_report_reports_missing_pdf_as_zero_bytes(tmp_path):

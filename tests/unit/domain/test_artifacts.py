@@ -61,6 +61,17 @@ def test_artifact_verification_can_record_media_size_page_and_evidence():
     assert payload["findings"][0]["page"] == 3
 
 
+def test_verification_report_serializes_preview_hashes():
+    artifact = ArtifactRef("output/report.pdf", "a" * 64)
+    report = VerificationReport(
+        artifact=artifact,
+        preview_hashes={"report-p01.png": "b" * 64},
+    )
+
+    assert report.to_dict()["artifact"]["sha256"] == "a" * 64
+    assert report.to_dict()["preview_hashes"] == {"report-p01.png": "b" * 64}
+
+
 @pytest.mark.parametrize("media_type", ["", 123, [], {}])
 def test_artifact_ref_rejects_invalid_media_type_metadata(media_type):
     with pytest.raises(ValueError, match="media_type"):

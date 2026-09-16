@@ -50,6 +50,9 @@ def render_qa_report(
         lines.append("- No ejecutada.")
     else:
         lines.append(f"- Resultado: {'OK' if render_verification.passed else 'FAIL'}")
+        lines.append(f"- Artifact SHA-256: {render_verification.artifact.sha256}")
+        for name, sha256 in sorted(render_verification.preview_hashes.items()):
+            lines.append(f"- Preview `{name}` SHA-256: {sha256}")
         for finding in render_verification.findings:
             lines.append(f"- {finding.severity.upper()} `{finding.code}`: {finding.message}")
     lines.extend(
