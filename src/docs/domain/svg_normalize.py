@@ -10,7 +10,7 @@ _ID_DEF_RE = re.compile(r'id="([^"]+)"')
 
 
 def ensure_accessibility_metadata(text: str, name: str, description: str) -> str:
-    """Add deterministic, escaped SVG title/description elements."""
+    """Add deterministic, escaped SVG title/description elements and link them."""
     if not name and not description:
         return text
     title = f"<title>{escape(name)}</title>"
@@ -20,7 +20,18 @@ def ensure_accessibility_metadata(text: str, name: str, description: str) -> str
     match = re.search(r"<svg\b[^>]*>", text, flags=re.IGNORECASE)
     if match is None:
         return text
-    return text[: match.end()] + title + desc + text[match.end() :]
+    root = match.group(0)
+    labelled_root = re.sub(
+        r'\saria-labelledby="[^"]*"',
+        ' aria-labelledby="visual-title visual-desc"',
+        root,
+        flags=re.IGNORECASE,
+    )
+    if labelled_root == root:
+        labelled_root = root[:-1] + ' aria-labelledby="visual-title visual-desc">'
+    title = f'<title id="visual-title">{escape(name)}</title>'
+    desc = f'<desc id="visual-desc">{escape(description)}</desc>'
+    return text[: match.start()] + labelled_root + title + desc + text[match.end() :]
 
 
 def normalize_svg(text: str) -> str:

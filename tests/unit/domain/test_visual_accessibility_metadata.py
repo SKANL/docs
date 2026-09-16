@@ -19,13 +19,21 @@ def test_svg_accessibility_metadata_is_escaped_and_deterministic():
     second = ensure_accessibility_metadata("<svg><rect/></svg>", "A & B", "A < B")
 
     assert first == second
-    assert "<title>A &amp; B</title>" in first
-    assert "<desc>A &lt; B</desc>" in first
+    assert '<title id="visual-title">A &amp; B</title>' in first
+    assert '<desc id="visual-desc">A &lt; B</desc>' in first
+
+
+def test_svg_accessibility_metadata_links_svg_to_title_and_description():
+    svg = ensure_accessibility_metadata("<svg><rect/></svg>", "Revenue", "Revenue by quarter.")
+
+    assert '<svg aria-labelledby="visual-title visual-desc">' in svg
+    assert '<title id="visual-title">Revenue</title>' in svg
+    assert '<desc id="visual-desc">Revenue by quarter.</desc>' in svg
 
 
 def test_chart_renderer_emits_title_and_description():
     source = json.dumps({"kind": "bar", "labels": ["Q1"], "series": [{"label": "Revenue", "values": [1]}]})
     svg = ChartSvgRenderer().render(VisualSpec(label="revenue", type="chart", source=source, caption="Revenue"))
 
-    assert "<title>Revenue</title>" in svg
-    assert "<desc>Generated visual: Revenue.</desc>" in svg
+    assert '<title id="visual-title">Revenue</title>' in svg
+    assert '<desc id="visual-desc">Generated visual: Revenue.</desc>' in svg
