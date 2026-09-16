@@ -187,6 +187,10 @@ ISSUE_CODES: dict[str, IssueCode] = {
         meaning="No se pudo ejecutar el navegador headless; la verificación HTML quedó limitada a evidencia estática.",
         fix="Instalá Playwright y su navegador Chromium, o tratá el hallazgo como una degradación explícita del entorno.",
     ),
+    "render.browser.exception": IssueCode(
+        meaning="El navegador headless encontró una excepción acotada durante la verificación; el resultado puede estar incompleto.",
+        fix="Revisá el detalle técnico, corregí el artefacto o el entorno y repetí la verificación para obtener evidencia completa.",
+    ),
     "render.browser.checked": IssueCode(
         meaning="Se inspeccionó el HTML en un navegador headless y se recolectó evidencia de layout por viewport.",
         fix="Es un hallazgo informativo; revisá cualquier hallazgo asociado de overflow, blank o accesibilidad.",
