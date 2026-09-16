@@ -38,6 +38,8 @@ def _catalog_row(catalog_id: str, *, width_px: int | None = 300, height_px: int 
         "caption": "Organigrama del equipo",
         "source_role": "evidence",
         "origin_kind": "standalone",
+        "accessible_name": "Organigrama accesible",
+        "accessible_description": "Descripción detallada del organigrama.",
     }
 
 
@@ -137,6 +139,8 @@ def test_binding_with_existing_file_and_dims_is_included_as_bound_figure(tmp_pat
             width_px=300,
             height_px=200,
             caption="Organigrama del equipo",
+            accessible_name="Organigrama accesible",
+            accessible_description="Descripción detallada del organigrama.",
         )
     }
 

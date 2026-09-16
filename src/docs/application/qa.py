@@ -1,6 +1,7 @@
 # src/docs/application/qa.py
 from __future__ import annotations
 
+import inspect
 import shutil
 from pathlib import Path
 from typing import Any
@@ -52,13 +53,16 @@ class QaService:
         ):
             raise ValueError("Invalid visual QA profile: preview and blank-page options must be booleans")
         preview_stem = settings.get("preview_stem", docx_path.stem)
+        baseline_dir, minimum_similarity = self._visual_baseline_config(config, docx_path)
         profile = RenderProfile(
             format="pdf", allow_blank_pages=settings.get("allow_blank_pages", False),
             require_previews=settings.get("require_previews", False),
             expected_page_size=settings.get("expected_page_size"), preview_stem=preview_stem,
+            baseline_dir=baseline_dir,
+            minimum_similarity=minimum_similarity,
+            baseline_strict=strict,
         )
         output_dir = Path(config["paths"]["output_qa_dir"]) / preview_stem
-        baseline_dir, minimum_similarity = self._visual_baseline_config(config, docx_path)
         if baseline_dir is not None and (
             baseline_dir.resolve().is_relative_to(output_dir.resolve())
             or output_dir.resolve().is_relative_to(baseline_dir.resolve())
@@ -82,9 +86,11 @@ class QaService:
 
         render_verification: VerificationReport | None = None
         if expected_pdf is not None and self.render_verification_service is not None:
-            render_verification = self.render_verification_service.verify(
-                expected_pdf, profile, output_dir / "previews"
-            )
+            verifier = self.render_verification_service.verify
+            if "config" in inspect.signature(verifier).parameters:
+                render_verification = verifier(expected_pdf, profile, output_dir / "previews", config)
+            else:
+                render_verification = verifier(expected_pdf, profile, output_dir / "previews")
 
         # The PDF verifier renders one deterministic PNG per page when a
         # preview directory is supplied. Reuse those previews as the QA
@@ -94,7 +100,10 @@ class QaService:
 
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)
-        if baseline_dir is not None:
+        # Keep the legacy/manual path for callers that intentionally omit the
+        # shared verifier.  When it is composed, baseline comparison belongs to
+        # RenderVerificationAdapter so every format follows the same contract.
+        if baseline_dir is not None and render_verification is None:
             for finding in compare_preview_baseline(
                 previews_dir,
                 baseline_dir,

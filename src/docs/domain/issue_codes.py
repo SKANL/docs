@@ -18,6 +18,7 @@ from dataclasses import dataclass
 # What each code family is ABOUT, so an unfamiliar code is still placeable
 # from its prefix alone.
 ISSUE_CODE_FAMILIES: dict[str, str] = {
+    "accessibility": "Señales técnicas de accesibilidad del artefacto, sin afirmar conformidad WCAG.",
     "apa": "Citas y referencias en estilo APA 7 dentro de una sección.",
     "coherence": "Consistencia del documento COMPLETO (entre secciones).",
     "content": "Estado del cuerpo redactado frente a la política del template.",
@@ -138,6 +139,46 @@ ISSUE_CODES: dict[str, IssueCode] = {
         fix="Instalá LibreOffice para habilitarla. No bloquea: la auditoría estructural del .docx ya se ejecutó.",
     ),
     # --- render ------------------------------------------------------------
+    "accessibility.pdf.language_missing": IssueCode(
+        meaning="El catálogo PDF no declara el idioma principal del documento.",
+        fix="Definí el idioma del documento en el catálogo PDF y repetí la verificación; esto no valida por sí solo el orden de lectura.",
+    ),
+    "accessibility.pdf.title_missing": IssueCode(
+        meaning="Los metadatos del PDF no declaran un título.",
+        fix="Agregá un título descriptivo en los metadatos del PDF y repetí la verificación; esto no constituye una auditoría WCAG.",
+    ),
+    "accessibility.pdf.metadata_unverified": IssueCode(
+        meaning="No se pudieron inspeccionar las señales básicas de idioma y título del PDF.",
+        fix="Revisá la capacidad del parser PDF instalado y volvé a ejecutar la verificación.",
+    ),
+    "accessibility.pdf.untagged": IssueCode(
+        meaning="El PDF no declara una estructura etiquetada; el orden de lectura y las alternativas no pudieron verificarse.",
+        fix="Generá el PDF con estructura etiquetada y validalo con una herramienta especializada.",
+    ),
+    "accessibility.pdf.tags_unverified": IssueCode(
+        meaning="El PDF declara etiquetas, pero esta verificación no inspecciona su semántica ni el orden de lectura.",
+        fix="Usá una herramienta especializada de accesibilidad PDF para revisar la estructura y las alternativas.",
+    ),
+    "render.browser.unavailable": IssueCode(
+        meaning="No se pudo ejecutar el navegador headless; la verificación HTML quedó limitada a evidencia estática.",
+        fix="Instalá Playwright y su navegador Chromium, o tratá el hallazgo como una degradación explícita del entorno.",
+    ),
+    "render.browser.checked": IssueCode(
+        meaning="Se inspeccionó el HTML en un navegador headless y se recolectó evidencia de layout por viewport.",
+        fix="Es un hallazgo informativo; revisá cualquier hallazgo asociado de overflow, blank o accesibilidad.",
+    ),
+    "render.browser.horizontal_overflow": IssueCode(
+        meaning="El contenido renderizado excede horizontalmente el viewport del navegador.",
+        fix="Corregí el layout responsive o el contenido que provoca overflow y repetí la verificación.",
+    ),
+    "render.browser.excessive_height": IssueCode(
+        meaning="El contenido renderizado resulta inusualmente alto para el viewport inspeccionado.",
+        fix="Revisá bucles de layout, contenido expandido y estilos que generen altura inesperada.",
+    ),
+    "render.browser.blank": IssueCode(
+        meaning="El navegador no encontró texto visible en el viewport inspeccionado.",
+        fix="Comprobá que el HTML tenga contenido visible después de ejecutar estilos y scripts.",
+    ),
     "render.capability.unavailable": IssueCode(
         meaning="La verificación de render multiformato no está configurada, por lo que la calidad del artefacto no pudo comprobarse.",
         fix="Configurá e inyectá el puerto de verificación de render para el formato solicitado y repetí la etapa de revisión.",
@@ -209,6 +250,10 @@ ISSUE_CODES: dict[str, IssueCode] = {
     "template.missing_blocks": IssueCode(
         meaning="Al template le faltan bloques de primer nivel obligatorios.",
         fix="Agregá los bloques que el hallazgo enumera; `docs template init` genera un esqueleto con todos.",
+    ),
+    "template.contract.invalid": IssueCode(
+        meaning="El contrato de fidelidad declara una regla con una forma o valor que el auditor no puede ejecutar.",
+        fix="Corregí la forma declarada en `template_contract` y respetá los tipos indicados por el hallazgo.",
     ),
     # --- voice --------------------------------------------------------------
     "voice.first_person": IssueCode(

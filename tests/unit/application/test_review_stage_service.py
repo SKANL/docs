@@ -227,6 +227,16 @@ def test_visual_stage_honors_blank_page_profile(tmp_path):
     assert not service.visual_review(artifact, config, PipelinePolicy()).ok
 
 
+def test_visual_stage_rejects_empty_browser_viewports(tmp_path):
+    artifact = tmp_path / "document.html"
+    artifact.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+    outcome = _multiformat_service(tmp_path).visual_review(
+        artifact, {"visual_qa": {"browser_viewports": []}}, PipelinePolicy()
+    )
+    assert not outcome.ok
+    assert "browser_viewports" in outcome.detail
+
+
 def test_multiformat_stage_without_render_port_reports_capability_gap(tmp_path):
     artifact = tmp_path / "document.html"
     artifact.write_text('<html><body>text</body></html>')

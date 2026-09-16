@@ -77,6 +77,8 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
                     width_px=row["width_px"],
                     height_px=row["height_px"],
                     caption="",
+                    accessible_name="",
+                    accessible_description="",
                 )
                 continue
             print(
@@ -117,6 +119,12 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
             width_px=width_px,
             height_px=height_px,
             caption=row.get("caption", ""),
+            accessible_name=row.get("accessible_name", "") if isinstance(row.get("accessible_name", ""), str) else "",
+            accessible_description=(
+                row.get("accessible_description", "")
+                if isinstance(row.get("accessible_description", ""), str)
+                else ""
+            ),
         )
     return resolved
 

@@ -219,6 +219,45 @@ def test_qa_docx_compares_configured_visual_baseline(tmp_path):
     assert "visual.baseline_changed" not in report
 
 
+def test_qa_docx_passes_visual_contract_to_shared_verifier(tmp_path):
+    class QaPort:
+        def render_docx_to_pdf(self, _config, docx_path, output_dir):
+            pdf_path = output_dir / f"{docx_path.stem}.pdf"
+            pdf_path.write_bytes(b"pdf")
+            return pdf_path
+
+        def run_documents_audits(self, *_args):
+            return []
+
+    class VerificationService:
+        def __init__(self):
+            self.profile = None
+
+        def verify(self, _artifact_path, profile, _preview_dir=None):
+            self.profile = profile
+            from docs.domain.artifacts import ArtifactRef, VerificationReport
+
+            return VerificationReport(ArtifactRef("rendered.pdf", "a" * 64))
+
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+    verifier = VerificationService()
+    docx_path = _make_docx(tmp_path)
+    QaService(
+        QaPort(), FormatAuditService(PythonDocxAuditAdapter()), render_verification_service=verifier
+    ).qa_docx(
+        {
+            "paths": {"output_qa_dir": str(tmp_path / "qa")},
+            "visual_qa": {"baseline_dir": str(baseline), "minimum_similarity": 0.91},
+        },
+        docx_path,
+    )
+
+    assert verifier.profile.baseline_dir == baseline
+    assert verifier.profile.minimum_similarity == 0.91
+    assert verifier.profile.baseline_strict is False
+
+
 def test_qa_docx_enforces_required_previews_without_renderer(tmp_path):
     class QaPort:
         def render_docx_to_pdf(self, config, docx_path, output_dir):

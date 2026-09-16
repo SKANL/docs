@@ -10,6 +10,7 @@ import matplotlib
 # E402 by the eager-backend-setup code below (which must run before any
 # pyplot use); VisualSpec has no matplotlib dependency.
 from docs.domain.ports.visual_renderer_port import VisualSpec
+from docs.domain.svg_normalize import ensure_accessibility_metadata
 
 matplotlib.use("Agg")
 
@@ -54,9 +55,7 @@ class ChartSvgRenderer:
         data = _parse_source(spec.source)
         kind = data.get("kind")
         if kind not in _SUPPORTED_KINDS:
-            raise ValueError(
-                f"Unsupported chart kind {kind!r}; expected one of {sorted(_SUPPORTED_KINDS)}."
-            )
+            raise ValueError(f"Unsupported chart kind {kind!r}; expected one of {sorted(_SUPPORTED_KINDS)}.")
         labels = data.get("labels")
         if not isinstance(labels, list) or not labels:
             raise ValueError("Chart spec is missing required non-empty field 'labels'.")
@@ -84,7 +83,9 @@ class ChartSvgRenderer:
                 fig.savefig(buf, format="svg", metadata={"Date": None})
             finally:
                 plt.close(fig)
-        return buf.getvalue().decode("utf-8")
+        return ensure_accessibility_metadata(
+            buf.getvalue().decode("utf-8"), spec.accessible_name, spec.accessible_description
+        )
 
 
 def _parse_source(source: str) -> dict:

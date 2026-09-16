@@ -31,6 +31,88 @@ _REQUIRED_TOP_LEVEL_BLOCKS = ("type", "title", "sections", "section_contracts", 
 _SENTINEL_TODO = "TODO"
 
 
+def _contract_issue(path: str, message: str) -> Issue:
+    return Issue("error", f"Contrato inválido en `{path}`: {message}.", code="template.contract.invalid")
+
+
+def validate_template_contract(contract: Any) -> list[Issue]:
+    """Validate the executable, common fidelity vocabulary.
+
+    Contract extension data remains open, but the values consumed by the
+    native audit must have a predictable shape. Vendor-specific nested keys
+    are intentionally left untouched.
+    """
+    if contract is None:
+        return []
+    if not isinstance(contract, dict):
+        return [_contract_issue("template_contract", "debe ser un objeto")]
+    issues: list[Issue] = []
+    geometry = contract.get("page_geometry", {})
+    if not isinstance(geometry, dict):
+        issues.append(_contract_issue("template_contract.page_geometry", "debe ser un objeto"))
+    else:
+        for key in ("width", "height"):
+            value = geometry.get(key)
+            if value is not None and (type(value) not in {int, float} or value <= 0):
+                issues.append(_contract_issue(f"template_contract.page_geometry.{key}", "debe ser positivo"))
+        orientation = geometry.get("orientation")
+        if orientation is not None and orientation not in {"portrait", "landscape"}:
+            issues.append(
+                _contract_issue("template_contract.page_geometry.orientation", "debe ser portrait o landscape")
+            )
+        margins = geometry.get("margins_cm", geometry.get("margins"))
+        if margins is not None:
+            if not isinstance(margins, dict):
+                issues.append(_contract_issue("template_contract.page_geometry.margins", "debe ser un objeto"))
+            else:
+                for key, value in margins.items():
+                    if type(value) not in {int, float} or value <= 0:
+                        issues.append(
+                            _contract_issue(f"template_contract.page_geometry.margins.{key}", "debe ser positivo")
+                        )
+
+    style = contract.get("style_contract", {})
+    if not isinstance(style, dict):
+        issues.append(_contract_issue("template_contract.style_contract", "debe ser un objeto"))
+    else:
+        for key in ("body_font", "heading_font"):
+            if key in style and (not isinstance(style[key], str) or not style[key].strip()):
+                issues.append(_contract_issue(f"template_contract.style_contract.{key}", "debe ser texto no vacío"))
+
+    def entries(name: str, required: tuple[str, ...] = ("id",)) -> None:
+        value = contract.get(name, [])
+        if not isinstance(value, list):
+            issues.append(_contract_issue(f"template_contract.{name}", "debe ser una lista"))
+            return
+        seen: set[str] = set()
+        for index, item in enumerate(value):
+            path = f"template_contract.{name}[{index}]"
+            if not isinstance(item, dict):
+                issues.append(_contract_issue(path, "debe ser un objeto"))
+                continue
+            for key in required:
+                if not isinstance(item.get(key), str) or not item[key].strip():
+                    issues.append(_contract_issue(f"{path}.{key}", "debe ser texto no vacío"))
+            item_id = item.get("id")
+            if isinstance(item_id, str) and item_id in seen:
+                issues.append(_contract_issue(f"template_contract.{name}", f"el id `{item_id}` está repetido"))
+            if isinstance(item_id, str):
+                seen.add(item_id)
+
+    entries("components", ("kind",))
+    entries("editable_slots")
+    entries("required_assets")
+    entries("fidelity_checks")
+    degradations = contract.get("allowed_degradations", [])
+    if not isinstance(degradations, list) or any(
+        not isinstance(item, str) or not item.strip() for item in degradations
+    ):
+        issues.append(
+            _contract_issue("template_contract.allowed_degradations", "debe ser una lista de textos no vacíos")
+        )
+    return issues
+
+
 def _check_required_blocks(raw: dict[str, Any]) -> list[Issue]:
     missing = [block for block in _REQUIRED_TOP_LEVEL_BLOCKS if block not in raw]
     if not missing:
@@ -134,9 +216,7 @@ def _near_miss_keys(raw: Any, model: type[BaseModel], path: str) -> list[Issue]:
     """
     if not isinstance(raw, dict):
         return []
-    known = set(model.model_fields) | {
-        info.alias for info in model.model_fields.values() if info.alias
-    }
+    known = set(model.model_fields) | {info.alias for info in model.model_fields.values() if info.alias}
     issues: list[Issue] = []
     for key in raw:
         if not isinstance(key, str) or key in known:
@@ -222,9 +302,7 @@ def _check_near_miss_keys(raw: dict[str, Any]) -> list[Issue]:
     for section_id, contract in (raw.get("section_contracts") or {}).items():
         issues.extend(_near_miss_keys(contract, SectionContract, f"section_contracts.{section_id}"))
         if isinstance(contract, dict):
-            issues.extend(
-                _near_miss_keys(contract.get("length"), LengthSpec, f"section_contracts.{section_id}.length")
-            )
+            issues.extend(_near_miss_keys(contract.get("length"), LengthSpec, f"section_contracts.{section_id}.length"))
     context_schema = raw.get("context_schema")
     issues.extend(_near_miss_keys(context_schema, ContextSchema, "context_schema"))
     if isinstance(context_schema, dict):
@@ -232,18 +310,14 @@ def _check_near_miss_keys(raw: dict[str, Any]) -> list[Issue]:
             issues.extend(_near_miss_keys(topic, Topic, f"context_schema.topics[{index}]"))
             if isinstance(topic, dict):
                 for f_index, field in enumerate(topic.get("fields") or []):
-                    issues.extend(
-                        _near_miss_keys(field, Field, f"context_schema.topics[{index}].fields[{f_index}]")
-                    )
+                    issues.extend(_near_miss_keys(field, Field, f"context_schema.topics[{index}].fields[{f_index}]"))
     issues.extend(_near_miss_keys(raw.get("apa7"), Apa7Config, "apa7"))
     issues.extend(_near_miss_keys(raw.get("template_contract"), TemplateContract, "template_contract"))
     strict_policy = raw.get("strict_policy")
     issues.extend(_near_miss_keys(strict_policy, StrictPolicy, "strict_policy"))
     if isinstance(strict_policy, dict):
         for block in ("draft", "strict"):
-            issues.extend(
-                _near_miss_keys(strict_policy.get(block), StrictPolicyBlock, f"strict_policy.{block}")
-            )
+            issues.extend(_near_miss_keys(strict_policy.get(block), StrictPolicyBlock, f"strict_policy.{block}"))
     return issues
 
 
@@ -258,6 +332,7 @@ def validate_template(raw: dict[str, Any]) -> list[Issue]:
     issues = _check_required_blocks(raw)
     issues.extend(_check_incomplete_sentinels(raw))
     issues.extend(_check_near_miss_keys(raw))
+    issues.extend(validate_template_contract(raw.get("template_contract")))
     issues.extend(_check_config_envelope(raw))
 
     try:

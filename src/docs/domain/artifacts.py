@@ -37,6 +37,7 @@ class RenderProfile:
     minimum_similarity: float = 0.75
     baseline_strict: bool = False
     preview_stem: str | None = None
+    browser_viewports: tuple[tuple[int, int], ...] = ((1280, 800), (390, 844))
 
     def __post_init__(self) -> None:
         if self.preview_stem is not None and (
@@ -44,6 +45,11 @@ class RenderProfile:
             or any(char in self.preview_stem for char in '/\\:')
         ):
             raise ValueError("preview_stem must be a nonempty filename stem")
+        if not self.browser_viewports or any(
+            len(viewport) != 2 or any(type(value) is not int or value <= 0 for value in viewport)
+            for viewport in self.browser_viewports
+        ):
+            raise ValueError("browser_viewports must contain positive width/height integer pairs")
 
 
 @dataclass(frozen=True)

@@ -15,6 +15,17 @@ class VisualSpec:
     type: str
     source: str
     caption: str = ""
+    accessible_name: str = ""
+    accessible_description: str = ""
+
+    def __post_init__(self) -> None:
+        # Keep direct renderer calls backwards-compatible when no accessibility
+        # metadata was requested; the application parser supplies label-based
+        # defaults for generated visuals.
+        name = self.accessible_name.strip() or self.caption.strip()
+        description = self.accessible_description.strip() or (f"Generated visual: {name}." if name else "")
+        object.__setattr__(self, "accessible_name", name)
+        object.__setattr__(self, "accessible_description", description)
 
 
 class VisualRendererPort(Protocol):

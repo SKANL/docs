@@ -28,7 +28,9 @@ def test_width_attr_clamps_to_max_content_width():
     assert figure_width_attr(1200) == "{width=6.0in}"
 
 
-def _bound_figure(*, width_px: int | None = 192, caption: str = "") -> BoundFigure:
+def _bound_figure(
+    *, width_px: int | None = 192, caption: str = "", accessible_name: str = "", accessible_description: str = ""
+) -> BoundFigure:
     return BoundFigure(
         label="organigrama",
         catalog_id="fig-abcd1234",
@@ -36,6 +38,8 @@ def _bound_figure(*, width_px: int | None = 192, caption: str = "") -> BoundFigu
         width_px=width_px,
         height_px=100,
         caption=caption,
+        accessible_name=accessible_name,
+        accessible_description=accessible_description,
     )
 
 
@@ -56,6 +60,28 @@ def test_image_markdown_empty_caption_rstrips_trailing_space():
     markdown = figure_image_markdown(2, fig)
 
     assert markdown == "![Figura 2.](/abs/assets/figures/fig-abcd1234.png){width=2.0in}"
+
+
+def test_image_markdown_uses_accessible_name_and_description_for_renderers():
+    fig = _bound_figure(
+        caption="Visible caption",
+        accessible_name="Accessible chart",
+        accessible_description="Revenue by quarter.",
+    )
+
+    assert figure_image_markdown(1, fig) == (
+        '![Accessible chart](/abs/assets/figures/fig-abcd1234.png "Revenue by quarter.")'
+        "{width=2.0in}"
+    )
+
+
+def test_image_markdown_falls_back_to_caption_when_accessible_name_missing():
+    fig = _bound_figure(caption="Visible caption", accessible_description="Extra detail.")
+
+    assert figure_image_markdown(1, fig) == (
+        '![Figura 1. Visible caption](/abs/assets/figures/fig-abcd1234.png "Extra detail.")'
+        "{width=2.0in}"
+    )
 
 
 # --- merge_bindings() -- on-demand-visual-generation, design.md "pure merge +

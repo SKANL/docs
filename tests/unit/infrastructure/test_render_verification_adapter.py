@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from docx import Document
 from PIL import Image
 
 from docs.application.render_verification import RenderVerificationService
-from docs.domain.artifacts import RenderProfile
+from docs.domain.artifacts import ArtifactRef, RenderProfile, VerificationFinding
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 
 
@@ -45,6 +46,63 @@ def test_pdf_verification_emits_preview_and_page_findings(tmp_path):
     assert any(finding.code == "render.page.valid" for finding in report.findings)
     assert any(finding.code == "render.page.blank" for finding in report.findings)
     assert report.passed is True
+
+
+def test_docx_verification_uses_shared_renderer_for_pages_previews_and_baseline(tmp_path):
+    docx = tmp_path / "report.docx"
+    Document().save(docx)
+    baseline = tmp_path / "baseline"
+    baseline.mkdir()
+
+    class Renderer:
+        def render_docx_to_pdf(self, _config, _docx_path, output_dir):
+            pdf = output_dir / "report.pdf"
+            _write_blank_pdf(pdf)
+            return pdf
+
+    previews = tmp_path / "previews"
+    report = RenderVerificationService(RenderVerificationAdapter(docx_renderer=Renderer())).verify(
+        docx,
+        RenderProfile(
+            format="docx",
+            expected_page_size=(612, 792),
+            require_previews=True,
+            allow_blank_pages=True,
+            baseline_dir=baseline,
+            preview_stem="report",
+        ),
+        previews,
+    )
+
+    assert (previews / "report-p01.png").is_file()
+    assert any(f.code == "render.pages.count" and f.evidence["count"] == 1 for f in report.findings)
+    assert any(f.code == "render.toolchain" for f in report.findings)
+    assert len(report.checked_artifacts) == 2
+    assert any(f.code == "visual.baseline_missing" for f in report.findings)
+
+
+def test_docx_verification_forwards_config_and_omits_ephemeral_pdf_without_previews(tmp_path):
+    docx = tmp_path / "report.docx"
+    Document().save(docx)
+    config = {"paths": {"output_qa_dir": str(tmp_path / "qa")}, "visual_qa": {"allow_blank_pages": True}}
+    calls = []
+
+    class Renderer:
+        def render_docx_to_pdf(self, received_config, _docx_path, output_dir):
+            calls.append(received_config)
+            pdf = output_dir / "report.pdf"
+            _write_blank_pdf(pdf)
+            return pdf
+
+    report = RenderVerificationAdapter(docx_renderer=Renderer()).verify(
+        ArtifactRef(path=docx.as_posix(), sha256="source"),
+        RenderProfile(format="docx", allow_blank_pages=True),
+        config=config,
+    )
+
+    assert calls == [config]
+    assert len(report.checked_artifacts) == 1
+    assert not (tmp_path / "report.pdf").exists()
 
 
 def test_image_verification_detects_wrong_dimensions(tmp_path):
@@ -110,6 +168,109 @@ def test_html_valid_static_accessibility_does_not_claim_layout_verified(tmp_path
     assert any(f.code == "render.layout.unavailable" and f.severity == "warning" for f in report.findings)
 
 
+def test_html_browser_qa_replaces_static_layout_fallback_and_writes_viewport_screenshots(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header>'
+                    '<main><p>Content</p></main></body></html>')
+
+    class BrowserQa:
+        def verify(self, path, profile, preview_dir):
+            assert path == html
+            assert profile.browser_viewports == ((800, 600), (390, 844))
+            assert preview_dir is not None
+            (preview_dir / "report-browser-800x600.png").write_bytes(b"desktop")
+            (preview_dir / "report-browser-390x844.png").write_bytes(b"mobile")
+            return [
+                VerificationFinding(
+                    "render.browser.checked", "Browser layout checked.", "info", dimension="visual",
+                    evidence={"viewport": [800, 600]},
+                ),
+                VerificationFinding(
+                    "render.browser.checked", "Browser layout checked.", "info", dimension="visual",
+                    evidence={"viewport": [390, 844]},
+                ),
+            ]
+
+    report = RenderVerificationService(RenderVerificationAdapter(browser_qa=BrowserQa())).verify(
+        html,
+        RenderProfile(format="html", browser_viewports=((800, 600), (390, 844)), require_previews=True),
+        tmp_path / "previews",
+    )
+
+    assert (tmp_path / "previews" / "report-browser-800x600.png").is_file()
+    assert (tmp_path / "previews" / "report-browser-390x844.png").is_file()
+    assert any(f.code == "render.browser.checked" for f in report.findings)
+    assert not any(f.code == "render.layout.unavailable" for f in report.findings)
+
+
+def test_html_browser_qa_failure_keeps_static_fallback_and_reports_unavailability(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+
+    class BrowserQa:
+        def verify(self, path, profile, preview_dir):
+            raise RuntimeError("browser executable missing")
+
+    report = RenderVerificationService(RenderVerificationAdapter(browser_qa=BrowserQa())).verify(
+        html, RenderProfile(format="html"), tmp_path / "previews"
+    )
+
+    assert any(f.code == "render.browser.unavailable" and f.severity == "warning" for f in report.findings)
+    assert any(f.code == "render.layout.unavailable" for f in report.findings)
+
+
+def test_html_browser_findings_keep_static_fallback_when_browser_returns_no_checked_evidence(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+
+    class BrowserQa:
+        def verify(self, path, profile, preview_dir):
+            return [VerificationFinding("render.browser.warning", "Only partial browser evidence.", "warning", dimension="visual")]
+
+    report = RenderVerificationService(RenderVerificationAdapter(browser_qa=BrowserQa())).verify(
+        html, RenderProfile(format="html"), tmp_path / "previews"
+    )
+
+    assert any(f.code == "render.layout.unavailable" for f in report.findings)
+
+
+def test_html_browser_partial_viewport_evidence_keeps_static_fallback(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+
+    class BrowserQa:
+        def verify(self, path, profile, preview_dir):
+            return [VerificationFinding(
+                "render.browser.checked", "One viewport checked.", "info", dimension="visual",
+                evidence={"viewport": list(profile.browser_viewports[0])},
+            )]
+
+    report = RenderVerificationService(RenderVerificationAdapter(browser_qa=BrowserQa())).verify(
+        html, RenderProfile(format="html", browser_viewports=((800, 600), (390, 844))), tmp_path / "previews"
+    )
+
+    assert any(f.code == "render.layout.unavailable" for f in report.findings)
+
+
+def test_html_browser_screenshot_evidence_is_hashed(tmp_path):
+    html = tmp_path / "report.html"
+    html.write_text('<html lang="en"><body><header><h1>Title</h1></header><main>Text</main></body></html>')
+
+    class BrowserQa:
+        def verify(self, path, profile, preview_dir):
+            screenshot = preview_dir / "report-browser-800x600.png"
+            screenshot.write_bytes(b"desktop")
+            return [VerificationFinding("render.browser.checked", "Browser layout checked.", "info", dimension="visual")]
+
+    report = RenderVerificationService(RenderVerificationAdapter(browser_qa=BrowserQa())).verify(
+        html, RenderProfile(format="html", browser_viewports=((800, 600),)), tmp_path / "previews"
+    )
+
+    finding = next(f for f in report.findings if f.code == "render.browser.checked")
+    assert finding.evidence["screenshot_sha256"] == __import__("hashlib").sha256(b"desktop").hexdigest()
+    assert finding.evidence["screenshot_path"].endswith("report-browser-800x600.png")
+
+
 def test_html_detects_empty_body_not_nonempty_source(tmp_path):
     html = tmp_path / "empty.html"
     html.write_text('<html><head><title>Title</title><style>body{color:red}</style></head>'
@@ -133,6 +294,17 @@ def test_pdf_reports_absence_of_tags_in_addition_to_technical_findings(tmp_path)
     report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
     assert any(f.code == "accessibility.pdf.untagged" and f.severity == "warning" for f in report.findings)
     assert any(f.code == "render.page.blank" for f in report.findings)
+
+
+def test_pdf_accessibility_reports_missing_language_and_title_metadata(tmp_path):
+    pdf = tmp_path / "report.pdf"
+    _write_blank_pdf(pdf)
+
+    report = RenderVerificationService(RenderVerificationAdapter()).verify(pdf, RenderProfile(format="pdf"))
+
+    codes = {finding.code for finding in report.findings}
+    assert {"accessibility.pdf.language_missing", "accessibility.pdf.title_missing"} <= codes
+    assert all("WCAG" not in finding.message for finding in report.findings if finding.dimension == "accessibility")
 
 
 def test_pdf_detects_objects_outside_page_bounds(tmp_path):
