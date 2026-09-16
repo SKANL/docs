@@ -22,6 +22,10 @@ class BoundFigure:
     caption: str
     accessible_name: str = ""
     accessible_description: str = ""
+    unit: str = ""
+    semantic_summary: str = ""
+    decorative: bool = False
+    data_fallback: str = ""
 
 
 def figure_width_attr(width_px: int | None) -> str:
@@ -42,11 +46,21 @@ def figure_image_markdown(number: int, fig: BoundFigure) -> str:
     prefix as the unbound text-only path -- embedding never changes
     numbering, only the marker's replacement."""
     caption = f"Figura {number}. {fig.caption}".rstrip()
-    alt_text = fig.accessible_name.strip() or caption
-    description = fig.accessible_description.strip()
+    alt_text = "" if fig.decorative else (fig.accessible_name.strip() or caption)
+    details = [fig.accessible_description.strip()]
+    if fig.unit.strip():
+        details.append(f"Unit: {fig.unit.strip()}.")
+    if fig.semantic_summary.strip():
+        details.append(fig.semantic_summary.strip())
+    if fig.data_fallback.strip():
+        details.append(f"Data: {fig.data_fallback.strip().rstrip('.')}.")
+    description = " ".join(part for part in details if part)
     escaped_description = description.replace('"', '\\"')
     title = f' "{escaped_description}"' if description else ""
-    return f"![{alt_text}]({fig.path}{title}){figure_width_attr(fig.width_px)}"
+    attrs = figure_width_attr(fig.width_px)
+    if fig.decorative:
+        attrs = attrs[:-1] + ' role="presentation"}' if attrs else '{role="presentation"}'
+    return f"![{alt_text}]({fig.path}{title}){attrs}"
 
 
 def merge_bindings(existing: dict, additions: dict) -> dict:

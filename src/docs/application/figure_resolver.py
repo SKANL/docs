@@ -125,6 +125,12 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
                 if isinstance(row.get("accessible_description", ""), str)
                 else ""
             ),
+            unit=row.get("unit", "") if isinstance(row.get("unit", ""), str) else "",
+            semantic_summary=(
+                row.get("semantic_summary", "") if isinstance(row.get("semantic_summary", ""), str) else ""
+            ),
+            decorative=row.get("decorative", False) if isinstance(row.get("decorative", False), bool) else False,
+            data_fallback=row.get("data_fallback", "") if isinstance(row.get("data_fallback", ""), str) else "",
         )
     return resolved
 
