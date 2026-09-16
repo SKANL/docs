@@ -29,7 +29,8 @@ def test_width_attr_clamps_to_max_content_width():
 
 
 def _bound_figure(
-    *, width_px: int | None = 192, caption: str = "", accessible_name: str = "", accessible_description: str = ""
+    *, width_px: int | None = 192, caption: str = "", accessible_name: str = "", accessible_description: str = "",
+    unit: str = "", semantic_summary: str = "", decorative: bool = False, data_fallback: str = ""
 ) -> BoundFigure:
     return BoundFigure(
         label="organigrama",
@@ -40,6 +41,10 @@ def _bound_figure(
         caption=caption,
         accessible_name=accessible_name,
         accessible_description=accessible_description,
+        unit=unit,
+        semantic_summary=semantic_summary,
+        decorative=decorative,
+        data_fallback=data_fallback,
     )
 
 
@@ -80,6 +85,27 @@ def test_image_markdown_falls_back_to_caption_when_accessible_name_missing():
 
     assert figure_image_markdown(1, fig) == (
         '![Figura 1. Visible caption](/abs/assets/figures/fig-abcd1234.png "Extra detail.")'
+        "{width=2.0in}"
+    )
+
+
+def test_image_markdown_preserves_generated_visual_accessibility_metadata():
+    fig = _bound_figure(
+        caption="Revenue",
+        accessible_name="Revenue chart",
+        accessible_description="Quarterly revenue.",
+        unit="USD",
+        semantic_summary="Revenue increases each quarter.",
+        decorative=False,
+        data_fallback="Q1: Revenue=10 USD; Q2: Revenue=20 USD",
+    )
+
+    markdown = figure_image_markdown(1, fig)
+
+    assert markdown == (
+        '![Revenue chart](/abs/assets/figures/fig-abcd1234.png '
+        '"Quarterly revenue. Unit: USD. Revenue increases each quarter. '
+        'Data: Q1: Revenue=10 USD; Q2: Revenue=20 USD.")'
         "{width=2.0in}"
     )
 

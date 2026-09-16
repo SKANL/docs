@@ -73,14 +73,16 @@ def _parse_spec(raw: Any) -> VisualSpec | None:
     caption = raw.get("caption", "")
     if not isinstance(caption, str):
         caption = ""
-    name = caption.strip() or raw["label"]
+    name = raw.get("accessible_name", "") if isinstance(raw.get("accessible_name", ""), str) else ""
+    name = name.strip() or caption.strip() or raw["label"]
+    description = raw.get("accessible_description", "") if isinstance(raw.get("accessible_description", ""), str) else ""
     return VisualSpec(
         label=raw["label"],
         type=raw["type"],
         source=raw["source"],
         caption=caption,
         accessible_name=name,
-        accessible_description=f"Generated visual: {name}.",
+        accessible_description=description.strip() or f"Generated visual: {name}.",
         unit=raw.get("unit", "") if isinstance(raw.get("unit", ""), str) else "",
         semantic_summary=(
             raw.get("semantic_summary", "")
@@ -94,6 +96,27 @@ def _parse_spec(raw: Any) -> VisualSpec | None:
             else ""
         ),
     )
+
+
+def _chart_data_fallback(spec: VisualSpec) -> str:
+    """Create deterministic text for chart users who cannot perceive SVG."""
+    if spec.data_fallback.strip() or spec.type != "chart":
+        return spec.data_fallback
+    try:
+        data = json.loads(spec.source)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    labels = data.get("labels") if isinstance(data, dict) else None
+    series = data.get("series") if isinstance(data, dict) else None
+    if not isinstance(labels, list) or not isinstance(series, list):
+        return ""
+    unit = f" {spec.unit.strip()}" if spec.unit.strip() else ""
+    rows = []
+    for index, label in enumerate(labels):
+        values = [entry.get("values", [])[index] for entry in series if isinstance(entry, dict)
+                  and isinstance(entry.get("values"), list) and index < len(entry["values"])]
+        rows.append(f"{label}: {', '.join(str(value) for value in values)}{unit}")
+    return "; ".join(rows)
 
 
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -294,4 +317,8 @@ class GenerateVisualsService:
             origin_kind="generated",
             accessible_name=spec.accessible_name,
             accessible_description=spec.accessible_description,
+            unit=spec.unit,
+            semantic_summary=spec.semantic_summary,
+            decorative=spec.decorative,
+            data_fallback=_chart_data_fallback(spec),
         )

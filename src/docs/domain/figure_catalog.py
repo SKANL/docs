@@ -15,6 +15,10 @@ class FigureEntry:
     origin_kind: str = ""
     accessible_name: str = ""
     accessible_description: str = ""
+    unit: str = ""
+    semantic_summary: str = ""
+    decorative: bool = False
+    data_fallback: str = ""
 
 
 def build(entries: list[FigureEntry]) -> dict:
@@ -34,6 +38,10 @@ def build(entries: list[FigureEntry]) -> dict:
             "origin_kind": entry.origin_kind,
             "accessible_name": entry.accessible_name,
             "accessible_description": entry.accessible_description,
+            "unit": entry.unit,
+            "semantic_summary": entry.semantic_summary,
+            "decorative": entry.decorative,
+            "data_fallback": entry.data_fallback,
         }
         for entry in entries
     ]
