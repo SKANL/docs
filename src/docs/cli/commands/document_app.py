@@ -1681,21 +1681,6 @@ def run_document(
         policy,
         pipeline_id="document",
     )
-    status_reader = payload.get("v2", {})
-    current_v2 = dict(status_reader) if isinstance(status_reader, Mapping) else {}
-    payload["v2"] = {
-        **current_v2,
-        "capabilities": capability_registry.report(),
-        "capability_diagnostics": capability_registry.diagnostics(),
-        "unsupported_stages": current_v2.get("unsupported_stages", []),
-        "publication_blockers": current_v2.get("publication_blockers", []),
-        "public_pipelines": [spec.pipeline_id for spec in PUBLIC_PIPELINES],
-    }
-    typer.echo(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
-    )
 
 
 def _durable_evidence_stores(ctx: typer.Context):
