@@ -187,7 +187,7 @@ def _build_worker(
 ) -> WorkerRunner:
     """Compose the real local worker; no synthetic completion path is allowed."""
     from .cli._shared import Deps
-    from .cli.commands.document_app import create_document_service
+    from .cli.commands.document_app import _source_pipeline, create_document_service
     from .domain.workspace import Workspace
 
     root = workspace.resolve()
@@ -206,6 +206,12 @@ def _build_worker(
                 raise ValueError("document_id is required to execute a run")
             output_format = payload.get("format", "docx")
             deps = Deps(Workspace(root / "documents", root / "templates"))
+            source_pipeline = _source_pipeline(deps)
+            if source_pipeline is None:
+                raise RuntimeError("source pipeline dependencies are unavailable")
+            prepared = source_pipeline.prepare(document_id, deps.workspace.doc_root(document_id), deps.resolve_context(document_id).config)
+            if not prepared.get("succeeded", False):
+                raise RuntimeError("document preparation failed; inspect intake evidence")
             service = create_document_service(
                 deps,
                 output_format=output_format,
