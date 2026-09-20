@@ -87,6 +87,23 @@ def build_openapi_document() -> dict[str, Any]:
             "post": _operation("Select workspace", _json_response(_ref("workspace")), scopes=("workspaces:write",)),
         },
         "/v1/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document")), scopes=("documents:write",))},
+        "/v1/documents/import": {
+            "post": _operation(
+                "Import document source",
+                _json_response({"type": "object"}),
+                request={
+                    "type": "object",
+                    "required": ["workspace_id", "filename", "content_base64"],
+                    "properties": {
+                        "workspace_id": {"type": "string"},
+                        "document_id": {"type": "string"},
+                        "filename": {"type": "string"},
+                        "content_base64": {"type": "string", "contentEncoding": "base64"},
+                    },
+                },
+                scopes=("documents:write",),
+            )
+        },
         "/v1/documents/{document_id}": {
             "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",))
         },
