@@ -185,6 +185,8 @@ export class ReviewApiClient {
   listPublications(params?: ListParams) { return this.list<Publication>("publications", params); }
   listWorkspaces() { return this.request<unknown>("workspaces").then(page<Workspace>); }
   createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  renameWorkspace(id:string,name:string) { return this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) }); }
+  deleteWorkspace(id:string) { return this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" }); }
   createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.request<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }); }
   createRun(input: { documentId:string; pipelineId?:string; format?:string }) { return this.request<Record<string,unknown>>("runs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
   cancelRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
