@@ -799,7 +799,20 @@ class X20Application:
         return ownership_references > 0
 
     def _document(self, document_id: str, request: Request) -> Response:
-        document = self.document_store.get(document_id) if self.document_store is not None and hasattr(self.document_store, "get") else None
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        document = None
+        if workspace_id and self.workspace_registry is not None and hasattr(self.document_store, "list_for_workspace"):
+            try:
+                workspace = self.workspace_registry.get(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            document = next(
+                (item for item in self.document_store.list_for_workspace(workspace["root"])
+                 if str(_dict(item).get("id")) == document_id),
+                None,
+            )
+        elif self.document_store is not None and hasattr(self.document_store, "get"):
+            document = self.document_store.get(document_id)
         if document is None:
             items = self.document_store.list() if self.document_store is not None and hasattr(self.document_store, "list") else self.documents
             document = next((item for item in items if str(_dict(item).get("id")) == document_id), None)
