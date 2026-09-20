@@ -59,7 +59,7 @@ class TemplateCompiler:
                 if template.template_contract is not None
                 else None
             ),
-            legacy_config=config,
+            source_config=config,
         )
 
     def compile_json(self, text: str) -> TemplateIR:

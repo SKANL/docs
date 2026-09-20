@@ -12,7 +12,7 @@ from .ir import TemplateIR
 def to_source_config(ir: TemplateIR) -> dict[str, Any]:
     """Return the config shape used by existing repositories and renderers."""
 
-    return ir.to_dict()["legacy_config"]
+    return ir.to_dict()["source_config"]
 
 
 def to_source_template(ir: TemplateIR) -> Template:
