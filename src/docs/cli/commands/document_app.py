@@ -1314,7 +1314,8 @@ def _run(
             report = service.run(
                 provenance_run_id or f"cli-{command}-{output_format}",
                 publish=command == "build"
-                and pipeline_id in {"document", "document-publish"},
+                and pipeline_id in {"document", "document-publish"}
+                and (selected_policy is None or selected_policy.can_publish()),
                 pipeline_id=pipeline_id,
                 external_artifacts=external_artifacts,
             )
