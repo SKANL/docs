@@ -252,6 +252,23 @@ class _WorkspaceFindingStore:
     def list_for_run(self, run_id: str) -> list[dict[str, Any]]: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
 
 
+class _WorkspaceGraphStore:
+    def __init__(self, registry: WorkspaceRegistry, fallback_root: Path) -> None:
+        self.registry = registry
+        self.fallback_root = fallback_root.resolve()
+
+    @property
+    def path(self) -> Path: return self.fallback_root / ".docs" / "x20.sqlite3"
+
+    def _store(self) -> SqliteGraphStore:
+        active = self.registry.active()
+        root = Path(str(active["root"])).resolve() if active is not None else self.fallback_root
+        return SqliteGraphStore(root / ".docs" / "x20.sqlite3")
+
+    def get(self) -> Any: return self._store().get()
+    def put(self, value: Any) -> None: self._store().put(value)
+
+
 @dataclass(frozen=True)
 class SidecarConfig:
     host: str = "127.0.0.1"
@@ -371,7 +388,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     evidence_stores = _WorkspaceEvidenceStores(registry, run_store, config.workspace)
     passport_store = evidence_stores.passport()
     artifact_store = evidence_stores.artifact()
-    graph_store = SqliteGraphStore(state_path)
+    graph_store = _WorkspaceGraphStore(registry, config.workspace)
     findings_store = evidence_stores.finding()
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
         from .cli._shared import Deps
