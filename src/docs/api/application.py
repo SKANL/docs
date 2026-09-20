@@ -490,7 +490,10 @@ class X20Application:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         if workspace is None:
             raise APIError("workspace_not_configured", "Select a workspace before reading document status", 503)
-        snapshot = StatusReader().read(Path(str(workspace["root"])) / "documents" / document_id)
+        document_root = Path(str(workspace["root"])) / "documents" / document_id
+        if not (document_root / "document.json").is_file():
+            raise APIError("document_not_found", "Document not found in workspace", 404)
+        snapshot = StatusReader().read(document_root)
         return Response.json({
             "document_id": document_id,
             "workspace_id": workspace["id"],
