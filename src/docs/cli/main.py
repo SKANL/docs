@@ -30,6 +30,7 @@ from docs.cli.commands.source_app import source_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
 from docs.cli.commands.workspace_app import workspace_app
+from docs.cli.commands.run_app import run_app
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
@@ -49,6 +50,7 @@ app.add_typer(source_app, name="source")
 app.add_typer(docx_app)
 app.add_typer(translate_app)
 app.add_typer(workspace_app, name="workspace")
+app.add_typer(run_app, name="run")
 
 # Named group modules: mounted with the same group name they already had.
 app.add_typer(template_app, name="template")
