@@ -26,6 +26,8 @@ from docs.application.artifact_build_service import (
     ArtifactBuildError,
     ArtifactBuildService,
 )
+from docs.application.workspaces import WorkspaceRegistry
+from docs.infrastructure.persistence.x20 import SqliteArtifactStore, SqliteFindingStore, SqlitePassportStore
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
 from docs.application.package_release_service import PackageReleaseService
@@ -1696,6 +1698,41 @@ def run_document(
     )
 
 
+def _durable_evidence_stores(ctx: typer.Context):
+    deps = ctx.obj["deps"]
+    root = deps.workspace.documents_dir.parent.resolve()
+    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    active = registry.active()
+    if active is not None:
+        root = Path(str(active["root"])).resolve()
+    state = root / ".docs" / "x20.sqlite3"
+    return SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state)
+
+
+@document_app.command("passport")
+def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
+    """Show the immutable evidence passport for a durable run."""
+    passport_store, _, _ = _durable_evidence_stores(ctx)
+    passport = passport_store.get(run_id)
+    if passport is None:
+        raise typer.BadParameter(f"Passport not found for run: {run_id}")
+    payload = passport.to_dict()
+    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+@document_app.command("evidence")
+def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
+    """Show the passport and all findings/artifacts produced by a durable run."""
+    passport_store, artifact_store, finding_store = _durable_evidence_stores(ctx)
+    passport = passport_store.get(run_id)
+    if passport is None:
+        raise typer.BadParameter(f"Evidence not found for run: {run_id}")
+    payload = {
+        "passport": passport.to_dict(),
+        "artifacts": [item.to_dict() for item in artifact_store.list_for_run(run_id)],
+        "findings": finding_store.list_for_run(run_id),
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 @document_app.command("plan")
 def plan(
     ctx: typer.Context,
