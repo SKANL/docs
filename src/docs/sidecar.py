@@ -69,50 +69,41 @@ class SidecarConfig:
         )
 
 
-class _Queue:
-    def enqueue(self, run_id: str, payload: dict[str, Any]) -> None:
-        del run_id, payload
-
-    def cancel(self, run_id: str) -> None:
-        del run_id
-
-
-class _EmptyStore:
-    def list(self) -> Any:
-        return []
-
-    def get(self, item_id: str | None = None) -> None:
-        del item_id
-        return None
-
-    def list_for_run(self, run_id: str) -> Any:
-        del run_id
-        return []
-
-
-class _EmptyRunStore(_EmptyStore):
-    def put(self, run: Any) -> None:
-        del run
-
-    def get(self, run_id: str | None = None) -> None:
-        del run_id
-        return None
-
-    def list(self) -> Any:
-        return []
-
-
 class _HealthApplication:
-    def __init__(self, application: X20Application, health_path: str, protocol: str) -> None:
+    def __init__(
+        self,
+        application: X20Application | None,
+        health_path: str,
+        protocol: str,
+        *,
+        workspace_error: str | None = None,
+    ) -> None:
         self.application = application
         self.health_path = health_path
         self.protocol = protocol
+        self.workspace_error = workspace_error
 
     def __call__(self, environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
         if environ.get("PATH_INFO") == self.health_path and environ.get("REQUEST_METHOD", "GET") == "GET":
-            response = Response.json({"ready": True, "protocol": self.protocol})
+            ready = self.workspace_error is None
+            response = Response.json(
+                {"ready": ready, "protocol": self.protocol}
+                if ready
+                else {"error": self.workspace_error, "protocol": self.protocol, "ready": False}
+            )
             start_response(
-                "200 OK",
+                "200 OK" if ready else "503 Service Unavailable",
+                [
+                    ("Content-Type", "application/json"),
+                    ("Content-Length", str(len(response.body))),
+                    ("Connection", "close"),
+                ],
+            )
+            return [response.body]
+        if self.application is None:
+            response = Response.json({"error": self.workspace_error or "sidecar_unavailable"})
+            start_response(
+                "503 Service Unavailable",
                 [
                     ("Content-Type", "application/json"),
                     ("Content-Length", str(len(response.body))),
@@ -130,18 +121,18 @@ def _workspace_from_environment() -> Path | None:
 
 def build_application(config: SidecarConfig) -> _HealthApplication:
     if config.workspace is None:
-        run_store: Any = _EmptyRunStore()
-        queue: Any = _Queue()
-        passport_store: Any = _EmptyStore()
-        artifact_store: Any = _EmptyStore()
-        graph_store: Any = _EmptyStore()
-    else:
-        state_path = config.workspace / ".docs" / "x20.sqlite3"
-        run_store = SqliteRunStore(state_path)
-        queue = SqliteJobQueue(state_path)
-        passport_store = SqlitePassportStore(state_path)
-        artifact_store = SqliteArtifactStore(state_path)
-        graph_store = SqliteGraphStore(state_path)
+        return _HealthApplication(
+            None,
+            urlsplit(config.health_url).path,
+            config.protocol,
+            workspace_error="workspace_not_configured",
+        )
+    state_path = config.workspace / ".docs" / "x20.sqlite3"
+    run_store = SqliteRunStore(state_path)
+    queue = SqliteJobQueue(state_path)
+    passport_store = SqlitePassportStore(state_path)
+    artifact_store = SqliteArtifactStore(state_path)
+    graph_store = SqliteGraphStore(state_path)
     application = X20Application(
         run_store=run_store,
         queue=queue,
