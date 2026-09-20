@@ -107,6 +107,21 @@ def test_import_is_byte_deterministic_for_the_same_source(tmp_path: Path) -> Non
     assert _tree_bytes(first) == _tree_bytes(second)
 
 
+def test_import_preserves_body_block_order_for_editable_markdown(tmp_path: Path) -> None:
+    source = tmp_path / "ordered.docx"
+    document = Document()
+    document.add_paragraph("Before the table")
+    table = document.add_table(rows=1, cols=1)
+    table.cell(0, 0).text = "Table content"
+    document.add_paragraph("After the table")
+    document.save(source)
+
+    DocxImportService().import_file(source, tmp_path / "imported")
+
+    markdown = (tmp_path / "imported" / "document.md").read_text(encoding="utf-8")
+    assert markdown.index("Before the table") < markdown.index("| Table content |") < markdown.index("After the table")
+
+
 def test_import_reports_unsupported_ooxml_without_claiming_lossless_conversion(tmp_path: Path) -> None:
     source = tmp_path / "input.docx"
     _make_docx(source)

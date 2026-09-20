@@ -83,6 +83,7 @@ The document reference is split by reader need:
 - [Templates](docs/templates.md) — template inputs and portability rules.
 - [Covers](docs/covers.md) — declarative variants, slots, and cover assets.
 - [QA](docs/qa.md) — verification, degradation, and CI evidence.
+- [DOCX import](docs/docx-import.md) — editable import categories and the DOCX-to-PDF bounded-edit journey.
 - [Provenance](docs/provenance.md) — hashes, ledger attestations, and publication proof.
 - [Deployment](docs/deployment.md) — API/worker topology, persistence, proxying, and release checks.
 - [API transport](docs/api-transport.md) — HTTP boundary, authentication, and request/response contract.

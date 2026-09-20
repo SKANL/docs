@@ -45,11 +45,13 @@ class DocxImportService:
         except Exception as exc:
             raise ValueError(f"Malformed DOCX: {source}") from exc
 
-        preserved = ["source:exact-bytes"]
+        preserved = ["source:exact-bytes", "body:block-order"]
         normalized: list[str] = []
         dropped: list[str] = []
         unsupported = [f"ooxml-part:{name}" for name in sorted(names) if self._unsupported_part(name)]
         markdown, assets = self._markdown(document, normalized, dropped)
+        if assets:
+            preserved.append("asset:embedded-image-bytes")
         report = ImportReport(tuple(preserved), tuple(normalized), tuple(dropped), tuple(unsupported), source_hash)
         self._publish(output, source_bytes, markdown, assets, report)
         return report
@@ -61,6 +63,8 @@ class DocxImportService:
         }
 
     def _markdown(self, document: Any, normalized: list[str], dropped: list[str]) -> tuple[str, dict[str, bytes]]:
+        from docx.table import Table
+
         lines = ["---"]
         properties = document.core_properties
         for key in ("title", "author", "subject", "keywords"):
@@ -70,7 +74,43 @@ class DocxImportService:
         lines += ["---", ""]
         assets: dict[str, bytes] = {}
         image_number = 0
-        for paragraph in document.paragraphs:
+        seen_image_rel_ids: set[str] = set()
+
+        def append_images(paragraph: Any) -> None:
+            nonlocal image_number
+            for shape in paragraph._p.xpath('.//*[local-name()="blip"]'):
+                rel_id = shape.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
+                if not rel_id or rel_id in seen_image_rel_ids or rel_id not in document.part.rels:
+                    continue
+                seen_image_rel_ids.add(rel_id)
+                image_number += 1
+                part = document.part.rels[rel_id].target_part
+                filename = f"image-{image_number}{Path(part.partname).suffix.lower()}"
+                assets[filename] = part.blob
+                lines.extend([f"![Image {image_number}](assets/{filename})", ""])
+
+        for block in self._iter_body_blocks(document):
+            if isinstance(block, Table):
+                rows = [
+                    [cell.text.replace("|", "\\|").replace("\n", " ") for cell in row.cells]
+                    for row in block.rows
+                ]
+                if rows:
+                    lines.extend(
+                        [
+                            "| " + " | ".join(rows[0]) + " |",
+                            "| " + " | ".join("---" for _ in rows[0]) + " |",
+                        ]
+                    )
+                    lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
+                    lines.append("")
+                for row in block.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            append_images(paragraph)
+                continue
+
+            paragraph = block
             text = paragraph.text
             style_name = getattr(paragraph.style, "name", "")
             if not text:
@@ -89,25 +129,14 @@ class DocxImportService:
                 lines.extend([f"*{text}*", ""])
             else:
                 lines.extend([text, ""])
-            for shape in paragraph._p.xpath('.//*[local-name()="blip"]'):
-                rel_id = shape.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
-                if rel_id and rel_id in document.part.rels:
-                    image_number += 1
-                    part = document.part.rels[rel_id].target_part
-                    filename = f"image-{image_number}{Path(part.partname).suffix.lower()}"
-                    assets[filename] = part.blob
-                    lines.extend([f"![Image {image_number}](assets/{filename})", ""])
+            append_images(paragraph)
 
-        for table in document.tables:
-            rows = [[cell.text.replace("|", "\\|").replace("\n", " ") for cell in row.cells] for row in table.rows]
-            if rows:
-                lines.extend(["| " + " | ".join(rows[0]) + " |", "| " + " | ".join("---" for _ in rows[0]) + " |"])
-                lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
-                lines.append("")
-
-        for _rel_id, relationship in sorted(document.part.rels.items()):
+        for rel_id, relationship in sorted(document.part.rels.items()):
             if "image" not in relationship.reltype:
                 continue
+            if rel_id in seen_image_rel_ids:
+                continue
+            seen_image_rel_ids.add(rel_id)
             image_number += 1
             part = relationship.target_part
             filename = f"image-{image_number}{Path(part.partname).suffix.lower()}"
@@ -124,6 +153,22 @@ class DocxImportService:
                     lines.extend([f"### Section {index}", "", text, ""])
 
         return "\n".join(lines).rstrip() + "\n", assets
+
+    @staticmethod
+    def _iter_body_blocks(document: Any):
+        """Yield paragraphs and tables in their original DOCX body order."""
+        from docx.oxml.ns import qn
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
+
+        if hasattr(document, "iter_inner_content"):
+            yield from document.iter_inner_content()
+            return
+        for child in document.element.body.iterchildren():
+            if child.tag == qn("w:p"):
+                yield Paragraph(child, document)
+            elif child.tag == qn("w:tbl"):
+                yield Table(child, document)
 
     @staticmethod
     def _publish(output: Path, source: bytes, markdown: str, assets: dict[str, bytes], report: ImportReport) -> None:

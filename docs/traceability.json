@@ -36,6 +36,27 @@
     "unavailable": "controlled skip with capability names in pytest output",
     "scope": "This proves the external adapter chain independently of the deterministic v2 CLI journey; the latter remains the closest-real-journey test above."
   },
+  "docx_pdf_edit_journey": {
+    "status": "proved-when-capable",
+    "test": "tests/integration/test_docx_pdf_edit_journey.py::test_docx_import_to_pdf_edit_journey_is_deterministic_and_bounded",
+    "covered": [
+      "deterministic DOCX import",
+      "editable Markdown section and asset preservation",
+      "DOCX render and audit reopen",
+      "PDF conversion",
+      "bounded PDF text edit",
+      "untouched text and page geometry",
+      "provenance ledger and evidence passport replay"
+    ],
+    "adapters": {
+      "docx_import": "src/docs/application/docx_import.py::DocxImportService",
+      "docx_render": "src/docs/infrastructure/docx/python_docx_assembly_adapter.py::PythonDocxAssemblyAdapter",
+      "pdf_conversion": "src/docs/infrastructure/docx/libreoffice_qa_adapter.py::LibreOfficeQaAdapter",
+      "pdf_edit": "src/docs/infrastructure/pdf/pypdfium2_text_edit_adapter.py::Pypdfium2TextEditAdapter"
+    },
+    "unavailable": "real conversion/edit path skips when LibreOffice is absent; companion test asserts WARN, no PDF, and no partial output",
+    "scope": "Readable structure and bounded visual edits are verified; arbitrary OOXML lossless round-tripping and PDF byte identity are not promised."
+  },
   "pipeline_stages": [
     {
       "stage": "resolve-config",

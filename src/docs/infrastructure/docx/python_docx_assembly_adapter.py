@@ -669,8 +669,13 @@ class PythonDocxAssemblyAdapter:
         os.close(fd)
         temporary_path = Path(temporary_output)
         try:
+            resource_dirs = sorted({str(Path(input_path).resolve().parent) for input_path in inputs})
+            command = [pandoc_path, *map(str, inputs)]
+            if resource_dirs:
+                command.append(f"--resource-path={os.pathsep.join(resource_dirs)}")
+            command.extend(["-o", str(temporary_path)])
             subprocess.run(
-                [pandoc_path, *map(str, inputs), "-o", str(temporary_path)],
+                command,
                 check=True,
                 timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
             )
