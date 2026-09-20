@@ -93,6 +93,26 @@ class SqlitePassportStore(_SqliteStore):
         return None if row is None else Passport.from_dict(self._decode(row[0]))
 
 
+class SqliteFindingStore(_SqliteStore):
+    """Durable, workspace-local findings projection for API and Review Studio."""
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS x20_findings (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payload TEXT NOT NULL)")
+            connection.execute("CREATE INDEX IF NOT EXISTS x20_findings_run_id ON x20_findings(run_id)")
+
+    def put(self, finding: dict[str, Any]) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO x20_findings (id, run_id, payload) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                (str(finding["id"]), str(finding.get("run_id", "")), self._encode(finding)),
+            )
+
+    def list(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload FROM x20_findings ORDER BY id").fetchall()
+        return [self._decode(row[0]) for row in rows]
+
+
 class SqliteArtifactStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:

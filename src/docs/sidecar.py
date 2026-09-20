@@ -22,6 +22,7 @@ from .api.server import GracefulHTTPServer, TransportConfig, create_server, serv
 from .infrastructure.persistence.x20 import (
     SqliteArtifactStore,
     SqliteGraphStore,
+    SqliteFindingStore,
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -150,6 +151,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     passport_store = SqlitePassportStore(state_path)
     artifact_store = SqliteArtifactStore(state_path)
     graph_store = SqliteGraphStore(state_path)
+    findings_store = SqliteFindingStore(state_path)
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
         from .cli._shared import Deps
         from .domain.workspace import Workspace
@@ -188,6 +190,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         passport_store=passport_store,
         artifact_store=artifact_store,
         graph_store=graph_store,
+        findings_store=findings_store,
         workspace_registry=WorkspaceRegistry(),
         document_creator=create_document,
         document_action=document_action,
@@ -276,7 +279,7 @@ def _build_worker(
         SqliteLeaseStore(state_path),
         run_store=run_store,
         passport_store=passport_store,
-        finalizer=lambda result: _persist_worker_evidence(passport_store, artifact_store, result),
+        finalizer=lambda result: _persist_worker_evidence(passport_store, artifact_store, findings_store, result),
     )
     original_handle = composition.handle
 
@@ -288,7 +291,7 @@ def _build_worker(
     return WorkerRunner(composition.create_service(), poll_interval=0.2)
 
 
-def _persist_worker_evidence(passport_store: SqlitePassportStore, artifact_store: SqliteArtifactStore, result: Any) -> None:
+def _persist_worker_evidence(passport_store: SqlitePassportStore, artifact_store: SqliteArtifactStore, findings_store: SqliteFindingStore, result: Any) -> None:
     """Persist the real pipeline result as the run's durable evidence passport."""
     value = result.value if isinstance(result.value, dict) else {"value": result.value}
     passport_store.put(Passport(result.run_id, entries=(
@@ -310,6 +313,17 @@ def _persist_worker_evidence(passport_store: SqlitePassportStore, artifact_store
                 digest=digest,
                 metadata={"value": str(produced), "source": "pipeline"},
             ))
+        for severity, messages in (("error", stage.get("errors", ())), ("warning", stage.get("warnings", ()) )):
+            for index, message in enumerate(messages):
+                findings_store.put({
+                    "id": f"{result.run_id}-{stage.get('stage', 'stage')}-{severity}-{index}",
+                    "run_id": result.run_id,
+                    "title": f"{stage.get('stage', 'stage')} {severity}",
+                    "severity": "high" if severity == "error" else "medium",
+                    "status": "failed" if severity == "error" else "warnings",
+                    "location": str(stage.get("stage", "pipeline")),
+                    "summary": str(message),
+                })
 
 
 def build_server(config: SidecarConfig) -> GracefulHTTPServer:
