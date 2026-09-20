@@ -14,6 +14,7 @@ import type {
   Template,
   Workspace,
   ImportResult,
+  DocumentRecord,
 } from "./models";
 
 export type Page<T> = { items: T[]; nextCursor?: string; total?: number };
@@ -170,6 +171,7 @@ export class ReviewApiClient {
   }
 
   listRuns(params?: ListParams) { return this.list<Run>("runs", params); }
+  listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params); }
   listArtifacts(params?: ListParams) { return this.list<Artifact>("artifacts", params); }
   getPassport(runId: string) { return this.request<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
