@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 import typer
 
 from docs.cli._shared import _ctx
+from docs.application.workspaces import WorkspaceRegistry
 from docs.infrastructure.persistence.x20 import SqliteJobQueue, SqliteRunStore
 
 run_app = typer.Typer(add_completion=False, help="Inspect and control durable runs.")
@@ -13,7 +15,12 @@ run_app = typer.Typer(add_completion=False, help="Inspect and control durable ru
 
 def _stores(ctx: typer.Context):
     deps, _ = _ctx(ctx)
-    state = deps.workspace.documents_dir.parent / ".docs" / "x20.sqlite3"
+    root = deps.workspace.documents_dir.parent.resolve()
+    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    active = registry.active()
+    if active is not None:
+        root = Path(str(active["root"])).resolve()
+    state = root / ".docs" / "x20.sqlite3"
     return SqliteRunStore(state), SqliteJobQueue(state)
 
 
