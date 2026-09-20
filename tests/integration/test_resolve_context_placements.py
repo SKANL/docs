@@ -8,6 +8,7 @@ import pytest
 
 from docs.cli._shared import Deps
 from docs.domain.docx_structure import structure_parts
+from docs.template_compiler import TemplateIR, legacy_template
 
 _TEMPLATE = {
     "type": "tesina",
@@ -101,6 +102,31 @@ def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
 
     assert not any(p.get("type") == "cover_from_asset" for p in parts)
     assert parts[0]["type"] == "cover_from_template"
+
+
+def test_template_resolution_compiles_ir_while_preserving_legacy_template(workspace):
+    deps = Deps()
+    deps.documents.create("doc-ir", "tesina")
+
+    resolved = deps.resolve_context("doc-ir")
+
+    assert isinstance(resolved.template_ir, TemplateIR)
+    assert resolved.template.model_dump() == legacy_template(resolved.template_ir).model_dump()
+    assert len(resolved.template_ir.ir_hash) == 64
+
+
+def test_legacy_template_without_section_contracts_still_resolves(workspace):
+    legacy = dict(_TEMPLATE)
+    legacy["section_contracts"] = {}
+    (workspace / "templates" / "tesina.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+    deps = Deps()
+    deps.documents.create("legacy-doc", "tesina")
+
+    resolved = deps.resolve_context("legacy-doc")
+
+    assert resolved.template.type == "tesina"
+    assert resolved.template_ir is None
 
 
 def test_doc_root_and_inbox_dir_tokens_expand_in_template_paths(workspace, tmp_path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from types import MappingProxyType
@@ -143,3 +144,8 @@ class TemplateIR(BaseModel):
         from docs.domain.pipeline_kernel import deterministic_json
 
         return deterministic_json(self.to_dict())
+
+    @property
+    def ir_hash(self) -> str:
+        """Return the stable content hash used by build provenance."""
+        return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()

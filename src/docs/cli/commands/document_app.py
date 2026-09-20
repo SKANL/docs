@@ -330,6 +330,7 @@ def _current_input_identities(
             {path.relative_to(root).as_posix(): sha256_file(path) for path in inputs}
         ),
         "template_hash": sha256_content(getattr(template, "__dict__", template)),
+        "template_ir_hash": getattr(getattr(resolved, "template_ir", None), "ir_hash", ""),
         # The selected output format is a renderer choice, not a source
         # generation identity; this keeps one build generation packageable
         # across DOCX/HTML/PDF.
@@ -1139,6 +1140,7 @@ def create_document_service(
         artifact_store=artifact_store,
         record_sink=state["stage_artifacts"].extend,
         run_start=state["stage_artifacts"].clear,
+        observability=getattr(deps, "observability", None),
     )
 
 
@@ -1754,6 +1756,7 @@ def _package_files(
             manifest.document_id,
             manifest.source_hash,
             manifest.template_hash,
+            manifest.template_ir_hash,
             manifest.config_hash,
             manifest.context_hash,
             tuple(sorted(manifest.asset_hashes.items())),
@@ -1982,12 +1985,15 @@ def publish(
         raise typer.BadParameter(f"publish requires resolvable current inputs: {exc}") from exc
     for field, label in (
         ("template_hash", "template"),
+        ("template_ir_hash", "template IR"),
         ("config_hash", "config"),
         ("context_hash", "context"),
         ("asset_hashes", "asset"),
         ("renderer_versions", "renderer"),
         ("source_hash", "source inputs"),
     ):
+        if field == "template_ir_hash" and not getattr(manifest, field):
+            continue
         if current[field] != getattr(manifest, field):
             raise typer.BadParameter(f"publish requires unchanged {label} identity")
     ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)

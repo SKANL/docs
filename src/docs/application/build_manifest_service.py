@@ -75,6 +75,7 @@ class BuildManifestService:
             document_id=resolved.doc_id,
             source_hash=str(identities["source_hash"]),
             template_hash=str(identities["template_hash"]),
+            template_ir_hash=str(identities.get("template_ir_hash", "")),
             config_hash=str(identities["config_hash"]),
             context_hash=str(identities["context_hash"]),
             asset_hashes=dict(identities["asset_hashes"]),

@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from docs.application.graph_queries import GraphQueryService
 from docs.domain.contracts import Run
+from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
 from .enterprise import encode_sse_event
@@ -45,6 +46,7 @@ class X20Application:
         findings: Iterable[Any] = (),
         router: Router | None = None,
         auth: Any = None,
+        observability: ObservabilityPort | None = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -64,6 +66,7 @@ class X20Application:
         self.router = router or Router()
         self._route_lock = threading.RLock()
         self._auth = auth
+        self.observability = observability or create_observability_from_env()
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -87,19 +90,26 @@ class X20Application:
         self._register_owned_route("POST", "/v1/runs", self._create_run)
 
     def dispatch(self, request: Request) -> Response:
-        parts = request.route_path.strip("/").split("/")
-        if len(parts) >= 3 and parts[:2] in (["v1", "runs"], ["v1", "documents"]):
-            handler = self._dynamic_handler(request.method, request.route_path)
-            if handler is not None:
-                key = (request.method.upper(), request.route_path)
-                self._install_dynamic_route(key, handler)
-        return self.router.dispatch(request)
+        with self.observability.span("docs.api.request", {"method": request.method.upper()}):
+            parts = request.route_path.strip("/").split("/")
+            if len(parts) >= 3 and parts[:2] in (["v1", "runs"], ["v1", "documents"]):
+                handler = self._dynamic_handler(request.method, request.route_path)
+                if handler is not None:
+                    key = (request.method.upper(), request.route_path)
+                    self._install_dynamic_route(key, handler)
+            response = self.router.dispatch(request)
+            self.observability.increment(
+                "docs.api.request.completed",
+                attributes={"method": request.method.upper(), "status": str(response.status)},
+            )
+            return response
 
     def __call__(self, environ: Mapping[str, Any], start_response: Any) -> Any:
         path = str(environ.get("PATH_INFO", "/"))
         method = str(environ.get("REQUEST_METHOD", "GET")).upper()
-        self._register_dynamic(method, path)
-        return self.router(environ, start_response)
+        with self.observability.span("docs.api.request", {"method": method}):
+            self._register_dynamic(method, path)
+            return self.router(environ, start_response)
 
     def _register_dynamic(self, method: str, path: str) -> None:
         handler = self._dynamic_handler(method, path)

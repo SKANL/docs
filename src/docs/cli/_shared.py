@@ -62,6 +62,8 @@ from docs.infrastructure.persistence.json_repository import JsonDocumentReposito
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
+from docs.observability import ObservabilityPort, create_observability_from_env
+from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, legacy_template
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,7 @@ class ResolvedContext:
     doc_id: str
     config: dict[str, Any]
     template: Template
+    template_ir: TemplateIR | None = None
 
 
 def _ctx(ctx: typer.Context) -> tuple[Deps, str]:
@@ -123,8 +126,13 @@ class Deps:
     """Composition root — builds every adapter + service exactly as the
     integration-test _service() helpers do, plus config assembly."""
 
-    def __init__(self, workspace: Workspace | None = None) -> None:
+    def __init__(
+        self,
+        workspace: Workspace | None = None,
+        observability: ObservabilityPort | None = None,
+    ) -> None:
         self.workspace = workspace or build_workspace()
+        self.observability: ObservabilityPort = observability or create_observability_from_env()
         document_repo = JsonDocumentRepository(self.workspace)
         evidence_repo = JsonEvidenceRepository()
         section_repo = JsonSectionRepository(self.workspace)
@@ -373,6 +381,7 @@ class Deps:
             raise RuntimeError("No hay documento activo. Usa `doc new <id>` o `doc use <id>`.")
         document = self.document_repository.read_document(doc_id)      # Document (extra allowed)
         template = self.document_repository.load_template(document.template)
+        _compile_template_compat(template)
         merged = _deep_merge(template.model_dump(), document.model_dump())
         merged = _expand_tokens(merged, _standard_tokens(self.workspace, self.workspace.doc_root(doc_id)))
         paths = dict(merged.get("paths", {}))
@@ -384,7 +393,22 @@ class Deps:
         merged["structure"] = _apply_confirmed_placements(
             structure_parts(merged), Path(paths["inbox_dir"])
         )
-        return ResolvedContext(doc_id=doc_id, config=merged, template=Template.model_validate(merged))
+        resolved_template = Template.model_validate(merged)
+        resolved_template_ir = _compile_template_compat(resolved_template)
+        return ResolvedContext(
+            doc_id=doc_id,
+            config=merged,
+            template=(legacy_template(resolved_template_ir) if resolved_template_ir is not None else resolved_template),
+            template_ir=resolved_template_ir,
+        )
+
+
+def _compile_template_compat(template: Template) -> TemplateIR | None:
+    """Compile when possible without making existing legacy templates fail."""
+    try:
+        return compile_template(template)
+    except TemplateCompilationError:
+        return None
 
 
 def resolve_renderer(renderers: dict[str, DocumentRendererPort], output_format: str) -> DocumentRendererPort:

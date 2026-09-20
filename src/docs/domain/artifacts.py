@@ -209,6 +209,7 @@ class BuildManifest:
     artifacts: tuple[ArtifactRef, ...] = ()
     verification: dict[str, Any] = field(default_factory=dict)
     provenance_run: str | None = None
+    template_ir_hash: str = ""
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -246,7 +247,7 @@ class BuildManifest:
             }
             for artifact in self.artifacts
         ]
-        return {
+        payload = {
             "document_id": self.document_id,
             "source_hash": self.source_hash,
             "template_hash": self.template_hash,
@@ -264,10 +265,13 @@ class BuildManifest:
             ),
             "verification": self.verification,
         }
+        if self.template_ir_hash:
+            payload["template_ir_hash"] = self.template_ir_hash
+        return payload
 
     def to_dict_without_schema(self) -> dict[str, Any]:
         _validate_renderer_versions(self.renderer_versions)
-        return {
+        payload = {
             "document_id": self.document_id,
             "source_hash": self.source_hash,
             "template_hash": self.template_hash,
@@ -282,6 +286,9 @@ class BuildManifest:
             "verification": self.verification,
             "provenance_run": self.provenance_run,
         }
+        if self.template_ir_hash:
+            payload["template_ir_hash"] = self.template_ir_hash
+        return payload
 
     def to_identity_dict(self) -> dict[str, Any]:
         """Return the content-addressed representation, excluding run metadata."""
@@ -319,6 +326,8 @@ class BuildManifest:
         ):
             if not re.fullmatch(r"[0-9a-f]{64}", digest):
                 raise ValueError(f"{name} must be a SHA-256 digest")
+        if self.template_ir_hash and not re.fullmatch(r"[0-9a-f]{64}", self.template_ir_hash):
+            raise ValueError("template_ir_hash must be a SHA-256 digest")
         if not self.artifacts:
             raise ValueError("at least one artifact is required")
         for artifact in self.artifacts:
@@ -360,6 +369,7 @@ class BuildManifest:
             document_id=payload.get("document_id", ""),
             source_hash=payload.get("source_hash", ""),
             template_hash=payload.get("template_hash", ""),
+            template_ir_hash=payload.get("template_ir_hash", ""),
             config_hash=payload.get("config_hash", ""),
             context_hash=payload.get("context_hash", ""),
             asset_hashes={str(key): value for key, value in asset_hashes.items()},

@@ -23,6 +23,7 @@ from typing import Any
 
 from docs.domain.contracts import Job, Run
 from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
+from docs.observability import NoOpObservability, ObservabilityPort
 
 
 class _LeaseLost(RuntimeError):
@@ -86,6 +87,7 @@ class WorkerService:
         lease_ttl_seconds: int = 60,
         heartbeat_interval_seconds: float | None = None,
         max_retries: int = 0,
+        observability: ObservabilityPort | None = None,
     ) -> None:
         if lease_ttl_seconds <= 0 or max_retries < 0:
             raise ValueError("lease_ttl_seconds must be positive and max_retries non-negative")
@@ -99,6 +101,7 @@ class WorkerService:
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex}"
         self.lease_ttl_seconds, self.max_retries = lease_ttl_seconds, max_retries
         self.heartbeat_interval_seconds = float(heartbeat_interval)
+        self.observability = observability or NoOpObservability()
         self._finalized: dict[str, WorkerResult] = {}
         self._cancelled: set[str] = set()
         self._state_lock = threading.RLock()
@@ -126,10 +129,16 @@ class WorkerService:
         return self.leases.renew(run_id, self.worker_id, self.lease_ttl_seconds)
 
     def run_sync(self) -> WorkerResult | None:
-        job = self.queue.claim(self.worker_id)
-        if job is None:
-            return None
-        return self._execute(job)
+        with self.observability.span("docs.worker.run", {"worker_id": self.worker_id}):
+            job = self.queue.claim(self.worker_id)
+            if job is None:
+                return None
+            result = self._execute(job)
+            self.observability.increment(
+                "docs.worker.completed",
+                attributes={"state": result.state},
+            )
+            return result
 
     async def run_async(self) -> WorkerResult | None:
         job, cancellation = await self._shield_and_drain(

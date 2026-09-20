@@ -15,6 +15,7 @@ from docs.application.provenance import ProvenanceLedger
 from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
 from docs.domain.pipeline_policy import PipelinePolicy
 from docs.domain.tool_capability import ToolCapabilityRegistry
+from docs.observability import ObservabilityPort
 
 StageOperation = Callable[[], tuple[bool, str] | StageResult]
 PublicationOperation = Callable[[Path], None]
@@ -76,6 +77,7 @@ class PipelineService:
         artifact_store: ArtifactStore | None = None,
         record_sink: Callable[[tuple[ArtifactRecord, ...]], None] | None = None,
         run_start: Callable[[], None] | None = None,
+        observability: ObservabilityPort | None = None,
     ) -> None:
         self._operations = operations
         self._publication = publication
@@ -101,7 +103,14 @@ class PipelineService:
         self.definition = registered.definition
         self.stage_plan = self.planner.plan(self.definition)
         self._runtimes = {
-            name: PipelineRuntime(entry.definition, entry.handlers, capabilities, ledger, policy)
+            name: PipelineRuntime(
+                entry.definition,
+                entry.handlers,
+                capabilities,
+                ledger,
+                policy,
+                observability,
+            )
             for name, entry in (
                 (pipeline, self.registry.resolve(pipeline))
                 for pipeline in self.registry.names()

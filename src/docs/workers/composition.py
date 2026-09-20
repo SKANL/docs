@@ -22,6 +22,7 @@ from docs.infrastructure.persistence.x20 import (
     SqlitePassportStore,
     SqliteRunStore,
 )
+from docs.observability import ObservabilityPort, create_observability_from_env
 from docs.workers.service import WorkerResult, WorkerService
 
 
@@ -87,6 +88,7 @@ class WorkerServiceConfiguration:
     lease_ttl_seconds: int = 60
     heartbeat_interval_seconds: float | None = None
     max_retries: int = 0
+    observability: ObservabilityPort | None = None
 
 
 class WorkerComposition:
@@ -107,6 +109,7 @@ class WorkerComposition:
         lease_ttl_seconds: int = 60,
         heartbeat_interval_seconds: float | None = None,
         max_retries: int = 0,
+        observability: ObservabilityPort | None = None,
     ) -> None:
         self._runtime_factory = runtime_factory
         self._workspace_root = Path(workspace_root).resolve()
@@ -121,6 +124,7 @@ class WorkerComposition:
             lease_ttl_seconds=lease_ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             max_retries=max_retries,
+            observability=observability or create_observability_from_env(),
         )
 
     def handle(self, job: Job, _scratch: Path | None = None) -> Any:
@@ -155,6 +159,7 @@ class WorkerComposition:
             lease_ttl_seconds=options.lease_ttl_seconds,
             heartbeat_interval_seconds=options.heartbeat_interval_seconds,
             max_retries=options.max_retries,
+            observability=options.observability,
         )
 
     build = create_service
@@ -171,6 +176,7 @@ def create_production_worker(
     lease_ttl_seconds: int = 60,
     heartbeat_interval_seconds: float | None = None,
     max_retries: int = 0,
+    observability: ObservabilityPort | None = None,
 ) -> WorkerService:
     """Compose a worker with durable SQLite queue, lease, and run stores."""
     database = Path(state_path).resolve()
@@ -187,6 +193,7 @@ def create_production_worker(
         lease_ttl_seconds=lease_ttl_seconds,
         heartbeat_interval_seconds=heartbeat_interval_seconds,
         max_retries=max_retries,
+        observability=observability,
     ).create_service()
 
 
@@ -201,6 +208,7 @@ def create_production_worker_factory(
     lease_ttl_seconds: int = 60,
     heartbeat_interval_seconds: float | None = None,
     max_retries: int = 0,
+    observability: ObservabilityPort | None = None,
 ) -> Callable[[Any], WorkerService]:
     """Return a CLI/API-compatible factory accepting a worker configuration."""
 
@@ -216,6 +224,7 @@ def create_production_worker_factory(
             lease_ttl_seconds=lease_ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             max_retries=max_retries,
+            observability=observability,
         )
 
     return factory

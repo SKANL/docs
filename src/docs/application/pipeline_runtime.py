@@ -12,6 +12,7 @@ from docs.application.provenance import ProvenanceLedger
 from docs.domain.pipeline_kernel import PipelineDefinition, StageResult, deterministic_json
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapabilityRegistry
+from docs.observability import NoOpObservability, ObservabilityPort
 
 
 def _finding_code(message: str) -> str:
@@ -52,8 +53,9 @@ class PipelineRuntime:
         capabilities: ToolCapabilityRegistry,
         ledger: ProvenanceLedger,
         policy: PipelinePolicy | None = None,
+        observability: ObservabilityPort | None = None,
     ) -> None:
-        self._executor = PipelineExecutor(definition, handlers)
+        self._executor = PipelineExecutor(definition, handlers, observability or NoOpObservability())
         self._capabilities = capabilities
         self._ledger = ledger
         self._policy = policy
