@@ -146,7 +146,7 @@ class PluginRunner:
         self.trusted_builtin_ids = frozenset(trusted_builtin_ids)
         self.trusted_builtin_tokens = frozenset(trusted_builtin_tokens)
         self.trusted_credentials = dict(trusted_credentials or {})
-        # The legacy knobs are retained for callers, but are deliberately not
+        # Deprecated constructor knobs are accepted for callers, but deliberately not
         # security inputs. Only a provider-issued platform attestation counts.
         del sandbox_launcher, sandbox_available
         self.sandbox_provider = sandbox_provider
@@ -220,7 +220,7 @@ class PluginRunner:
                 command = self._platform_sandbox_command(manifest.entrypoint)
                 # An untrusted Windows plugin must be contained by a Job
                 # Object from before spawn through cleanup. Trusted
-                # unsandboxed execution intentionally keeps its legacy path.
+                # unsandboxed execution intentionally keeps its compatibility path.
                 job = self._create_windows_job()
                 process: subprocess.Popen[bytes] | None = None
                 writer: threading.Thread | None = None
