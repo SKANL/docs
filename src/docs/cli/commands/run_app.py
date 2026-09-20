@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 import typer
 
 from docs.cli._shared import _ctx
@@ -45,3 +46,23 @@ def cancel_run(ctx: typer.Context, run_id: str) -> None:
     if callable(cancel):
         cancel(run_id)
     typer.echo(json.dumps({"id": run_id, "status": "cancelled"}, sort_keys=True))
+
+
+@run_app.command("watch")
+def watch_run(
+    ctx: typer.Context,
+    run_id: str,
+    json_output: bool = typer.Option(False, "--json"),
+    interval: float = typer.Option(1.0, "--interval", min=0.1),
+) -> None:
+    """Follow a durable run until it reaches a terminal state."""
+    store, _ = _stores(ctx)
+    while True:
+        item = store.get(run_id)
+        if item is None:
+            raise typer.BadParameter(f"Run not found: {run_id}")
+        payload = item.to_dict()
+        typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else f"{run_id}\t{payload['status']}")
+        if payload["status"] in {"succeeded", "completed", "failed", "cancelled", "expired"}:
+            return
+        time.sleep(interval)
