@@ -20,6 +20,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     listPublications: () => client.listPublications().then(page => page.items),
     listWorkspaces: () => client.listWorkspaces().then(page => page.items),
     createWorkspace: input => client.createWorkspace(input), renameWorkspace: (id, name) => client.renameWorkspace(id, name), deleteWorkspace: id => client.deleteWorkspace(id),
+    getDocumentStatus: (documentId, workspaceId) => client.getDocumentStatus(documentId, workspaceId),
     createDocument: input => client.createDocument(input),
     createRun: input => client.createRun(input), documentAction: (documentId, action, workspaceId) => client.documentAction(documentId, action, workspaceId), cancelRun: id => client.cancelRun(id), retryRun: id => client.retryRun(id),
     selectWorkspace: id => client.selectWorkspace(id),
