@@ -17,6 +17,18 @@ def test_import_writes_hashed_source_atomically(tmp_path: Path) -> None:
     assert destination.name.startswith(result["sha256"][:12])
 
 
+def test_import_is_idempotent_for_same_content(tmp_path: Path) -> None:
+    service = SourceImportService()
+    encoded = base64.b64encode(b"same-source").decode()
+
+    first = service.import_base64(tmp_path, "source.pdf", encoded)
+    second = service.import_base64(tmp_path, "source.pdf", encoded)
+
+    assert first["deduplicated"] is False
+    assert second["deduplicated"] is True
+    assert second["path"] == first["path"]
+
+
 @pytest.mark.parametrize(
     ("filename", "payload", "error"),
     [

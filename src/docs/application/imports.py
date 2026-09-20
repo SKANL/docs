@@ -42,9 +42,16 @@ class SourceImportService:
         inbox.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(content).hexdigest()
         destination = inbox / f"{digest[:12]}-{safe_name}"
-        temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
-        temporary.write_bytes(content)
-        temporary.replace(destination)
+        deduplicated = False
+        if destination.is_file() and destination.stat().st_size == len(content):
+            try:
+                deduplicated = hashlib.sha256(destination.read_bytes()).hexdigest() == digest
+            except OSError:
+                deduplicated = False
+        if not deduplicated:
+            temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+            temporary.write_bytes(content)
+            temporary.replace(destination)
         mime = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
         return {
             "id": f"import-{digest[:16]}",
@@ -54,6 +61,7 @@ class SourceImportService:
             "mime_type": mime,
             "size": len(content),
             "sha256": digest,
+            "deduplicated": deduplicated,
         }
 
     @staticmethod
