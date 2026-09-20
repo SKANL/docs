@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from docs.application.graph_queries import GraphQueryService
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.application.imports import ImportError, SourceImportService
 from docs.domain.contracts import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
@@ -53,6 +54,7 @@ class X20Application:
         observability: ObservabilityPort | None = None,
         idempotency_persistence: Any = None,
         workspace_registry: WorkspaceRegistry | None = None,
+        import_service: SourceImportService | None = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -77,6 +79,7 @@ class X20Application:
         self._auth = auth
         self.observability = observability or create_observability_from_env()
         self.workspace_registry = workspace_registry
+        self.import_service = import_service or SourceImportService()
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -93,6 +96,7 @@ class X20Application:
             ("GET", "/v1/publications"),
             ("GET", "/v1/workspaces"),
             ("POST", "/v1/workspaces"),
+            ("POST", "/v1/documents/import"),
             ("POST", "/v1/baselines/promotions"),
             ("POST", "/v1/runs"),
         }
@@ -110,6 +114,7 @@ class X20Application:
         self._register_owned_route("GET", "/v1/publications", self._publications)
         self._register_owned_route("GET", "/v1/workspaces", self._workspaces)
         self._register_owned_route("POST", "/v1/workspaces", self._create_workspace)
+        self._register_owned_route("POST", "/v1/documents/import", self._import_document)
         self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
         self._register_owned_route("POST", "/v1/runs", self._create_run)
 
@@ -375,6 +380,25 @@ class X20Application:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             raise APIError(str(exc), str(exc), status) from exc
         return Response.json(item, 201)
+
+    def _import_document(self, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        data = request.json(object_only=True)
+        workspace_id = data.get("workspace_id")
+        try:
+            workspace = self.workspace_registry.get(str(workspace_id))
+            result = self.import_service.import_base64(
+                workspace["root"],
+                str(data.get("filename", "")),
+                str(data.get("content_base64", "")),
+                document_id=data.get("document_id"),
+            )
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        except ImportError as exc:
+            raise APIError(str(exc), str(exc), 400) from exc
+        return Response.json(result, 201)
 
     def _workspace(self, workspace_id: str, request: Request) -> Response:
         del request
