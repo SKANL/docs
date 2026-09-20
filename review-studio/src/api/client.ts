@@ -64,7 +64,7 @@ export type ReviewClientOptions = {
   allowedPreviewOrigins?: readonly string[];
 };
 
-export type ListParams = { cursor?: string; limit?: number };
+export type ListParams = { cursor?: string; limit?: number; workspaceId?: string };
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -145,6 +145,7 @@ export class ReviewApiClient {
   private readonly requestFetch: typeof globalThis.fetch;
   private readonly timeoutMs: number;
   private readonly allowedPreviewOrigins: Set<string>;
+  private selectedWorkspaceId?: string;
 
   constructor(options: ReviewClientOptions = {}) {
     this.baseUrl = new URL(options.baseUrl ?? "/v1", globalThis.location?.href ?? "http://localhost/").toString().replace(/\/$/, "");
@@ -167,6 +168,8 @@ export class ReviewApiClient {
     const query = new URLSearchParams();
     if (params.cursor) query.set("cursor", params.cursor);
     if (params.limit !== undefined) query.set("limit", String(params.limit));
+    const workspaceId = params.workspaceId ?? this.selectedWorkspaceId;
+    if (workspaceId) query.set("workspace_id", workspaceId);
     return this.request<unknown>(`${path}${query.size ? `?${query}` : ""}`).then(page<T>);
   }
 
@@ -175,7 +178,7 @@ export class ReviewApiClient {
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params); }
   listArtifacts(params?: ListParams) { return this.list<Artifact>("artifacts", params); }
   getPassport(runId: string) { return this.request<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
-  getGraph() { return this.request<unknown>("graph").then(normalizeGraph); }
+  getGraph() { const query = this.selectedWorkspaceId ? `?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}` : ""; return this.request<unknown>(`graph${query}`).then(normalizeGraph); }
   getGraphQuery(query: GraphQuery, id?: string) {
     const params = new URLSearchParams({ query });
     if (id) params.set("id", id);
@@ -195,7 +198,11 @@ export class ReviewApiClient {
   cancelRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
   retryRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
   documentAction(documentId:string, action:"prepare"|"build"|"verify", workspaceId:string) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/"+action, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspaceId}) }); }
-  selectWorkspace(id:string) { return this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" }); }
+  async selectWorkspace(id:string) {
+    const workspace = await this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" });
+    this.selectedWorkspaceId = workspace.id;
+    return workspace;
+  }
   async importDocument(file: File, workspace: Workspace): Promise<ImportResult> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
