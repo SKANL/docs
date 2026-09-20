@@ -181,6 +181,77 @@ class _WorkspaceJobQueue:
         return any(queue.is_cancelled(run_id) for queue in self._queues.values())
 
 
+class _WorkspaceEvidenceStores:
+    """Route passport, artifact, and finding projections by their run owner."""
+
+    def __init__(self, registry: WorkspaceRegistry, run_store: _WorkspaceRunStore, fallback_root: Path) -> None:
+        self.registry = registry
+        self.run_store = run_store
+        self.fallback_root = fallback_root.resolve()
+        self._stores: dict[str, tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore]] = {}
+
+    def _stores_for_root(self, root: str | Path) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore]:
+        resolved = Path(root).expanduser().resolve()
+        key = str(resolved)
+        if key not in self._stores:
+            state = resolved / ".docs" / "x20.sqlite3"
+            self._stores[key] = (SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state))
+        return self._stores[key]
+
+    def _root_for_run(self, run_id: str) -> Path:
+        run = self.run_store.get(run_id)
+        if run is not None and isinstance(run.payload, dict):
+            workspace_id = run.payload.get("workspace_id")
+            if isinstance(workspace_id, str) and workspace_id:
+                try:
+                    return Path(str(self.registry.get(workspace_id)["root"])).resolve()
+                except Exception:
+                    pass
+        return self.fallback_root
+
+    def passport(self) -> "_WorkspacePassportStore":
+        return _WorkspacePassportStore(self)
+
+    def artifact(self) -> "_WorkspaceArtifactStore":
+        return _WorkspaceArtifactStore(self)
+
+    def finding(self) -> "_WorkspaceFindingStore":
+        return _WorkspaceFindingStore(self)
+
+
+class _WorkspacePassportStore:
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    @property
+    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+    def put(self, value: Passport) -> None: self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[0].put(value)
+    def get(self, run_id: str) -> Any: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[0].get(run_id)
+
+
+class _WorkspaceArtifactStore:
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    @property
+    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+    def put(self, value: Artifact) -> None: self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[1].put(value)
+    def get(self, artifact_id: str) -> Any:
+        for root in [self.parent._root_for_run(run.id) for run in self.parent.run_store.list()]:
+            value = self.parent._stores_for_root(root)[1].get(artifact_id)
+            if value is not None: return value
+        return None
+    def list(self) -> list[Any]:
+        return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
+    def list_for_run(self, run_id: str) -> list[Any]: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[1].list_for_run(run_id)
+
+
+class _WorkspaceFindingStore:
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    @property
+    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+    def put(self, value: dict[str, Any]) -> None: self.parent._stores_for_root(self.parent._root_for_run(str(value.get("run_id", ""))))[2].put(value)
+    def list(self) -> list[dict[str, Any]]:
+        return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
+    def list_for_run(self, run_id: str) -> list[dict[str, Any]]: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
+
+
 @dataclass(frozen=True)
 class SidecarConfig:
     host: str = "127.0.0.1"
@@ -294,10 +365,11 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     state_path = config.workspace / ".docs" / "x20.sqlite3"
     run_store = _WorkspaceRunStore(registry, config.workspace)
     queue = _WorkspaceJobQueue(registry, config.workspace)
-    passport_store = SqlitePassportStore(state_path)
-    artifact_store = SqliteArtifactStore(state_path)
+    evidence_stores = _WorkspaceEvidenceStores(registry, run_store, config.workspace)
+    passport_store = evidence_stores.passport()
+    artifact_store = evidence_stores.artifact()
     graph_store = SqliteGraphStore(state_path)
-    findings_store = SqliteFindingStore(state_path)
+    findings_store = evidence_stores.finding()
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
         from .cli._shared import Deps
         from .domain.workspace import Workspace

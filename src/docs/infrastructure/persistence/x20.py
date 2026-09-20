@@ -112,6 +112,13 @@ class SqliteFindingStore(_SqliteStore):
             rows = connection.execute("SELECT payload FROM x20_findings ORDER BY id").fetchall()
         return [self._decode(row[0]) for row in rows]
 
+    def list_for_run(self, run_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload FROM x20_findings WHERE run_id = ? ORDER BY id", (run_id,)
+            ).fetchall()
+        return [self._decode(row[0]) for row in rows]
+
 
 class SqliteArtifactStore(_SqliteStore):
     def _initialize(self) -> None:
