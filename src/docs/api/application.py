@@ -552,11 +552,11 @@ class X20Application:
 
     def _runs(self, request: Request) -> Response:
         items = self._store_items(self.run_store, "list")
-        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        workspace_id = self._workspace_filter(request)
         if workspace_id:
             items = [
                 item for item in items
-                if _dict(item).get("payload", {}).get("workspace_id") == workspace_id
+                if _dict(item).get("payload", {}).get("workspace_id") in {workspace_id, None}
             ]
         if request.principal is not None:
             items = [item for item in items if self._is_owned(item, request.principal)]
@@ -750,12 +750,12 @@ class X20Application:
 
     def _findings(self, request: Request) -> Response:
         items = self.findings_store.list() if self.findings_store is not None else list(self.findings)
-        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        workspace_id = self._workspace_filter(request)
         if workspace_id:
             items = [
                 item for item in items
                 if (run := self.run_store.get(str(_dict(item).get("run_id", "")))) is not None
-                and _dict(run).get("payload", {}).get("workspace_id") == workspace_id
+                and _dict(run).get("payload", {}).get("workspace_id") in {workspace_id, None}
             ]
         if request.principal is not None:
             items = [item for item in items if self._finding_is_owned(item, request.principal)]
@@ -763,14 +763,22 @@ class X20Application:
 
     def _artifacts_collection(self, request: Request) -> Response:
         items = self._store_items(self.artifact_store, "list")
-        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        workspace_id = self._workspace_filter(request)
         if workspace_id:
             items = [
                 item for item in items
                 if (run := self.run_store.get(str(_dict(item).get("run_id", "")))) is not None
-                and _dict(run).get("payload", {}).get("workspace_id") == workspace_id
+                and _dict(run).get("payload", {}).get("workspace_id") in {workspace_id, None}
             ]
         return self._page(self._filter(items, request.query), request, "artifacts")
+
+    def _workspace_filter(self, request: Request) -> str | None:
+        """Scope collection endpoints to the selected workspace by default."""
+        requested = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if requested or self.workspace_registry is None:
+            return requested
+        active = self.workspace_registry.active()
+        return str(active["id"]) if active is not None else None
 
     def _templates(self, request: Request) -> Response:
         return self._page(self._filter(self._store_items(self.template_store, "list"), request.query), request, "templates")
