@@ -5,5 +5,5 @@
   "identifier": "com.docs.reviewstudio",
   "build": { "frontendDist": "../src", "devUrl": "http://localhost:1420" },
   "app": { "windows": [{ "title": "Review Studio", "width": 1280, "height": 800, "resizable": true }], "security": { "csp": "default-src 'self'; connect-src 'self'" } },
-  "bundle": { "active": true, "targets": ["msi", "nsis"], "icon": ["icons/icon.ico"], "windows": { "webviewInstallMode": { "type": "embedBootstrapper" } } }
+  "bundle": { "active": true, "targets": ["msi", "nsis"], "icon": ["icons/icon.ico"], "resources": ["../sidecar/*"], "windows": { "webviewInstallMode": { "type": "embedBootstrapper" } } }
 }

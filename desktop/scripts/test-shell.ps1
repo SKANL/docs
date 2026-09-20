@@ -4,6 +4,7 @@ $desktop = Split-Path -Parent $PSScriptRoot
 $index = Get-Content (Join-Path $desktop 'src/index.html') -Raw
 $sync = Get-Content (Join-Path $desktop 'scripts/sync-review-studio.ps1') -Raw
 $build = Get-Content (Join-Path $desktop 'scripts/build-windows.ps1') -Raw
+$sidecarCheck = Get-Content (Join-Path $desktop 'scripts/check-sidecar-packaging.py') -Raw
 $config = Get-Content (Join-Path $desktop 'src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json
 
 if ($index -match 'Desktop shell ready|intentionally minimal placeholder') {
@@ -15,8 +16,11 @@ if ($index -notmatch 'Review Studio') {
 if ($sync -notmatch 'review-studio' -or $sync -notmatch 'npm ci' -or $sync -notmatch 'dist') {
     throw 'sync-review-studio.ps1 is missing the deterministic build/copy contract.'
 }
-if ($build -notmatch 'sync-review-studio.ps1' -or $build -notmatch 'npm run build') {
+if ($build -notmatch 'sync:review-studio' -or $build -notmatch 'tauri build') {
     throw 'build-windows.ps1 does not run the frontend sync before Tauri.'
+}
+if ($build -notmatch 'check:sidecar' -or $sidecarCheck -notmatch 'resource_dir' -or $sidecarCheck -notmatch 'docs-sidecar/v1') {
+    throw 'sidecar packaging verification is not wired to the resource/handshake contract.'
 }
 if ($config.build.frontendDist -ne '../src') {
     throw "Unexpected Tauri frontendDist: $($config.build.frontendDist)"

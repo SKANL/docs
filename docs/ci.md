@@ -31,3 +31,16 @@ uv run pytest tests/integration/test_v2_source_commands.py tests/integration/tes
 
 Do not make CI depend on an authoring plugin. Install only the declared executable toolchains when a job is intended to exercise optional capability paths; the product runtime remains native and reports missing tools through capabilities and policy.
 
+## Desktop contract check
+
+The Linux quality job verifies the Tauri sidecar contract without attempting a
+Windows installer build:
+
+```bash
+python desktop/scripts/check-sidecar-packaging.py
+```
+
+The check is static and deterministic: it validates the configured resource
+glob, Rust resource lookup, and the `/health` handshake. Windows-only MSI/NSIS
+packaging remains in `desktop/scripts/build-windows.ps1`.
+

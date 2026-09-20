@@ -84,6 +84,11 @@ The document reference is split by reader need:
 - [Covers](docs/covers.md) — declarative variants, slots, and cover assets.
 - [QA](docs/qa.md) — verification, degradation, and CI evidence.
 - [Provenance](docs/provenance.md) — hashes, ledger attestations, and publication proof.
+- [Deployment](docs/deployment.md) — API/worker topology, persistence, proxying, and release checks.
+- [API transport](docs/api-transport.md) — HTTP boundary, authentication, and request/response contract.
+- [Plugins](docs/plugins.md) — manifest, trust, permissions, and deterministic execution boundary.
+- [OpenTelemetry](docs/observability.md) — fail-open OTLP configuration and redaction policy.
+- [Tauri desktop](docs/desktop-tauri.md) — sidecar resource/health contract and Windows packaging.
 - [Migration](docs/runtime-guide.md) — canonical runtime architecture and release workflow.
 - [CI](docs/ci.md) — local and GitHub Actions checks.
 
