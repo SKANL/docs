@@ -85,7 +85,7 @@ def build_openapi_document() -> dict[str, Any]:
         "/v1/workspaces/{workspace_id}/select": {
             "post": _operation("Select workspace", _json_response(_ref("workspace")), scopes=("workspaces:write",)),
         },
-        "/v1/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",))},
+        "/v1/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document")), scopes=("documents:write",))},
         "/v1/documents/{document_id}": {
             "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",))
         },
