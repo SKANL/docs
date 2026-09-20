@@ -60,7 +60,7 @@ from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToo
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
-_BATCH_OUTPUT_PATHS = (Path("output") / "v2", Path("output") / "release")
+_BATCH_OUTPUT_PATHS = (Path("output") / "current", Path("output") / "release")
 
 
 def _source_pipeline(deps: Any) -> SourcePipeline | None:
@@ -268,7 +268,7 @@ def _build_inputs(root: Path) -> tuple[Path, ...]:
                 and not path.is_symlink()
                 and not any(part in excluded for part in path.relative_to(root).parts)
                 and not any(
-                    part.startswith((".v2-", ".atomic-"))
+                    part.startswith((".x20-", ".atomic-"))
                     for part in path.relative_to(root).parts
                 )
             ),
@@ -520,7 +520,7 @@ def create_document_service(
         state["renderer"], output_format, initial_root, state["config"].get("paths", {})
     )
     destination = publication_destination or (
-        initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
+        initial_root / "output" / "current" / f"{initial.doc_id}.{output_format}"
     )
     if pipeline_id in {"document-verify", "document-package", "document-publish"}:
         source_artifact = artifact_path or destination
@@ -597,7 +597,7 @@ def create_document_service(
         manifest=lambda: state.get("manifest"),
         document_id=initial.doc_id,
         output_format=output_format,
-        source_dir=initial_root / "output" / "v2",
+        source_dir=initial_root / "output" / "current",
         destination=release_destination,
         ledger=ledger,
         write_package=lambda candidate, staging: _write_package_archive(
@@ -743,7 +743,7 @@ def create_document_service(
         renderer = state.get("renderer")
         if not isinstance(artifact, Path) or renderer is None:
             return False, "reproducibility check has no rendered artifact"
-        scratch_dir = Path(tempfile.mkdtemp(prefix=".v2-repro-", dir=initial_root))
+        scratch_dir = Path(tempfile.mkdtemp(prefix=".x20-repro-", dir=initial_root))
         scratch_dirs.append(scratch_dir)
         try:
             rebuilt = renderer.build(
@@ -795,21 +795,21 @@ def create_document_service(
         )
 
     def _native_package_release() -> tuple[bool, str]:
-        """Package the verified, attested v2 artifact before publication."""
+        """Package the verified, attested artifact before publication."""
         artifact = state.get("artifact")
         manifest = state.get("manifest")
         if not isinstance(artifact, Path) or not isinstance(manifest, BuildManifest):
             return False, "package-release requires a verified artifact and manifest"
         destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-        source_dir = initial_root / "output" / "v2"
+        source_dir = initial_root / "output" / "current"
         source_dir.mkdir(parents=True, exist_ok=True)
         candidate = destination.with_name(f".{destination.name}.candidate")
-            # A package stage runs before this format reaches output/v2.  Stage a
+            # A package stage runs before this format reaches output/current.  Stage a
         # complete snapshot of the already-published formats plus this run's
         # attested artifact, so repeatable --format builds accumulate one
         # release archive instead of replacing it format by format.
         with _package_lock(destination):
-            staging = Path(tempfile.mkdtemp(prefix=".v2-package-", dir=source_dir.parent))
+            staging = Path(tempfile.mkdtemp(prefix=".x20-package-", dir=source_dir.parent))
             try:
                 for existing in sorted(source_dir.iterdir(), key=lambda path: path.name):
                     if existing.is_symlink() or not existing.is_file():
@@ -1225,7 +1225,7 @@ def _run(
     if command == "build" and not _batch_lock_held:
         resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
         root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-        with owned_directory_lock(root / "runs" / ".v2-batch.lock"):
+        with owned_directory_lock(root / "runs" / ".x20-batch.lock"):
             return _run(ctx, command, json_output, formats, policy, dimensions, pipeline_id,
                         artifact_path, manifest_path, _batch_lock_held=True)
     selected_document = ctx.obj.get("doc", "")
@@ -1251,7 +1251,7 @@ def _run(
         batch_root.mkdir(parents=True, exist_ok=True)
         batch_journal = _batch_journal_path(batch_root)
         _recover_batch_transaction(batch_journal, _lock_held=True)
-        batch_backup = Path(tempfile.mkdtemp(prefix=".v2-batch-", dir=batch_root))
+        batch_backup = Path(tempfile.mkdtemp(prefix=".x20-batch-", dir=batch_root))
         batch_paths = _BATCH_OUTPUT_PATHS
         for relative in batch_paths:
             current = batch_root / relative
@@ -1293,7 +1293,7 @@ def _run(
                             resolved.config.get("paths", {}).get("output_draft_dir")
                         )
                         source_manifest = (
-                            Path(source_artifact).parent / "v2" / f"{resolved.doc_id}.{output_format}.manifest.json"
+                            Path(source_artifact).parent / "current" / f"{resolved.doc_id}.{output_format}.manifest.json"
                             if isinstance(source_artifact, str)
                             else None
                         )
@@ -1368,7 +1368,7 @@ def _run(
                     and manifest_path is None
                     and isinstance(draft_dir, str)
                 ):
-                    artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
+                    artifact = Path(draft_dir).parent / "current" / f"{resolved.doc_id}.{output_format}"
                     if artifact.is_file():
                         ledger = ProvenanceLedger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
                         recorded = ledger.load_attestation(provenance_run_id or "")
@@ -1405,7 +1405,7 @@ def _run(
 
 
 def _batch_journal_path(root: Path) -> Path:
-    return root / "runs" / "v2-batch-transaction.json"
+    return root / "runs" / "x20-batch-transaction.json"
 
 
 def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[Path, ...]) -> None:
@@ -1453,7 +1453,7 @@ def _record_batch_outputs(journal: Path, doc_id: str, output_format: str) -> Non
     """
     payload = json.loads(journal.read_text(encoding="utf-8"))
     owned = {
-        "output/v2": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
+        "output/current": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
         "output/release": (f"{doc_id}.zip",),
     }
     for relative, names in owned.items():
@@ -1470,7 +1470,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     if not journal.exists():
         return
     if not _lock_held:
-        with owned_directory_lock(journal.parent / ".v2-batch.lock"):
+        with owned_directory_lock(journal.parent / ".x20-batch.lock"):
             return _recover_batch_transaction(journal, _lock_held=True)
     payload = json.loads(journal.read_text(encoding="utf-8"))
     root = journal.parent.parent.resolve()
@@ -1478,7 +1478,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     paths = _BATCH_OUTPUT_PATHS
     if (Path(payload["root"]).resolve() != root
             or journal.resolve() != _batch_journal_path(root)
-            or backup.parent.resolve() != root or not backup.name.startswith(".v2-batch-")
+            or backup.parent.resolve() != root or not backup.name.startswith(".x20-batch-")
             or payload.get("paths") != [path.as_posix() for path in paths]):
         raise RuntimeError("batch recovery path scope is invalid")
     if not isinstance(payload.get("expected"), dict) or not isinstance(payload.get("saved"), dict):
@@ -1505,7 +1505,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
             raise RuntimeError("batch recovery backup changed")
         checked_snapshot(relative)
     # Copy first. A failed copy never removes a live output or consumes backups.
-    with tempfile.TemporaryDirectory(prefix=".v2-batch-restore-", dir=root) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".x20-batch-restore-", dir=root) as temporary:
         staged = Path(temporary)
         for relative in paths:
             saved_dir = backup / relative
@@ -1686,7 +1686,7 @@ def build(
     artifact: Path | None = typer.Option(None, "--artifact", help="Verified existing artifact for publish/package."),
     manifest: Path | None = typer.Option(None, "--manifest", help="Verified existing manifest for publish/package."),
 ) -> None:
-    """Build verified v2 artifacts in one or more requested formats."""
+    """Build verified artifacts in one or more requested formats."""
     _run(
         ctx,
         "build",
@@ -1708,7 +1708,7 @@ def verify(
     dimensions: list[ReviewDimension] | None = typer.Option(None, "--dimension"),
     pipeline_id: str = typer.Option("document", "--pipeline", help="Registered pipeline boundary to execute."),
 ) -> None:
-    """Verify v2 artifacts without publishing them."""
+    """Verify artifacts without publishing them."""
     _run(ctx, "verify", json_output, formats, policy, dimensions, pipeline_id)
 
 
@@ -1734,15 +1734,15 @@ def _require_contained(path: Path, root: Path, label: str) -> None:
 def _package_files(
     source_dir: Path, *, _allow_staging: bool = False, _verify_attestation: bool = True
 ) -> tuple[tuple[str, bytes], ...]:
-    """Validate the complete v2 artifact set before creating a package."""
-    valid_source = source_dir.name == "v2" and source_dir.parent.name == "output"
+    """Validate the complete artifact set before creating a package."""
+    valid_source = source_dir.name == "current" and source_dir.parent.name == "output"
     valid_staging = (
         _allow_staging
-        and source_dir.name.startswith(".v2-package-")
+        and source_dir.name.startswith(".x20-package-")
         and source_dir.parent.name == "output"
     )
     if not (valid_source or valid_staging):
-        raise typer.BadParameter("package requires an output/v2 source directory")
+        raise typer.BadParameter("package requires an output/current source directory")
     if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):
         raise typer.BadParameter("package refuses a symlinked source boundary")
     candidates = tuple(sorted(source_dir.rglob("*"), key=lambda path: path.relative_to(source_dir).as_posix()))
@@ -1752,7 +1752,7 @@ def _package_files(
     files = tuple(path for path in candidates if path.is_file() and not path.is_symlink())
     artifacts = tuple(path for path in files if not path.name.endswith(".manifest.json"))
     if not artifacts:
-        raise typer.BadParameter("package requires at least one v2 artifact")
+        raise typer.BadParameter("package requires at least one artifact")
     document_root = source_dir.parent.parent
     ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
     expected_manifests: set[Path] = set()
@@ -1810,7 +1810,7 @@ def _package_files(
         snapshots[manifest_path.relative_to(source_dir).as_posix()] = manifest_bytes
     actual_manifests = {path for path in files if path.name.endswith(".manifest.json")}
     if actual_manifests != expected_manifests:
-        raise typer.BadParameter("package requires each manifest to match one v2 artifact")
+        raise typer.BadParameter("package requires each manifest to match one artifact")
     return tuple((relative, snapshots[relative]) for relative in sorted(snapshots))
 
 
@@ -1981,12 +1981,12 @@ def publish(
         raise typer.BadParameter("publish requires --policy strict or --policy release")
     manifest_path = source.with_suffix(source.suffix + ".manifest.json")
     document_root = source.parent.parent.parent
-    if source.parent.name != "v2" or source.parent.parent.name != "output":
-        raise typer.BadParameter("publish requires a v2 artifact with its matching manifest")
-    _require_contained(source, document_root / "output" / "v2", "source")
-    _require_contained(manifest_path, document_root / "output" / "v2", "manifest")
+    if source.parent.name != "current" or source.parent.parent.name != "output":
+        raise typer.BadParameter("publish requires an artifact with its matching manifest")
+    _require_contained(source, document_root / "output" / "current", "source")
+    _require_contained(manifest_path, document_root / "output" / "current", "manifest")
     if not manifest_path.is_file():
-        raise typer.BadParameter("publish requires a v2 artifact with its matching manifest")
+        raise typer.BadParameter("publish requires an artifact with its matching manifest")
     _require_contained(destination, document_root, "destination")
     try:
         manifest_bytes = _read_package_file(manifest_path, document_root)
@@ -1996,8 +1996,8 @@ def publish(
         raise typer.BadParameter(f"publish requires a valid manifest: {exc}") from exc
     source_identity = str(source.resolve())
     source_bytes = _read_package_file(source, document_root)
-    _require_contained(source, document_root / "output" / "v2", "source")
-    _require_contained(manifest_path, document_root / "output" / "v2", "manifest")
+    _require_contained(source, document_root / "output" / "current", "source")
+    _require_contained(manifest_path, document_root / "output" / "current", "manifest")
     matching = [artifact for artifact in manifest.artifacts if artifact.path == source_identity]
     if len(matching) != 1 or matching[0].sha256 != hashlib.sha256(source_bytes).hexdigest():
         raise typer.BadParameter("publish requires the manifest artifact hash to match the source")

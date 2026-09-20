@@ -63,7 +63,7 @@ class PackageReleaseService:
             return False, "package-release manifest is not attested for the current build"
 
         self._source_dir.mkdir(parents=True, exist_ok=True)
-        staging = Path(tempfile.mkdtemp(prefix=".v2-package-", dir=self._source_dir.parent))
+        staging = Path(tempfile.mkdtemp(prefix=".x20-package-", dir=self._source_dir.parent))
         candidate = self._destination.with_name(f".{self._destination.name}.candidate")
         try:
             self._copy_verified_existing_outputs(staging)

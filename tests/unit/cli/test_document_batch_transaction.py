@@ -12,7 +12,7 @@ from docs.cli.commands.document_app import (
 
 def test_batch_transaction_recovery_uses_the_paths_written_to_its_journal(tmp_path: Path) -> None:
     document_root = tmp_path / "document"
-    paths = (Path("output") / "v2", Path("output") / "release")
+    paths = (Path("output") / "current", Path("output") / "release")
     (document_root / paths[0]).mkdir(parents=True)
     (document_root / paths[1]).mkdir(parents=True)
     (document_root / paths[0] / "report.pdf").write_bytes(b"pdf")
@@ -22,7 +22,7 @@ def test_batch_transaction_recovery_uses_the_paths_written_to_its_journal(tmp_pa
     journal = _batch_journal_path(document_root)
 
     def write_journal() -> None:
-        backup = document_root / ".v2-batch-backup"
+        backup = document_root / ".x20-batch-backup"
         for relative in paths:
             source = document_root / relative
             destination = backup / relative
@@ -38,5 +38,5 @@ def test_batch_transaction_recovery_uses_the_paths_written_to_its_journal(tmp_pa
     _record_batch_outputs(journal, "report", "pdf")
 
     payload = json.loads(journal.read_text(encoding="utf-8"))
-    assert payload["paths"] == ["output/v2", "output/release"]
-    assert "report.pdf" in payload["expected"]["output/v2"]
+    assert payload["paths"] == ["output/current", "output/release"]
+    assert "report.pdf" in payload["expected"]["output/current"]

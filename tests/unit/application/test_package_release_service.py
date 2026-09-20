@@ -28,7 +28,7 @@ def test_package_release_service_packages_current_verified_generation_atomically
         manifest=lambda: manifest,
         document_id="document",
         output_format="docx",
-        source_dir=tmp_path / "output" / "v2",
+        source_dir=tmp_path / "output" / "current",
         destination=destination,
         ledger=SimpleNamespace(verify_attestation=lambda run, attestation: True),
         write_package=lambda candidate, staging: (
@@ -66,7 +66,7 @@ def test_package_release_service_rejects_a_manifest_not_attested_for_the_current
         manifest=lambda: manifest,
         document_id="document",
         output_format="docx",
-        source_dir=tmp_path / "output" / "v2",
+        source_dir=tmp_path / "output" / "current",
         destination=tmp_path / "release.zip",
         ledger=SimpleNamespace(verify_attestation=lambda run, attestation: False),
         write_package=lambda candidate, staging: None,
