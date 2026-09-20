@@ -775,6 +775,12 @@ class X20Application:
     def _workspace_filter(self, request: Request) -> str | None:
         """Scope collection endpoints to the selected workspace by default."""
         requested = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if requested and self.workspace_registry is not None:
+            try:
+                self.workspace_registry.get(requested)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            return requested
         if requested or self.workspace_registry is None:
             return requested
         active = self.workspace_registry.active()
