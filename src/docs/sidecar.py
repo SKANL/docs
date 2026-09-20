@@ -156,6 +156,30 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         document = deps.documents.create(document_id, template, title)
         return document.model_dump()
 
+    def document_action(workspace_root: str, document_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .cli._shared import Deps
+        from .cli.commands.document_app import _source_pipeline, create_document_service
+        from .domain.workspace import Workspace
+
+        deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        resolved = deps.resolve_context(document_id)
+        if action == "prepare":
+            pipeline = _source_pipeline(deps)
+            if pipeline is None:
+                raise RuntimeError("source pipeline dependencies are unavailable")
+            return pipeline.prepare(document_id, deps.workspace.doc_root(document_id), resolved.config)
+        pipeline_id = "document" if action == "build" else "document-verify"
+        run_id = str(payload.get("run_id") or f"api-{action}-{uuid4().hex}")
+        service = create_document_service(
+            deps,
+            output_format=str(payload.get("format", "docx")),
+            document=document_id,
+            pipeline_id=pipeline_id,
+            provenance_run_id=run_id,
+        )
+        report = service.run(run_id, publish=action == "build", pipeline_id=pipeline_id)
+        return report.to_dict()
+
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -164,6 +188,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         graph_store=graph_store,
         workspace_registry=WorkspaceRegistry(),
         document_creator=create_document,
+        document_action=document_action,
         router=Router(cors_origins=config.cors_origins),
     )
     runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store)

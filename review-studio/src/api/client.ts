@@ -189,6 +189,7 @@ export class ReviewApiClient {
   createRun(input: { documentId:string; pipelineId?:string; format?:string }) { return this.request<Record<string,unknown>>("runs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
   cancelRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
   retryRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
+  documentAction(documentId:string, action:"prepare"|"build"|"verify", workspaceId:string) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/"+action, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspaceId}) }); }
   selectWorkspace(id:string) { return this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" }); }
   async importDocument(file: File, workspace: Workspace): Promise<ImportResult> {
     const bytes = new Uint8Array(await file.arrayBuffer());

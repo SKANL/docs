@@ -92,6 +92,9 @@ def build_openapi_document() -> dict[str, Any]:
         "/v1/documents/{document_id}/runs": {
             "get": _operation("List document runs", page("run"), scopes=("documents:read",))
         },
+        "/v1/documents/{document_id}/prepare": {"post": _operation("Prepare document", _json_response(_ref("document")), scopes=("documents:write",))},
+        "/v1/documents/{document_id}/build": {"post": _operation("Build document", _json_response(_ref("run")), scopes=("documents:write",))},
+        "/v1/documents/{document_id}/verify": {"post": _operation("Verify document", _json_response(_ref("run")), scopes=("documents:write",))},
         "/v1/documents/{document_id}/revisions": {
             "post": _operation("Create document revision", _json_response(_ref("revision")), scopes=("documents:write",))
         },
