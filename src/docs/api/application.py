@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
 
 from docs.application.graph_queries import GraphQueryService
@@ -717,7 +717,17 @@ class X20Application:
         return Response.json(payload)
 
     def _run_graph(self, run_id: str, request: Request) -> Response:
-        self._owned_run(run_id, request)
+        run = self._owned_run(run_id, request)
+        payload = _dict(run).get("payload", {})
+        run_workspace = payload.get("workspace_id") if isinstance(payload, Mapping) else None
+        requested_workspace = request.query.get("workspace_id")
+        if run_workspace and requested_workspace and requested_workspace != run_workspace:
+            raise APIError("not_found", "Graph not found", 404)
+        if run_workspace and not requested_workspace:
+            query = dict(request.query)
+            query["workspace_id"] = str(run_workspace)
+            path = urlsplit(request.path).path + "?" + urlencode(query)
+            request = Request(request.method, path, request.headers, request.body, request.environ, request.principal)
         return self._graph(request)
 
     @staticmethod
