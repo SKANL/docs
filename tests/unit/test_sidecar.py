@@ -14,6 +14,25 @@ def test_sidecar_defaults_are_loopback_and_protocol_stable() -> None:
     assert config.host == "127.0.0.1"
     assert config.port == 8765
     assert config.protocol == "docs-sidecar/v1"
+    assert "http://localhost:1420" in config.cors_origins
+
+
+def test_sidecar_allows_review_studio_origin(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    server = build_server(config)
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+    try:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}/v1/runs",
+            headers={"Origin": "http://localhost:1420"},
+        )
+        with urllib.request.urlopen(request, timeout=2) as response:
+            assert response.status == 200
+            assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:1420"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
 
 
 def test_sidecar_health_is_real_http_and_shutdown_is_graceful(tmp_path: Path) -> None:

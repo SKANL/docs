@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .api.application import X20Application
-from .api.http import Response
+from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from .infrastructure.persistence.x20 import (
     SqliteArtifactStore,
@@ -35,6 +35,12 @@ class SidecarConfig:
     workspace: Path | None = None
     health_url: str = "http://127.0.0.1:8765/health"
     protocol: str = "docs-sidecar/v1"
+    cors_origins: tuple[str, ...] = (
+        "http://localhost:1420",
+        "http://127.0.0.1:1420",
+        "tauri://localhost",
+        "http://tauri.localhost",
+    )
 
     @classmethod
     def from_args(cls, argv: list[str]) -> SidecarConfig:
@@ -52,6 +58,14 @@ class SidecarConfig:
             port=parsed.port or 8765,
             workspace=args.workspace or _workspace_from_environment(),
             health_url=args.health_url,
+            cors_origins=tuple(
+                origin.strip().rstrip("/")
+                for origin in os.environ.get(
+                    "DOCS_SIDECAR_CORS_ORIGINS",
+                    ",".join(cls.cors_origins),
+                ).split(",")
+                if origin.strip()
+            ),
         )
 
 
@@ -134,12 +148,19 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         passport_store=passport_store,
         artifact_store=artifact_store,
         graph_store=graph_store,
+        router=Router(cors_origins=config.cors_origins),
     )
     return _HealthApplication(application, urlsplit(config.health_url).path, config.protocol)
 
 
 def build_server(config: SidecarConfig) -> GracefulHTTPServer:
-    transport = TransportConfig(host=config.host, port=config.port, mode="offline", workspace=config.workspace)
+    transport = TransportConfig(
+        host=config.host,
+        port=config.port,
+        mode="offline",
+        workspace=config.workspace,
+        cors_origins=config.cors_origins,
+    )
     return create_server(build_application(config), transport)
 
 
