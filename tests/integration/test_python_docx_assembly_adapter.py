@@ -94,6 +94,59 @@ def test_assemble_produces_output_with_blank_cover_when_no_template(tmp_path):
     assert any("Introduccion" in p.text for p in document.paragraphs)
 
 
+def test_empty_fixed_text_page_does_not_create_blank_leading_page(tmp_path):
+    body = _save_body_docx(tmp_path)
+    config = {
+        "project": {"title": ""},
+        "structure": [
+            {"type": "fixed_text_page", "text_field": "title"},
+            {"type": "sections", "preliminary_pagination": {}},
+        ],
+    }
+
+    document = PythonDocxAssemblyAdapter()._build_main_document(config, body, None)
+
+    assert len(document.sections) == 1
+    assert not any(paragraph.text.strip() for paragraph in document.paragraphs[:-2])
+
+
+def test_non_empty_fixed_text_page_keeps_its_preliminary_section(tmp_path):
+    body = _save_body_docx(tmp_path)
+    config = {
+        "project": {"title": "Technical Report"},
+        "structure": [
+            {"type": "fixed_text_page", "text_field": "title"},
+            {"type": "sections", "preliminary_pagination": {}},
+        ],
+    }
+
+    document = PythonDocxAssemblyAdapter()._build_main_document(config, body, None)
+
+    assert len(document.sections) == 2
+    assert any(paragraph.text.strip() == "Technical Report" for paragraph in document.paragraphs)
+
+
+def test_empty_fixed_text_page_preserves_explicit_preliminary_pagination(tmp_path):
+    body = _save_body_docx(tmp_path)
+    config = {
+        "project": {"title": ""},
+        "structure": [
+            {"type": "fixed_text_page", "text_field": "title"},
+            {
+                "type": "sections",
+                "preliminary_pagination": {"start": 2, "format": "lowerRoman"},
+            },
+        ],
+    }
+
+    document = PythonDocxAssemblyAdapter()._build_main_document(config, body, None)
+
+    assert len(document.sections) == 2
+    pg_num_type = document.sections[1]._sectPr.find(qn("w:pgNumType"))
+    assert pg_num_type.get(qn("w:start")) == "2"
+    assert pg_num_type.get(qn("w:fmt")) == "lowerRoman"
+
+
 def test_assemble_loads_cover_from_template_when_configured(tmp_path):
     template = Document()
     template.add_paragraph("TEMPLATE COVER MARKER")
