@@ -83,6 +83,104 @@ class _FilesystemDocumentStore:
         return value
 
 
+class _WorkspaceRunStore:
+    """Route durable run records to the SQLite database of their workspace."""
+
+    def __init__(self, registry: WorkspaceRegistry, fallback_root: Path | None = None) -> None:
+        self.registry = registry
+        self.fallback_root = fallback_root.resolve() if fallback_root is not None else None
+        self._stores: dict[str, SqliteRunStore] = {}
+
+    @property
+    def path(self) -> Path:
+        if self.fallback_root is None:
+            raise AttributeError("workspace run store has no fallback path")
+        return self.fallback_root / ".docs" / "x20.sqlite3"
+
+    def _store(self, root: str | Path) -> SqliteRunStore:
+        resolved = Path(root).expanduser().resolve()
+        key = str(resolved)
+        if key not in self._stores:
+            self._stores[key] = SqliteRunStore(resolved / ".docs" / "x20.sqlite3")
+        return self._stores[key]
+
+    def _all(self) -> list[SqliteRunStore]:
+        roots = [Path(item["root"]).resolve() for item in self.registry.list()]
+        if self.fallback_root is not None and self.fallback_root not in roots:
+            roots.append(self.fallback_root)
+        return [self._store(root) for root in roots]
+
+    def put(self, run: Any) -> None:
+        workspace_id = run.payload.get("workspace_id") if isinstance(run.payload, dict) else None
+        if isinstance(workspace_id, str) and workspace_id:
+            self._store(self.registry.get(workspace_id)["root"]).put(run)
+        elif self.fallback_root is not None:
+            self._store(self.fallback_root).put(run)
+        else:
+            raise ValueError("workspace_id is required for durable runs")
+
+    def get(self, run_id: str) -> Any:
+        for store in self._all():
+            item = store.get(run_id)
+            if item is not None:
+                return item
+        return None
+
+    def list(self) -> list[Any]:
+        items = [item for store in self._all() for item in store.list()]
+        return sorted(items, key=lambda item: item.id)
+
+
+class _WorkspaceJobQueue:
+    """Queue facade that claims work from every registered workspace."""
+
+    def __init__(self, registry: WorkspaceRegistry, fallback_root: Path | None = None) -> None:
+        self.registry = registry
+        self.fallback_root = fallback_root.resolve() if fallback_root is not None else None
+        self._queues: dict[str, SqliteJobQueue] = {}
+
+    @property
+    def path(self) -> Path:
+        if self.fallback_root is None:
+            raise AttributeError("workspace queue has no fallback path")
+        return self.fallback_root / ".docs" / "x20.sqlite3"
+
+    def _queue(self, root: str | Path) -> SqliteJobQueue:
+        resolved = Path(root).expanduser().resolve()
+        key = str(resolved)
+        if key not in self._queues:
+            self._queues[key] = SqliteJobQueue(resolved / ".docs" / "x20.sqlite3")
+        return self._queues[key]
+
+    def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
+        workspace_id = payload.get("workspace_id")
+        if isinstance(workspace_id, str) and workspace_id:
+            self._queue(self.registry.get(workspace_id)["root"]).enqueue(job_id, payload)
+        elif self.fallback_root is not None:
+            self._queue(self.fallback_root).enqueue(job_id, payload)
+        else:
+            raise ValueError("workspace_id is required for queued runs")
+
+    def claim(self, worker_id: str) -> Any:
+        roots = [item["root"] for item in self.registry.list()]
+        if self.fallback_root is not None and str(self.fallback_root) not in {str(Path(root).resolve()) for root in roots}:
+            roots.append(self.fallback_root)
+        for root in roots:
+            job = self._queue(root).claim(worker_id)
+            if job is not None:
+                return job
+        return None
+
+    def ack(self, job_id: str, worker_id: str) -> bool:
+        return any(queue.ack(job_id, worker_id) for queue in self._queues.values())
+
+    def cancel(self, run_id: str) -> bool:
+        return any(queue.cancel(run_id) for queue in self._queues.values())
+
+    def is_cancelled(self, run_id: str) -> bool:
+        return any(queue.is_cancelled(run_id) for queue in self._queues.values())
+
+
 @dataclass(frozen=True)
 class SidecarConfig:
     host: str = "127.0.0.1"
@@ -192,9 +290,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             config.protocol,
             workspace_error="workspace_not_configured",
         )
+    registry = WorkspaceRegistry()
     state_path = config.workspace / ".docs" / "x20.sqlite3"
-    run_store = SqliteRunStore(state_path)
-    queue = SqliteJobQueue(state_path)
+    run_store = _WorkspaceRunStore(registry, config.workspace)
+    queue = _WorkspaceJobQueue(registry, config.workspace)
     passport_store = SqlitePassportStore(state_path)
     artifact_store = SqliteArtifactStore(state_path)
     graph_store = SqliteGraphStore(state_path)
@@ -231,7 +330,6 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         report = service.run(run_id, publish=action == "build", pipeline_id=pipeline_id)
         return report.to_dict()
 
-    registry = WorkspaceRegistry()
     application = X20Application(
         run_store=run_store,
         queue=queue,
