@@ -90,6 +90,9 @@ def build_openapi_document() -> dict[str, Any]:
         "/v1/documents/{document_id}": {
             "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",))
         },
+        "/v1/documents/{document_id}/status": {
+            "get": _operation("Get document status", _json_response({"type": "object"}), scopes=("documents:read",))
+        },
         "/v1/documents/{document_id}/runs": {
             "get": _operation("List document runs", page("run"), scopes=("documents:read",))
         },

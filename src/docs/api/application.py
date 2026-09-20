@@ -5,12 +5,14 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 from docs.application.graph_queries import GraphQueryService
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.application.status_reader import StatusReader
 from docs.application.imports import ImportError, SourceImportService
 from docs.domain.contracts import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
@@ -293,6 +295,7 @@ class X20Application:
                 len(parts) == 4 and parts[3] == "runs" and method == "GET"
             ) or (len(parts) == 4 and parts[3] == "revisions" and method == "POST") or (
                 len(parts) == 4 and parts[3] in {"prepare", "build", "verify"} and method == "POST"
+            ) or (len(parts) == 4 and parts[3] == "status" and method == "GET"
             )
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
@@ -307,7 +310,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"])
+            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"])
         ):
             return None
         resource_id = parts[2]
@@ -320,6 +323,8 @@ class X20Application:
                 return lambda request: self._revision(resource_id, request)
             if len(parts) == 4 and parts[3] in {"prepare", "build", "verify"} and method == "POST":
                 return lambda request: self._document_action(resource_id, parts[3], request)
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return lambda request: self._document_status(resource_id, request)
             return None
         if parts[:2] == ["v1", "workspaces"]:
             workspace_id = resource_id
@@ -457,6 +462,29 @@ class X20Application:
         except (ValueError, OSError, KeyError, RuntimeError) as exc:
             raise APIError("document_action_failed", str(exc), 400) from exc
         return Response.json(result)
+
+    def _document_status(self, document_id: str, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        try:
+            workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        if workspace is None:
+            raise APIError("workspace_not_configured", "Select a workspace before reading document status", 503)
+        snapshot = StatusReader().read(Path(str(workspace["root"])) / "documents" / document_id)
+        return Response.json({
+            "document_id": document_id,
+            "workspace_id": workspace["id"],
+            "succeeded": snapshot.succeeded,
+            "manifest": _dict(snapshot.manifest),
+            "capabilities": snapshot.capabilities,
+            "execution": snapshot.execution,
+            "provenance": snapshot.provenance,
+            "unsupported_stages": snapshot.unsupported_stages,
+            "publication_blockers": snapshot.publication_blockers,
+        })
 
     def _workspace(self, workspace_id: str, request: Request) -> Response:
         del request
