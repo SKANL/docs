@@ -119,20 +119,29 @@ class PipelineRuntime:
                 )
                 or self._policy.severity(_finding_code(warning), "warning") == "warning"
             )
-            errors = tuple(result.errors) + tuple(
-                warning
-                for warning in result.warnings
-                if self._policy.severity(_finding_code(warning), "warning") == "error"
-                and not (
-                    (
-                        warning.startswith("stage unsupported:")
-                        or warning.startswith("stage skipped:")
+            errors = list(result.errors)
+            for warning in result.warnings:
+                if (
+                    self._policy.severity(_finding_code(warning), "warning") == "error"
+                    and not (
+                        (
+                            warning.startswith("stage unsupported:")
+                            or warning.startswith("stage skipped:")
+                        )
+                        and stage_specs.get(result.stage) is not None
+                        and stage_specs[result.stage].optional
                     )
-                    and stage_specs.get(result.stage) is not None
-                    and stage_specs[result.stage].optional
-                )
+                    and warning not in errors
+                ):
+                    errors.append(warning)
+            return StageResult(
+                result.stage,
+                not errors,
+                result.artifacts,
+                warnings,
+                tuple(errors),
+                result.outcome,
             )
-            return StageResult(result.stage, not errors, result.artifacts, warnings, errors, result.outcome)
 
         executor_external_artifacts = set(external_artifacts or ())
         execution = self._executor.run(

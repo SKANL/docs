@@ -2,12 +2,53 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import replace
 from time import perf_counter
-from typing import Protocol
+from typing import Any, Protocol
 
 from docs.domain.pipeline_kernel import PipelineDefinition, StageResult, deterministic_json
+from docs.observability import NoOpObservability, ObservabilityPort
+
+
+@contextmanager
+def _fail_open_span(span_factory: Callable[[], Any]) -> Iterator[None]:
+    """Close telemetry with the real exception triple without affecting stages."""
+    try:
+        context = span_factory()
+    except Exception:
+        context = nullcontext()
+    entered = False
+    try:
+        try:
+            context.__enter__()
+            entered = True
+        except Exception as exc:
+            with suppress(Exception):
+                context.__exit__(type(exc), exc, exc.__traceback__)
+            yield
+            return
+        try:
+            yield
+        except BaseException as exc:
+            if entered:
+                with suppress(Exception):
+                    context.__exit__(type(exc), exc, exc.__traceback__)
+            raise
+        else:
+            if entered:
+                with suppress(Exception):
+                    context.__exit__(None, None, None)
+    except BaseException:
+        raise
+
+
+def _stage_span_factory(observability: ObservabilityPort, stage_name: str) -> Callable[[], Any]:
+    def factory() -> Any:
+        return observability.span("docs.pipeline.stage", {"stage": stage_name})
+
+    return factory
 
 
 class StageHandler(Protocol):
@@ -42,9 +83,11 @@ class PipelineExecutor:
         self,
         definition: PipelineDefinition,
         handlers: Mapping[str, StageHandler],
+        observability: ObservabilityPort | None = None,
     ) -> None:
         self.definition = definition
         self.handlers = handlers
+        self.observability = observability or NoOpObservability()
 
     def run(
         self,
@@ -131,16 +174,27 @@ class PipelineExecutor:
             handler = self.handlers.get(stage_name)
             started = perf_counter()
             try:
-                result = StageResult.unsupported(stage_name) if handler is None else handler()
+                with _fail_open_span(_stage_span_factory(self.observability, stage_name)):
+                    result = StageResult.unsupported(stage_name) if handler is None else handler()
             except Exception as exc:
                 result = StageResult(stage_name, False, errors=(f"stage handler failed: {exc}",))
-            result = replace(result, duration_ms=max(0, round((perf_counter() - started) * 1000)))
+            result = replace(
+                result,
+                duration_ms=result.duration_ms
+                if result.duration_ms is not None
+                else max(0, round((perf_counter() - started) * 1000)),
+            )
             if (
                 result.outcome == "unsupported"
                 and fail_on_unsupported
                 and not stage.optional
             ):
-                result = StageResult(stage_name, False, errors=(f"stage unsupported: {stage_name}",))
+                result = replace(
+                    result,
+                    ok=False,
+                    outcome="failed",
+                    errors=(*result.errors, f"stage unsupported: {stage_name}"),
+                )
             if result.stage != stage_name:
                 raise ValueError(
                     f"Handler for stage {stage_name!r} returned result for {result.stage!r}"
@@ -180,8 +234,21 @@ class PipelineExecutor:
                         for artifact in missing_required
                     )
                     + tuple(contract_errors),
+                    duration_ms=result.duration_ms,
                 )
             results.append(result)
+            # Emit only after result mapping and artifact validation have
+            # established the final status visible to pipeline consumers.
+            with suppress(Exception):
+                self.observability.increment(
+                    "docs.pipeline.stage.completed",
+                    attributes={"stage": stage_name, "outcome": result.outcome},
+                )
+                self.observability.observe(
+                    "docs.pipeline.stage.duration_ms",
+                    result.duration_ms or 0,
+                    {"stage": stage_name},
+                )
             unavailable = not result.ok or (
                 result.outcome == "unsupported"
                 and (

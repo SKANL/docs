@@ -9,6 +9,14 @@ from defusedxml.ElementTree import fromstring as safe_fromstring
 
 _SVG_NS = "http://www.w3.org/2000/svg"
 _XLINK_NS = "http://www.w3.org/1999/xlink"
+_COMMON_UNDECLARED_NAMESPACES = {
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "dc": "http://purl.org/dc/elements/1.1/",
+    "xlink": _XLINK_NS,
+}
+_SVG_ROOT_START_RE = re.compile(r"<svg(?=\s|>)", re.IGNORECASE)
+_XMLNS_DECLARATION_RE = re.compile(r"xmlns:(rdf|dc|xlink)\s*=", re.IGNORECASE)
+_COMMON_PREFIX_RE = re.compile(r"(?<![\w.-])(rdf|dc|xlink):", re.IGNORECASE)
 _CSS_URL_RE = re.compile(r"url\s*\(\s*([\"']?)#([\w:.-]+)\1\s*\)", re.IGNORECASE)
 _CSS_ID_RE = re.compile(r"(?<![\w.-])#([\w:.-]+)(?![\w.-])")
 
@@ -18,12 +26,30 @@ def _local_name(tag: str) -> str:
 
 
 def _parse(text: str) -> ET.Element:
+    text = _bind_common_svg_namespaces(text)
     try:
         return safe_fromstring(text)
     except DefusedXmlException as exc:
         raise ValueError("Unsafe SVG XML: DTD and entity declarations are not allowed") from exc
     except ET.ParseError as exc:
         raise ValueError(f"Invalid SVG XML: {exc}") from exc
+
+
+def _bind_common_svg_namespaces(text: str) -> str:
+    """Bind common renderer prefixes that occasionally appear undeclared."""
+    used = {match.group(1).lower() for match in _COMMON_PREFIX_RE.finditer(text)}
+    declared = {match.group(1).lower() for match in _XMLNS_DECLARATION_RE.finditer(text)}
+    missing = [prefix for prefix in ("rdf", "dc", "xlink") if prefix in used - declared]
+    if not missing:
+        return text
+
+    root_match = _SVG_ROOT_START_RE.search(text)
+    if root_match is None:
+        return text
+    declarations = "".join(
+        f' xmlns:{prefix}="{_COMMON_UNDECLARED_NAMESPACES[prefix]}"' for prefix in missing
+    )
+    return text[: root_match.end()] + declarations + text[root_match.end() :]
 
 
 def _serialize(root: ET.Element) -> str:

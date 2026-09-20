@@ -1,0 +1,19 @@
+{
+  "name": "docs-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "sync:review-studio": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-review-studio.ps1",
+    "test:shell": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1",
+    "build": "tauri build",
+    "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
+    "dev": "tauri dev",
+    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.0.0"
+  }
+}

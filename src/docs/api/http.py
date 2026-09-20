@@ -102,10 +102,22 @@ def error_response(error: Exception) -> Response:
         headers = dict(error.headers)
         if error.status == 401:
             headers.setdefault("WWW-Authenticate", 'Bearer realm="api"')
-        return Response.json({"error": {"code": error.code, "message": error.message}}, error.status, headers)
+        return Response.json(
+            {"error": {"code": error.code, "message": error.message, "details": {}}}, error.status, headers
+        )
     if isinstance(error, APIError):
-        return Response.json({"error": {"code": error.code, "message": error.message}}, error.status, error.headers)
-    return Response.json({"error": {"code": "internal_error", "message": "Internal server error"}}, 500)
+        from .enterprise import normalize_error
+
+        if error.status >= 500:
+            return Response.json(
+                {"error": {"code": "internal_error", "message": "Internal server error", "details": {}}},
+                error.status,
+                error.headers,
+            )
+        return Response.json(normalize_error(error), error.status, error.headers)
+    return Response.json(
+        {"error": {"code": "internal_error", "message": "Internal server error", "details": {}}}, 500
+    )
 
 
 _CURSOR_SECRET = b"docs-api-cursor-v1"
@@ -241,15 +253,23 @@ class Router:
         cors_origins: Iterable[str] | None = None,
         cors_origin: str | None = None,
         max_body_size: int = 1_048_576,
+        rate_limiter: Any = None,
+        rate_limit_key: Callable[[Request], str] | None = None,
     ) -> None:
         self._routes: list[tuple[str, str, Handler, TokenValidator | None]] = []
+        self._route_scopes: dict[tuple[str, str], Any] = {}
         self.cors_origins = {origin.rstrip("/") for origin in (cors_origins or ([cors_origin] if cors_origin else [])) if origin}
         self.idempotency = IdempotencyStore()
         self.max_body_size = max_body_size
+        self.rate_limiter = rate_limiter
+        self.rate_limit_key = rate_limit_key or (lambda request: request.headers.get("X-Principal", "anonymous"))
 
-    def route(self, method: str, path: str, *, auth: TokenValidator | None = None):
+    def route(self, method: str, path: str, *, auth: TokenValidator | None = None, scopes: Any = None):
         def decorator(handler):
-            self._routes.append((method.upper(), path, handler, auth))
+            normalized = (method.upper(), path)
+            self._routes.append((*normalized, handler, auth))
+            if scopes is not None:
+                self._route_scopes[normalized] = scopes
             return handler
 
         return decorator
@@ -262,10 +282,24 @@ class Router:
             )
         if request.method.upper() == "OPTIONS":
             return self._cors(Response(204, b"", {}), origin)
-        methods = [m for m, p, h, a in self._routes if p == request.route_path]
+        if self.rate_limiter is not None:
+            result = self.rate_limiter.allow(self.rate_limit_key(request))
+            if not result.allowed:
+                from .enterprise import normalize_error
+
+                error = APIError(
+                    "rate_limited",
+                    "Rate limit exceeded",
+                    429,
+                    details={"remaining": result.remaining, "retry_after": result.retry_after},
+                    headers={"retry-after": str(max(1, int(result.retry_after + 0.999)))}
+                )
+                return self._cors(Response.json(normalize_error(error), error.status, error.headers), origin)
+        methods = [m for m, p, _, _ in self._routes if p == request.route_path]
         for method, path, handler, validator in self._routes:
             if method == request.method.upper() and path == request.route_path:
                 try:
+                    scopes = self._route_scopes.get((method, path))
                     key = next((v for k, v in request.headers.items() if k.lower() == "idempotency-key"), None)
                     idem_key = self._idem_key(request, key) if request.method.upper() in {"POST", "PUT", "PATCH"} else None
                     reservation = self.idempotency.reservation(idem_key)
@@ -280,6 +314,13 @@ class Router:
                                             bearer_auth(request.headers, validator))
                                     if validator is not None else request
                                 )
+                                if scopes is not None:
+                                    from .oidc import require_policy
+
+                                    principal = authenticated.principal
+                                    if principal is None:
+                                        raise APIError("unauthorized", "Authentication required", 401)
+                                    require_policy(principal, scopes)
                                 response = handler(authenticated)
                             if not replay:
                                 self.idempotency.put(idem_key, response)

@@ -6,8 +6,12 @@ import pytest
 
 from docs.api.application import X20Application
 from docs.api.auth import Principal
+from docs.api.enterprise import TokenBucketRateLimiter
 from docs.api.http import Request, Response, Router
+from docs.api.oidc import scope_policy
+from docs.api.openapi import build_openapi_document, canonical_json
 from docs.domain.contracts import Artifact, Graph, Passport, Run
+from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 
 
 class Runs:
@@ -55,6 +59,13 @@ def body(response):
     return json.loads(response.body)
 
 
+ALL_SCOPES = frozenset({
+    "documents:read", "documents:write", "runs:read", "runs:write", "findings:read",
+    "artifacts:read", "graph:read", "passport:read", "baselines:read", "baselines:write",
+    "plugins:read", "publication:write",
+})
+
+
 def app(router=None):
     return X20Application(
         run_store=Runs(),
@@ -79,6 +90,25 @@ def test_application_rejects_preexisting_dynamic_route_collision_at_construction
         )
 
 
+def test_openapi_endpoint_returns_deterministic_json_without_workspace():
+    application = app()
+
+    first = application.dispatch(Request("GET", "/v1/openapi.json"))
+    second = application.dispatch(Request("GET", "/v1/openapi.json"))
+
+    assert first.status == second.status == 200
+    assert first.headers["content-type"] == "application/json"
+    assert first.body == second.body == canonical_json(build_openapi_document()).encode()
+
+
+def test_openapi_documents_owned_document_scope_operations():
+    paths = build_openapi_document()["paths"]
+
+    assert paths["/v1/documents/{document_id}"]["get"]["x-rbac-scopes"] == ["documents:read"]
+    assert paths["/v1/documents/{document_id}/runs"]["get"]["x-rbac-scopes"] == ["documents:read"]
+    assert paths["/v1/documents/{document_id}/revisions"]["post"]["x-rbac-scopes"] == ["documents:write"]
+
+
 def test_auth_refresh_preserves_unrelated_router_routes():
     router = Router()
 
@@ -90,7 +120,7 @@ def test_auth_refresh_preserves_unrelated_router_routes():
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), router=router,
     )
-    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
 
     assert body(router.dispatch(Request("GET", "/v1/other"))) == {"owner": "other"}
@@ -141,7 +171,7 @@ def test_wsgi_reaches_dynamic_endpoint():
 
 def test_dynamic_requests_use_auth_and_unknown_ids_are_not_found():
     application = app()
-    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     denied = application.dispatch(Request("GET", "/v1/runs/missing"))
     assert denied.status == 401
     found = application.dispatch(Request("GET", "/v1/runs/missing", headers={"Authorization": "Bearer ok"}))
@@ -150,9 +180,9 @@ def test_dynamic_requests_use_auth_and_unknown_ids_are_not_found():
 
 def test_dynamic_auth_validator_is_resolved_at_request_time():
     application = app()
-    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})).status == 404
-    application.auth = lambda token: Principal("grace", frozenset()) if token == "new" else None
+    application.auth = lambda token: Principal("grace", ALL_SCOPES) if token == "new" else None
     assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer new"})).status == 404
 
 
@@ -164,7 +194,7 @@ def test_dynamic_registration_and_auth_refresh_are_thread_safe():
             super().__setattr__(name, value)
 
     application = app(router=MutationDetectingRouter())
-    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     barrier = threading.Barrier(3)
     statuses = []
     failures = []
@@ -199,7 +229,7 @@ def test_dynamic_registration_and_auth_refresh_are_thread_safe():
 
 def test_static_endpoints_require_configured_authentication():
     application = app()
-    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
 
     for method, path in (("GET", "/v1/graph"), ("GET", "/v1/documents"), ("GET", "/v1/findings"), ("POST", "/v1/runs")):
         assert application.dispatch(Request(method, path)).status == 401
@@ -212,7 +242,7 @@ def test_enabling_auth_after_dynamic_route_creation_requires_authentication():
     application.run_store.put(Run("r1", payload={}))
     assert application.dispatch(Request("GET", "/v1/runs/r1")).status == 200
 
-    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     assert application.dispatch(Request("GET", "/v1/runs/r1")).status == 401
     assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})).status == 200
 
@@ -269,3 +299,312 @@ def test_concurrent_cancellation_is_atomic_and_cancels_once():
         thread.join()
     assert [response.status for response in responses] == [200, 200]
     assert application.queue.cancel_calls == ["r1"]
+
+
+def test_router_rate_limit_returns_retry_metadata():
+    router = Router(
+        rate_limiter=TokenBucketRateLimiter(rate=1, capacity=1),
+        rate_limit_key=lambda request: request.headers.get("X-Tenant", "anonymous"),
+    )
+    router.route("GET", "/limited")(lambda request: Response.json({"ok": True}))
+
+    assert router.dispatch(Request("GET", "/limited", {"X-Tenant": "tenant-1"})).status == 200
+    response = router.dispatch(Request("GET", "/limited", {"X-Tenant": "tenant-1"}))
+
+    assert response.status == 429
+    assert response.headers["retry-after"]
+    assert body(response)["error"]["code"] == "rate_limited"
+    assert body(response)["error"]["details"]["remaining"] == 0
+
+
+def test_router_enforces_optional_oidc_scope_policy():
+    router = Router()
+    router.route(
+        "GET",
+        "/scoped",
+        auth=lambda token: Principal("ada", frozenset({"documents:read"})) if token == "ok" else None,
+        scopes=scope_policy(all_of=("documents:write",)),
+    )(lambda request: Response.json({"ok": True}))
+
+    response = router.dispatch(Request("GET", "/scoped", {"Authorization": "Bearer ok"}))
+
+    assert response.status == 403
+    assert body(response)["error"]["code"] == "insufficient_scope"
+
+
+def test_application_propagates_authenticated_principal_to_handlers():
+    application = app()
+    principal = Principal("ada", frozenset({"graph:read"}))
+    application.auth = lambda token: principal if token == "ok" else None
+    seen = {}
+    guarded = application._authenticated(
+        lambda request: (seen.update(principal=request.principal) or Response.json({"ok": True}))
+    )
+
+    response = guarded(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
+
+    assert response.status == 200
+    assert seen["principal"] == principal
+
+
+def test_application_denies_missing_scope_with_bearer_challenge():
+    application = app()
+    application.auth = lambda token: Principal("ada", frozenset({"documents:read"})) if token == "ok" else None
+
+    response = application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
+
+    assert response.status == 403
+    assert body(response)["error"]["code"] == "insufficient_scope"
+    assert response.headers["WWW-Authenticate"] == 'Bearer realm="api", error="insufficient_scope", scope="graph:read"'
+
+
+def test_application_bearer_challenge_is_returned_for_missing_credentials():
+    application = app()
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
+
+    response = application.dispatch(Request("GET", "/v1/graph"))
+
+    assert response.status == 401
+    assert response.headers["WWW-Authenticate"] == 'Bearer realm="api"'
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "scope"),
+    [
+        ("GET", "/v1/graph", "graph:read"),
+        ("GET", "/v1/documents", "documents:read"),
+        ("GET", "/v1/documents/d1", "documents:read"),
+        ("GET", "/v1/documents/d1/runs", "documents:read"),
+        ("POST", "/v1/documents/d1/revisions", "documents:write"),
+        ("GET", "/v1/findings", "findings:read"),
+        ("GET", "/v1/runs/r1", "runs:read"),
+        ("POST", "/v1/runs", "runs:write"),
+        ("POST", "/v1/runs/r1/cancel", "runs:write"),
+        ("GET", "/v1/runs/r1/progress", "runs:read"),
+        ("GET", "/v1/runs/r1/findings", "findings:read"),
+        ("GET", "/v1/runs/r1/graph", "graph:read"),
+        ("GET", "/v1/runs/r1/passport", "passport:read"),
+        ("GET", "/v1/runs/r1/artifacts", "artifacts:read"),
+        ("GET", "/v1/runs/r1/previews/a1", "artifacts:read"),
+        ("GET", "/v1/baselines", "baselines:read"),
+        ("POST", "/v1/baselines/promotions", "baselines:write"),
+        ("GET", "/v1/plugins", "plugins:read"),
+    ],
+)
+def test_application_scope_policy_covers_owned_routes(method, path, scope):
+    assert X20Application._required_scope(method, path) == scope
+
+
+def test_application_scope_policy_does_not_overmatch_dynamic_routes():
+    assert X20Application._required_scope("GET", "/v1/runs/r1/unknown") is None
+    assert X20Application._required_scope("GET", "/v1/documents/d1/revisions") is None
+    assert X20Application._required_scope("GET", "/v1/openapi.json") is None
+    assert app().dispatch(Request("GET", "/v1/runs//passport")).status == 404
+
+
+def test_run_progress_is_exposed_as_sse():
+    application = app()
+    application.run_store.put(Run("r1", "running", {"document_id": "d1"}, "2026-01-01T00:00:00+00:00"))
+
+    response = application.dispatch(Request("GET", "/v1/runs/r1/progress"))
+
+    assert response.status == 200
+    assert response.headers["content-type"] == "text/event-stream"
+    assert response.body.startswith(b"id: r1\nevent: progress\n")
+    assert b'"id":"r1"' in response.body
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/v1/documents/d1"),
+        ("GET", "/v1/documents/d1/runs"),
+        ("GET", "/v1/runs/r1/findings"),
+        ("GET", "/v1/runs/r1/graph"),
+        ("GET", "/v1/runs/r1/previews/a1"),
+        ("POST", "/v1/documents/d1/revisions"),
+        ("GET", "/v1/baselines"),
+        ("POST", "/v1/baselines/promotions"),
+        ("GET", "/v1/plugins"),
+    ],
+)
+def test_x20_resource_routes_exist(method, path):
+    application = app()
+    if path.startswith("/v1/runs/"):
+        application.run_store.put(Run("r1", payload={"document_id": "d1"}))
+    application.dispatch(Request(method, path, body={} if method == "POST" else None))
+    assert (method, path) in application._dynamic_routes or (method, path) in application._registered_route_keys()
+
+
+def test_x20_resource_routes_are_safe_for_missing_resources():
+    application = app()
+
+    assert application.dispatch(Request("GET", "/v1/documents/missing")).status == 404
+    assert application.dispatch(Request("GET", "/v1/documents/missing/runs")).status == 404
+    assert body(application.dispatch(Request("GET", "/v1/runs/missing/findings"))) == {"items": [], "next_cursor": None}
+    assert application.dispatch(Request("GET", "/v1/runs/missing/previews/missing.png")).status == 404
+    assert application.dispatch(Request("POST", "/v1/documents/missing/revisions", body={})).status == 404
+    assert body(application.dispatch(Request("GET", "/v1/baselines"))) == {"items": [], "next_cursor": None}
+    assert application.dispatch(Request("POST", "/v1/baselines/promotions", body={})).status == 400
+    assert body(application.dispatch(Request("GET", "/v1/plugins"))) == {"items": [], "next_cursor": None}
+
+
+class Baselines:
+    def __init__(self):
+        self.promotions = []
+
+    def list(self):
+        return [{"id": "base-1", "status": "passed"}, {"id": "base-2", "status": "warnings"}]
+
+    def promote(self, baseline_id, payload):
+        self.promotions.append((baseline_id, payload))
+        return {"id": baseline_id, "status": "passed", "promoted": True}
+
+
+class Plugins:
+    def list(self):
+        return [{"id": "plugin-b", "version": "2"}, {"id": "plugin-a", "version": "1"}]
+
+
+def test_baselines_plugins_and_promotions_use_existing_store_contracts():
+    baselines = Baselines()
+    application = X20Application(
+        run_store=Runs(),
+        queue=Queue(),
+        passport_store=Passports(),
+        artifact_store=Artifacts(),
+        graph_store=Graphs(),
+        baseline_store=baselines,
+        plugin_store=Plugins(),
+    )
+
+    baseline_page = application.dispatch(Request("GET", "/v1/baselines?limit=1"))
+    plugin_page = application.dispatch(Request("GET", "/v1/plugins?limit=1"))
+    promoted = application.dispatch(
+        Request("POST", "/v1/baselines/promotions", body={"baseline_id": "base-1", "target": "release"})
+    )
+
+    assert body(baseline_page)["items"] == [{"id": "base-1", "status": "passed"}]
+    assert body(baseline_page)["next_cursor"]
+    assert body(plugin_page)["items"] == [{"id": "plugin-b", "version": "2"}]
+    assert body(plugin_page)["next_cursor"]
+    assert body(promoted) == {"id": "base-1", "promoted": True, "status": "passed"}
+    assert baselines.promotions == [("base-1", {"baseline_id": "base-1", "target": "release"})]
+
+
+class SemanticGraphs:
+    def get(self):
+        return SemanticGraph(
+            nodes=(
+                SemanticNode("claim-supported", "claim", "Supported claim"),
+                SemanticNode("claim-missing", "claim", "Missing claim"),
+                SemanticNode("evidence-1", "evidence", "Evidence"),
+                SemanticNode("revision-1", "revision", "Revision"),
+                SemanticNode("finding-1", "finding", "Finding"),
+                SemanticNode("input-1", "input", "Input"),
+                SemanticNode("artifact-1", "artifact", "Artifact"),
+                SemanticNode("reference-used", "reference", "Used reference"),
+                SemanticNode("reference-unused", "reference", "Unused reference"),
+                SemanticNode("requirement-met", "requirement", "Met requirement"),
+                SemanticNode("requirement-unmet", "requirement", "Unmet requirement"),
+                SemanticNode("consumer-1", "consumer", "Consumer"),
+            ),
+            edges=(
+                SemanticEdge("evidence-1", "claim-supported", "supports"),
+                SemanticEdge("revision-1", "finding-1", "affects"),
+                SemanticEdge("artifact-1", "input-1", "derived_from"),
+                SemanticEdge("consumer-1", "reference-used", "references"),
+                SemanticEdge("consumer-1", "requirement-met", "satisfies"),
+            ),
+        )
+
+
+def semantic_app():
+    return X20Application(
+        run_store=Runs(),
+        queue=Queue(),
+        passport_store=Passports(),
+        artifact_store=Artifacts(),
+        graph_store=SemanticGraphs(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_ids"),
+    [
+        ("mode=claims_without_evidence", ["claim-missing"]),
+        ("mode=findings_affected_by_revision&revision_id=revision-1", ["finding-1"]),
+        ("mode=artifacts_derived_from_input&input_id=input-1", ["artifact-1"]),
+        ("mode=unused_references", ["reference-unused"]),
+        ("mode=unmet_requirements", ["requirement-unmet"]),
+    ],
+)
+def test_graph_query_modes_expose_domain_read_models(query, expected_ids):
+    response = semantic_app().dispatch(Request("GET", f"/v1/graph?{query}"))
+
+    assert response.status == 200
+    assert [item["id"] for item in body(response)["items"]] == expected_ids
+
+
+def test_graph_query_mode_requires_its_identifier():
+    response = semantic_app().dispatch(Request("GET", "/v1/graph?mode=findings_affected_by_revision"))
+
+    assert response.status == 400
+    assert body(response)["error"]["code"] == "invalid_graph_query"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_ids"),
+    [
+        ("claims_without_evidence", ["claim-missing"]),
+        ("findings_affected_by_revision&id=revision-1", ["finding-1"]),
+        ("artifacts_derived_from_input&id=input-1", ["artifact-1"]),
+        ("unused_references", ["reference-unused"]),
+        ("unmet_requirements", ["requirement-unmet"]),
+    ],
+)
+def test_graph_query_aliases_expose_review_studio_contract(query, expected_ids):
+    response = semantic_app().dispatch(Request("GET", f"/v1/graph?query={query}"))
+
+    assert response.status == 200
+    assert [item["id"] for item in body(response)["items"]] == expected_ids
+
+
+def test_run_graph_preserves_graph_query_aliases():
+    application = semantic_app()
+    application.run_store.put(Run("r1", payload={}))
+
+    response = application.dispatch(
+        Request("GET", "/v1/runs/r1/graph?query=findings_affected_by_revision&id=revision-1")
+    )
+
+    assert response.status == 200
+    assert [item["id"] for item in body(response)["items"]] == ["finding-1"]
+
+
+def test_run_graph_requires_an_existing_run():
+    response = semantic_app().dispatch(Request("GET", "/v1/runs/missing/graph"))
+
+    assert response.status == 404
+    assert body(response)["error"]["code"] == "not_found"
+
+
+@pytest.mark.parametrize("query", ["findings_affected_by_revision", "artifacts_derived_from_input"])
+def test_graph_query_alias_requires_id(query):
+    response = semantic_app().dispatch(Request("GET", f"/v1/graph?query={query}"))
+
+    assert response.status == 400
+    assert body(response)["error"]["code"] == "invalid_graph_query"
+
+
+def test_graph_query_rejects_conflicting_query_and_mode():
+    response = semantic_app().dispatch(
+        Request("GET", "/v1/graph?query=unused_references&mode=unused_references")
+    )
+
+    assert response.status == 400
+    assert body(response)["error"] == {
+        "code": "invalid_graph_query",
+        "message": "query and mode cannot be used together",
+        "details": {},
+    }

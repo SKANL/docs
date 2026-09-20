@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import inspect
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from docs.application.semantic_graph import SemanticGraphProjector
 from docs.domain.docx_structure import structure_parts
 from docs.domain.ports.atomic_file_port import AtomicFilePort
 from docs.domain.ports.markdown_normalizer_port import MarkdownNormalizerPort
@@ -41,10 +42,16 @@ class SourcePipeline:
         ingest_service: Any,
         normalizer: MarkdownNormalizerPort,
         file_writer: AtomicFilePort,
+        graph_projector: SemanticGraphProjector | None = None,
+        record_factory: Callable[[Mapping[str, Any]], Iterable[Mapping[str, Any]] | None] | None = None,
+        record_mapper: Callable[[Mapping[str, Any]], Iterable[Mapping[str, Any]] | None] | None = None,
     ) -> None:
         self.ingest_service = ingest_service
         self.normalizer = normalizer
         self.file_writer = file_writer
+        self.graph_projector = graph_projector
+        self.record_factory = record_factory
+        self.record_mapper = record_mapper
 
     def ingest(
         self, document_id: str, document_root: Path, config: dict[str, Any], strict: bool = False
@@ -101,6 +108,7 @@ class SourcePipeline:
                 "warning": "v2 ingest does not expose strict enforcement",
             })
         result = dict(result)
+        self._project_graph_safely(result)
         report = self._report(
             document_id,
             "ingest-sources",
@@ -115,6 +123,48 @@ class SourcePipeline:
                 "message": f"The v2 ingest strict_policy is contradictory: {policy_error}",
             }]
         return self._persist_report_safely(root, config, "ingest", report)
+
+    def _project_graph_safely(self, result: dict[str, Any]) -> None:
+        """Project explicit normalized records without affecting ingest success."""
+        if self.graph_projector is None or not self._result_succeeded(result):
+            return
+        try:
+            records = self._normalized_records(result)
+            if records is None:
+                return
+            projection = self.graph_projector.project(records)
+            warnings = tuple(getattr(projection, "warnings", ()))
+            if getattr(projection, "graph_unavailable", False) and not warnings:
+                warnings = ("graph unavailable",)
+            self._append_graph_warnings(result, warnings)
+        except Exception as exc:
+            self._append_graph_warnings(result, (f"graph unavailable: {exc}",))
+
+    def _normalized_records(
+        self, result: Mapping[str, Any]
+    ) -> Iterable[Mapping[str, Any]] | None:
+        for mapper in (self.record_factory, self.record_mapper):
+            if mapper is not None:
+                return mapper(result)
+        records = result.get("normalized_records")
+        if isinstance(records, Iterable) and not isinstance(records, (str, bytes, Mapping)):
+            return records
+        return None
+
+    @staticmethod
+    def _append_graph_warnings(result: dict[str, Any], warnings: Iterable[Any]) -> None:
+        messages = [str(warning) for warning in warnings if str(warning)]
+        if not messages:
+            return
+        existing = result.get("warnings")
+        previous = (
+            [*existing]
+            if isinstance(existing, (list, tuple))
+            else [str(existing)]
+            if existing is not None
+            else []
+        )
+        result["warnings"] = previous + messages
 
     def normalize(self, document_id: str, document_root: Path, config: dict[str, Any]) -> dict[str, Any]:
         root = Path(document_root)

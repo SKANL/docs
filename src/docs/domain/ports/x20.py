@@ -1,8 +1,39 @@
 from __future__ import annotations
 
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol
 
-from docs.domain.contracts import Artifact, Blob, Graph, Job, Passport, Run
+from docs.domain.contracts import SCHEMA, Artifact, Blob, Graph, Job, Passport, Run
+from docs.domain.ports.document_renderer_port import DocumentRendererPort
+from docs.domain.ports.document_repository import DocumentRepository
+from docs.domain.ports.render_verification_port import RenderVerificationPort
+
+X20_PORT_CONTRACT = SCHEMA
+
+
+class DocumentStore(DocumentRepository, Protocol):
+    """Version 1 public document-persistence boundary."""
+
+
+class Renderer(DocumentRendererPort, Protocol):
+    """Version 1 public document-rendering boundary."""
+
+
+class Verifier(RenderVerificationPort, Protocol):
+    """Version 1 public rendered-artifact verification boundary."""
+
+
+class PluginExecutor(Protocol):
+    """Version 1 public boundary for isolated plugin execution."""
+
+    def run(
+        self,
+        manifest: Any,
+        payload: Any,
+        publication_dir: Path | None = None,
+        *,
+        trusted_token: str | None = None,
+    ) -> Any: ...
 
 
 class RunStore(Protocol):
