@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,9 +23,12 @@ from .infrastructure.persistence.x20 import (
     SqliteArtifactStore,
     SqliteGraphStore,
     SqliteJobQueue,
+    SqliteLeaseStore,
     SqlitePassportStore,
     SqliteRunStore,
 )
+from .workers.composition import WorkerComposition
+from .workers.runner import WorkerRunner
 
 _LOG = logging.getLogger("docs.sidecar")
 
@@ -78,11 +82,21 @@ class _HealthApplication:
         protocol: str,
         *,
         workspace_error: str | None = None,
+        worker_runner: WorkerRunner | None = None,
+        worker_thread: threading.Thread | None = None,
     ) -> None:
         self.application = application
         self.health_path = health_path
         self.protocol = protocol
         self.workspace_error = workspace_error
+        self.worker_runner = worker_runner
+        self.worker_thread = worker_thread
+
+    def shutdown(self) -> None:
+        if self.worker_runner is not None:
+            self.worker_runner.stop()
+        if self.worker_thread is not None and self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=5)
 
     def __call__(self, environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
         if environ.get("PATH_INFO") == self.health_path and environ.get("REQUEST_METHOD", "GET") == "GET":
@@ -143,7 +157,87 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         workspace_registry=WorkspaceRegistry(),
         router=Router(cors_origins=config.cors_origins),
     )
-    return _HealthApplication(application, urlsplit(config.health_url).path, config.protocol)
+    runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store)
+    thread = threading.Thread(target=runner.run_until_stopped, name="docs-worker", daemon=True)
+    thread.start()
+    return _HealthApplication(
+        application,
+        urlsplit(config.health_url).path,
+        config.protocol,
+        worker_runner=runner,
+        worker_thread=thread,
+    )
+
+
+def _build_worker(
+    workspace: Path,
+    queue: SqliteJobQueue,
+    state_path: Path,
+    run_store: SqliteRunStore,
+    passport_store: SqlitePassportStore,
+) -> WorkerRunner:
+    """Compose the real local worker; no synthetic completion path is allowed."""
+    from .cli._shared import Deps
+    from .cli.commands.document_app import create_document_service
+    from .domain.workspace import Workspace
+
+    root = workspace.resolve()
+
+    class Runtime:
+        def __init__(self, pipeline_id: str) -> None:
+            self.pipeline_id = pipeline_id
+
+        def run(self, run_id: str, *, inputs=(), outputs=(), excluded_stages=frozenset(), external_artifacts=None):
+            del outputs, excluded_stages
+            # The API payload is deliberately explicit: a run cannot execute
+            # against an implicit or fake document.
+            payload = current_payload.get(run_id, {})
+            document_id = payload.get("document_id")
+            if not isinstance(document_id, str) or not document_id:
+                raise ValueError("document_id is required to execute a run")
+            output_format = payload.get("format", "docx")
+            deps = Deps(Workspace(root / "documents", root / "templates"))
+            service = create_document_service(
+                deps,
+                output_format=output_format,
+                document=document_id,
+                pipeline_id=self.pipeline_id,
+                provenance_run_id=run_id,
+            )
+            report = service.run(
+                run_id,
+                inputs=inputs,
+                publish=True,
+                pipeline_id=self.pipeline_id,
+                external_artifacts=external_artifacts,
+            )
+            if not getattr(report, "succeeded", False):
+                raise RuntimeError("document pipeline failed; inspect run evidence for stage findings")
+            return {"pipeline_id": self.pipeline_id, "document_id": document_id, "succeeded": True}
+
+    current_payload: dict[str, dict[str, Any]] = {}
+
+    def factory(pipeline_id: str) -> Runtime:
+        return Runtime(pipeline_id)
+
+    # The worker handler needs the immutable payload for document_id while
+    # still receiving the validated paths from WorkerComposition.
+    composition = WorkerComposition(
+        factory,
+        root,
+        queue,
+        SqliteLeaseStore(state_path),
+        run_store=run_store,
+        passport_store=passport_store,
+    )
+    original_handle = composition.handle
+
+    def handle(job, scratch=None):
+        current_payload[str(job.payload.get("run_id", job.id))] = dict(job.payload)
+        return original_handle(job, scratch)
+
+    composition.handle = handle  # type: ignore[method-assign]
+    return WorkerRunner(composition.create_service(), poll_interval=0.2)
 
 
 def build_server(config: SidecarConfig) -> GracefulHTTPServer:
@@ -154,7 +248,10 @@ def build_server(config: SidecarConfig) -> GracefulHTTPServer:
         workspace=config.workspace,
         cors_origins=config.cors_origins,
     )
-    return create_server(build_application(config), transport)
+    application = build_application(config)
+    server = create_server(application, transport)
+    server._docs_application = application  # type: ignore[attr-defined]
+    return server
 
 
 def run(server: GracefulHTTPServer) -> None:
@@ -183,6 +280,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         run(server)
     finally:
+        application = getattr(server, "_docs_application", None)
+        if application is not None:
+            application.shutdown()
         for number, handler in previous.items():
             signal.signal(number, handler)
     return 0

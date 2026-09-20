@@ -12,6 +12,8 @@ import type {
   Revision,
   Run,
   Template,
+  Workspace,
+  ImportResult,
 } from "./models";
 
 export type Page<T> = { items: T[]; nextCursor?: string; total?: number };
@@ -181,6 +183,14 @@ export class ReviewApiClient {
   listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params); }
   listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params); }
   listPublications(params?: ListParams) { return this.list<Publication>("publications", params); }
+  listWorkspaces() { return this.request<unknown>("workspaces").then(page<Workspace>); }
+  createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  selectWorkspace(id:string) { return this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" }); }
+  async importDocument(file: File, workspace: Workspace): Promise<ImportResult> {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
+    return this.request<ImportResult>("documents/import", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspace.id, filename:file.name, content_base64:btoa(binary)}) });
+  }
 
   previewUrl(value: string): string {
     const url = new URL(value, `${this.baseUrl}/`);
