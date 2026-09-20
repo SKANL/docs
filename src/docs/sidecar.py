@@ -36,6 +36,38 @@ import hashlib
 _LOG = logging.getLogger("docs.sidecar")
 
 
+class _FilesystemDocumentStore:
+    """Read real document manifests for the local API; never synthesizes rows."""
+
+    def __init__(self, workspace: Path) -> None:
+        self.root = workspace.resolve() / "documents"
+
+    def list(self) -> list[dict[str, Any]]:
+        if not self.root.is_dir():
+            return []
+        items: list[dict[str, Any]] = []
+        for path in sorted(self.root.glob("*/document.json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(value, dict):
+                value.setdefault("id", path.parent.name)
+                items.append(value)
+        return items
+
+    def get(self, document_id: str) -> dict[str, Any] | None:
+        path = self.root / document_id / "document.json"
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(value, dict):
+            return None
+        value.setdefault("id", document_id)
+        return value
+
+
 @dataclass(frozen=True)
 class SidecarConfig:
     host: str = "127.0.0.1"
@@ -191,6 +223,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         artifact_store=artifact_store,
         graph_store=graph_store,
         findings_store=findings_store,
+        document_store=_FilesystemDocumentStore(config.workspace),
         workspace_registry=WorkspaceRegistry(),
         document_creator=create_document,
         document_action=document_action,
