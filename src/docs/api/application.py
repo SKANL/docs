@@ -55,6 +55,7 @@ class X20Application:
         idempotency_persistence: Any = None,
         workspace_registry: WorkspaceRegistry | None = None,
         import_service: SourceImportService | None = None,
+        document_creator: Any = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -80,6 +81,7 @@ class X20Application:
         self.observability = observability or create_observability_from_env()
         self.workspace_registry = workspace_registry
         self.import_service = import_service or SourceImportService()
+        self.document_creator = document_creator
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -97,6 +99,7 @@ class X20Application:
             ("GET", "/v1/workspaces"),
             ("POST", "/v1/workspaces"),
             ("POST", "/v1/documents/import"),
+            ("POST", "/v1/documents"),
             ("POST", "/v1/baselines/promotions"),
             ("POST", "/v1/runs"),
         }
@@ -115,6 +118,7 @@ class X20Application:
         self._register_owned_route("GET", "/v1/workspaces", self._workspaces)
         self._register_owned_route("POST", "/v1/workspaces", self._create_workspace)
         self._register_owned_route("POST", "/v1/documents/import", self._import_document)
+        self._register_owned_route("POST", "/v1/documents", self._create_document)
         self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
         self._register_owned_route("POST", "/v1/runs", self._create_run)
 
@@ -209,6 +213,8 @@ class X20Application:
             ("POST", "/v1/workspaces"): "workspaces:write",
             ("GET", "/v1/graph"): "graph:read",
             ("GET", "/v1/documents"): "documents:read",
+            ("POST", "/v1/documents"): "documents:write",
+            ("POST", "/v1/documents/import"): "documents:write",
             ("GET", "/v1/findings"): "findings:read",
             ("GET", "/v1/baselines"): "baselines:read",
             ("POST", "/v1/baselines/promotions"): "baselines:write",
@@ -398,6 +404,27 @@ class X20Application:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         except ImportError as exc:
             raise APIError(str(exc), str(exc), 400) from exc
+        return Response.json(result, 201)
+
+    def _create_document(self, request: Request) -> Response:
+        if self.document_creator is None:
+            raise APIError("document_creation_unavailable", "Document creation is not configured", 501)
+        data = request.json(object_only=True)
+        workspace_id = str(data.get("workspace_id", ""))
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            workspace = self.workspace_registry.get(workspace_id)
+            result = self.document_creator(
+                workspace["root"],
+                str(data.get("document_id", "")),
+                str(data.get("template", "documento-generico")),
+                str(data.get("title", "")),
+            )
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        except (ValueError, OSError, KeyError) as exc:
+            raise APIError("document_creation_failed", str(exc), 400) from exc
         return Response.json(result, 201)
 
     def _workspace(self, workspace_id: str, request: Request) -> Response:

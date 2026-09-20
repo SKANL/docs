@@ -148,6 +148,14 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     passport_store = SqlitePassportStore(state_path)
     artifact_store = SqliteArtifactStore(state_path)
     graph_store = SqliteGraphStore(state_path)
+    def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
+        from .cli._shared import Deps
+        from .domain.workspace import Workspace
+
+        deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        document = deps.documents.create(document_id, template, title)
+        return document.model_dump()
+
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -155,6 +163,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         artifact_store=artifact_store,
         graph_store=graph_store,
         workspace_registry=WorkspaceRegistry(),
+        document_creator=create_document,
         router=Router(cors_origins=config.cors_origins),
     )
     runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store)
