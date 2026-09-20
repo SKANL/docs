@@ -636,13 +636,19 @@ class X20Application:
         """Expose deterministic read-only graph queries without mutating the graph."""
         if request.principal is not None:
             raise APIError("not_found", "Graph not found", 404)
-        if not request.query:
-            graph = self.graph_store.get()
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        graph_store = self.graph_store
+        if workspace_id and hasattr(self.graph_store, "for_workspace"):
+            if self.workspace_registry is not None:
+                self.workspace_registry.get(workspace_id)
+            graph_store = self.graph_store.for_workspace(workspace_id)
+        if not request.query or (set(request.query) == {"workspace_id"}):
+            graph = graph_store.get()
             data = _dict(graph)
             if not isinstance(data, Mapping):
                 data = {}
             return Response.json({"nodes": list(data.get("nodes", [])), "edges": list(data.get("edges", []))})
-        query = GraphQueryService(self.graph_store)
+        query = GraphQueryService(graph_store)
         params = request.query
         mode = params.get("mode")
         query_name = params.get("query")

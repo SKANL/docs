@@ -260,13 +260,28 @@ class _WorkspaceGraphStore:
     @property
     def path(self) -> Path: return self.fallback_root / ".docs" / "x20.sqlite3"
 
-    def _store(self) -> SqliteGraphStore:
-        active = self.registry.active()
-        root = Path(str(active["root"])).resolve() if active is not None else self.fallback_root
+    def _store(self, workspace_id: str | None = None) -> SqliteGraphStore:
+        selected = self.registry.get(workspace_id) if workspace_id else self.registry.active()
+        root = Path(str(selected["root"])).resolve() if selected is not None else self.fallback_root
         return SqliteGraphStore(root / ".docs" / "x20.sqlite3")
 
-    def get(self) -> Any: return self._store().get()
+    def for_workspace(self, workspace_id: str) -> _WorkspaceGraphView:
+        return _WorkspaceGraphView(self, workspace_id)
+
+    def get(self, workspace_id: str | None = None) -> Any: return self._store(workspace_id).get()
     def put(self, value: Any) -> None: self._store().put(value)
+
+
+class _WorkspaceGraphView:
+    def __init__(self, parent: _WorkspaceGraphStore, workspace_id: str) -> None:
+        self.parent = parent
+        self.workspace_id = workspace_id
+
+    def get(self) -> Any:
+        return self.parent.get(self.workspace_id)
+
+    def put(self, value: Any) -> None:
+        self.parent._store(self.workspace_id).put(value)
 
 
 @dataclass(frozen=True)
