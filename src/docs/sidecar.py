@@ -361,7 +361,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             config.protocol,
             workspace_error="workspace_not_configured",
         )
-    registry = WorkspaceRegistry()
+    registry = WorkspaceRegistry(config.workspace / ".docs" / "workspaces.json")
+    configured_workspace = registry.ensure("Local workspace", config.workspace)
+    if registry.active() is None:
+        registry.select(configured_workspace["id"])
     state_path = config.workspace / ".docs" / "x20.sqlite3"
     run_store = _WorkspaceRunStore(registry, config.workspace)
     queue = _WorkspaceJobQueue(registry, config.workspace)

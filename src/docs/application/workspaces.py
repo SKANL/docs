@@ -43,6 +43,16 @@ class WorkspaceRegistry:
             self._write(data)
             return dict(item)
 
+    def ensure(self, name: str, root: str | Path) -> dict[str, Any]:
+        """Return the registered workspace for a root, creating it if needed."""
+        resolved = str(Path(root).expanduser().resolve())
+        with self._lock:
+            for item in self._read()["workspaces"]:
+                if str(Path(str(item["root"])).expanduser().resolve()) == resolved:
+                    self._ensure_layout(Path(resolved))
+                    return dict(item)
+        return self.create(name, resolved)
+
     @staticmethod
     def _ensure_layout(root: Path) -> None:
         """Create the durable workspace boundary before it becomes selectable."""
