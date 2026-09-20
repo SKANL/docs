@@ -39,14 +39,23 @@ _LOG = logging.getLogger("docs.sidecar")
 class _FilesystemDocumentStore:
     """Read real document manifests for the local API; never synthesizes rows."""
 
-    def __init__(self, workspace: Path) -> None:
+    def __init__(self, workspace: Path, registry: WorkspaceRegistry | None = None) -> None:
         self.root = workspace.resolve() / "documents"
+        self.registry = registry
+
+    def _documents_root(self) -> Path:
+        if self.registry is not None:
+            active = self.registry.active()
+            if active is not None:
+                return Path(str(active["root"])).resolve() / "documents"
+        return self.root
 
     def list(self) -> list[dict[str, Any]]:
-        if not self.root.is_dir():
+        root = self._documents_root()
+        if not root.is_dir():
             return []
         items: list[dict[str, Any]] = []
-        for path in sorted(self.root.glob("*/document.json")):
+        for path in sorted(root.glob("*/document.json")):
             try:
                 value = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
@@ -57,7 +66,7 @@ class _FilesystemDocumentStore:
         return items
 
     def get(self, document_id: str) -> dict[str, Any] | None:
-        path = self.root / document_id / "document.json"
+        path = self._documents_root() / document_id / "document.json"
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -216,6 +225,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         report = service.run(run_id, publish=action == "build", pipeline_id=pipeline_id)
         return report.to_dict()
 
+    registry = WorkspaceRegistry()
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -223,8 +233,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         artifact_store=artifact_store,
         graph_store=graph_store,
         findings_store=findings_store,
-        document_store=_FilesystemDocumentStore(config.workspace),
-        workspace_registry=WorkspaceRegistry(),
+        document_store=_FilesystemDocumentStore(config.workspace, registry),
+        workspace_registry=registry,
         document_creator=create_document,
         document_action=document_action,
         router=Router(cors_origins=config.cors_origins),
