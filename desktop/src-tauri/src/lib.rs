@@ -331,13 +331,23 @@ fn sidecar_start(
     })
 }
 
+#[tauri::command]
+fn sidecar_restart(
+    app: tauri::AppHandle,
+    supervisor: State<'_, SidecarSupervisor>,
+) -> Result<Health, String> {
+    supervisor.shutdown();
+    sidecar_start(app, supervisor)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(SidecarSupervisor::default())
         .invoke_handler(tauri::generate_handler![
             sidecar_handshake,
             sidecar_health,
-            sidecar_start
+            sidecar_start,
+            sidecar_restart
         ])
         .setup(|app| {
             let handle = app.handle().clone();
