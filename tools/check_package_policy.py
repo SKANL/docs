@@ -6,7 +6,6 @@ import sys
 from pathlib import PurePosixPath
 from zipfile import ZipFile
 
-
 # These are retired runtime paths, not words that may occur in supported
 # compatibility adapters or their APIs.
 FORBIDDEN_PATH_COMPONENTS = frozenset({"v2_atomic", "flat_pipeline"})
