@@ -11,6 +11,7 @@ if (-not (Test-Path (Join-Path $reviewStudio 'package.json') -PathType Leaf)) {
 
 Push-Location $reviewStudio
 try {
+    $env:VITE_DOCS_API_BASE_URL = 'http://127.0.0.1:8765/v1'
     if (Test-Path 'package-lock.json' -PathType Leaf) {
         npm ci
     } else {
