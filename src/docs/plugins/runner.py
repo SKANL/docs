@@ -292,7 +292,7 @@ class PluginRunner:
         if os.name != "nt" or self.allow_unsandboxed:
             return None
         try:
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
             create_job = kernel32.CreateJobObjectW
             set_information = kernel32.SetInformationJobObject
             assign_process = kernel32.AssignProcessToJobObject
@@ -318,26 +318,26 @@ class PluginRunner:
         get_current_process.argtypes = []
         get_current_process.restype = ctypes.c_void_p
 
-        ctypes.set_last_error(0)
+        ctypes.set_last_error(0)  # type: ignore[attr-defined]
         in_parent_job_value = ctypes.c_int()
         if not is_process_in_job(get_current_process(), None, ctypes.byref(in_parent_job_value)):
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise PluginRunError(f"IsProcessInJob failed with Win32 error {error}; refusing untrusted plugin execution")
         in_parent_job = bool(in_parent_job_value.value)
         if in_parent_job:
-            version = sys.getwindowsversion()
+            version = sys.getwindowsversion()  # type: ignore[attr-defined]
             if (version.major, version.minor) < (6, 2):
                 raise PluginRunError("Windows host forbids nested Job Objects; refusing untrusted plugin execution")
 
         handle = create_job(None, None)
         if not handle:
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise PluginRunError(f"CreateJobObjectW failed with Win32 error {error}; refusing untrusted plugin execution")
         job = _WindowsJobObject(kernel32, handle)
         limits = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         limits.BasicLimitInformation.LimitFlags = 0x00002000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
         if not set_information(job.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):  # JobObjectExtendedLimitInformation
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             self._close_windows_job(job)
             raise PluginRunError(f"SetInformationJobObject failed with Win32 error {error}; refusing untrusted plugin execution")
         return job
@@ -349,11 +349,11 @@ class PluginRunner:
         with suppress(TypeError, ValueError):
             process_handle = int(process_handle)
         if not job.api.AssignProcessToJobObject(job.handle, process_handle):
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise PluginRunError(f"AssignProcessToJobObject failed with Win32 error {error}; refusing untrusted plugin execution")
         associated = ctypes.c_int()
         if not job.api.IsProcessInJob(process_handle, job.handle, ctypes.byref(associated)) or not associated.value:
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise PluginRunError(f"Windows process was not contained by Job Object (Win32 error {error}); refusing untrusted plugin execution")
 
     def _resume_windows_process(self, api: Any, process: subprocess.Popen[bytes]) -> None:
@@ -380,7 +380,7 @@ class PluginRunner:
         snapshot_value = snapshot.value if isinstance(snapshot, ctypes.c_void_p) else snapshot
         invalid_handle = ctypes.c_void_p(-1).value
         if not snapshot or snapshot_value == invalid_handle:
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise PluginRunError(f"CreateToolhelp32Snapshot failed with Win32 error {error}; refusing untrusted plugin execution")
 
         thread_ids: list[int] = []
@@ -399,11 +399,11 @@ class PluginRunner:
 
         thread_handle = open_thread(0x0002, 0, thread_ids[0])  # THREAD_SUSPEND_RESUME
         if not thread_handle:
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise PluginRunError(f"OpenThread failed with Win32 error {error}; refusing untrusted plugin execution")
         try:
             if resume_thread(thread_handle) == 0xFFFFFFFF:
-                error = ctypes.get_last_error()
+                error = ctypes.get_last_error()  # type: ignore[attr-defined]
                 raise PluginRunError(f"ResumeThread failed with Win32 error {error}; refusing untrusted plugin execution")
         finally:
             close_handle(thread_handle)
