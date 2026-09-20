@@ -90,7 +90,9 @@ impl SidecarSupervisor {
         if state.child.is_some() {
             return Err(SupervisorError::AlreadyRunning);
         }
-        let child = Command::new(executable)
+        let executable_path = Path::new(executable);
+        let child = Command::new(executable_path)
+            .current_dir(executable_path.parent().unwrap_or_else(|| Path::new(".")))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -255,6 +257,16 @@ fn resolve_sidecar_executable(app: &tauri::AppHandle) -> Result<PathBuf, Supervi
         .map_err(|error| SupervisorError::Resolve(error.to_string()))?;
     let candidate = package_local_candidates(&resource_dir)
         .find(|path| path.is_file())
+        .or_else(|| {
+            // In `tauri dev`, resources are not copied into an app bundle.
+            // Resolve the repository-local staged sidecar as a development
+            // fallback while keeping packaged installations resource-first.
+            let desktop_dir = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?;
+            sidecar_names()
+                .into_iter()
+                .map(|name| desktop_dir.join("sidecar").join(name))
+                .find(|path| path.is_file())
+        })
         .ok_or(SupervisorError::NotFound);
     candidate
 }

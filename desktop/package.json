@@ -8,9 +8,10 @@
     "sync:review-studio": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-review-studio.ps1",
     "test:shell": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1",
     "check:sidecar": "python scripts/check-sidecar-packaging.py",
+    "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
     "build": "tauri build",
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
-    "dev": "tauri dev",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-windows.ps1",
     "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1"
   },
   "devDependencies": {

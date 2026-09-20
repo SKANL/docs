@@ -14,6 +14,8 @@ try {
         }
         New-Item -ItemType Directory -Path $sidecarDir -Force | Out-Null
         Copy-Item -LiteralPath $configuredSidecar -Destination (Join-Path $sidecarDir 'docs-sidecar.exe') -Force
+    } else {
+        powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-sidecar.ps1')
     }
 
     npm run check:sidecar
@@ -22,7 +24,7 @@ try {
         (Join-Path $sidecarDir 'sidecar.exe')
     ) | Where-Object { Test-Path $_ -PathType Leaf }
     if (-not $packaged) {
-        throw 'No Windows sidecar was staged. Set DOCS_SIDECAR_EXECUTABLE or place sidecar/docs-sidecar.exe before building.'
+        throw 'No Windows sidecar was staged. Build-sidecar.ps1 must produce sidecar/docs-sidecar.exe.'
     }
 
     npm run tauri build

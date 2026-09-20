@@ -5,6 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
+docs-sidecar.spec
 
 # Virtual environments
 .venv

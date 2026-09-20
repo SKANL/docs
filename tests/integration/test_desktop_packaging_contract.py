@@ -29,3 +29,10 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
 
     package = json.loads((root / "desktop/package.json").read_text(encoding="utf-8"))
     assert package["scripts"]["check:sidecar"] == "python scripts/check-sidecar-packaging.py"
+    assert package["scripts"]["build:sidecar"].endswith("scripts/build-sidecar.ps1")
+    assert "beforeDevCommand" in config["build"]
+    assert "review-studio" in config["build"]["beforeDevCommand"]
+
+    sidecar = (root / "desktop/scripts/build-sidecar.ps1").read_text(encoding="utf-8")
+    assert "pyinstaller" in sidecar
+    assert "docs-sidecar.exe" in sidecar

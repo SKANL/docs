@@ -36,6 +36,7 @@ observability = [
 docs = "docs.cli.main:main"
 docs-worker = "docs.workers.cli:main"
 docs-api = "docs.api.server:main"
+docs-sidecar = "docs.sidecar:main"
 
 # Every quality tool the project is checked with is declared HERE, not left
 # ambient. `uv run <tool>` only reaches the project venv for tools it can
@@ -53,6 +54,7 @@ dev = [
     "ruff>=0.15.6",
     "types-defusedxml>=0.7.0",
     "diff-cover>=9.2.0",
+    "pyinstaller>=6.0.0",
 ]
 
 [build-system]
