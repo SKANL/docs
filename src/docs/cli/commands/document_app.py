@@ -1656,6 +1656,29 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
         deps.workspace.doc_root(resolved.doc_id),
         resolved.config.get("paths", {}),
     )
+
+
+@document_app.command("run")
+def run_document(
+    ctx: typer.Context,
+    formats: list[str] | None = typer.Option(None, "--format"),
+    policy: PipelineMode = typer.Option(PipelineMode.release, "--policy"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Execute the real document pipeline synchronously from source to verified output.
+
+    This is the CLI's end-to-end entry point. It intentionally delegates to
+    the same application pipeline used by build/release instead of creating a
+    second implementation or returning a synthetic run result.
+    """
+    _run(
+        ctx,
+        "build",
+        json_output,
+        formats,
+        policy,
+        pipeline_id="document",
+    )
     status_reader = payload.get("v2", {})
     current_v2 = dict(status_reader) if isinstance(status_reader, Mapping) else {}
     payload["v2"] = {
