@@ -182,6 +182,7 @@ export class ReviewApiClient {
   getGraphQuery(query: GraphQuery, id?: string) {
     const params = new URLSearchParams({ query });
     if (id) params.set("id", id);
+    if (this.selectedWorkspaceId) params.set("workspace_id", this.selectedWorkspaceId);
     return this.request<unknown>(`graph?${params}`).then(normalizeGraphQuery);
   }
   listTemplates(params?: ListParams) { return this.list<Template>("templates", params); }

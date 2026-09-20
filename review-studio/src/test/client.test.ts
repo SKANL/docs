@@ -20,6 +20,19 @@ describe("ReviewApiClient", () => {
     expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v1/graph?query=findings_affected_by_revision&id=rev+1");
   });
 
+  it("scopes graph domain queries to the selected workspace", async () => {
+    const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const path = new URL(input.toString()).pathname;
+      return Promise.resolve(path.endsWith("/select")
+        ? jsonResponse({ id: "workspace-2", name: "Workspace 2", root: "C:/workspace-2" })
+        : jsonResponse({ items: [] }));
+    });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    await client.selectWorkspace("workspace-2");
+    await client.getGraphQuery("unused_references");
+    expect(fetcher.mock.calls.at(-1)?.[0].toString()).toBe("https://review.test/v1/graph?query=unused_references&workspace_id=workspace-2");
+  });
+
   it("normalizes backend graph nodes and edges without changing the UI shape", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ nodes: [{ id: "claim-1", kind: "claim", label: "Claim", confidence: { score: 0.75 } }], edges: [{ source: "source-1", target: "claim-1", relation: "supports" }] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
