@@ -1602,6 +1602,33 @@ def ingest(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     _run_source_command(ctx, "ingest", json_output)
 
 
+@document_app.command("import")
+def import_source(
+    ctx: typer.Context,
+    source: Path = typer.Argument(..., exists=True, readable=True),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Copy a source into the active document inbox with a content hash."""
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    inbox = deps.workspace.doc_root(resolved.doc_id) / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    digest = sha256_file(source)
+    destination = inbox / f"{digest[:12]}-{source.name}"
+    temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+    shutil.copyfile(source, temporary)
+    temporary.replace(destination)
+    payload = {
+        "document_id": resolved.doc_id,
+        "filename": source.name,
+        "path": str(destination),
+        "sha256": digest,
+        "size": destination.stat().st_size,
+        "mime_type": mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=None if json_output else 2, sort_keys=True))
+
+
 @document_app.command("prepare")
 def prepare(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")) -> None:
     """Ingest, normalize, and compile the document source structure."""
