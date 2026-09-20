@@ -30,7 +30,10 @@ class WorkspaceRegistry:
     def create(self, name: str, root: str | Path) -> dict[str, Any]:
         normalized = self._name(name)
         resolved = Path(root).expanduser().resolve()
-        self._ensure_layout(resolved)
+        try:
+            self._ensure_layout(resolved)
+        except OSError as exc:
+            raise WorkspaceRegistryError("invalid_workspace_root") from exc
         with self._lock:
             data = self._read()
             if any(item["name"] == normalized for item in data["workspaces"]):
