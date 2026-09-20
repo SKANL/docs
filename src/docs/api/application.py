@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -390,6 +390,8 @@ class X20Application:
             raise APIError("invalid_graph_query", "query and mode cannot be used together", 400)
         selected_query = query_name if query_name is not None else mode
         identifier = params.get("id") if query_name is not None else None
+        result: Any
+        payload: dict[str, Any]
         if selected_query == "claims_without_evidence":
             result = query.claims_without_evidence()
             payload = {"items": [_dict(item) for item in (result.value or ())]}
@@ -433,7 +435,9 @@ class X20Application:
             payload = {"path": result.value}
         elif "node" in params:
             result = query.neighbors(
-                params["node"], relation=params.get("relation"), direction=params.get("direction", "both")
+                params["node"],
+                relation=params.get("relation"),
+                direction=cast(Literal["in", "out", "both"], params.get("direction", "both")),
             )
             payload = {"items": [_dict(item) for item in (result.value or ())]}
         elif "relation" in params:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from math import isfinite
 from threading import Event
+from typing import Literal
 
 from docs.workers.service import WorkerResult, WorkerService
 
@@ -102,7 +103,7 @@ class WorkerRunner:
         """Return this runner for use in a ``with`` statement."""
         return self
 
-    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool:
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> Literal[False]:
         """Request shutdown without suppressing an exception from the body."""
         self.stop()
         return False

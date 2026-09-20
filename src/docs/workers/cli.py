@@ -7,6 +7,7 @@ import math
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import NoReturn
 
 from docs.workers.runner import WorkerRunner
 from docs.workers.service import WorkerService
@@ -33,7 +34,7 @@ WorkerServiceFactory = Callable[[WorkerConfiguration], WorkerService]
 class _Parser(argparse.ArgumentParser):
     """An argument parser whose errors are returned by :func:`main`."""
 
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         raise ValueError(message)
 
 
@@ -106,7 +107,7 @@ def main(
     try:
         options = parser.parse_args(argv)
     except SystemExit as exc:
-        return int(exc.code)
+        return int(exc.code) if exc.code is not None else USAGE_OR_CONFIGURATION_ERROR
     except ValueError as exc:
         parser.print_usage(sys.stderr)
         print(f"error: {exc}", file=sys.stderr)

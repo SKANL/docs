@@ -29,16 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          from zipfile import ZipFile
-          forbidden = ('legacy', 'compat', 'v2_atomic', 'flat_pipeline')
-          for artifact in Path('dist').iterdir():
-              if artifact.suffix == '.whl':
-                  with ZipFile(artifact) as z:
-                      bad = [name for name in z.namelist() if any(token in name.lower() for token in forbidden)]
-                      if bad: raise SystemExit(f'forbidden package entries: {bad}')
-          PY
+          python tools/check_package_policy.py dist/*.whl
           sha256sum dist/* > dist/SHA256SUMS
       - name: Upload package evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

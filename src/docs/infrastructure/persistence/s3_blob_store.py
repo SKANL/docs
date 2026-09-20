@@ -103,9 +103,11 @@ class S3BlobStore:
 
     def put(self, blob: Blob, content: bytes) -> None:
         self._require_available()
+        client = self._client
+        assert client is not None
         self._validate_key(blob.key)
         self._verify_content(blob, content)
-        self._client.put_object(
+        client.put_object(
             Bucket=self.bucket,
             Key=self._object_key(blob.key),
             Body=content,
@@ -125,6 +127,8 @@ class S3BlobStore:
         competing creator from winning silently.
         """
         self._require_available()
+        client = self._client
+        assert client is not None
         self._validate_key(blob.key)
         self._verify_content(blob, content)
         current_response = self._get_response(blob.key)
@@ -140,7 +144,7 @@ class S3BlobStore:
             etag = current_response.get("ETag")
             conditions["IfMatch"] = str(etag) if etag is not None else expected_digest
         try:
-            self._client.put_object(
+            client.put_object(
                 Bucket=self.bucket,
                 Key=self._object_key(blob.key),
                 Body=content,
@@ -169,8 +173,10 @@ class S3BlobStore:
         return None if response is None else self._decode_response(key, response)
 
     def _get_response(self, key: str) -> dict[str, Any] | None:
+        client = self._client
+        assert client is not None
         try:
-            response = self._client.get_object(Bucket=self.bucket, Key=self._object_key(key))
+            response = client.get_object(Bucket=self.bucket, Key=self._object_key(key))
         except Exception as exc:
             if self._is_missing_object(exc):
                 return None
@@ -189,7 +195,9 @@ class S3BlobStore:
         if blob.key != key:
             raise ValueError("remote blob key does not match requested key")
         content = response.get("Body")
-        content = content.read() if callable(getattr(content, "read", None)) else content
+        reader = getattr(content, "read", None)
+        if callable(reader):
+            content = reader()
         if not isinstance(content, bytes):
             raise ValueError("remote blob body is not bytes")
         if response.get("ContentLength") != len(content):
