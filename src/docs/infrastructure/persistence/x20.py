@@ -148,6 +148,11 @@ class SqliteJobQueue(_SqliteStore):
                 "id TEXT PRIMARY KEY, payload TEXT NOT NULL, reason TEXT NOT NULL"
                 ")"
             )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS x20_job_cancellations ("
+                "run_id TEXT PRIMARY KEY"
+                ")"
+            )
             columns = {row[1] for row in connection.execute("PRAGMA table_info(x20_jobs)")}
             if "claimed_until" not in columns:
                 connection.execute("ALTER TABLE x20_jobs ADD COLUMN claimed_until REAL")
@@ -194,6 +199,20 @@ class SqliteJobQueue(_SqliteStore):
         with self._connect() as connection:
             cursor = connection.execute("DELETE FROM x20_jobs WHERE id = ? AND claimed_by = ?", (job_id, worker_id))
         return cursor.rowcount == 1
+
+    def cancel(self, run_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT OR IGNORE INTO x20_job_cancellations (run_id) VALUES (?)", (run_id,)
+            )
+        return cursor.rowcount == 1
+
+    def is_cancelled(self, run_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM x20_job_cancellations WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        return row is not None
 
 
 class SqliteLeaseStore(_SqliteStore):
@@ -445,6 +464,10 @@ class RedisJobQueue:
     def _quarantine_key(self) -> str:
         return f"{self.key}:quarantine"
 
+    @property
+    def _cancelled_key(self) -> str:
+        return f"{self.key}:cancelled"
+
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         if self._client is None:
             return
@@ -525,6 +548,18 @@ class RedisJobQueue:
                 worker_id,
             )
         )
+
+    def cancel(self, run_id: str) -> bool:
+        if self._client is None:
+            return False
+        sadd = getattr(self._client, "sadd", None)
+        return bool(callable(sadd) and sadd(self._cancelled_key, run_id))
+
+    def is_cancelled(self, run_id: str) -> bool:
+        if self._client is None:
+            return False
+        sismember = getattr(self._client, "sismember", None)
+        return bool(callable(sismember) and sismember(self._cancelled_key, run_id))
 
     @staticmethod
     def _decode_job(raw: bytes | str) -> Job:

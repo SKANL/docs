@@ -4,7 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from docs.workers.composition import PipelineJobConfiguration, WorkerComposition
+from docs.workers.composition import (
+    PipelineJobConfiguration,
+    WorkerComposition,
+    create_production_worker,
+    create_production_worker_factory,
+)
 from docs.workers.service import WorkerService
 
 
@@ -88,3 +93,35 @@ def test_create_service_wires_options_and_handler(tmp_path):
     assert service.worker_id == "worker"
     assert service.lease_ttl_seconds == 9
     assert service.max_retries == 2
+
+
+def test_production_factory_composes_durable_sqlite_worker_dependencies(tmp_path):
+    def runtime_factory(_pipeline_id):
+        return type("Runtime", (), {"run": lambda self, run_id, **kwargs: {"run_id": run_id}})()
+
+    service = create_production_worker(
+        runtime_factory,
+        tmp_path,
+        tmp_path / "worker.sqlite3",
+        worker_id="worker-1",
+        lease_ttl_seconds=9,
+        heartbeat_interval_seconds=0.5,
+    )
+
+    assert service.worker_id == "worker-1"
+    assert service.lease_ttl_seconds == 9
+    assert service.heartbeat_interval_seconds == 0.5
+    assert service.queue.__class__.__name__ == "SqliteJobQueue"
+    assert service.leases.__class__.__name__ == "SqliteLeaseStore"
+    assert service.run_store.__class__.__name__ == "SqliteRunStore"
+
+
+def test_production_worker_factory_adapts_cli_configuration(tmp_path):
+    factory = create_production_worker_factory(
+        lambda _pipeline_id: object(), tmp_path, tmp_path / "worker.sqlite3", lease_ttl_seconds=7
+    )
+
+    service = factory(SimpleNamespace(worker_id="cli-worker"))
+
+    assert service.worker_id == "cli-worker"
+    assert service.lease_ttl_seconds == 7

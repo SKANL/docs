@@ -1,8 +1,9 @@
 """Dependency-injected composition for pipeline worker jobs.
 
 This module translates an immutable queue payload into the small, typed call
-surface required by a synchronous pipeline runtime.  It deliberately owns no
-pipeline construction, persistence implementation, or worker lifecycle.
+surface required by a synchronous pipeline runtime.  ``WorkerComposition``
+remains dependency-injected; the production factory at the bottom supplies
+the durable adapters used by CLI/API entry points.
 """
 
 from __future__ import annotations
@@ -15,6 +16,12 @@ from typing import Any, Protocol
 
 from docs.domain.contracts import Job
 from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
+from docs.infrastructure.persistence.x20 import (
+    SqliteJobQueue,
+    SqliteLeaseStore,
+    SqlitePassportStore,
+    SqliteRunStore,
+)
 from docs.workers.service import WorkerResult, WorkerService
 
 
@@ -78,6 +85,7 @@ class WorkerServiceConfiguration:
     scratch_parent: str | Path | None = None
     worker_id: str | None = None
     lease_ttl_seconds: int = 60
+    heartbeat_interval_seconds: float | None = None
     max_retries: int = 0
 
 
@@ -97,6 +105,7 @@ class WorkerComposition:
         scratch_parent: str | Path | None = None,
         worker_id: str | None = None,
         lease_ttl_seconds: int = 60,
+        heartbeat_interval_seconds: float | None = None,
         max_retries: int = 0,
     ) -> None:
         self._runtime_factory = runtime_factory
@@ -110,6 +119,7 @@ class WorkerComposition:
             scratch_parent=scratch_parent,
             worker_id=worker_id,
             lease_ttl_seconds=lease_ttl_seconds,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
             max_retries=max_retries,
         )
 
@@ -143,10 +153,72 @@ class WorkerComposition:
             scratch_parent=options.scratch_parent,
             worker_id=options.worker_id,
             lease_ttl_seconds=options.lease_ttl_seconds,
+            heartbeat_interval_seconds=options.heartbeat_interval_seconds,
             max_retries=options.max_retries,
         )
 
     build = create_service
+
+
+def create_production_worker(
+    runtime_factory: PipelineRuntimeFactory,
+    workspace_root: str | Path,
+    state_path: str | Path,
+    *,
+    finalizer: Callable[[WorkerResult], Any] | None = None,
+    scratch_parent: str | Path | None = None,
+    worker_id: str | None = None,
+    lease_ttl_seconds: int = 60,
+    heartbeat_interval_seconds: float | None = None,
+    max_retries: int = 0,
+) -> WorkerService:
+    """Compose a worker with durable SQLite queue, lease, and run stores."""
+    database = Path(state_path).resolve()
+    return WorkerComposition(
+        runtime_factory,
+        workspace_root,
+        SqliteJobQueue(database),
+        SqliteLeaseStore(database),
+        run_store=SqliteRunStore(database),
+        passport_store=SqlitePassportStore(database),
+        finalizer=finalizer,
+        scratch_parent=scratch_parent,
+        worker_id=worker_id,
+        lease_ttl_seconds=lease_ttl_seconds,
+        heartbeat_interval_seconds=heartbeat_interval_seconds,
+        max_retries=max_retries,
+    ).create_service()
+
+
+def create_production_worker_factory(
+    runtime_factory: PipelineRuntimeFactory,
+    workspace_root: str | Path,
+    state_path: str | Path,
+    *,
+    finalizer: Callable[[WorkerResult], Any] | None = None,
+    scratch_parent: str | Path | None = None,
+    worker_id: str | None = None,
+    lease_ttl_seconds: int = 60,
+    heartbeat_interval_seconds: float | None = None,
+    max_retries: int = 0,
+) -> Callable[[Any], WorkerService]:
+    """Return a CLI/API-compatible factory accepting a worker configuration."""
+
+    def factory(configuration: Any) -> WorkerService:
+        configured_worker_id = getattr(configuration, "worker_id", None) or worker_id
+        return create_production_worker(
+            runtime_factory,
+            workspace_root,
+            state_path,
+            finalizer=finalizer,
+            scratch_parent=scratch_parent,
+            worker_id=configured_worker_id,
+            lease_ttl_seconds=lease_ttl_seconds,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+            max_retries=max_retries,
+        )
+
+    return factory
 
 
 def _required_text(payload: Mapping[str, Any], field_name: str) -> str:

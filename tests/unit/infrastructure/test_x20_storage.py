@@ -173,6 +173,20 @@ def test_sqlite_queue_reclaims_expired_claim_without_losing_owner_ack(tmp_path: 
     assert queue.ack("job-1", "worker-2") is True
 
 
+def test_sqlite_queue_cancellation_is_durable_and_idempotent(tmp_path: Path) -> None:
+    db = tmp_path / "queue.sqlite3"
+    queue = SqliteJobQueue(db)
+    queue.enqueue("job-1", {"run_id": "run-1"})
+
+    assert queue.cancel("run-1") is True
+    assert queue.cancel("run-1") is False
+    assert queue.is_cancelled("run-1") is True
+
+    reopened = SqliteJobQueue(db)
+    claimed = reopened.claim("worker-1")
+    assert claimed is not None and claimed.id == "job-1"
+
+
 def test_sqlite_queue_quarantines_malformed_claim_and_removes_it(tmp_path: Path) -> None:
     db = tmp_path / "queue.sqlite3"
     queue = SqliteJobQueue(db)

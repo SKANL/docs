@@ -69,6 +69,7 @@ class InMemoryJobQueue:
         self._pending: deque[Job] = deque()
         self._claimed: dict[str, str] = {}
         self._job_ids: set[str] = set()
+        self._cancelled: set[str] = set()
 
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         if job_id in self._job_ids:
@@ -89,6 +90,14 @@ class InMemoryJobQueue:
         del self._claimed[job_id]
         self._job_ids.remove(job_id)
         return True
+
+    def cancel(self, run_id: str) -> bool:
+        before = len(self._cancelled)
+        self._cancelled.add(run_id)
+        return len(self._cancelled) != before
+
+    def is_cancelled(self, run_id: str) -> bool:
+        return run_id in self._cancelled
 
 
 class InMemoryLeaseStore:

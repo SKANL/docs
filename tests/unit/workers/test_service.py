@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.domain.contracts import Job
+from docs.domain.contracts import Job, Run
 from docs.workers.service import WorkerResult, WorkerService
 
 
@@ -163,6 +163,158 @@ def test_lease_renewal_loss_stops_work_without_success_finalization(tmp_path: Pa
     assert not called and finalized == [] and queue.acked == []
 
 
+def test_heartbeat_renews_periodically_while_sync_handler_runs(tmp_path: Path) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+
+    def handler(job: Job) -> str:
+        started.set()
+        assert finish.wait(2)
+        return "ok"
+
+    service, _, leases = make_service(
+        tmp_path,
+        Job("job-1", {"run_id": "run-1"}),
+        handler,
+        lease_ttl_seconds=1,
+        heartbeat_interval_seconds=0.01,
+    )
+    result_holder: list[WorkerResult] = []
+    thread = threading.Thread(target=lambda: result_holder.append(service.run_sync()))
+    thread.start()
+    assert started.wait(2)
+    deadline = threading.Event()
+    while len(leases.renewed) < 3 and not deadline.wait(0.01):
+        pass
+    finish.set()
+    thread.join(2)
+
+    assert result_holder and result_holder[0] is not None
+    assert result_holder[0].state == "succeeded"
+    assert len(leases.renewed) >= 3
+
+
+def test_periodic_heartbeat_loss_fails_closed_after_sync_handler_returns(tmp_path: Path) -> None:
+    started = threading.Event()
+    finish = threading.Event()
+    finalized: list[WorkerResult] = []
+
+    class LosingLeases(FakeLeases):
+        def renew(self, resource: str, owner: str, ttl_seconds: int) -> bool:
+            self.renewed.append((resource, owner, ttl_seconds))
+            return len(self.renewed) < 2
+
+    def handler(job: Job) -> str:
+        started.set()
+        assert finish.wait(2)
+        return "must not be published"
+
+    queue = FakeQueue(Job("job-1", {"run_id": "run-1"}))
+    leases = LosingLeases()
+    service = WorkerService(
+        queue,
+        leases,
+        handler,
+        finalizer=finalized.append,
+        scratch_parent=tmp_path,
+        worker_id="worker-1",
+        lease_ttl_seconds=1,
+        heartbeat_interval_seconds=0.01,
+    )
+    result_holder: list[WorkerResult] = []
+    thread = threading.Thread(target=lambda: result_holder.append(service.run_sync()))
+    thread.start()
+    assert started.wait(2)
+    while len(leases.renewed) < 2:
+        threading.Event().wait(0.01)
+    finish.set()
+    thread.join(2)
+
+    assert result_holder and result_holder[0] is not None
+    assert result_holder[0].state == "lease_lost"
+    assert finalized == [] and queue.acked == []
+
+
+def test_durable_cancellation_is_observed_from_run_store(tmp_path: Path) -> None:
+    class Runs:
+        def __init__(self) -> None:
+            self.items: dict[str, object] = {}
+
+        def put(self, run: object) -> None:
+            self.items[run.id] = run  # type: ignore[attr-defined]
+
+        def get(self, run_id: str) -> object | None:
+            return self.items.get(run_id)
+
+    runs = Runs()
+    service, queue, _ = make_service(
+        tmp_path,
+        Job("job-1", {"run_id": "run-1"}),
+        lambda job: (runs.put(Run("run-1", "cancelled")) or "ignored"),
+    )
+    service.run_store = runs  # type: ignore[assignment]
+
+    result = service.run_sync()
+
+    assert result is not None and result.state == "cancelled"
+    assert queue.acked == [("job-1", "worker-1")]
+
+
+def test_async_heartbeat_renews_periodically_while_coroutine_runs(tmp_path: Path) -> None:
+    async def handler(job: Job) -> str:
+        await asyncio.sleep(0.05)
+        return "ok"
+
+    service, _, leases = make_service(
+        tmp_path,
+        Job("job-1", {"run_id": "run-1"}),
+        handler,
+        lease_ttl_seconds=1,
+        heartbeat_interval_seconds=0.01,
+    )
+
+    result = asyncio.run(service.run_async())
+
+    assert result is not None and result.state == "succeeded"
+    assert len(leases.renewed) >= 3
+
+
+def test_async_heartbeat_loss_cancels_coroutine_and_does_not_ack(tmp_path: Path) -> None:
+    started = asyncio.Event()
+
+    class LosingLeases(FakeLeases):
+        def renew(self, resource: str, owner: str, ttl_seconds: int) -> bool:
+            self.renewed.append((resource, owner, ttl_seconds))
+            return len(self.renewed) < 2
+
+    async def handler(job: Job) -> str:
+        started.set()
+        await asyncio.sleep(60)
+        return "must not publish"
+
+    queue = FakeQueue(Job("job-1", {"run_id": "run-1"}))
+    leases = LosingLeases()
+    service = WorkerService(
+        queue,
+        leases,
+        handler,
+        scratch_parent=tmp_path,
+        worker_id="worker-1",
+        lease_ttl_seconds=1,
+        heartbeat_interval_seconds=0.01,
+    )
+
+    async def exercise() -> WorkerResult | None:
+        task = asyncio.create_task(service.run_async())
+        await started.wait()
+        return await task
+
+    result = asyncio.run(exercise())
+
+    assert result is not None and result.state == "lease_lost"
+    assert queue.acked == [] and leases.released == []
+
+
 def test_job_id_is_sanitized_and_scratch_stays_contained(tmp_path: Path) -> None:
     seen_scratch: Path | None = None
 
@@ -226,6 +378,40 @@ def test_finalizer_success_is_deduplicated_when_ack_fails(tmp_path: Path) -> Non
     assert service._finalize(result) == result
     assert finalizer_calls == [result]
     assert queue.acked == [("job-1", "worker-1"), ("job-1", "worker-1")]
+
+
+def test_finalizer_completion_is_durable_across_service_restarts(tmp_path: Path) -> None:
+    class Runs:
+        def __init__(self) -> None:
+            self.items: dict[str, Run] = {}
+
+        def put(self, run: Run) -> None:
+            self.items[run.id] = run
+
+        def get(self, run_id: str) -> Run | None:
+            return self.items.get(run_id)
+
+    runs = Runs()
+    first_calls: list[WorkerResult] = []
+    first_service, first_queue, _ = make_service(
+        tmp_path, Job("job-1"), lambda job: "ok", finalizer=first_calls.append
+    )
+    first_service.run_store = runs  # type: ignore[assignment]
+    first_queue.ack_result = False
+    result = WorkerResult("job-1", "job-1", "succeeded", worker_id="worker-1", value="ok")
+
+    with pytest.raises(RuntimeError, match="ack"):
+        first_service._finalize(result)
+
+    second_calls: list[WorkerResult] = []
+    second_service, second_queue, _ = make_service(
+        tmp_path, Job("job-1"), lambda job: "ok", finalizer=second_calls.append
+    )
+    second_service.run_store = runs  # type: ignore[assignment]
+
+    assert second_service._finalize(result) == result
+    assert first_calls == [result] and second_calls == []
+    assert second_queue.acked == [("job-1", "worker-1")]
 
 
 def test_concurrent_finalization_runs_side_effects_once(tmp_path: Path) -> None:
