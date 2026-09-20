@@ -80,6 +80,7 @@ def build_openapi_document() -> dict[str, Any]:
         },
         "/v1/workspaces/{workspace_id}": {
             "get": _operation("Get workspace", _json_response(_ref("workspace")), scopes=("workspaces:read",)),
+            "patch": _operation("Rename workspace", _json_response(_ref("workspace")), request={"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}, scopes=("workspaces:write",)),
             "delete": _operation("Delete workspace", _json_response({"type": "object"}), scopes=("workspaces:write",)),
         },
         "/v1/workspaces/{workspace_id}/select": {

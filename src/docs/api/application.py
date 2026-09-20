@@ -325,6 +325,8 @@ class X20Application:
             workspace_id = resource_id
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._workspace(workspace_id, request)
+            if len(parts) == 3 and method == "PATCH":
+                return lambda request: self._rename_workspace(workspace_id, request)
             if len(parts) == 4 and parts[3] == "select" and method == "POST":
                 return lambda request: self._select_workspace(workspace_id, request)
             if len(parts) == 3 and method == "DELETE":
@@ -473,6 +475,18 @@ class X20Application:
             return Response.json(self.workspace_registry.select(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
+
+    def _rename_workspace(self, workspace_id: str, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        data = request.json(object_only=True)
+        try:
+            return Response.json(self.workspace_registry.rename(workspace_id, str(data.get("name", ""))))
+        except WorkspaceRegistryError as exc:
+            status = 409 if str(exc) == "workspace_name_conflict" else 400
+            if str(exc) == "workspace_not_found":
+                status = 404
+            raise APIError(str(exc), str(exc), status) from exc
 
     def _delete_workspace(self, workspace_id: str, request: Request) -> Response:
         del request

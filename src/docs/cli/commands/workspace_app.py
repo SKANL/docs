@@ -45,6 +45,24 @@ def use_workspace(workspace_id: str) -> None:
         raise typer.BadParameter(str(exc)) from exc
 
 
+@workspace_app.command("rename")
+def rename_workspace(workspace_id: str, name: str) -> None:
+    """Rename a registered workspace without moving its files."""
+    try:
+        print(_registry().rename(workspace_id, name)["name"])
+    except WorkspaceRegistryError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@workspace_app.command("delete")
+def delete_workspace(workspace_id: str) -> None:
+    """Remove a workspace from the registry without deleting its files."""
+    try:
+        _registry().delete(workspace_id)
+    except WorkspaceRegistryError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 @workspace_app.command("status")
 def workspace_status(as_json: bool = typer.Option(False, "--json")) -> None:
     """Show the active workspace or workspace_not_configured."""

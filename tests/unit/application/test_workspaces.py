@@ -35,3 +35,15 @@ def test_registry_delete_clears_active_workspace(tmp_path: Path) -> None:
     assert registry.active() is None
     with pytest.raises(WorkspaceRegistryError, match="workspace_not_found"):
         registry.get(item["id"])
+
+
+def test_registry_renames_without_changing_root_or_id(tmp_path: Path) -> None:
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    item = registry.create("Primary", tmp_path / "one")
+
+    renamed = registry.rename(item["id"], "Renamed")
+
+    assert renamed["id"] == item["id"]
+    assert renamed["root"] == item["root"]
+    assert renamed["name"] == "Renamed"
+    assert registry.list() == [renamed]

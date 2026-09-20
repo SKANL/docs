@@ -55,6 +55,19 @@ class WorkspaceRegistry:
             self._write(data)
         return item
 
+    def rename(self, workspace_id: str, name: str) -> dict[str, Any]:
+        normalized = self._name(name)
+        with self._lock:
+            data = self._read()
+            target = next((item for item in data["workspaces"] if item["id"] == workspace_id), None)
+            if target is None:
+                raise WorkspaceRegistryError("workspace_not_found")
+            if any(item["id"] != workspace_id and item["name"] == normalized for item in data["workspaces"]):
+                raise WorkspaceRegistryError("workspace_name_conflict")
+            target["name"] = normalized
+            self._write(data)
+            return dict(target)
+
     def delete(self, workspace_id: str) -> None:
         with self._lock:
             data = self._read()
