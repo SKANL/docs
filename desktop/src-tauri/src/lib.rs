@@ -91,13 +91,14 @@ impl SidecarSupervisor {
         state.health.clone()
     }
 
-    pub fn start(&self, executable: &str) -> Result<Health, SupervisorError> {
+    pub fn start(&self, executable: &str, workspace: &Path) -> Result<Health, SupervisorError> {
         let mut state = self.state.lock().expect("sidecar mutex poisoned");
         if state.child.is_some() {
             return Err(SupervisorError::AlreadyRunning);
         }
         let executable_path = Path::new(executable);
         let mut command = Command::new(executable_path);
+        command.arg("--workspace").arg(workspace);
         configure_sidecar_command(&mut command);
         let child = command
             .current_dir(executable_path.parent().unwrap_or_else(|| Path::new(".")))
@@ -317,7 +318,13 @@ fn sidecar_start(
             supervisor.fail(message.clone());
             message
         })?;
-    supervisor.start(executable).map_err(|error| {
+    let workspace = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("app data directory: {error}"))?
+        .join("workspace");
+    std::fs::create_dir_all(&workspace).map_err(|error| error.to_string())?;
+    supervisor.start(executable, &workspace).map_err(|error| {
         let message = error.to_string();
         supervisor.fail(message.clone());
         message
