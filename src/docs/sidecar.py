@@ -29,6 +29,7 @@ from .infrastructure.persistence.x20 import (
 )
 from .workers.composition import WorkerComposition
 from .workers.runner import WorkerRunner
+from .domain.contracts import Passport
 
 _LOG = logging.getLogger("docs.sidecar")
 
@@ -253,7 +254,12 @@ def _build_worker(
             )
             if not getattr(report, "succeeded", False):
                 raise RuntimeError("document pipeline failed; inspect run evidence for stage findings")
-            return {"pipeline_id": self.pipeline_id, "document_id": document_id, "succeeded": True}
+            return {
+                "pipeline_id": self.pipeline_id,
+                "document_id": document_id,
+                "succeeded": True,
+                "report": report.to_dict(),
+            }
 
     current_payload: dict[str, dict[str, Any]] = {}
 
@@ -269,6 +275,7 @@ def _build_worker(
         SqliteLeaseStore(state_path),
         run_store=run_store,
         passport_store=passport_store,
+        finalizer=lambda result: _persist_worker_passport(passport_store, result),
     )
     original_handle = composition.handle
 
@@ -278,6 +285,15 @@ def _build_worker(
 
     composition.handle = handle  # type: ignore[method-assign]
     return WorkerRunner(composition.create_service(), poll_interval=0.2)
+
+
+def _persist_worker_passport(store: SqlitePassportStore, result: Any) -> None:
+    """Persist the real pipeline result as the run's durable evidence passport."""
+    value = result.value if isinstance(result.value, dict) else {"value": result.value}
+    store.put(Passport(result.run_id, entries=(
+        {"stage": "worker", "status": result.state, "attempt": result.attempt},
+        {"stage": "pipeline", "result": value},
+    )))
 
 
 def build_server(config: SidecarConfig) -> GracefulHTTPServer:
