@@ -189,13 +189,18 @@ def test_runner_uses_sanitized_environment_and_explicit_roots() -> None:
         validate_manifest(manifest(entrypoint=command)), {}
     )
 
-    assert result.output["env"] == [
+    expected_environment = {
         "DOCS_PLUGIN_INPUT_ROOT",
         "DOCS_PLUGIN_NETWORK",
         "DOCS_PLUGIN_SCRATCH_ROOT",
         "PATH",
         "PYTHONIOENCODING",
-    ]
+    }
+    # Python may materialize LC_CTYPE during interpreter startup when the
+    # child receives an otherwise minimal environment. That runtime detail
+    # is not inherited host state and does not weaken the sandbox contract.
+    assert expected_environment <= set(result.output["env"])
+    assert set(result.output["env"]) - expected_environment <= {"LC_CTYPE"}
     assert result.output["input"] != result.output["scratch"]
 
 
