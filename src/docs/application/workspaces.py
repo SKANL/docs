@@ -101,7 +101,11 @@ class WorkspaceRegistry:
     def active(self) -> dict[str, Any] | None:
         with self._lock:
             active = self._read().get("active")
-        return self.get(active) if active else None
+        if not active:
+            return None
+        item = self.get(active)
+        self._ensure_layout(Path(str(item["root"])).expanduser().resolve())
+        return item
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():
