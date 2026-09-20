@@ -196,24 +196,30 @@ def paginate(
 
 
 class IdempotencyStore:
-    def __init__(self, *, ttl: float = 86400, max_size: int = 10000) -> None:
+    def __init__(self, *, ttl: float = 86400, max_size: int = 10000, persistence: Any = None) -> None:
         self._data: dict[str, tuple[float, Response]] = {}
         self._lock = threading.Lock()
         self._inflight: dict[str, tuple[threading.Lock, int]] = {}
         self.ttl = ttl
         self.max_size = max_size
+        self.persistence = persistence
 
     def get(self, key: str | None) -> Response | None:
         if not key:
             return None
         with self._lock:
             item = self._data.get(key)
-            if not item:
-                return None
-            if item[0] <= time.monotonic():
+            if item and item[0] > time.monotonic():
+                return item[1]
+            if item:
                 self._data.pop(key, None)
-                return None
-            return item[1]
+        if self.persistence is not None:
+            response = self.persistence.get(key)
+            if response is not None:
+                with self._lock:
+                    self._data[key] = (time.monotonic() + self.ttl, response)
+            return response
+        return None
 
     def put(self, key: str | None, response: Response) -> None:
         if key:
@@ -221,6 +227,8 @@ class IdempotencyStore:
                 if len(self._data) >= self.max_size:
                     self._data.pop(next(iter(self._data)))
                 self._data[key] = (time.monotonic() + self.ttl, response)
+            if self.persistence is not None:
+                self.persistence.put(key, response, self.ttl)
 
     def reservation(self, key: str | None) -> threading.Lock | None:
         if not key:
@@ -255,11 +263,13 @@ class Router:
         max_body_size: int = 1_048_576,
         rate_limiter: Any = None,
         rate_limit_key: Callable[[Request], str] | None = None,
+        idempotency_persistence: Any = None,
+        idempotency_store: IdempotencyStore | None = None,
     ) -> None:
         self._routes: list[tuple[str, str, Handler, TokenValidator | None]] = []
         self._route_scopes: dict[tuple[str, str], Any] = {}
         self.cors_origins = {origin.rstrip("/") for origin in (cors_origins or ([cors_origin] if cors_origin else [])) if origin}
-        self.idempotency = IdempotencyStore()
+        self.idempotency = idempotency_store or IdempotencyStore(persistence=idempotency_persistence)
         self.max_body_size = max_body_size
         self.rate_limiter = rate_limiter
         self.rate_limit_key = rate_limit_key or (lambda request: request.headers.get("X-Principal", "anonymous"))

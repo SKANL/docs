@@ -64,6 +64,12 @@ def manifest_identity(manifest: PluginManifest) -> str:
     return manifest_hash(manifest_document(manifest))
 
 
+def plugin_identity(manifest: PluginManifest, artifact_digest: str | None = None) -> str:
+    """Bind trust to the manifest and, when installed, to the package bytes."""
+    identity = manifest_identity(manifest)
+    return identity if artifact_digest is None else manifest_hash({"artifact": artifact_digest, "manifest": identity})
+
+
 def _string(value: Any, label: str, *, namespace: bool = False) -> str:
     if not isinstance(value, str) or not value.strip() or "\x00" in value or len(value) > 4096:
         raise ManifestError(f"{label} must be a safe non-empty string")

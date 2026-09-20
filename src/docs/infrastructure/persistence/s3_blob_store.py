@@ -116,15 +116,68 @@ class S3BlobStore:
         if stored != (blob, content):
             raise ValueError("remote blob did not verify after upload")
 
+    def put_conditional(self, blob: Blob, content: bytes, *, expected_digest: str | None) -> bool:
+        """Atomically publish using S3's conditional write headers.
+
+        The public compare token remains the X20 content digest.  For an
+        existing object we first verify that digest and bind the actual remote
+        ETag to ``IfMatch``; for a missing object ``IfNoneMatch=*`` prevents a
+        competing creator from winning silently.
+        """
+        self._require_available()
+        self._validate_key(blob.key)
+        self._verify_content(blob, content)
+        current_response = self._get_response(blob.key)
+        conditions: dict[str, str] = {}
+        if current_response is None:
+            if expected_digest is not None:
+                return False
+            conditions["IfNoneMatch"] = "*"
+        else:
+            current = self._decode_response(blob.key, current_response)
+            if expected_digest is None or current[0].digest != expected_digest:
+                return False
+            etag = current_response.get("ETag")
+            conditions["IfMatch"] = str(etag) if etag is not None else expected_digest
+        try:
+            self._client.put_object(
+                Bucket=self.bucket,
+                Key=self._object_key(blob.key),
+                Body=content,
+                ContentType=blob.media_type,
+                Metadata={_MANIFEST_METADATA_KEY: self._serialize(blob.to_dict())},
+                **conditions,
+            )
+        except Exception as exc:
+            if self._is_precondition_failed(exc):
+                return False
+            raise
+        stored = self.get(blob.key)
+        if stored != (blob, content):
+            raise ValueError("remote blob did not verify after conditional upload")
+        return True
+
+    def compare_and_swap(self, key: str, expected_digest: str | None, blob: Blob, content: bytes) -> bool:
+        if blob.key != key:
+            raise ValueError("compare-and-swap key does not match blob key")
+        return self.put_conditional(blob, content, expected_digest=expected_digest)
+
     def get(self, key: str) -> tuple[Blob, bytes] | None:
         self._require_available()
         self._validate_key(key)
+        response = self._get_response(key)
+        return None if response is None else self._decode_response(key, response)
+
+    def _get_response(self, key: str) -> dict[str, Any] | None:
         try:
             response = self._client.get_object(Bucket=self.bucket, Key=self._object_key(key))
         except Exception as exc:
             if self._is_missing_object(exc):
                 return None
             raise
+        return response
+
+    def _decode_response(self, key: str, response: Mapping[str, Any]) -> tuple[Blob, bytes]:
         metadata = response.get("Metadata") or {}
         manifest = metadata.get(_MANIFEST_METADATA_KEY) or metadata.get(_MANIFEST_METADATA_KEY.lower())
         if not isinstance(manifest, str):
@@ -188,7 +241,15 @@ class S3BlobStore:
     def _is_missing_object(exc: Exception) -> bool:
         response = getattr(exc, "response", None)
         code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
-        return code in {"404", "NoSuchKey", "NoSuchBucket"} or type(exc).__name__ == "NoSuchKey"
+        return code in {"404", "NoSuchKey", "NoSuchBucket"} or type(exc).__name__ == "NoSuchKey" or isinstance(exc, KeyError)
+
+    @staticmethod
+    def _is_precondition_failed(exc: Exception) -> bool:
+        response = getattr(exc, "response", None)
+        code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
+        return code in {"304", "412", "PreconditionFailed", "ConditionalRequestConflict"} or (
+            "precondition" in str(exc).lower()
+        )
 
 
 __all__ = ["S3BlobStore"]

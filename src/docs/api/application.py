@@ -47,6 +47,7 @@ class X20Application:
         router: Router | None = None,
         auth: Any = None,
         observability: ObservabilityPort | None = None,
+        idempotency_persistence: Any = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -63,7 +64,7 @@ class X20Application:
         self.blob_store = blob_store
         self.documents = documents
         self.findings = findings
-        self.router = router or Router()
+        self.router = router or Router(idempotency_persistence=idempotency_persistence)
         self._route_lock = threading.RLock()
         self._auth = auth
         self.observability = observability or create_observability_from_env()
@@ -562,6 +563,8 @@ class X20Application:
                     "capabilities": sorted(item.manifest.capabilities),
                     "trust": item.trust,
                     "digest": item.digest,
+                    "artifact_digest": item.artifact_digest,
+                    "sbom": item.sbom,
                 }
                 for item in self.plugin_registry.list()
             ]

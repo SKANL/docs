@@ -17,7 +17,15 @@ class FakeS3:
         self.objects: dict[tuple[str, str], dict[str, Any]] = {}
 
     def put_object(self, **kwargs: Any) -> None:
-        self.objects[(kwargs["Bucket"], kwargs["Key"])] = dict(kwargs)
+        if kwargs.get("IfNoneMatch") == "*" and (kwargs["Bucket"], kwargs["Key"]) in self.objects:
+            raise RuntimeError("PreconditionFailed")
+        if "IfMatch" in kwargs:
+            current = self.objects.get((kwargs["Bucket"], kwargs["Key"]))
+            if current is None or current.get("ETag") != kwargs["IfMatch"]:
+                raise RuntimeError("PreconditionFailed")
+        stored = dict(kwargs)
+        stored["ETag"] = json.loads(kwargs["Metadata"]["x20-blob"])["digest"]
+        self.objects[(kwargs["Bucket"], kwargs["Key"])] = stored
 
     def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:
         stored = self.objects[(Bucket, Key)]
@@ -26,6 +34,7 @@ class FakeS3:
             "ContentLength": len(stored["Body"]),
             "ContentType": stored["ContentType"],
             "Metadata": stored["Metadata"],
+            "ETag": json.loads(stored["Metadata"]["x20-blob"])["digest"],
         }
 
 
@@ -71,6 +80,18 @@ def test_s3_blob_store_rejects_mismatched_remote_payload() -> None:
 
     with pytest.raises(ValueError, match=r"digest|size"):
         store.get(blob.key)
+
+
+def test_s3_blob_store_compare_and_swap_uses_conditional_put() -> None:
+    client = FakeS3()
+    store = S3BlobStore.from_client(client, bucket="docs")
+    first = _blob(b"first")
+    second = _blob(b"second")
+
+    assert store.put_conditional(first, b"first", expected_digest=None) is True
+    assert store.put_conditional(second, b"second", expected_digest="sha256:wrong") is False
+    assert store.compare_and_swap(first.key, first.digest, second, b"second") is True
+    assert store.get(first.key) == (second, b"second")
 
 
 def test_s3_blob_store_is_explicitly_unavailable_without_boto3(monkeypatch: pytest.MonkeyPatch) -> None:

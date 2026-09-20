@@ -49,6 +49,21 @@ class InMemoryBlobStore:
     def put(self, blob: Blob, content: bytes) -> None:
         self._items[blob.key] = (blob, bytes(content))
 
+    def put_conditional(self, blob: Blob, content: bytes, *, expected_digest: str | None) -> bool:
+        current = self._items.get(blob.key)
+        if expected_digest is None:
+            if current is not None:
+                return False
+        elif current is None or current[0].digest != expected_digest:
+            return False
+        self.put(blob, content)
+        return True
+
+    def compare_and_swap(self, key: str, expected_digest: str | None, blob: Blob, content: bytes) -> bool:
+        if blob.key != key:
+            raise ValueError("compare-and-swap key does not match blob key")
+        return self.put_conditional(blob, content, expected_digest=expected_digest)
+
     def get(self, key: str) -> tuple[Blob, bytes] | None:
         return self._items.get(key)
 

@@ -4,6 +4,7 @@ import threading
 import pytest
 
 from docs.api.http import APIError, Request, Response, Router, decode_cursor, paginate
+from docs.infrastructure.persistence.idempotency import SqliteIdempotencyStore
 
 
 def test_router_dispatches_json_and_cors():
@@ -91,6 +92,28 @@ def test_idempotency_reservations_are_removed_after_completion():
         assert response.status == 201
 
     assert len(router.idempotency._inflight) == 0
+
+
+def test_idempotency_replays_from_durable_sqlite_store_after_router_restart(tmp_path):
+    persistence = SqliteIdempotencyStore(tmp_path / "api.sqlite3")
+    first_router = Router(idempotency_persistence=persistence)
+    calls = 0
+
+    @first_router.route("POST", "/v1/runs")
+    def create(request: Request) -> Response:
+        nonlocal calls
+        calls += 1
+        return Response.json({"run": calls}, 201, {"x-result": "stored"})
+
+    request = Request("POST", "/v1/runs", {"Idempotency-Key": "durable"})
+    first = first_router.dispatch(request)
+
+    second_router = Router(idempotency_persistence=SqliteIdempotencyStore(tmp_path / "api.sqlite3"))
+    second_router.route("POST", "/v1/runs")(lambda request: Response.json({"run": 99}, 201))
+
+    replay = second_router.dispatch(request)
+    assert replay == first
+    assert calls == 1
 
 
 def test_pagination_has_opaque_stable_cursor():

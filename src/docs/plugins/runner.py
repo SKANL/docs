@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from docs.domain.evidence_passport import redact
-from docs.plugins.manifest import PluginManifest, generate_sbom, manifest_hash, manifest_identity
+from docs.plugins.manifest import PluginManifest, generate_sbom, manifest_hash, manifest_identity, plugin_identity
 
 
 class PluginRunError(RuntimeError):
@@ -160,6 +160,7 @@ class PluginRunner:
         publication_dir: Path | None = None,
         *,
         trusted_token: str | None = None,
+        artifact_digest: str | None = None,
     ) -> PluginRunResult:
         """Run a plugin with stdin/stdout only; never hand it a publication path."""
         del publication_dir
@@ -168,9 +169,8 @@ class PluginRunner:
             "scratch": {"byte_limit": self.max_scratch_bytes, "file_limit": self.max_scratch_files, "bytes_used": 0, "files_used": 0},
         }
         self._validate_manifest_contract(manifest)
-        identity = manifest_identity(manifest)
-        plugin_identity = identity
-        metadata.update({"plugin_identity": plugin_identity, "manifest_digest": identity})
+        identity = plugin_identity(manifest, artifact_digest)
+        metadata.update({"plugin_identity": identity, "manifest_digest": manifest_identity(manifest)})
         trusted = trusted_token is not None and self.trusted_credentials.get(identity) == trusted_token
         if self.allow_unsandboxed and not trusted:
             raise PluginRunError("allow_unsandboxed requires a manifest-bound trusted credential", metadata=metadata)
@@ -250,7 +250,7 @@ class PluginRunner:
                         output = json.loads(raw_stdout, parse_constant=self._reject_non_finite)
                     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
                         raise PluginRunError("plugin stdout must be one finite JSON value", metadata=metadata) from exc
-                    return PluginRunResult(output, manifest_hash(output), raw_stdout, metadata, plugin_identity, identity, dict(manifest.toolchain), generate_sbom(manifest))
+                    return PluginRunResult(output, manifest_hash(output), raw_stdout, metadata, identity, manifest_identity(manifest), dict(manifest.toolchain), generate_sbom(manifest))
                 finally:
                     if process is not None:
                         self._cleanup_process(process, writer, readers, metadata, job)

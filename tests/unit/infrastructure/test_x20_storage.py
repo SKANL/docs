@@ -41,6 +41,15 @@ def test_sqlite_stores_round_trip_contracts_and_survive_reopen(tmp_path: Path) -
     assert SqliteGraphStore(db).get() == graph
 
 
+def test_sqlite_adapters_enable_wal_and_busy_timeout(tmp_path: Path) -> None:
+    db = tmp_path / "pragmas.sqlite3"
+
+    store = SqliteRunStore(db, busy_timeout_ms=4321)
+    with store._connect() as connection:
+        assert connection.execute("PRAGMA journal_mode").fetchone() == ("wal",)
+        assert connection.execute("PRAGMA busy_timeout").fetchone() == (4321,)
+
+
 def test_sqlite_decoding_rejects_non_object_and_wrong_schema_payloads(tmp_path: Path) -> None:
     db = tmp_path / "invalid.sqlite3"
     SqliteRunStore(db)
@@ -127,6 +136,17 @@ def test_filesystem_blob_store_reads_one_published_generation(tmp_path: Path) ->
     (tmp_path / "blobs" / "report.bin").write_bytes(b"wrong-generation")
     (tmp_path / "blobs" / "report.bin.json").write_text(json.dumps(first.to_dict()))
 
+    assert store.get("report.bin") == (second, b"second")
+
+
+def test_filesystem_blob_store_compare_and_swap_is_atomic_at_the_contract_boundary(tmp_path: Path) -> None:
+    store = FilesystemBlobStore(tmp_path / "blobs")
+    first = Blob("report.bin", "sha256:first", 5)
+    second = Blob("report.bin", "sha256:second", 6)
+
+    assert store.put_conditional(first, b"first", expected_digest=None) is True
+    assert store.put_conditional(second, b"second", expected_digest="sha256:wrong") is False
+    assert store.compare_and_swap("report.bin", "sha256:first", second, b"second") is True
     assert store.get("report.bin") == (second, b"second")
 
 

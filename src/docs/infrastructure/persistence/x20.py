@@ -17,8 +17,11 @@ _JSON = dict[str, Any]
 
 
 class _SqliteStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, busy_timeout_ms: int = 5_000) -> None:
+        if busy_timeout_ms <= 0:
+            raise ValueError("busy_timeout_ms must be positive")
         self.path = path
+        self.busy_timeout_ms = busy_timeout_ms
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
@@ -26,7 +29,9 @@ class _SqliteStore:
         raise NotImplementedError
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=self.busy_timeout_ms / 1000)
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
@@ -129,12 +134,19 @@ class SqliteGraphStore(_SqliteStore):
 
 
 class SqliteJobQueue(_SqliteStore):
-    def __init__(self, path: Path, *, claim_ttl_seconds: float = 300.0, clock: Callable[[], float] = time.time) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        claim_ttl_seconds: float = 300.0,
+        clock: Callable[[], float] = time.time,
+        busy_timeout_ms: int = 5_000,
+    ) -> None:
         if claim_ttl_seconds <= 0:
             raise ValueError("claim_ttl_seconds must be positive")
         self.claim_ttl_seconds = claim_ttl_seconds
         self._clock = clock
-        super().__init__(path)
+        super().__init__(path, busy_timeout_ms=busy_timeout_ms)
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -294,6 +306,22 @@ class FilesystemBlobStore:
             self._manifest_path(blob.key),
             (self._encode({"generation": generation}) + "\n").encode("utf-8"),
         )
+
+    def put_conditional(self, blob: Blob, content: bytes, *, expected_digest: str | None) -> bool:
+        """Publish only when the current digest matches the expected value."""
+        current = self.get(blob.key)
+        if expected_digest is None:
+            if current is not None:
+                return False
+        elif current is None or current[0].digest != expected_digest:
+            return False
+        self.put(blob, content)
+        return True
+
+    def compare_and_swap(self, key: str, expected_digest: str | None, blob: Blob, content: bytes) -> bool:
+        if blob.key != key:
+            raise ValueError("compare-and-swap key does not match blob key")
+        return self.put_conditional(blob, content, expected_digest=expected_digest)
 
     def get(self, key: str) -> tuple[Blob, bytes] | None:
         content_path, metadata_path = self._paths(key)
