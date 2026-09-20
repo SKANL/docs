@@ -60,6 +60,8 @@ from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToo
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
+_BATCH_OUTPUT_PATHS = (Path("output") / "v2", Path("output") / "release")
+
 
 def _source_pipeline(deps: Any) -> SourcePipeline | None:
     """Compose the source pipeline while tolerating older dependency fixtures."""
@@ -777,7 +779,7 @@ def create_document_service(
         source_dir = initial_root / "output" / "v2"
         source_dir.mkdir(parents=True, exist_ok=True)
         candidate = destination.with_name(f".{destination.name}.candidate")
-        # A package stage runs before this format reaches output/current.  Stage a
+            # A package stage runs before this format reaches output/v2.  Stage a
         # complete snapshot of the already-published formats plus this run's
         # attested artifact, so repeatable --format builds accumulate one
         # release archive instead of replacing it format by format.
@@ -1225,7 +1227,7 @@ def _run(
         batch_journal = _batch_journal_path(batch_root)
         _recover_batch_transaction(batch_journal, _lock_held=True)
         batch_backup = Path(tempfile.mkdtemp(prefix=".v2-batch-", dir=batch_root))
-        batch_paths = (Path("output") / "v2", Path("output") / "release")
+        batch_paths = _BATCH_OUTPUT_PATHS
         for relative in batch_paths:
             current = batch_root / relative
             if current.exists() and not current.is_symlink():
@@ -1426,7 +1428,7 @@ def _record_batch_outputs(journal: Path, doc_id: str, output_format: str) -> Non
     """
     payload = json.loads(journal.read_text(encoding="utf-8"))
     owned = {
-        "output/current": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
+        "output/v2": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
         "output/release": (f"{doc_id}.zip",),
     }
     for relative, names in owned.items():
@@ -1448,7 +1450,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     payload = json.loads(journal.read_text(encoding="utf-8"))
     root = journal.parent.parent.resolve()
     backup = Path(payload["backup"])
-    paths = (Path("output/current"), Path("output/release"))
+    paths = _BATCH_OUTPUT_PATHS
     if (Path(payload["root"]).resolve() != root
             or journal.resolve() != _batch_journal_path(root)
             or backup.parent.resolve() != root or not backup.name.startswith(".v2-batch-")
@@ -1712,7 +1714,7 @@ def _package_files(
         and source_dir.parent.name == "output"
     )
     if not (valid_source or valid_staging):
-        raise typer.BadParameter("package requires an output/current source directory")
+        raise typer.BadParameter("package requires an output/v2 source directory")
     if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):
         raise typer.BadParameter("package refuses a symlinked source boundary")
     candidates = tuple(sorted(source_dir.rglob("*"), key=lambda path: path.relative_to(source_dir).as_posix()))
