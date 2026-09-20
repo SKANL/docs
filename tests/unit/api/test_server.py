@@ -13,6 +13,8 @@ import pytest
 from docs.api.server import (
     TransportConfig,
     X20Transport,
+    _compose_application,
+    create_app,
     create_server,
     serve,
 )
@@ -72,6 +74,29 @@ def echo_app(environ, start_response):
 class UnexpectedRead:
     def read(self, size=-1):
         raise AssertionError("bodyless request must not read from wsgi.input")
+
+
+def test_production_composition_rejects_application_without_authentication():
+    class Application:
+        auth = None
+
+    with pytest.raises(ValueError, match="production mode requires authentication"):
+        _compose_application(lambda config: Application(), TransportConfig(mode="production"))
+
+
+def test_offline_composition_preserves_application_without_authentication():
+    class Application:
+        auth = None
+
+    application = Application()
+
+    assert _compose_application(lambda config: application, TransportConfig(mode="offline")) is application
+
+
+@pytest.mark.parametrize("compose", [create_app, create_server])
+def test_public_production_composition_rejects_application_without_authentication(compose):
+    with pytest.raises(ValueError, match="production mode requires authentication"):
+        compose(echo_app, TransportConfig(mode="production", port=0))
 
 
 def test_transport_rejects_request_bodies_over_configured_limit():
@@ -183,8 +208,11 @@ def test_public_binding_requires_explicit_opt_in():
 
 
 def test_graceful_shutdown_stops_threading_server():
-    transport = X20Transport(echo_app, TransportConfig())
-    server = create_server(transport, TransportConfig(host="127.0.0.1", port=0))
+    transport = X20Transport(echo_app, TransportConfig(mode="offline"))
+    server = create_server(
+        transport,
+        TransportConfig(host="127.0.0.1", port=0, mode="offline"),
+    )
     thread = threading.Thread(target=serve, args=(server,), daemon=True)
     thread.start()
     deadline = time.monotonic() + 2
@@ -199,7 +227,10 @@ def test_graceful_shutdown_stops_threading_server():
 
 
 def test_once_server_handles_a_real_http_request_and_closes():
-    server = create_server(X20Transport(echo_app, TransportConfig()), TransportConfig(port=0))
+    server = create_server(
+        X20Transport(echo_app, TransportConfig(mode="offline")),
+        TransportConfig(port=0, mode="offline"),
+    )
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
     thread.start()
 
@@ -371,8 +402,11 @@ def test_chunked_request_is_rejected_without_reading_the_body():
 
 def test_shutdown_wait_is_bounded_by_configured_timeout():
     server = create_server(
-        X20Transport(echo_app, TransportConfig(graceful_shutdown_timeout=0.05)),
-        TransportConfig(port=0, graceful_shutdown_timeout=0.05),
+        X20Transport(
+            echo_app,
+            TransportConfig(graceful_shutdown_timeout=0.05, mode="offline"),
+        ),
+        TransportConfig(port=0, graceful_shutdown_timeout=0.05, mode="offline"),
     )
     thread = threading.Thread(target=serve, args=(server,), daemon=True)
     thread.start()
@@ -397,7 +431,10 @@ def test_http_handler_supplies_standard_wsgi_environ_keys():
         start_response("200 OK", [("Content-Type", "text/plain")])
         return [b"ok"]
 
-    server = create_server(X20Transport(app, TransportConfig()), TransportConfig(port=0))
+    server = create_server(
+        X20Transport(app, TransportConfig(mode="offline")),
+        TransportConfig(port=0, mode="offline"),
+    )
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
     thread.start()
     with urlopen(f"http://127.0.0.1:{server.server_address[1]}/v1/example") as response:
@@ -429,7 +466,10 @@ def test_sse_streams_over_a_real_socket_without_buffering():
 
         return events()
 
-    server = create_server(X20Transport(streaming_app, TransportConfig()), TransportConfig(port=0))
+    server = create_server(
+        X20Transport(streaming_app, TransportConfig(mode="offline")),
+        TransportConfig(port=0, mode="offline"),
+    )
     thread = threading.Thread(target=serve, args=(server,), daemon=True)
     thread.start()
     with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=1) as client:

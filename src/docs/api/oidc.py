@@ -294,7 +294,7 @@ class BearerTokenValidator:
             scopes = frozenset(item for item in raw_scopes if isinstance(item, str))
         else:
             raise AuthError("invalid_scope", "OIDC scope claim is invalid")
-        return Principal(subject, scopes)
+        return _principal(subject, scopes, claims)
 
 
 def _verify_signature(signing_input: str, encoded_signature: str, algorithm: str, key: object) -> bool:
@@ -383,7 +383,20 @@ class OIDCValidator:
             scopes = frozenset(item for item in raw_scopes if isinstance(item, str))
         else:
             scopes = frozenset()
-        return Principal(subject, scopes)
+        return _principal(subject, scopes, claims)
+
+
+def _principal(subject: str, scopes: frozenset[str], claims: Mapping[str, Any]) -> Principal:
+    tenant_id = claims.get("tenant_id")
+    organization_id = claims.get("organization_id")
+    return Principal(
+        subject,
+        scopes,
+        tenant_id=tenant_id if isinstance(tenant_id, str) and tenant_id else None,
+        organization_id=(
+            organization_id if isinstance(organization_id, str) and organization_id else None
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)

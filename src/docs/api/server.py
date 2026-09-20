@@ -89,6 +89,7 @@ class TransportConfig:
     cors_origins: tuple[str, ...] = ()
     graceful_shutdown_timeout: float = 10.0
     allow_public_bind: bool = False
+    mode: str = "production"
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> TransportConfig:
@@ -106,6 +107,7 @@ class TransportConfig:
                 values.get("graceful_shutdown_timeout", cls.graceful_shutdown_timeout)
             ),
             allow_public_bind=bool(values.get("allow_public_bind", cls.allow_public_bind)),
+            mode=str(values.get("mode", cls.mode)).lower(),
         )
 
     def validate(self) -> None:
@@ -117,6 +119,8 @@ class TransportConfig:
             raise ValueError("max_request_body must not be negative")
         if self.graceful_shutdown_timeout < 0:
             raise ValueError("graceful_shutdown_timeout must not be negative")
+        if self.mode not in {"production", "offline"}:
+            raise ValueError("mode must be production or offline")
         if self.host.lower() not in _LOOPBACK and not self.allow_public_bind:
             raise ValueError(
                 "public binding is disabled; set allow_public_bind=true explicitly before binding outside loopback"
@@ -443,6 +447,7 @@ def create_app(
 ) -> X20Transport:
     """Build the same transport for embedded/offline and remote deployments."""
     resolved = config if isinstance(config, TransportConfig) else TransportConfig.from_mapping(config or {})
+    _require_production_auth(application, resolved)
     return X20Transport(application, resolved, ready_check=ready_check)
 
 
@@ -453,6 +458,7 @@ def create_server(
         resolved = application.config if config is None else (
             config if isinstance(config, TransportConfig) else TransportConfig.from_mapping(config)
         )
+        _require_production_auth(application.application, resolved)
         transport = application if resolved == application.config else X20Transport(
             application.application, resolved, ready_check=application.ready_check
         )
@@ -460,6 +466,11 @@ def create_server(
         transport = create_app(application, config)
         resolved = transport.config
     return GracefulHTTPServer((resolved.host, resolved.port), transport)
+
+
+def _require_production_auth(application: Callable[..., Any], config: TransportConfig) -> None:
+    if config.mode == "production" and getattr(application, "auth", None) is None:
+        raise ValueError("production mode requires authentication")
 
 
 def serve(server: GracefulHTTPServer, *, once: bool = False) -> None:
@@ -611,6 +622,16 @@ def _load_factory(spec: str) -> Callable[[TransportConfig], Callable[..., Any]]:
     return factory
 
 
+def _compose_application(
+    factory: Callable[[TransportConfig], Callable[..., Any]],
+    config: TransportConfig,
+) -> Callable[..., Any]:
+    application = factory(config)
+    if config.mode == "production" and getattr(application, "auth", None) is None:
+        raise ValueError("production mode requires authentication to be injected by application_factory")
+    return application
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="docs-api", description="Serve an existing X20 WSGI application")
     parser.add_argument("--config", type=Path, required=True, help="JSON deployment configuration")
@@ -629,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
         transport_values["allow_public_bind"] = True
     config = TransportConfig.from_mapping(transport_values)
     factory = _load_factory(str(raw.get("application_factory", "")))
-    application = create_app(factory(config), config)
+    application = create_app(_compose_application(factory, config), config)
     server = create_server(application)
     previous = {}
 

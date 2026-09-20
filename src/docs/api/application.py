@@ -245,7 +245,7 @@ class X20Application:
         resource_id = parts[2]
         if parts[:2] == ["v1", "documents"]:
             if len(parts) == 3 and method == "GET":
-                return lambda _: self._document(resource_id)
+                return lambda request: self._document(resource_id, request)
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
                 return lambda request: self._document_runs(resource_id, request)
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
@@ -253,42 +253,89 @@ class X20Application:
             return None
         run_id = resource_id
         if len(parts) == 3 and method == "GET":
-            return lambda _: self._run(run_id)
+            return lambda request: self._run(run_id, request)
         if len(parts) == 4 and parts[3] == "cancel" and method == "POST":
-            return lambda _: self._cancel(run_id)
+            return lambda request: self._cancel(run_id, request)
         if len(parts) == 4 and parts[3] == "passport" and method == "GET":
-            return lambda _: self._passport(run_id)
+            return lambda request: self._passport(run_id, request)
         if len(parts) == 4 and parts[3] == "artifacts" and method == "GET":
             return lambda request: self._artifacts(run_id, request)
         if len(parts) == 4 and parts[3] == "progress" and method == "GET":
-            return lambda _: self._progress(run_id)
+            return lambda request: self._progress(run_id, request)
         if len(parts) == 4 and parts[3] == "findings" and method == "GET":
             return lambda request: self._run_findings(run_id, request)
         if len(parts) == 4 and parts[3] == "graph" and method == "GET":
             return lambda request: self._run_graph(run_id, request)
         if len(parts) == 5 and parts[3] == "previews" and method == "GET":
-            return lambda _: self._preview(run_id, parts[4])
+            return lambda request: self._preview(run_id, parts[4], request)
         return None
 
     def _create_run(self, request: Request) -> Response:
         data = request.json(object_only=True)
+        if request.principal is not None:
+            if request.principal.tenant_id is None or request.principal.organization_id is None:
+                raise AuthError(
+                    "missing_tenant_identity",
+                    "Tenant and organization identity are required",
+                    403,
+                )
+            document_id = data.get("document_id")
+            if document_id is not None:
+                self._document(str(document_id), request)
+            data.update(
+                {
+                    "owner_subject": request.principal.subject,
+                    "tenant_id": request.principal.tenant_id,
+                    "organization_id": request.principal.organization_id,
+                }
+            )
         run_id = data.get("id") or str(uuid4())
+        existing = self.run_store.get(run_id)
+        if (
+            existing is not None
+            and request.principal is not None
+            and not self._is_owned(existing, request.principal)
+        ):
+            raise APIError("run_id_conflict", "Run ID is unavailable", 409)
         run = Run(run_id, payload=data, created_at=datetime.now(UTC).isoformat())
         self.run_store.put(run)
         self.queue.enqueue(run_id, dict(data))
         return Response.json(run.to_dict(), 201)
 
-    def _run(self, run_id: str) -> Response:
+    def _run(self, run_id: str, request: Request) -> Response:
+        run = self._owned_run(run_id, request)
+        return Response.json(run.to_dict())
+
+    def _owned_run(self, run_id: str, request: Request) -> Run:
         run = self.run_store.get(run_id)
         if run is None:
             raise APIError("not_found", "Run not found", 404)
-        return Response.json(run.to_dict())
+        self._require_owned(run, request, "Run")
+        return run
 
-    def _cancel(self, run_id: str) -> Response:
+    @staticmethod
+    def _require_owned(resource: Any, request: Request, resource_name: str) -> None:
+        principal = request.principal
+        if principal is None or X20Application._is_owned(resource, principal):
+            return
+
+        raise APIError("not_found", f"{resource_name} not found", 404)
+
+    @staticmethod
+    def _is_owned(resource: Any, principal: Any) -> bool:
+        data = _dict(resource)
+        ownership = data.get("payload", data) if isinstance(data, Mapping) else {}
+        return not (
+            not isinstance(ownership, Mapping)
+            or principal.tenant_id is None
+            or principal.organization_id is None
+            or ownership.get("tenant_id") != principal.tenant_id
+            or ownership.get("organization_id") != principal.organization_id
+        )
+
+    def _cancel(self, run_id: str, request: Request) -> Response:
         with self._cancel_lock:
-            run = self.run_store.get(run_id)
-            if run is None:
-                raise APIError("not_found", "Run not found", 404)
+            run = self._owned_run(run_id, request)
             if run.status in {"cancelled", "completed", "failed"}:
                 return Response.json(run.to_dict())
             cancel = getattr(self.queue, "cancel", None)
@@ -298,23 +345,19 @@ class X20Application:
             self.run_store.put(cancelled)
             return Response.json(cancelled.to_dict())
 
-    def _passport(self, run_id: str) -> Response:
-        if self.run_store.get(run_id) is None:
-            raise APIError("not_found", "Run not found", 404)
+    def _passport(self, run_id: str, request: Request) -> Response:
+        self._owned_run(run_id, request)
         item = self.passport_store.get(run_id)
         if item is None:
             raise APIError("not_found", "Passport not found", 404)
         return Response.json(item.to_dict())
 
     def _artifacts(self, run_id: str, request: Request) -> Response:
-        if self.run_store.get(run_id) is None:
-            raise APIError("not_found", "Run not found", 404)
+        self._owned_run(run_id, request)
         return self._page(self.artifact_store.list_for_run(run_id), request, "artifacts")
 
-    def _progress(self, run_id: str) -> Response:
-        run = self.run_store.get(run_id)
-        if run is None:
-            raise APIError("not_found", "Run not found", 404)
+    def _progress(self, run_id: str, request: Request) -> Response:
+        run = self._owned_run(run_id, request)
         return Response(
             200,
             encode_sse_event("progress", run.to_dict(), event_id=run.id).encode(),
@@ -323,6 +366,8 @@ class X20Application:
 
     def _graph(self, request: Request) -> Response:
         """Expose deterministic read-only graph queries without mutating the graph."""
+        if request.principal is not None:
+            raise APIError("not_found", "Graph not found", 404)
         if not request.query:
             graph = self.graph_store.get()
             return Response.json(_dict(graph))
@@ -391,8 +436,7 @@ class X20Application:
         return Response.json(payload)
 
     def _run_graph(self, run_id: str, request: Request) -> Response:
-        if self.run_store.get(run_id) is None:
-            raise APIError("not_found", "Run not found", 404)
+        self._owned_run(run_id, request)
         return self._graph(request)
 
     @staticmethod
@@ -401,37 +445,80 @@ class X20Application:
 
     def _documents(self, request: Request) -> Response:
         items = self.document_store.list() if self.document_store is not None else list(self.documents)
+        if request.principal is not None:
+            items = [item for item in items if self._is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "documents")
 
     def _findings(self, request: Request) -> Response:
         items = self.findings_store.list() if self.findings_store is not None else list(self.findings)
+        if request.principal is not None:
+            items = [item for item in items if self._finding_is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "findings")
 
-    def _document(self, document_id: str) -> Response:
+    def _finding_is_owned(self, finding: Any, principal: Any) -> bool:
+        data = _dict(finding)
+        if not isinstance(data, Mapping):
+            return False
+
+        ownership_references = 0
+        run_id = data.get("run_id")
+        if run_id is not None:
+            ownership_references += 1
+            run = self.run_store.get(str(run_id))
+            if run is None or not self._is_owned(run, principal):
+                return False
+
+        document_id = data.get("document_id")
+        if document_id is not None:
+            ownership_references += 1
+            document = (
+                self.document_store.get(str(document_id))
+                if self.document_store is not None and hasattr(self.document_store, "get")
+                else None
+            )
+            if document is None:
+                documents = (
+                    self.document_store.list()
+                    if self.document_store is not None and hasattr(self.document_store, "list")
+                    else self.documents
+                )
+                document = next(
+                    (item for item in documents if str(_dict(item).get("id")) == str(document_id)),
+                    None,
+                )
+            if document is None or not self._is_owned(document, principal):
+                return False
+
+        return ownership_references > 0
+
+    def _document(self, document_id: str, request: Request) -> Response:
         document = self.document_store.get(document_id) if self.document_store is not None and hasattr(self.document_store, "get") else None
         if document is None:
             items = self.document_store.list() if self.document_store is not None and hasattr(self.document_store, "list") else self.documents
             document = next((item for item in items if str(_dict(item).get("id")) == document_id), None)
         if document is None:
             raise APIError("not_found", "Document not found", 404)
+        self._require_owned(document, request, "Document")
         return Response.json(_dict(document))
 
     def _document_runs(self, document_id: str, request: Request) -> Response:
-        self._document(document_id)
+        self._document(document_id, request)
         items = self._store_items(self.run_store, "list_for_document", document_id)
         if not items:
             items = [run for run in self._store_items(self.run_store, "list") if _dict(run).get("payload", {}).get("document_id") == document_id]
+        if request.principal is not None:
+            items = [item for item in items if self._is_owned(item, request.principal)]
         return self._page(items, request, "runs")
 
     def _run_findings(self, run_id: str, request: Request) -> Response:
+        self._owned_run(run_id, request)
         items = self._store_items(self.findings_store, "list_for_run", run_id)
         if not items:
             items = [finding for finding in (self._store_items(self.findings_store, "list") or self.findings) if _dict(finding).get("run_id") == run_id]
         return self._page(items, request, "findings")
 
-    def _preview(self, run_id: str, name: str) -> Response:
-        if self.run_store.get(run_id) is None:
-            raise APIError("not_found", "Run not found", 404)
+    def _preview(self, run_id: str, name: str, request: Request) -> Response:
+        self._owned_run(run_id, request)
         artifact = self.artifact_store.get(name) if hasattr(self.artifact_store, "get") else None
         if artifact is None or _dict(artifact).get("run_id") != run_id:
             raise APIError("not_found", "Preview not found", 404)
@@ -443,7 +530,7 @@ class X20Application:
         return Response.json(_dict(artifact))
 
     def _revision(self, document_id: str, request: Request) -> Response:
-        self._document(document_id)
+        self._document(document_id, request)
         data = request.json(object_only=True)
         if callable(self.revision_service):
             result = self.revision_service(document_id, data)

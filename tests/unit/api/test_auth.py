@@ -11,6 +11,16 @@ def test_bearer_auth_is_case_insensitive():
     assert bearer_auth({"authorization": "bEaReR good"}, validator).subject == "user-1"
 
 
+def test_principal_carries_tenant_and_organization_identity_compatibly():
+    legacy = Principal("legacy", frozenset())
+    principal = Principal("user-1", frozenset(), tenant_id="tenant-a", organization_id="org-a")
+
+    assert legacy.tenant_id is None
+    assert legacy.organization_id is None
+    assert principal.tenant_id == "tenant-a"
+    assert principal.organization_id == "org-a"
+
+
 def test_auth_error_exposes_challenge_via_router():
     from docs.api.http import Request, Router
     router = Router()

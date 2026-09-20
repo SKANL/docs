@@ -136,6 +136,111 @@ def test_post_run_is_idempotent_and_enqueues_once():
     assert len(application.queue.calls) == 1
 
 
+def test_post_run_binds_ownership_from_authenticated_principal():
+    application = app()
+    principal = Principal(
+        "user-1",
+        frozenset({"runs:write"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request(
+            "POST",
+            "/v1/runs",
+            headers={"Authorization": "Bearer ok"},
+            body={
+                "id": "r1",
+                "owner_subject": "attacker",
+                "tenant_id": "tenant-b",
+                "organization_id": "org-b",
+            },
+        )
+    )
+
+    payload = body(response)["payload"]
+    assert payload["owner_subject"] == "user-1"
+    assert payload["tenant_id"] == "tenant-a"
+    assert payload["organization_id"] == "org-a"
+    assert application.queue.calls[0][1] == payload
+
+
+def test_post_run_rejects_authenticated_principal_without_tenant_identity():
+    application = app()
+    application.auth = lambda token: Principal("legacy", frozenset({"runs:write"}))
+
+    response = application.dispatch(
+        Request(
+            "POST",
+            "/v1/runs",
+            headers={"Authorization": "Bearer ok"},
+            body={"id": "r1"},
+        )
+    )
+
+    assert response.status == 403
+    assert body(response)["error"]["code"] == "missing_tenant_identity"
+
+
+def test_post_run_rejects_foreign_document_reference():
+    application = app()
+    application.documents = (
+        {"id": "d1", "tenant_id": "tenant-b", "organization_id": "org-b"},
+    )
+    principal = Principal(
+        "user-1",
+        frozenset({"runs:write"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request(
+            "POST",
+            "/v1/runs",
+            headers={"Authorization": "Bearer ok"},
+            body={"id": "r1", "document_id": "d1"},
+        )
+    )
+
+    assert response.status == 404
+    assert application.run_store.get("r1") is None
+    assert application.queue.calls == []
+
+
+def test_post_run_does_not_overwrite_foreign_tenant_run_id():
+    application = app()
+    foreign = Run(
+        "shared",
+        payload={"tenant_id": "tenant-b", "organization_id": "org-b"},
+    )
+    application.run_store.put(foreign)
+    principal = Principal(
+        "user-1",
+        frozenset({"runs:write"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request(
+            "POST",
+            "/v1/runs",
+            headers={"Authorization": "Bearer ok"},
+            body={"id": "shared"},
+        )
+    )
+
+    assert response.status == 409
+    assert body(response)["error"]["code"] == "run_id_conflict"
+    assert application.run_store.get("shared") is foreign
+    assert application.queue.calls == []
+
+
 def test_endpoints_return_resources_and_cancel():
     application = app()
     application.run_store.put(Run("r1", payload={"document_id": "d1"}))
@@ -152,6 +257,101 @@ def test_documents_are_filtered_and_paginated():
     application = app()
     response = application.dispatch(Request("GET", "/v1/documents?owner=ada&limit=1"))
     assert body(response) == {"items": [{"id": "d1", "owner": "ada"}], "next_cursor": None}
+
+
+def test_authenticated_document_list_only_returns_principal_tenant_and_organization():
+    application = app()
+    application.documents = (
+        {"id": "owned", "tenant_id": "tenant-a", "organization_id": "org-a"},
+        {"id": "foreign", "tenant_id": "tenant-b", "organization_id": "org-b"},
+        {"id": "legacy"},
+    )
+    principal = Principal(
+        "user-1",
+        frozenset({"documents:read"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request("GET", "/v1/documents", headers={"Authorization": "Bearer ok"})
+    )
+
+    assert [item["id"] for item in body(response)["items"]] == ["owned"]
+
+
+def test_authenticated_global_findings_only_return_owned_run_findings():
+    application = app()
+    application.run_store.put(
+        Run("owned", payload={"tenant_id": "tenant-a", "organization_id": "org-a"})
+    )
+    application.run_store.put(
+        Run("foreign", payload={"tenant_id": "tenant-b", "organization_id": "org-b"})
+    )
+    application.findings = (
+        {"id": "owned-finding", "run_id": "owned"},
+        {"id": "foreign-finding", "run_id": "foreign"},
+        {"id": "unowned-finding"},
+    )
+    principal = Principal(
+        "user-1",
+        frozenset({"findings:read"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request("GET", "/v1/findings", headers={"Authorization": "Bearer ok"})
+    )
+
+    assert response.status == 200
+    assert [item["id"] for item in body(response)["items"]] == ["owned-finding"]
+
+
+def test_authenticated_global_findings_only_return_owned_document_findings():
+    application = app()
+    application.documents = (
+        {"id": "owned", "tenant_id": "tenant-a", "organization_id": "org-a"},
+        {"id": "foreign", "tenant_id": "tenant-b", "organization_id": "org-b"},
+    )
+    application.findings = (
+        {"id": "owned-finding", "document_id": "owned"},
+        {"id": "foreign-finding", "document_id": "foreign"},
+    )
+    principal = Principal(
+        "user-1",
+        frozenset({"findings:read"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request("GET", "/v1/findings", headers={"Authorization": "Bearer ok"})
+    )
+
+    assert response.status == 200
+    assert [item["id"] for item in body(response)["items"]] == ["owned-finding"]
+
+
+def test_authenticated_global_graph_fails_closed_when_graph_is_not_tenant_scoped():
+    application = app()
+    principal = Principal(
+        "user-1",
+        frozenset({"graph:read"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"})
+    )
+
+    assert response.status == 404
+    assert body(response)["error"]["code"] == "not_found"
 
 
 def test_wsgi_reaches_dynamic_endpoint():
@@ -176,6 +376,141 @@ def test_dynamic_requests_use_auth_and_unknown_ids_are_not_found():
     assert denied.status == 401
     found = application.dispatch(Request("GET", "/v1/runs/missing", headers={"Authorization": "Bearer ok"}))
     assert found.status == 404
+
+
+def test_authenticated_run_access_hides_foreign_tenant_resource():
+    application = app()
+    application.run_store.put(
+        Run(
+            "r1",
+            payload={
+                "tenant_id": "tenant-b",
+                "organization_id": "org-b",
+                "owner_subject": "user-2",
+            },
+        )
+    )
+    principal = Principal(
+        "user-1",
+        frozenset({"runs:read"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})
+    )
+
+    assert response.status == 404
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("POST", "/v1/runs/r1/cancel"),
+        ("GET", "/v1/runs/r1/passport"),
+        ("GET", "/v1/runs/r1/artifacts"),
+        ("GET", "/v1/runs/r1/progress"),
+        ("GET", "/v1/runs/r1/findings"),
+        ("GET", "/v1/runs/r1/graph"),
+        ("GET", "/v1/runs/r1/previews/a1"),
+    ],
+)
+def test_authenticated_run_subresources_hide_foreign_tenant_run(method, path):
+    class PreviewArtifacts(Artifacts):
+        def get(self, key):
+            return Artifact(key, "r1", "image/png", "sha")
+
+    application = app()
+    application.artifact_store = PreviewArtifacts()
+    application.run_store.put(
+        Run("r1", payload={"tenant_id": "tenant-b", "organization_id": "org-b"})
+    )
+    assert application.dispatch(Request(method, path, body={} if method == "POST" else None)).status != 404
+    principal = Principal(
+        "user-1",
+        ALL_SCOPES,
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request(
+            method,
+            path,
+            headers={"Authorization": "Bearer ok"},
+            body={} if method == "POST" else None,
+        )
+    )
+
+    assert response.status == 404
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/v1/documents/d1"),
+        ("GET", "/v1/documents/d1/runs"),
+        ("POST", "/v1/documents/d1/revisions"),
+    ],
+)
+def test_authenticated_document_resources_hide_foreign_tenant_document(method, path):
+    application = app()
+    application.documents = (
+        {"id": "d1", "tenant_id": "tenant-b", "organization_id": "org-b"},
+    )
+    assert application.dispatch(Request(method, path, body={} if method == "POST" else None)).status != 404
+    principal = Principal(
+        "user-1",
+        ALL_SCOPES,
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request(
+            method,
+            path,
+            headers={"Authorization": "Bearer ok"},
+            body={} if method == "POST" else None,
+        )
+    )
+
+    assert response.status == 404
+
+
+def test_authenticated_document_runs_only_return_owned_runs():
+    class ListedRuns(Runs):
+        def list_for_document(self, document_id):
+            return list(self.items.values())
+
+    application = app()
+    application.run_store = ListedRuns()
+    application.documents = (
+        {"id": "d1", "tenant_id": "tenant-a", "organization_id": "org-a"},
+    )
+    application.run_store.put(
+        Run("owned", payload={"document_id": "d1", "tenant_id": "tenant-a", "organization_id": "org-a"})
+    )
+    application.run_store.put(
+        Run("foreign", payload={"document_id": "d1", "tenant_id": "tenant-b", "organization_id": "org-b"})
+    )
+    principal = Principal(
+        "user-1",
+        frozenset({"documents:read"}),
+        tenant_id="tenant-a",
+        organization_id="org-a",
+    )
+    application.auth = lambda token: principal if token == "ok" else None
+
+    response = application.dispatch(
+        Request("GET", "/v1/documents/d1/runs", headers={"Authorization": "Bearer ok"})
+    )
+
+    assert [item["id"] for item in body(response)["items"]] == ["owned"]
 
 
 def test_dynamic_auth_validator_is_resolved_at_request_time():
@@ -224,7 +559,7 @@ def test_dynamic_registration_and_auth_refresh_are_thread_safe():
         thread.join()
 
     assert failures == []
-    assert sorted(statuses) == [200, 404]
+    assert sorted(statuses) == [404, 404]
 
 
 def test_static_endpoints_require_configured_authentication():
@@ -234,7 +569,7 @@ def test_static_endpoints_require_configured_authentication():
     for method, path in (("GET", "/v1/graph"), ("GET", "/v1/documents"), ("GET", "/v1/findings"), ("POST", "/v1/runs")):
         assert application.dispatch(Request(method, path)).status == 401
 
-    assert application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"})).status == 200
+    assert application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"})).status == 404
 
 
 def test_enabling_auth_after_dynamic_route_creation_requires_authentication():
@@ -244,7 +579,7 @@ def test_enabling_auth_after_dynamic_route_creation_requires_authentication():
 
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     assert application.dispatch(Request("GET", "/v1/runs/r1")).status == 401
-    assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})).status == 200
+    assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})).status == 404
 
 
 def test_passport_and_artifacts_return_404_for_unknown_run():
@@ -441,7 +776,7 @@ def test_x20_resource_routes_are_safe_for_missing_resources():
 
     assert application.dispatch(Request("GET", "/v1/documents/missing")).status == 404
     assert application.dispatch(Request("GET", "/v1/documents/missing/runs")).status == 404
-    assert body(application.dispatch(Request("GET", "/v1/runs/missing/findings"))) == {"items": [], "next_cursor": None}
+    assert application.dispatch(Request("GET", "/v1/runs/missing/findings")).status == 404
     assert application.dispatch(Request("GET", "/v1/runs/missing/previews/missing.png")).status == 404
     assert application.dispatch(Request("POST", "/v1/documents/missing/revisions", body={})).status == 404
     assert body(application.dispatch(Request("GET", "/v1/baselines"))) == {"items": [], "next_cursor": None}

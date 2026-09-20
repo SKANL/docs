@@ -80,6 +80,30 @@ def test_validator_uses_injected_jwks_provider_without_networking():
     assert principal == Principal("user-1", frozenset({"documents:read"}))
 
 
+def test_validator_maps_tenant_and_organization_claims_to_principal():
+    validator = OIDCValidator(
+        issuer="issuer",
+        audience="docs-api",
+        key_provider=lambda **_: {"kid": "key-1"},
+        now=lambda: 1_000,
+    )
+
+    principal = validator.validate(
+        {"alg": "RS256", "kid": "key-1"},
+        {
+            "iss": "issuer",
+            "aud": "docs-api",
+            "sub": "user-1",
+            "tenant_id": "tenant-a",
+            "organization_id": "org-a",
+            "exp": 1_001,
+        },
+    )
+
+    assert principal.tenant_id == "tenant-a"
+    assert principal.organization_id == "org-a"
+
+
 def test_validator_rejects_missing_key_and_scope_policy_is_explicit():
     validator = OIDCValidator(issuer="issuer", audience="docs-api", key_provider=lambda **_: None, now=lambda: 1_000)
     with pytest.raises(AuthError, match="signing key"):

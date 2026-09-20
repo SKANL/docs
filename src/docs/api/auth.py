@@ -8,6 +8,8 @@ from dataclasses import dataclass
 class Principal:
     subject: str
     scopes: frozenset[str]
+    tenant_id: str | None = None
+    organization_id: str | None = None
 
 
 class AuthError(Exception):
