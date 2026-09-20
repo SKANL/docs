@@ -235,7 +235,12 @@ def _build_worker(
             if not isinstance(document_id, str) or not document_id:
                 raise ValueError("document_id is required to execute a run")
             output_format = payload.get("format", "docx")
-            deps = Deps(Workspace(root / "documents", root / "templates"))
+            run_root = root
+            workspace_id = payload.get("workspace_id")
+            if isinstance(workspace_id, str) and workspace_id:
+                selected = WorkspaceRegistry().get(workspace_id)
+                run_root = Path(str(selected["root"])).resolve()
+            deps = Deps(Workspace(run_root / "documents", run_root / "templates"))
             source_pipeline = _source_pipeline(deps)
             if source_pipeline is None:
                 raise RuntimeError("source pipeline dependencies are unavailable")
