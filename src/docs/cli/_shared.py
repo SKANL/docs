@@ -63,7 +63,7 @@ from docs.infrastructure.persistence.json_section_repository import JsonSectionR
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 from docs.observability import ObservabilityPort, create_observability_from_env
-from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, legacy_template
+from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, source_template
 
 
 @dataclass(frozen=True)
@@ -398,7 +398,7 @@ class Deps:
         return ResolvedContext(
             doc_id=doc_id,
             config=merged,
-            template=(legacy_template(resolved_template_ir) if resolved_template_ir is not None else resolved_template),
+            template=(source_template(resolved_template_ir) if resolved_template_ir is not None else resolved_template),
             template_ir=resolved_template_ir,
         )
 

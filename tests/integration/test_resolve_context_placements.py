@@ -8,7 +8,7 @@ import pytest
 
 from docs.cli._shared import Deps
 from docs.domain.docx_structure import structure_parts
-from docs.template_compiler import TemplateIR, legacy_template
+from docs.template_compiler import TemplateIR, source_template
 
 _TEMPLATE = {
     "type": "tesina",
@@ -104,18 +104,18 @@ def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
     assert parts[0]["type"] == "cover_from_template"
 
 
-def test_template_resolution_compiles_ir_while_preserving_legacy_template(workspace):
+def test_template_resolution_compiles_ir_while_preserving_source_template(workspace):
     deps = Deps()
     deps.documents.create("doc-ir", "tesina")
 
     resolved = deps.resolve_context("doc-ir")
 
     assert isinstance(resolved.template_ir, TemplateIR)
-    assert resolved.template.model_dump() == legacy_template(resolved.template_ir).model_dump()
+    assert resolved.template.model_dump() == source_template(resolved.template_ir).model_dump()
     assert len(resolved.template_ir.ir_hash) == 64
 
 
-def test_legacy_template_without_section_contracts_still_resolves(workspace):
+def test_source_template_without_section_contracts_still_resolves(workspace):
     legacy = dict(_TEMPLATE)
     legacy["section_contracts"] = {}
     (workspace / "templates" / "tesina.json").write_text(json.dumps(legacy), encoding="utf-8")

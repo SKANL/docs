@@ -13,8 +13,8 @@ from docs.domain.pipeline_kernel import deterministic_json
 from docs.domain.template_validation import validate_template
 
 from .ir import TemplateIR, _deep_thaw
-from .legacy import from_legacy_template, to_legacy_template
 from .lowering import RendererLoweringMetadata
+from .source_adapter import from_source_template, to_source_template
 
 
 class TemplateCompilationError(ValueError):
@@ -31,7 +31,7 @@ class TemplateCompiler:
     def compile(self, source: Template | dict[str, Any]) -> TemplateIR:
         if isinstance(source, Template):
             template = source
-            raw = from_legacy_template(source)
+            raw = from_source_template(source)
         else:
             raw = source
 
@@ -45,7 +45,7 @@ class TemplateCompiler:
             except ValidationError as exc:
                 raise TemplateCompilationError(exc.errors()) from exc
 
-        config = from_legacy_template(template)
+        config = from_source_template(template)
         return TemplateIR(
             template_type=template.type,
             title=template.title,
@@ -96,5 +96,5 @@ def compile_template_json(text: str) -> TemplateIR:
     return TemplateCompiler().compile_json(text)
 
 
-def legacy_template(ir: TemplateIR) -> Template:
-    return to_legacy_template(ir)
+def source_template(ir: TemplateIR) -> Template:
+    return to_source_template(ir)
