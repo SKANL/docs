@@ -9,7 +9,7 @@ import os
 import signal
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,7 +111,7 @@ class _WorkspaceRunStore:
         return [self._store(root) for root in roots]
 
     def put(self, run: Any) -> None:
-        workspace_id = run.payload.get("workspace_id") if isinstance(run.payload, dict) else None
+        workspace_id = run.payload.get("workspace_id") if isinstance(run.payload, Mapping) else None
         if isinstance(workspace_id, str) and workspace_id:
             self._store(self.registry.get(workspace_id)["root"]).put(run)
         elif self.fallback_root is not None:
@@ -200,7 +200,7 @@ class _WorkspaceEvidenceStores:
 
     def _root_for_run(self, run_id: str) -> Path:
         run = self.run_store.get(run_id)
-        if run is not None and isinstance(run.payload, dict):
+        if run is not None and isinstance(run.payload, Mapping):
             workspace_id = run.payload.get("workspace_id")
             if isinstance(workspace_id, str) and workspace_id:
                 try:
