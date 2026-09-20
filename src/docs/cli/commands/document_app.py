@@ -1658,6 +1658,20 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
         deps.workspace.doc_root(resolved.doc_id),
         resolved.config.get("paths", {}),
     )
+    current_v2 = payload.get("v2", {})
+    payload["v2"] = {
+        **(dict(current_v2) if isinstance(current_v2, Mapping) else {}),
+        "capabilities": capability_registry.report(),
+        "capability_diagnostics": capability_registry.diagnostics(),
+        "unsupported_stages": (dict(current_v2).get("unsupported_stages", []) if isinstance(current_v2, Mapping) else []),
+        "publication_blockers": (dict(current_v2).get("publication_blockers", []) if isinstance(current_v2, Mapping) else []),
+        "public_pipelines": [spec.pipeline_id for spec in PUBLIC_PIPELINES],
+    }
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
 
 
 @document_app.command("run")
