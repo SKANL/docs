@@ -352,11 +352,17 @@ class _HealthApplication:
 
     def __call__(self, environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
         if environ.get("PATH_INFO") == self.health_path and environ.get("REQUEST_METHOD", "GET") == "GET":
-            ready = self.workspace_error is None
+            ready = self.workspace_error is None and (
+                self.worker_thread is None or self.worker_thread.is_alive()
+            )
             response = Response.json(
                 {"ready": ready, "protocol": self.protocol}
                 if ready
-                else {"error": self.workspace_error, "protocol": self.protocol, "ready": False}
+                else {
+                    "error": self.workspace_error or "worker_not_running",
+                    "protocol": self.protocol,
+                    "ready": False,
+                }
             )
             start_response(
                 "200 OK" if ready else "503 Service Unavailable",
