@@ -4,6 +4,6 @@
   "version": "0.1.0",
   "identifier": "com.docs.reviewstudio",
   "build": { "beforeDevCommand": "npm --prefix ../review-studio run dev -- --host 127.0.0.1 --port 1420", "frontendDist": "../src", "devUrl": "http://localhost:1420" },
-  "app": { "windows": [{ "title": "Review Studio", "width": 1280, "height": 800, "resizable": true }], "security": { "csp": "default-src 'self'; connect-src 'self'" } },
+  "app": { "windows": [{ "title": "Review Studio", "width": 1280, "height": 800, "resizable": true }], "security": { "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765" } },
   "bundle": { "active": true, "targets": ["msi", "nsis"], "icon": ["icons/icon.ico"], "resources": ["../sidecar/*"], "windows": { "webviewInstallMode": { "type": "embedBootstrapper" } } }
 }

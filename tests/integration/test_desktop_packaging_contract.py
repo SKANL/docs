@@ -14,6 +14,8 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     assert "resource_dir()" in rust
     assert 'resource_dir.join("sidecar").join(name)' in rust
     assert 'resource_dir.join(name)' in rust
+    assert "CREATE_NO_WINDOW" in rust
+    assert "creation_flags(CREATE_NO_WINDOW)" in rust
     assert "/health" in rust
     assert '"docs-sidecar/v1"' in rust
 
@@ -32,6 +34,9 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     assert package["scripts"]["build:sidecar"].endswith("scripts/build-sidecar.ps1")
     assert "beforeDevCommand" in config["build"]
     assert "review-studio" in config["build"]["beforeDevCommand"]
+    assert config["app"]["security"]["csp"] == (
+        "default-src 'self'; connect-src 'self' http://127.0.0.1:8765"
+    )
 
     sidecar = (root / "desktop/scripts/build-sidecar.ps1").read_text(encoding="utf-8")
     assert "pyinstaller" in sidecar

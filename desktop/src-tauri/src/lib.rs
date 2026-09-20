@@ -10,6 +10,12 @@ use tauri::Manager;
 use tauri::State;
 use thiserror::Error;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Error)]
 pub enum SupervisorError {
     #[error("sidecar is already running")]
@@ -91,7 +97,9 @@ impl SidecarSupervisor {
             return Err(SupervisorError::AlreadyRunning);
         }
         let executable_path = Path::new(executable);
-        let child = Command::new(executable_path)
+        let mut command = Command::new(executable_path);
+        configure_sidecar_command(&mut command);
+        let child = command
             .current_dir(executable_path.parent().unwrap_or_else(|| Path::new(".")))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -138,6 +146,11 @@ impl SidecarSupervisor {
             error: Some(error.into()),
         };
     }
+}
+
+fn configure_sidecar_command(command: &mut Command) {
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
 }
 
 impl Clone for Health {
