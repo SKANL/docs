@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 from docs.domain.contracts import Blob
 
-
 _MANIFEST_METADATA_KEY = "x20-blob"
 
 

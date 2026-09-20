@@ -69,7 +69,7 @@ def test_s3_blob_store_rejects_mismatched_remote_payload() -> None:
     store.put(blob, b"hello")
     client.objects[("docs", blob.key)]["Body"] = b"tampered"
 
-    with pytest.raises(ValueError, match="digest|size"):
+    with pytest.raises(ValueError, match=r"digest|size"):
         store.get(blob.key)
 
 

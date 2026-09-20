@@ -83,9 +83,8 @@ def test_negative_max_iterations_is_rejected() -> None:
 
 def test_context_manager_stops_runner_and_preserves_exception() -> None:
     runner = WorkerRunner(FakeService())
-    with pytest.raises(RuntimeError, match="boom"):
-        with runner:
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError, match="boom"), runner:
+        raise RuntimeError("boom")
     assert runner.stopped
 
 

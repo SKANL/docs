@@ -143,6 +143,10 @@ ISSUE_CODES: dict[str, IssueCode] = {
         meaning="El texto sustituido se superpone con un objeto PDF que debía permanecer intacto.",
         fix="Acortá, ajustá o reposicioná la sustitución para despejar el objeto original y repetí la verificación; tratá la colisión como error bloqueante.",
     ),
+    "pdf.write.missing_replacement_lines": IssueCode(
+        meaning="Una o más líneas esperadas de la sustitución no aparecen en el PDF reabierto.",
+        fix="Revisá la fuente, la coincidencia del bloque y la escritura PDF; no publiques el artifact hasta que todas las líneas esperadas sean verificables.",
+    ),
     # --- qa -----------------------------------------------------------------
     "qa.failed": IssueCode(
         meaning="La auditoría visual sobre el PDF renderizado terminó con error.",

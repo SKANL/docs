@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from docs.domain.contracts import Job
 from docs.workers.composition import PipelineJobConfiguration, WorkerComposition
 from docs.workers.service import WorkerService
 
