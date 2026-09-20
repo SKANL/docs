@@ -30,7 +30,7 @@ class WorkspaceRegistry:
     def create(self, name: str, root: str | Path) -> dict[str, Any]:
         normalized = self._name(name)
         resolved = Path(root).expanduser().resolve()
-        resolved.mkdir(parents=True, exist_ok=True)
+        self._ensure_layout(resolved)
         with self._lock:
             data = self._read()
             if any(item["name"] == normalized for item in data["workspaces"]):
@@ -39,6 +39,21 @@ class WorkspaceRegistry:
             data["workspaces"].append(item)
             self._write(data)
             return dict(item)
+
+    @staticmethod
+    def _ensure_layout(root: Path) -> None:
+        """Create the durable workspace boundary before it becomes selectable."""
+        for relative in (
+            "documents",
+            "templates",
+            "assets",
+            "runs",
+            "artifacts",
+            "baselines",
+            "passports",
+            ".docs",
+        ):
+            (root / relative).mkdir(parents=True, exist_ok=True)
 
     def get(self, workspace_id: str) -> dict[str, Any]:
         with self._lock:
@@ -49,6 +64,7 @@ class WorkspaceRegistry:
 
     def select(self, workspace_id: str) -> dict[str, Any]:
         item = self.get(workspace_id)
+        self._ensure_layout(Path(str(item["root"])).expanduser().resolve())
         with self._lock:
             data = self._read()
             data["active"] = workspace_id

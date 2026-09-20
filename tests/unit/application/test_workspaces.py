@@ -47,3 +47,11 @@ def test_registry_renames_without_changing_root_or_id(tmp_path: Path) -> None:
     assert renamed["root"] == item["root"]
     assert renamed["name"] == "Renamed"
     assert registry.list() == [renamed]
+
+
+def test_registry_provisions_isolated_workspace_layout(tmp_path: Path) -> None:
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    item = registry.create("Primary", tmp_path / "one")
+
+    expected = {"documents", "templates", "assets", "runs", "artifacts", "baselines", "passports", ".docs"}
+    assert {path.name for path in Path(item["root"]).iterdir()} >= expected
