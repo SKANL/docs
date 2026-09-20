@@ -173,6 +173,7 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
         renderer,
         str(output_format),
         deps.workspace.doc_root(resolved.doc_id),
+        resolved.config.get("paths", {}),
     )
     capabilities = registry.report()
     capability_diagnostics = registry.diagnostics()

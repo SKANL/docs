@@ -441,7 +441,12 @@ def _visual_capabilities(document_root: Path) -> tuple[ToolCapability, ...]:
     return tuple(capabilities)
 
 
-def _capabilities_for(renderer: Any, output_format: str, document_root: Path) -> ToolCapabilityRegistry:
+def _capabilities_for(
+    renderer: Any,
+    output_format: str,
+    document_root: Path,
+    paths: dict[str, object] | None = None,
+) -> ToolCapabilityRegistry:
     capabilities = list(_renderer_capabilities(renderer))
     capabilities.extend(
         (
@@ -452,9 +457,27 @@ def _capabilities_for(renderer: Any, output_format: str, document_root: Path) ->
     if output_format == "pdf":
         capabilities.append(ToolCapability("soffice", "soffice", required=True, requirement="required to derive PDF from DOCX", degradation="skip PDF derivation in draft mode"))
     capabilities.extend(_visual_capabilities(document_root))
+    tool_resolver = SystemToolResolverAdapter()
+    canonical_resolvers = {
+        "pandoc": tool_resolver.resolve_pandoc,
+        "soffice": tool_resolver.resolve_libreoffice,
+        "libreoffice": tool_resolver.resolve_libreoffice,
+        "java": tool_resolver.resolve_java,
+        "mmdc": tool_resolver.resolve_mmdc,
+        "resvg": tool_resolver.resolve_resvg,
+    }
+
+    def resolve_executable(executable: str, paths: dict[str, object]) -> str | None:
+        resolver = canonical_resolvers.get(executable)
+        return resolver(paths) if resolver else None
+
     return ToolCapabilityRegistry(
         capabilities,
-        NativeToolCapabilityDetector(SystemToolResolverAdapter().tool_version),
+        NativeToolCapabilityDetector(
+            tool_resolver.tool_version,
+            executable_resolver=resolve_executable,
+            paths=paths,
+        ),
     )
 
 
@@ -493,7 +516,9 @@ def create_document_service(
     initial = active_context()
     initial_root = deps.workspace.doc_root(initial.doc_id)
     initial_root.mkdir(parents=True, exist_ok=True)
-    capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
+    capabilities = _capabilities_for(
+        state["renderer"], output_format, initial_root, state["config"].get("paths", {})
+    )
     destination = publication_destination or (
         initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
     )
@@ -1599,7 +1624,10 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     output_format = output.get("format", "docx") if isinstance(output, Mapping) else "docx"
     renderer = deps.resolve_renderer(resolved.config)
     capability_registry = _capabilities_for(
-        renderer, output_format, deps.workspace.doc_root(resolved.doc_id)
+        renderer,
+        output_format,
+        deps.workspace.doc_root(resolved.doc_id),
+        resolved.config.get("paths", {}),
     )
     status_reader = payload.get("v2", {})
     current_v2 = dict(status_reader) if isinstance(status_reader, Mapping) else {}

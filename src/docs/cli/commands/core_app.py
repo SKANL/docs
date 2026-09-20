@@ -56,7 +56,12 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
         renderer = deps.resolve_renderer(resolved.config)
     except (AttributeError, TypeError, ValueError):
         renderer = None
-    registry = _capabilities_for(renderer, str(output_format), deps.workspace.doc_root(resolved.doc_id))
+    registry = _capabilities_for(
+        renderer,
+        str(output_format),
+        deps.workspace.doc_root(resolved.doc_id),
+        resolved.config.get("paths", {}),
+    )
     result.capabilities = registry.report()
     result.capability_diagnostics = registry.diagnostics()
     result.capabilities = dict(sorted(result.capabilities.items()))
