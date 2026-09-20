@@ -29,7 +29,8 @@ from .infrastructure.persistence.x20 import (
 )
 from .workers.composition import WorkerComposition
 from .workers.runner import WorkerRunner
-from .domain.contracts import Passport
+from .domain.contracts import Artifact, Passport
+import hashlib
 
 _LOG = logging.getLogger("docs.sidecar")
 
@@ -275,7 +276,7 @@ def _build_worker(
         SqliteLeaseStore(state_path),
         run_store=run_store,
         passport_store=passport_store,
-        finalizer=lambda result: _persist_worker_passport(passport_store, result),
+        finalizer=lambda result: _persist_worker_evidence(passport_store, artifact_store, result),
     )
     original_handle = composition.handle
 
@@ -287,13 +288,28 @@ def _build_worker(
     return WorkerRunner(composition.create_service(), poll_interval=0.2)
 
 
-def _persist_worker_passport(store: SqlitePassportStore, result: Any) -> None:
+def _persist_worker_evidence(passport_store: SqlitePassportStore, artifact_store: SqliteArtifactStore, result: Any) -> None:
     """Persist the real pipeline result as the run's durable evidence passport."""
     value = result.value if isinstance(result.value, dict) else {"value": result.value}
-    store.put(Passport(result.run_id, entries=(
+    passport_store.put(Passport(result.run_id, entries=(
         {"stage": "worker", "status": result.state, "attempt": result.attempt},
         {"stage": "pipeline", "result": value},
     )))
+    report = value.get("report", {}) if isinstance(value, dict) else {}
+    execution = report.get("execution", {}) if isinstance(report, dict) else {}
+    for stage in execution.get("results", []) if isinstance(execution, dict) else []:
+        if not isinstance(stage, dict):
+            continue
+        for index, produced in enumerate(stage.get("artifacts", ())):
+            encoded = str(produced).encode("utf-8")
+            digest = hashlib.sha256(encoded).hexdigest()
+            artifact_store.put(Artifact(
+                id=f"{result.run_id}-{stage.get('stage', 'stage')}-{index}",
+                run_id=result.run_id,
+                kind=str(stage.get("stage", "artifact")),
+                digest=digest,
+                metadata={"value": str(produced), "source": "pipeline"},
+            ))
 
 
 def build_server(config: SidecarConfig) -> GracefulHTTPServer:
