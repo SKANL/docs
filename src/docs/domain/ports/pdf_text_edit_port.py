@@ -35,6 +35,27 @@ class BlockReplacement:
 
 
 @dataclass(frozen=True)
+class WriteDiagnostic:
+    """Stable geometry evidence for one unsafe post-save replacement."""
+
+    code: str
+    page: int
+    replacement_index: int
+    bounds: tuple[float, float, float, float]
+    reference_bounds: tuple[float, float, float, float]
+    object_index: int | None = None
+
+    def to_line(self) -> str:
+        bounds = ",".join(f"{value:.1f}" for value in self.bounds)
+        reference = ",".join(f"{value:.1f}" for value in self.reference_bounds)
+        object_detail = "" if self.object_index is None else f" objeto {self.object_index}"
+        return (
+            f"pagina {self.page} reemplazo {self.replacement_index + 1} {self.code}"
+            f"{object_detail} bounds=({bounds}) reference=({reference})"
+        )
+
+
+@dataclass(frozen=True)
 class WriteReport:
     """What the write had to compromise on, so the caller can report it."""
 
@@ -47,6 +68,11 @@ class WriteReport:
     """Blocks whose original family matched no known face and fell back to
     Helvetica. A serif document silently turning sans-serif on every page is
     exactly the kind of degradation this harness refuses to hide."""
+    verification_diagnostics: tuple[WriteDiagnostic, ...] = ()
+
+    @property
+    def blocks_unsafe(self) -> int:
+        return len({item.replacement_index for item in self.verification_diagnostics})
 
 
 class PdfTextEditPort(Protocol):

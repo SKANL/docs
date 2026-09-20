@@ -21,6 +21,9 @@ from __future__ import annotations
 
 import ctypes
 import math
+import os
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -32,9 +35,35 @@ from docs.domain.block_grouping import DOMINANT_STYLE_SHARE, TextRun
 from docs.domain.fonts import needs_embedded_font, substitute_font
 from docs.domain.pdf_id import normalize_pdf_id
 from docs.domain.ports.font_source_port import FontSourcePort
-from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteReport
+from docs.domain.ports.pdf_text_edit_port import (
+    BlockReplacement,
+    WriteDiagnostic,
+    WriteReport,
+)
 
 _LINE_SPACING = 1.18
+
+# PDFium bounds are floating-point measurements. Differences up to half a
+# point are treated as equivalent at every post-save geometry boundary.
+POST_WRITE_TOLERANCE_POINTS = 0.5
+
+_Bounds = tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
+class _ObjectSnapshot:
+    object_index: int
+    text: str | None
+    bounds: _Bounds
+
+
+@dataclass(frozen=True)
+class _VerificationSpec:
+    page: int
+    replacement_index: int
+    permitted_bounds: _Bounds
+    expected_lines: tuple[_ObjectSnapshot, ...]
+    untouched: tuple[_ObjectSnapshot, ...]
 
 # Subset tags are exactly six uppercase letters followed by "+".
 _SUBSET_TAG_LENGTH = 6
@@ -320,6 +349,63 @@ def _object_bounds(obj: Any) -> tuple[float, float, float, float]:
     return left.value, bottom.value, right.value, top.value
 
 
+def _outside(inner: _Bounds, outer: _Bounds) -> bool:
+    tolerance = POST_WRITE_TOLERANCE_POINTS
+    return (
+        inner[0] < outer[0] - tolerance
+        or inner[1] < outer[1] - tolerance
+        or inner[2] > outer[2] + tolerance
+        or inner[3] > outer[3] + tolerance
+    )
+
+
+def _overlaps(first: _Bounds, second: _Bounds) -> bool:
+    tolerance = POST_WRITE_TOLERANCE_POINTS
+    return (
+        min(first[2], second[2]) - max(first[0], second[0]) > tolerance
+        and min(first[3], second[3]) - max(first[1], second[1]) > tolerance
+    )
+
+
+def _union(bounds: list[_Bounds]) -> _Bounds:
+    return (
+        min(item[0] for item in bounds),
+        min(item[1] for item in bounds),
+        max(item[2] for item in bounds),
+        max(item[3] for item in bounds),
+    )
+
+
+def _missing_expected_lines(
+    expected: tuple[_ObjectSnapshot, ...], actual: list[_ObjectSnapshot] | tuple[_ObjectSnapshot, ...]
+) -> tuple[_ObjectSnapshot, ...]:
+    remaining = list(actual)
+    missing: list[_ObjectSnapshot] = []
+    for item in expected:
+        for index, candidate in enumerate(remaining):
+            if candidate.text == item.text:
+                remaining.pop(index)
+                break
+        else:
+            missing.append(item)
+    return tuple(missing)
+
+
+def _permitted_bounds(
+    replacement: BlockReplacement, expected_lines: tuple[_ObjectSnapshot, ...]
+) -> _Bounds:
+    starts = [replacement.x]
+    if replacement.first_line_x:
+        starts.append(replacement.first_line_x)
+    source_bottom = min((run.y for run in replacement.remove), default=replacement.top)
+    baseline = replacement.baseline or (replacement.top - replacement.fitted.font_size)
+    first_line_bottom = (
+        expected_lines[0].bounds[1] if expected_lines else source_bottom
+    )
+    ink_descent = min(0.0, first_line_bottom - baseline)
+    return min(starts), source_bottom + ink_descent, replacement.right, replacement.top
+
+
 def _text_objects(page: Any, textpage: Any) -> list[tuple[Any, str, tuple[float, float, float, float]]]:
     """Every text object on the page, with its text and bounds, read once.
 
@@ -447,10 +533,14 @@ class Pypdfium2TextEditAdapter:
         by_page: dict[int, list[BlockReplacement]] = {}
         for replacement in replacements:
             by_page.setdefault(replacement.page, []).append(replacement)
+        replacement_indices = {id(item): index for index, item in enumerate(replacements)}
 
         substituted = 0
         unrecognized = 0
         embedded = 0
+        verification_specs: list[_VerificationSpec] = []
+        scratch_path: Path | None = None
+        saved_to_scratch = False
         font_cache: dict[Any, Any] = {}
         # PDFium reads the font bytes lazily, so the buffers must outlive the
         # loop that created them.
@@ -461,38 +551,68 @@ class Pypdfium2TextEditAdapter:
                 page = document[page_index]
                 # READ phase: the textpage is opened AND CLOSED inside here,
                 # before any mutation. Reordering this destroys text objects.
-                targets = self._targets_for(page, page_replacements)
+                targets, untouched = self._targets_for(page, page_replacements)
                 # WRITE phase: textpage closed.
                 for replacement, objects in targets:
                     for obj in objects:
                         pdfium_c.FPDFPage_RemoveObject(page.raw, obj)
                         pdfium_c.FPDFPageObj_Destroy(obj)
-                    drawn, known, real = self._draw(
+                    drawn, known, real, expected_lines = self._draw(
                         document, page, replacement, font_cache
                     )
                     substituted += drawn
                     unrecognized += 0 if known else 1
                     embedded += 1 if real else 0
+                    verification_specs.append(
+                        _VerificationSpec(
+                            page=page_index,
+                            replacement_index=replacement_indices[id(replacement)],
+                            permitted_bounds=_permitted_bounds(replacement, expected_lines),
+                            expected_lines=expected_lines,
+                            untouched=untouched,
+                        )
+                    )
                 pdfium_c.FPDFPage_GenerateContent(page.raw)
 
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            document.save(str(out_path))
+            scratch_handle, scratch_name = tempfile.mkstemp(
+                prefix=f".{out_path.name}.", suffix=".verify", dir=out_path.parent
+            )
+            os.close(scratch_handle)
+            scratch_path = Path(scratch_name)
+            document.save(str(scratch_path))
+            saved_to_scratch = True
         finally:
             document.close()
+            if not saved_to_scratch and scratch_path is not None and scratch_path.exists():
+                scratch_path.unlink()
 
         # PDFium stamps a random /ID on save; without this every byte-identity
         # test in this capability is flaky for a reason that is a real bug.
-        out_path.write_bytes(normalize_pdf_id(out_path.read_bytes()))
+        try:
+            assert scratch_path is not None
+            scratch_path.write_bytes(normalize_pdf_id(scratch_path.read_bytes()))
+            diagnostics = self._verify_output(scratch_path, verification_specs)
+            if any(item.code == "pdf.write.missing_replacement_lines" for item in diagnostics):
+                raise RuntimeError("missing replacement lines prevent PDF publication")
+            os.replace(scratch_path, out_path)
+        finally:
+            if scratch_path is not None and scratch_path.exists():
+                scratch_path.unlink()
         return WriteReport(
             blocks_written=len(replacements),
             fonts_substituted=substituted,
             fonts_unrecognized=unrecognized,
             fonts_embedded=embedded,
+            verification_diagnostics=diagnostics,
         )
 
     def _targets_for(
         self, page: Any, replacements: list[BlockReplacement]
-    ) -> list[tuple[BlockReplacement, list[Any]]]:
+    ) -> tuple[
+        list[tuple[BlockReplacement, list[Any]]],
+        tuple[_ObjectSnapshot, ...],
+    ]:
         """Match each replacement to its page objects, then CLOSE the textpage."""
         lookup: dict[tuple[str, float, float], int] = {}
         for index, replacement in enumerate(replacements):
@@ -500,20 +620,149 @@ class Pypdfium2TextEditAdapter:
                 lookup[_match_key(run.text, run.x, run.y)] = index
 
         matched: dict[int, list[Any]] = {index: [] for index in range(len(replacements))}
+        objects: list[tuple[int, Any, str | None, _Bounds]] = []
         textpage = pdfium_c.FPDFText_LoadPage(page.raw)
         try:
-            for obj, text, (left, bottom, _, _) in _text_objects(page, textpage):
+            for object_index in range(pdfium_c.FPDFPage_CountObjects(page.raw)):
+                obj = pdfium_c.FPDFPage_GetObject(page.raw, object_index)
+                text = (
+                    _object_text(obj, textpage)
+                    if pdfium_c.FPDFPageObj_GetType(obj) == pdfium_c.FPDF_PAGEOBJ_TEXT
+                    else None
+                )
+                bounds = _object_bounds(obj)
+                objects.append((object_index, obj, text, bounds))
+                if text is None:
+                    continue
+                left, bottom, _, _ = bounds
                 target = lookup.get(_match_key(text, left, bottom))
                 if target is not None:
                     matched[target].append(obj)
         finally:
             pdfium_c.FPDFText_ClosePage(textpage)
-        return [(replacements[index], matched[index]) for index in sorted(matched)]
+        targeted = {id(obj) for group in matched.values() for obj in group}
+        untouched = tuple(
+            _ObjectSnapshot(index, text, bounds)
+            for index, obj, text, bounds in objects
+            if text is not None and id(obj) not in targeted
+        )
+        return (
+            [(replacements[index], matched[index]) for index in sorted(matched)],
+            untouched,
+        )
+
+    def _verify_output(
+        self, out_path: Path, specs: list[_VerificationSpec]
+    ) -> tuple[WriteDiagnostic, ...]:
+        diagnostics: list[WriteDiagnostic] = []
+        by_page: dict[int, list[_VerificationSpec]] = {}
+        for spec in specs:
+            by_page.setdefault(spec.page, []).append(spec)
+
+        document = pdfium.PdfDocument(str(out_path))
+        try:
+            for page_index, page_specs in by_page.items():
+                page = document[page_index]
+                textpage = pdfium_c.FPDFText_LoadPage(page.raw)
+                try:
+                    written = [
+                        _ObjectSnapshot(index, text, bounds)
+                        for index, (obj, text, bounds) in enumerate(
+                            _text_objects(page, textpage)
+                        )
+                    ]
+                finally:
+                    pdfium_c.FPDFText_ClosePage(textpage)
+
+                page_bounds = (0.0, 0.0, float(page.get_width()), float(page.get_height()))
+                used: set[int] = set()
+                for spec in page_specs:
+                    actual_lines: list[_ObjectSnapshot] = []
+                    for expected in spec.expected_lines:
+                        candidates = [
+                            item
+                            for item in written
+                            if item.object_index not in used and item.text == expected.text
+                        ]
+                        if not candidates:
+                            continue
+                        actual = min(
+                            candidates,
+                            key=lambda item: sum(
+                                abs(left - right)
+                                for left, right in zip(item.bounds, expected.bounds, strict=True)
+                            ),
+                        )
+                        used.add(actual.object_index)
+                        actual_lines.append(actual)
+
+                    missing = _missing_expected_lines(spec.expected_lines, actual_lines)
+                    if missing:
+                        diagnostics.append(
+                            WriteDiagnostic(
+                                code="pdf.write.missing_replacement_lines",
+                                page=page_index + 1,
+                                replacement_index=spec.replacement_index,
+                                bounds=_union([item.bounds for item in missing]),
+                                reference_bounds=_union([item.bounds for item in spec.expected_lines]),
+                            )
+                        )
+                    if not actual_lines:
+                        continue
+                    actual_bounds = _union([item.bounds for item in actual_lines])
+                    page_number = page_index + 1
+                    if _outside(actual_bounds, spec.permitted_bounds):
+                        diagnostics.append(
+                            WriteDiagnostic(
+                                code="pdf.write.clipped",
+                                page=page_number,
+                                replacement_index=spec.replacement_index,
+                                bounds=actual_bounds,
+                                reference_bounds=spec.permitted_bounds,
+                            )
+                        )
+                    if _outside(actual_bounds, page_bounds):
+                        diagnostics.append(
+                            WriteDiagnostic(
+                                code="pdf.write.outside_page_bounds",
+                                page=page_number,
+                                replacement_index=spec.replacement_index,
+                                bounds=actual_bounds,
+                                reference_bounds=page_bounds,
+                            )
+                        )
+                    for untouched in spec.untouched:
+                        if any(_overlaps(line.bounds, untouched.bounds) for line in actual_lines):
+                            diagnostics.append(
+                                WriteDiagnostic(
+                                    code="pdf.write.overlaps_untouched_object",
+                                    page=page_number,
+                                    replacement_index=spec.replacement_index,
+                                    bounds=actual_bounds,
+                                    reference_bounds=untouched.bounds,
+                                    object_index=untouched.object_index,
+                                )
+                            )
+        finally:
+            document.close()
+
+        return tuple(
+            sorted(
+                diagnostics,
+                key=lambda item: (
+                    item.page,
+                    item.replacement_index,
+                    item.code,
+                    item.object_index if item.object_index is not None else -1,
+                    item.bounds,
+                ),
+            )
+        )
 
     def _draw(
         self, document: Any, page: Any, replacement: BlockReplacement,
         font_cache: dict[Any, Any],
-    ) -> tuple[int, bool, bool]:
+    ) -> tuple[int, bool, bool, tuple[_ObjectSnapshot, ...]]:
         family = replacement.remove[0].font_family if replacement.remove else ""
         font_name, recognized = _standard_font_for(family)
         # Matches `TextBlock._dominant`: a block goes italic only when it is
@@ -529,6 +778,7 @@ class Pypdfium2TextEditAdapter:
         )
         size = replacement.fitted.font_size
         lines = replacement.fitted.lines
+        expected_lines: list[_ObjectSnapshot] = []
         for line_number, line in enumerate(lines):
             obj, size = _place_within(
                 document,
@@ -550,4 +800,11 @@ class Pypdfium2TextEditAdapter:
             # this only lifts the line to its baseline.
             pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, 0, first - line_number * leading)
             pdfium_c.FPDFPage_InsertObject(page.raw, obj)
-        return 1, recognized, real
+            expected_lines.append(
+                _ObjectSnapshot(
+                    object_index=pdfium_c.FPDFPage_CountObjects(page.raw) - 1,
+                    text=line,
+                    bounds=_object_bounds(obj),
+                )
+            )
+        return 1, recognized, real, tuple(expected_lines)

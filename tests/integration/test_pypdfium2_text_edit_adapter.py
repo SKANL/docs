@@ -3,9 +3,13 @@ import hashlib
 import pytest
 
 from docs.domain.block_grouping import group_runs_into_blocks
-from docs.domain.ports.pdf_text_edit_port import BlockReplacement
-from docs.domain.text_fitting import fit_text_to_block
-from docs.infrastructure.pdf.pypdfium2_text_edit_adapter import Pypdfium2TextEditAdapter
+from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteDiagnostic
+from docs.domain.text_fitting import FittedText, fit_text_to_block
+from docs.infrastructure.pdf.pypdfium2_text_edit_adapter import (
+    Pypdfium2TextEditAdapter,
+    _missing_expected_lines,
+    _ObjectSnapshot,
+)
 
 
 @pytest.fixture
@@ -35,6 +39,18 @@ def _translate_all(adapter, src, dst, mapping):
         for block in group_runs_into_blocks(adapter.read_runs(src))
     ]
     return adapter.write_blocks(src, dst, replacements)
+
+
+def _replacement(block, text, *, x=None, top=None, baseline=None, right=None):
+    return BlockReplacement(
+        page=block.page,
+        remove=block.runs,
+        fitted=FittedText([text], block.font_size, False),
+        x=block.x if x is None else x,
+        top=block.top if top is None else top,
+        baseline=block.baseline if baseline is None else baseline,
+        right=block.right if right is None else right,
+    )
 
 
 def test_read_runs_returns_text_with_geometry(sample_pdf):
@@ -107,6 +123,148 @@ def test_the_write_report_counts_what_it_compromised(sample_pdf, tmp_path):
     assert report.fonts_substituted == report.blocks_written
 
 
+def test_post_write_verification_accepts_a_contained_replacement(sample_pdf, tmp_path):
+    adapter = Pypdfium2TextEditAdapter()
+    block = next(
+        block
+        for block in group_runs_into_blocks(adapter.read_runs(sample_pdf))
+        if block.text == "Hello world"
+    )
+
+    report = adapter.write_blocks(
+        sample_pdf,
+        tmp_path / "contained.pdf",
+        [_replacement(block, "Hi")],
+    )
+
+    assert report.verification_diagnostics == ()
+    assert report.blocks_unsafe == 0
+
+
+def test_post_write_verification_accepts_permitted_horizontal_expansion(sample_pdf, tmp_path):
+    adapter = Pypdfium2TextEditAdapter()
+    block = next(
+        block
+        for block in group_runs_into_blocks(adapter.read_runs(sample_pdf))
+        if block.text == "Hello world"
+    )
+
+    report = adapter.write_blocks(
+        sample_pdf,
+        tmp_path / "overflow.pdf",
+        [_replacement(block, "This replacement may use the detected column", right=400.0)],
+    )
+
+    assert report.verification_diagnostics == ()
+
+
+def test_post_write_verification_reports_clipping_outside_permitted_box(sample_pdf, tmp_path):
+    adapter = Pypdfium2TextEditAdapter()
+    block = next(
+        block
+        for block in group_runs_into_blocks(adapter.read_runs(sample_pdf))
+        if block.text == "Hello world"
+    )
+
+    report = adapter.write_blocks(
+        sample_pdf,
+        tmp_path / "clipped.pdf",
+        [
+            BlockReplacement(
+                page=block.page,
+                remove=block.runs,
+                fitted=FittedText(["One", "Two", "Three"], block.font_size, False),
+                x=block.x,
+                top=block.top,
+                baseline=block.baseline,
+                right=block.right,
+                line_spacing=block.font_size,
+            )
+        ],
+    )
+
+    assert [item.code for item in report.verification_diagnostics] == [
+        "pdf.write.clipped"
+    ]
+    assert report.verification_diagnostics[0].page == 1
+    assert report.blocks_unsafe == 1
+
+
+def test_post_write_verification_reports_out_of_page_text(sample_pdf, tmp_path):
+    adapter = Pypdfium2TextEditAdapter()
+    block = next(
+        block
+        for block in group_runs_into_blocks(adapter.read_runs(sample_pdf))
+        if block.text == "Hello world"
+    )
+
+    report = adapter.write_blocks(
+        sample_pdf,
+        tmp_path / "clipped.pdf",
+        [_replacement(block, "Clipped", x=-10.0, right=100.0)],
+    )
+
+    assert {item.code for item in report.verification_diagnostics} == {
+        "pdf.write.outside_page_bounds",
+    }
+
+
+def test_post_write_verification_reports_overlap_with_untouched_text(sample_pdf, tmp_path):
+    adapter = Pypdfium2TextEditAdapter()
+    blocks = {
+        block.text: block for block in group_runs_into_blocks(adapter.read_runs(sample_pdf))
+    }
+    target = blocks["Hello world"]
+    untouched = blocks["Second line of text"]
+
+    report = adapter.write_blocks(
+        sample_pdf,
+        tmp_path / "overlap.pdf",
+        [
+            _replacement(
+                target,
+                "Overlap",
+                x=untouched.x,
+                top=untouched.top,
+                baseline=untouched.baseline,
+                right=untouched.right,
+            )
+        ],
+    )
+
+    overlap = [
+        item
+        for item in report.verification_diagnostics
+        if item.code == "pdf.write.overlaps_untouched_object"
+    ]
+    assert len(overlap) == 1
+    assert overlap[0].object_index is not None
+
+
+def test_post_write_diagnostics_are_deterministic(sample_pdf, tmp_path):
+    adapter = Pypdfium2TextEditAdapter()
+    blocks = group_runs_into_blocks(adapter.read_runs(sample_pdf))
+    target = next(block for block in blocks if block.text == "Hello world")
+    replacement = _replacement(target, "Clipped", x=-10.0, right=100.0)
+
+    first = adapter.write_blocks(sample_pdf, tmp_path / "a.pdf", [replacement])
+    second = adapter.write_blocks(sample_pdf, tmp_path / "b.pdf", [replacement])
+
+    assert first.verification_diagnostics == second.verification_diagnostics
+    assert first.verification_diagnostics == tuple(
+        sorted(
+            first.verification_diagnostics,
+            key=lambda item: (
+                item.page,
+                item.replacement_index,
+                item.code,
+                item.object_index if item.object_index is not None else -1,
+                item.bounds,
+            ),
+        )
+    )
+
+
 def test_accented_target_text_survives_the_round_trip(sample_pdf, tmp_path):
     """The whole point of substituting fonts: the original subset has no "ó"."""
     adapter = Pypdfium2TextEditAdapter()
@@ -121,6 +279,51 @@ def test_an_empty_replacement_list_still_writes_a_valid_pdf(sample_pdf, tmp_path
     adapter.write_blocks(sample_pdf, out, [])
     assert out.exists()
     assert {r.text for r in adapter.read_runs(out)} == {"Hello world", "Second line of text"}
+
+
+def test_pdf_verification_failure_does_not_publish_partial_output(sample_pdf, tmp_path, monkeypatch):
+    adapter = Pypdfium2TextEditAdapter()
+    out = tmp_path / "out.pdf"
+    out.write_bytes(b"previous output")
+
+    def fail_verification(_path, _specs):
+        raise RuntimeError("verification failed")
+
+    monkeypatch.setattr(adapter, "_verify_output", fail_verification)
+
+    with pytest.raises(RuntimeError, match="verification failed"):
+        adapter.write_blocks(sample_pdf, out, [])
+
+    assert out.read_bytes() == b"previous output"
+
+
+def test_missing_replacement_lines_prevent_publication(sample_pdf, tmp_path, monkeypatch):
+    adapter = Pypdfium2TextEditAdapter()
+    out = tmp_path / "out.pdf"
+    out.write_bytes(b"previous output")
+    missing = WriteDiagnostic(
+        code="pdf.write.missing_replacement_lines",
+        page=1,
+        replacement_index=0,
+        bounds=(0, 0, 10, 10),
+        reference_bounds=(0, 0, 10, 10),
+    )
+    monkeypatch.setattr(adapter, "_verify_output", lambda _path, _specs: (missing,))
+
+    with pytest.raises(RuntimeError, match="missing replacement lines"):
+        adapter.write_blocks(sample_pdf, out, [])
+
+    assert out.read_bytes() == b"previous output"
+
+
+def test_missing_replacement_lines_are_reported_in_expected_order():
+    expected = (
+        _ObjectSnapshot(0, "first", (0, 0, 10, 10)),
+        _ObjectSnapshot(1, "second", (0, 10, 10, 20)),
+    )
+    actual = (_ObjectSnapshot(4, "second", (0, 10, 10, 20)),)
+
+    assert _missing_expected_lines(expected, actual) == (expected[0],)
 
 
 def _object_kinds(path):

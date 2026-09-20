@@ -3,7 +3,7 @@ import pytest
 from docs.application.translate import TranslateService, UntranslatablePdfError
 from docs.domain.block_grouping import TextRun
 from docs.domain.ports.pdf_classify_port import PdfClassification
-from docs.domain.ports.pdf_text_edit_port import WriteReport
+from docs.domain.ports.pdf_text_edit_port import WriteDiagnostic, WriteReport
 
 
 class FakeClassifier:
@@ -15,12 +15,13 @@ class FakeClassifier:
 
 
 class FakeEditor:
-    def __init__(self, runs=None):
+    def __init__(self, runs=None, write_report=None):
         # `runs if runs is not None`, never `runs or [...]`: an EMPTY list is
         # a meaningful value here (a PDF with no text), and truthiness would
         # silently replace it with the default.
         default = [TextRun("Hello world", 10.0, 700.0, 90.0, 14.0, 0, 12.0)]
         self._runs = default if runs is None else runs
+        self._write_report = write_report
         self.written = None
 
     def read_runs(self, path):
@@ -30,7 +31,9 @@ class FakeEditor:
         self.written = replacements
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"%PDF-1.4 fake\n")
-        return WriteReport(blocks_written=len(replacements), fonts_substituted=len(replacements))
+        return self._write_report or WriteReport(
+            blocks_written=len(replacements), fonts_substituted=len(replacements)
+        )
 
 
 class FakeTranslator:
@@ -146,6 +149,38 @@ def test_the_report_line_names_every_compromise(tmp_path):
     assert "0/1" in line
     assert "sin traducir" in line
     assert "3" in line
+
+
+def test_post_write_verification_failures_propagate_to_the_report_line(tmp_path):
+    diagnostic = WriteDiagnostic(
+        code="pdf.write.overlaps_untouched_object",
+        page=1,
+        replacement_index=0,
+        bounds=(10.0, 20.0, 40.0, 30.0),
+        reference_bounds=(30.0, 20.0, 50.0, 30.0),
+        object_index=2,
+    )
+    editor = FakeEditor(
+        write_report=WriteReport(
+            blocks_written=1,
+            fonts_substituted=1,
+            verification_diagnostics=(diagnostic,),
+        )
+    )
+
+    report = _service(editor=editor).translate_pdf(
+        tmp_path / "in.pdf", tmp_path / "out.pdf", "es"
+    )
+
+    assert report.blocks_translated == 1, "translation-engine meaning must not change"
+    assert report.blocks_unsafe == 1
+    assert report.write_diagnostics == (diagnostic,)
+    assert (
+        "1 edicion geometrica insegura: "
+        "pagina 1 reemplazo 1 pdf.write.overlaps_untouched_object objeto 2 "
+        "bounds=(10.0,20.0,40.0,30.0) reference=(30.0,20.0,50.0,30.0)"
+        in report.to_line()
+    )
 
 
 def test_a_pdf_with_no_text_at_all_reports_zero_blocks(tmp_path):

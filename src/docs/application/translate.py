@@ -23,7 +23,11 @@ from docs.domain.alignment import Alignment, detect_alignment, detect_column
 from docs.domain.block_grouping import TextBlock, group_runs_into_blocks
 from docs.domain.collision import collides, vertical_room
 from docs.domain.ports.pdf_classify_port import PdfClassifyPort
-from docs.domain.ports.pdf_text_edit_port import BlockReplacement, PdfTextEditPort
+from docs.domain.ports.pdf_text_edit_port import (
+    BlockReplacement,
+    PdfTextEditPort,
+    WriteDiagnostic,
+)
 from docs.domain.ports.translation_memory_port import TranslationMemoryPort
 from docs.domain.ports.translation_port import TranslationPort
 from docs.domain.text_fitting import FittedText, fit_text_to_block, leading_for
@@ -61,6 +65,8 @@ class TranslateReport:
     fonts_unrecognized: int = 0
     fonts_embedded: int = 0
     pages_untrusted: list[int] = field(default_factory=list)
+    blocks_unsafe: int = 0
+    write_diagnostics: tuple[WriteDiagnostic, ...] = ()
 
     @property
     def blocks_untranslated(self) -> int:
@@ -89,6 +95,10 @@ class TranslateReport:
         if self.pages_untrusted:
             pages = ", ".join(str(page) for page in self.pages_untrusted)
             parts.append(f"paginas multicolumna sin verificar: {pages}")
+        if self.blocks_unsafe:
+            noun = "edicion geometrica insegura" if self.blocks_unsafe == 1 else "ediciones geometricas inseguras"
+            details = " | ".join(item.to_line() for item in self.write_diagnostics)
+            parts.append(f"{self.blocks_unsafe} {noun}: {details}")
         return "; ".join(parts)
 
 
@@ -211,6 +221,8 @@ class TranslateService:
         report.fonts_substituted = write_report.fonts_substituted
         report.fonts_unrecognized = write_report.fonts_unrecognized
         report.fonts_embedded = write_report.fonts_embedded
+        report.blocks_unsafe = write_report.blocks_unsafe
+        report.write_diagnostics = write_report.verification_diagnostics
         return report
 
     def _translate_block(

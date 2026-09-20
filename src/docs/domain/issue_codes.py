@@ -25,6 +25,7 @@ ISSUE_CODE_FAMILIES: dict[str, str] = {
     "contract": "El contrato de la sección: contenido obligatorio y longitud.",
     "evidence": "Respaldo verificable de lo que la sección afirma.",
     "privacy": "Secretos, credenciales o datos sensibles filtrados al texto.",
+    "pdf": "Seguridad geométrica de las sustituciones de texto escritas en un PDF.",
     "qa": "Auditoría visual del artefacto renderizado (PDF vía LibreOffice).",
     "render": "Verificación y apertura de artefactos renderizados en formatos admitidos.",
     "reproducibility": "Reproducibilidad determinista de los artefactos generados.",
@@ -128,6 +129,19 @@ ISSUE_CODES: dict[str, IssueCode] = {
     "privacy.sensitive_data": IssueCode(
         meaning="El texto contiene algo que coincide con un patrón de secreto, credencial o dato personal.",
         fix="Quitá el dato del cuerpo. Si es un falso positivo, ajustá `secret_patterns` en la configuración normativa.",
+    ),
+    # --- pdf ----------------------------------------------------------------
+    "pdf.write.clipped": IssueCode(
+        meaning="El texto sustituido ocupa más espacio que el cuadro permitido y quedó recortado o invadió su límite original.",
+        fix="Acortá o reformulá la traducción, o ajustá el cuadro de destino de forma intencional antes de volver a escribir el PDF; tratá el hallazgo como error bloqueante.",
+    ),
+    "pdf.write.outside_page_bounds": IssueCode(
+        meaning="El texto sustituido quedó parcial o totalmente fuera de los límites físicos de la página PDF.",
+        fix="Reducí o reposicioná el texto dentro de la página y repetí la escritura; no publiques el PDF mientras persista este error bloqueante.",
+    ),
+    "pdf.write.overlaps_untouched_object": IssueCode(
+        meaning="El texto sustituido se superpone con un objeto PDF que debía permanecer intacto.",
+        fix="Acortá, ajustá o reposicioná la sustitución para despejar el objeto original y repetí la verificación; tratá la colisión como error bloqueante.",
     ),
     # --- qa -----------------------------------------------------------------
     "qa.failed": IssueCode(
