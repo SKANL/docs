@@ -24,6 +24,9 @@ class Runs:
     def get(self, key):
         return self.items.get(key)
 
+    def list(self):
+        return list(self.items.values())
+
 
 class Queue:
     def __init__(self):
@@ -43,6 +46,9 @@ class Passports:
 
 
 class Artifacts:
+    def list(self):
+        return []
+
     def list_for_run(self, key):
         return [Artifact("a1", key, "docx", "sha")]
 
@@ -107,6 +113,31 @@ def test_openapi_documents_owned_document_scope_operations():
     assert paths["/v1/documents/{document_id}"]["get"]["x-rbac-scopes"] == ["documents:read"]
     assert paths["/v1/documents/{document_id}/runs"]["get"]["x-rbac-scopes"] == ["documents:read"]
     assert paths["/v1/documents/{document_id}/revisions"]["post"]["x-rbac-scopes"] == ["documents:write"]
+
+
+def test_list_runs_returns_empty_page_from_injected_store():
+    response = app().dispatch(Request("GET", "/v1/runs"))
+
+    assert response.status == 200
+    assert body(response) == {"items": [], "next_cursor": None}
+
+
+def test_list_runs_returns_records_from_injected_store():
+    application = app()
+    application.run_store.put(Run("run-1", payload={"document_id": "d1"}, created_at="2026-01-01T00:00:00+00:00"))
+
+    response = application.dispatch(Request("GET", "/v1/runs"))
+
+    assert response.status == 200
+    assert body(response)["items"] == [application.run_store.get("run-1").to_dict()]
+
+
+@pytest.mark.parametrize("path", ["/v1/artifacts", "/v1/templates", "/v1/revisions", "/v1/publications"])
+def test_review_studio_collection_routes_return_empty_pages(path):
+    response = app().dispatch(Request("GET", path))
+
+    assert response.status == 200
+    assert body(response) == {"items": [], "next_cursor": None}
 
 
 def test_auth_refresh_preserves_unrelated_router_routes():

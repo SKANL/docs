@@ -1,11 +1,9 @@
 import { ApiConfigurationError, ReviewApiClient } from "./client";
-import { mockApi } from "./mockApi";
 import type { ReviewApi } from "./models";
 
 export type ReviewApiEnvironment = {
   apiBaseUrl?: string;
-  mockEnabled?: boolean;
-  isDevelopment?: boolean;
+  fetch?: typeof globalThis.fetch;
 };
 
 function remoteApi(client: ReviewApiClient): ReviewApi {
@@ -24,15 +22,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
   };
 }
 
-export function createReviewApi(environment: ReviewApiEnvironment = {
-  apiBaseUrl: import.meta.env.VITE_DOCS_API_BASE_URL,
-  mockEnabled: import.meta.env.VITE_REVIEW_STUDIO_MOCK_API === "true",
-  isDevelopment: import.meta.env.DEV || import.meta.env.MODE === "test",
-}): ReviewApi {
-  if (environment.mockEnabled) {
-    if (!environment.isDevelopment) throw new ApiConfigurationError("The mock API is available only in development or test mode.");
-    return mockApi;
-  }
+export function createReviewApi(environment: ReviewApiEnvironment = { apiBaseUrl: import.meta.env.VITE_DOCS_API_BASE_URL }): ReviewApi {
   if (!environment.apiBaseUrl) throw new ApiConfigurationError("Review API is not configured. Set VITE_DOCS_API_BASE_URL before starting Review Studio.");
-  return remoteApi(new ReviewApiClient({ baseUrl: environment.apiBaseUrl }));
+  return remoteApi(new ReviewApiClient({ baseUrl: environment.apiBaseUrl, fetch: environment.fetch }));
 }

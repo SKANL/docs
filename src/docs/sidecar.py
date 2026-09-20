@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import signal
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,13 @@ from urllib.parse import urlsplit
 from .api.application import X20Application
 from .api.http import Response
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
+from .infrastructure.persistence.x20 import (
+    SqliteArtifactStore,
+    SqliteGraphStore,
+    SqliteJobQueue,
+    SqlitePassportStore,
+    SqliteRunStore,
+)
 
 _LOG = logging.getLogger("docs.sidecar")
 
@@ -55,6 +63,31 @@ class _Queue:
         del run_id
 
 
+class _EmptyStore:
+    def list(self) -> Any:
+        return []
+
+    def get(self, item_id: str | None = None) -> None:
+        del item_id
+        return None
+
+    def list_for_run(self, run_id: str) -> Any:
+        del run_id
+        return []
+
+
+class _EmptyRunStore(_EmptyStore):
+    def put(self, run: Any) -> None:
+        del run
+
+    def get(self, run_id: str | None = None) -> None:
+        del run_id
+        return None
+
+    def list(self) -> Any:
+        return []
+
+
 class _HealthApplication:
     def __init__(self, application: X20Application, health_path: str, protocol: str) -> None:
         self.application = application
@@ -82,12 +115,25 @@ def _workspace_from_environment() -> Path | None:
 
 
 def build_application(config: SidecarConfig) -> _HealthApplication:
+    if config.workspace is None:
+        run_store: Any = _EmptyRunStore()
+        queue: Any = _Queue()
+        passport_store: Any = _EmptyStore()
+        artifact_store: Any = _EmptyStore()
+        graph_store: Any = _EmptyStore()
+    else:
+        state_path = config.workspace / ".docs" / "x20.sqlite3"
+        run_store = SqliteRunStore(state_path)
+        queue = SqliteJobQueue(state_path)
+        passport_store = SqlitePassportStore(state_path)
+        artifact_store = SqliteArtifactStore(state_path)
+        graph_store = SqliteGraphStore(state_path)
     application = X20Application(
-        run_store={},
-        queue=_Queue(),
-        passport_store={},
-        artifact_store={},
-        graph_store={},
+        run_store=run_store,
+        queue=queue,
+        passport_store=passport_store,
+        artifact_store=artifact_store,
+        graph_store=graph_store,
     )
     return _HealthApplication(application, urlsplit(config.health_url).path, config.protocol)
 
@@ -107,7 +153,7 @@ def run(server: GracefulHTTPServer) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    config = SidecarConfig.from_args(argv or [])
+    config = SidecarConfig.from_args(sys.argv[1:] if argv is None else argv)
     server = build_server(config)
 
     def request_shutdown(signum: int, frame: Any) -> None:

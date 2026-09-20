@@ -36,6 +36,9 @@ class X20Application:
         graph_store: Any,
         document_store: Any = None,
         findings_store: Any = None,
+        template_store: Any = None,
+        revision_store: Any = None,
+        publication_store: Any = None,
         revision_service: Any = None,
         baseline_store: Any = None,
         plugin_store: Any = None,
@@ -56,6 +59,9 @@ class X20Application:
         self.graph_store = graph_store
         self.document_store = document_store
         self.findings_store = findings_store
+        self.template_store = template_store
+        self.revision_store = revision_store
+        self.publication_store = publication_store
         self.revision_service = revision_service
         self.baseline_store = baseline_store
         self.plugin_store = plugin_store
@@ -77,6 +83,11 @@ class X20Application:
             ("GET", "/v1/openapi.json"),
             ("GET", "/v1/baselines"),
             ("GET", "/v1/plugins"),
+            ("GET", "/v1/runs"),
+            ("GET", "/v1/artifacts"),
+            ("GET", "/v1/templates"),
+            ("GET", "/v1/revisions"),
+            ("GET", "/v1/publications"),
             ("POST", "/v1/baselines/promotions"),
             ("POST", "/v1/runs"),
         }
@@ -87,6 +98,11 @@ class X20Application:
         self._register_owned_route("GET", "/v1/openapi.json", lambda _: self._openapi())
         self._register_owned_route("GET", "/v1/baselines", self._baselines)
         self._register_owned_route("GET", "/v1/plugins", self._plugins)
+        self._register_owned_route("GET", "/v1/runs", self._runs)
+        self._register_owned_route("GET", "/v1/artifacts", self._artifacts_collection)
+        self._register_owned_route("GET", "/v1/templates", self._templates)
+        self._register_owned_route("GET", "/v1/revisions", self._revisions)
+        self._register_owned_route("GET", "/v1/publications", self._publications)
         self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
         self._register_owned_route("POST", "/v1/runs", self._create_run)
 
@@ -183,6 +199,11 @@ class X20Application:
             ("GET", "/v1/baselines"): "baselines:read",
             ("POST", "/v1/baselines/promotions"): "baselines:write",
             ("GET", "/v1/plugins"): "plugins:read",
+            ("GET", "/v1/runs"): "runs:read",
+            ("GET", "/v1/artifacts"): "artifacts:read",
+            ("GET", "/v1/templates"): "documents:read",
+            ("GET", "/v1/revisions"): "documents:read",
+            ("GET", "/v1/publications"): "documents:read",
             ("POST", "/v1/runs"): "runs:write",
         }
         if (method, path) in static_scopes:
@@ -238,7 +259,7 @@ class X20Application:
             return (len(parts) == 3 and method == "GET") or (
                 len(parts) == 4 and parts[3] == "runs" and method == "GET"
             ) or (len(parts) == 4 and parts[3] == "revisions" and method == "POST")
-        if len(parts) == 3:
+        if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
         return (len(parts) == 4 and (
             (parts[3] == "cancel" and method == "POST")
@@ -263,7 +284,7 @@ class X20Application:
                 return lambda request: self._revision(resource_id, request)
             return None
         run_id = resource_id
-        if len(parts) == 3 and method == "GET":
+        if len(parts) == 3 and parts[2] != "runs" and method == "GET":
             return lambda request: self._run(run_id, request)
         if len(parts) == 4 and parts[3] == "cancel" and method == "POST":
             return lambda request: self._cancel(run_id, request)
@@ -316,6 +337,12 @@ class X20Application:
     def _run(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)
         return Response.json(run.to_dict())
+
+    def _runs(self, request: Request) -> Response:
+        items = self._store_items(self.run_store, "list")
+        if request.principal is not None:
+            items = [item for item in items if self._is_owned(item, request.principal)]
+        return self._page(self._filter(items, request.query), request, "runs")
 
     def _owned_run(self, run_id: str, request: Request) -> Run:
         run = self.run_store.get(run_id)
@@ -381,7 +408,10 @@ class X20Application:
             raise APIError("not_found", "Graph not found", 404)
         if not request.query:
             graph = self.graph_store.get()
-            return Response.json(_dict(graph))
+            data = _dict(graph)
+            if not isinstance(data, Mapping):
+                data = {}
+            return Response.json({"nodes": list(data.get("nodes", [])), "edges": list(data.get("edges", []))})
         query = GraphQueryService(self.graph_store)
         params = request.query
         mode = params.get("mode")
@@ -469,6 +499,18 @@ class X20Application:
         if request.principal is not None:
             items = [item for item in items if self._finding_is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "findings")
+
+    def _artifacts_collection(self, request: Request) -> Response:
+        return self._page(self._filter(self._store_items(self.artifact_store, "list"), request.query), request, "artifacts")
+
+    def _templates(self, request: Request) -> Response:
+        return self._page(self._filter(self._store_items(self.template_store, "list"), request.query), request, "templates")
+
+    def _revisions(self, request: Request) -> Response:
+        return self._page(self._filter(self._store_items(self.revision_store, "list"), request.query), request, "revisions")
+
+    def _publications(self, request: Request) -> Response:
+        return self._page(self._filter(self._store_items(self.publication_store, "list"), request.query), request, "publications")
 
     def _finding_is_owned(self, finding: Any, principal: Any) -> bool:
         data = _dict(finding)

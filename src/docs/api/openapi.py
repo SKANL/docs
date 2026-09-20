@@ -137,7 +137,14 @@ def build_openapi_document() -> dict[str, Any]:
             ],
         },
         "/v1/findings": {"get": _operation("List findings", page("finding"), scopes=("findings:read",))},
-        "/v1/runs": {"post": _operation("Create run", _json_response(_ref("run")), request={"$ref": "#/components/schemas/run"}, scopes=("runs:write",))},
+        "/v1/artifacts": {"get": _operation("List artifacts", page("artifact"), scopes=("artifacts:read",))},
+        "/v1/templates": {"get": _operation("List templates", page("document"), scopes=("documents:read",))},
+        "/v1/revisions": {"get": _operation("List revisions", page("revision"), scopes=("documents:read",))},
+        "/v1/publications": {"get": _operation("List publications", page("baseline"), scopes=("documents:read",))},
+        "/v1/runs": {
+            "get": _operation("List runs", page("run"), scopes=("runs:read",)),
+            "post": _operation("Create run", _json_response(_ref("run")), request={"$ref": "#/components/schemas/run"}, scopes=("runs:write",)),
+        },
         "/v1/runs/{run_id}": {"get": _operation("Get run", _json_response(_ref("run")), scopes=("runs:read",))},
         "/v1/runs/{run_id}/cancel": {"post": _operation("Cancel run", _json_response(_ref("run")), scopes=("runs:write",))},
         "/v1/runs/{run_id}/passport": {"get": _operation("Get run passport", _json_response(_ref("passport")), scopes=("passport:read",))},
@@ -145,7 +152,6 @@ def build_openapi_document() -> dict[str, Any]:
         "/v1/runs/{run_id}/progress": {"get": _operation("Stream run progress", {"description": "Server-sent progress events", "content": {"text/event-stream": {"schema": {"type": "string"}}}}, scopes=("runs:read",))},
         "/v1/artifacts/{artifact_id}": {"get": _operation("Get artifact", _json_response(_ref("artifact")), scopes=("artifacts:read",))},
         "/v1/artifacts/{artifact_id}/previews": {"get": _operation("List artifact previews", page("preview"), scopes=("artifacts:read",))},
-        "/v1/revisions": {"get": _operation("List revisions", page("revision"), scopes=("documents:read",))},
         "/v1/revisions/{revision_id}": {"get": _operation("Get revision", _json_response(_ref("revision")), scopes=("documents:read",))},
         "/v1/baselines": {"get": _operation("List baselines", page("baseline"), scopes=("baselines:read",)), "post": _operation("Create baseline", _json_response(_ref("baseline")), request={"$ref": "#/components/schemas/baseline"}, scopes=("baselines:write",))},
         "/v1/baselines/{baseline_id}": {"get": _operation("Get baseline", _json_response(_ref("baseline")), scopes=("baselines:read",))},
@@ -168,7 +174,7 @@ def build_openapi_document() -> dict[str, Any]:
     paths["/v1/runs/{run_id}/graph"] = copy.deepcopy(paths["/v1/graph"])
     paths["/v1/runs/{run_id}/graph"]["get"]["operationId"] = "get_run_graph"
     paths["/v1/runs/{run_id}/graph"]["get"]["summary"] = "Get run graph"
-    paged_paths = {"/v1/documents", "/v1/findings", "/v1/runs/{run_id}/artifacts", "/v1/artifacts/{artifact_id}/previews", "/v1/revisions", "/v1/baselines", "/v1/plugins"}
+    paged_paths = {"/v1/documents", "/v1/findings", "/v1/artifacts", "/v1/templates", "/v1/revisions", "/v1/publications", "/v1/runs/{run_id}/artifacts", "/v1/artifacts/{artifact_id}/previews", "/v1/baselines", "/v1/plugins"}
     for path, item in paths.items():
         parameters = []
         for segment in ("document_id", "run_id", "artifact_id", "revision_id", "baseline_id", "plugin_id"):

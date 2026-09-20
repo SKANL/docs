@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins as _builtins
 import json
 import os
 import sqlite3
@@ -67,6 +68,11 @@ class SqliteRunStore(_SqliteStore):
             row = connection.execute("SELECT payload FROM x20_runs WHERE id = ?", (run_id,)).fetchone()
         return None if row is None else Run.from_dict(self._decode(row[0]))
 
+    def list(self) -> _builtins.list[Run]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload FROM x20_runs ORDER BY id").fetchall()
+        return [Run.from_dict(self._decode(row[0])) for row in rows]
+
 
 class SqlitePassportStore(_SqliteStore):
     def _initialize(self) -> None:
@@ -106,7 +112,12 @@ class SqliteArtifactStore(_SqliteStore):
             row = connection.execute("SELECT payload FROM x20_artifacts WHERE id = ?", (artifact_id,)).fetchone()
         return None if row is None else Artifact.from_dict(self._decode(row[0]))
 
-    def list_for_run(self, run_id: str) -> list[Artifact]:
+    def list(self) -> _builtins.list[Artifact]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload FROM x20_artifacts ORDER BY id").fetchall()
+        return [Artifact.from_dict(self._decode(row[0])) for row in rows]
+
+    def list_for_run(self, run_id: str) -> _builtins.list[Artifact]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT payload FROM x20_artifacts WHERE run_id = ? ORDER BY id", (run_id,)
