@@ -33,6 +33,27 @@ export class ApiError extends Error {
   }
 }
 
+export class ApiConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ApiConfigurationError";
+  }
+}
+
+export function formatApiError(error: unknown, resource: string): string {
+  if (error instanceof ApiError) {
+    const summary = error.status === 401
+      ? `Authentication required to load ${resource}.`
+      : error.status === 403
+        ? `You are not authorized to load ${resource}.`
+        : `Unable to load ${resource}.`;
+    const request = error.requestId ? ` Request ID: ${error.requestId}.` : "";
+    return `${summary} ${error.message}${request}`;
+  }
+  if (error instanceof ApiConfigurationError) return error.message;
+  return `Unable to load ${resource}. ${error instanceof Error ? error.message : "The API returned an unknown error."}`;
+}
+
 export type ReviewClientOptions = {
   baseUrl?: string;
   fetch?: typeof globalThis.fetch;
