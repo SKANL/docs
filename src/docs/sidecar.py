@@ -475,6 +475,7 @@ def _build_worker(
     from .domain.workspace import Workspace
 
     root = workspace.resolve()
+    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
 
     class Runtime:
         def __init__(self, pipeline_id: str) -> None:
@@ -492,7 +493,7 @@ def _build_worker(
             run_root = root
             workspace_id = payload.get("workspace_id")
             if isinstance(workspace_id, str) and workspace_id:
-                selected = WorkspaceRegistry().get(workspace_id)
+                selected = registry.get(workspace_id)
                 run_root = Path(str(selected["root"])).resolve()
             deps = Deps(Workspace(run_root / "documents", run_root / "templates"))
             source_pipeline = _source_pipeline(deps)
