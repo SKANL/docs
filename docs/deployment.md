@@ -52,7 +52,7 @@ cancellation stores must be durable and shared by all worker instances.
 
 Back up the workspace's source inputs, `runs/`, passport storage, and durable
 queue state together. Rendered artifacts are replaceable; provenance and
-passport records are not. Publish only artifacts that have a matching v2
+passport records are not. Publish only artifacts that have a matching X20
 manifest and verifiable attestation (`docs/provenance.md`).
 
 ## Release checks

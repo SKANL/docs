@@ -160,7 +160,7 @@ CI runs all three on every push and pull request, with a coverage floor.
 - `CLAUDE.md` — conventions, determinism gotchas, knowledge-graph routing
 - `openspec/specs/` — the 12 capability contracts
 
-## Current v2 contract
+## Current X20 contract
 
 The public document commands are `document create`, `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish` . `release` executes the complete verified build/package/publication pipeline for the active document. `build` publishes verified requested formats under `output/current/`; `verify` performs the same format checks without publishing. Inspection and diff are read-only; packaging and publication use temporary files and atomic replacement. The native runtime does not silently fall back to an alternate pipeline or write unverified output.
 
@@ -168,6 +168,6 @@ The authoritative 23-stage `FULL_STAGE_IDS` flow is: `resolve-config`, `resolve-
 
 Policies are `draft`, `strict`, and `release`: draft may warn for permitted optional capability gaps and cannot publish; strict/release promote warnings and missing required capabilities to errors and can publish only after verification. Capabilities are local executable checks; plugins are not runtime dependencies.
 
-Publication requires a matching v2 manifest and verifiable ledger attestation for the exact artifact bytes. The manifest must include SHA-256 source/template/config/context, asset and artifact identities, renderer versions, passed verification, and a provenance run. HTML verification checks UTF-8 and one HTML/body root; PDF verification checks its header and readable page structure; DOCX uses format audit and QA. PDF is derived and not byte-deterministic.
+Publication requires a matching X20 manifest and verifiable ledger attestation for the exact artifact bytes. The manifest must include SHA-256 source/template/config/context, asset and artifact identities, renderer versions, passed verification, and a provenance run. HTML verification checks UTF-8 and one HTML/body root; PDF verification checks its header and readable page structure; DOCX uses format audit and QA. PDF is derived and not byte-deterministic.
 
-V2 sources are `document.json`, sections, context, template/configuration, and assets. Rendered files, manifests, QA reports, packages, and published copies are derived. The separate v2 provenance ledger records hashes only after successful stages.
+Canonical X20 sources are `document.json`, sections, context, template/configuration, and assets. Rendered files, manifests, QA reports, packages, and published copies are derived. The separate X20 provenance ledger records hashes only after successful stages.

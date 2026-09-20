@@ -1,6 +1,6 @@
-# Docs Harness v2 Architecture
+# Docs Harness X20 Architecture
 
-V2 is the contract-driven public surface for preparing sources, building, checking, inspecting, comparing, packaging, and publishing document artifacts. It keeps source inputs separate from derived outputs and records content-bound evidence before publication.
+Canonical X20 is the contract-driven public surface for preparing sources, building, checking, inspecting, comparing, packaging, and publishing document artifacts. It keeps source inputs separate from derived outputs and records content-bound evidence before publication.
 
 ## Public surface
 
@@ -9,16 +9,16 @@ Run from the harness checkout or use the installed `docs` entry point. The `docu
 | Command | Purpose | Writes |
 |---|---|---|
 | `document create <id> [--template T] [--title X] [--json]` | Create and activate a workspace document through the existing document service. | Document source structure. |
-| `document release [--format F]... [--policy release] [--json]` | Run the complete verified build/package/publication pipeline for the active document. | Verified v2 artifacts, manifests, provenance, and release package. |
-| `document ingest [--json]` | Convert the active document's inbox sources through the native v2 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
+| `document release [--format F]... [--policy release] [--json]` | Run the complete verified build/package/publication pipeline for the active document. | Verified X20 artifacts, manifests, provenance, and release package. |
+| `document ingest [--json]` | Convert the active document's inbox sources through the native X20 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
 | `document prepare [--json]` | Run ingest, normalization, and structure compilation in order. | Prepared sources, `sections/v2-structure.json`, and `runs/v2-prepare.json`. |
-| `document status [--json]` | Report domain status plus v2 capabilities, manifests, and provenance details. | No source changes; status may read existing run data. |
-| `document build [--format F]... [--policy P] [--json]` | Run the v2 plan and publish verified requested formats into `output/current/`. | Derived artifacts, sidecar manifests, QA data, and v2 provenance. |
+| `document status [--json]` | Report domain status plus X20 capabilities, manifests, and provenance details. | No source changes; status may read existing run data. |
+| `document build [--format F]... [--policy P] [--json]` | Run the X20 plan and publish verified requested formats into `output/current/`. | Derived artifacts, sidecar manifests, QA data, and X20 provenance. |
 | `document verify [--format F]... [--policy P] [--json]` | Run format checks without publishing. | Verification output only; it does not create a build attestation for `cli-verify-*`. |
 | `document inspect <artifact> [--json]` | Report path, media type, size, and SHA-256. | Nothing. |
 | `document diff <left> <right> [--json]` | Compare identities and, for UTF-8 files, return a text diff. | Nothing. |
-| `document package <dir> <zip> [--json]` | Package a verified v2 artifact directory as a deterministic ZIP through a temporary file. | The requested ZIP after close succeeds. |
-| `document publish <source> <destination> [--policy strict\|release] [--json]` | Publish one attested v2 artifact and its manifest atomically. | Destination artifact and manifest. |
+| `document package <dir> <zip> [--json]` | Package a verified X20 artifact directory as a deterministic ZIP through a temporary file. | The requested ZIP after close succeeds. |
+| `document publish <source> <destination> [--policy strict\|release] [--json]` | Publish one attested X20 artifact and its manifest atomically. | Destination artifact and manifest. |
 
 `--format` is repeatable and currently accepts the configured renderer formats (`docx`, `html`, `pdf`). `build` defaults to the document configuration when no format is supplied. `status`, `ingest`, and `prepare` use the active document selected by the workspace context.
 
@@ -26,7 +26,7 @@ Run from the harness checkout or use the installed `docs` entry point. The `docu
 
 Durable source inputs are `document.json`, section Markdown, resolved context, template/configuration, and workspace assets. Rendered DOCX/HTML/PDF files, manifests, QA reports, ZIP packages, and published copies are derived artifacts. Derived artifacts never replace source Markdown.
 
-The native runtime does not silently fall back to a alternate pipeline. Its build and publication boundary writes verified artifacts under `output/current/`; it never promotes those artifacts into unverified output. `docs document publish` remains a separate document-lifecycle operation that snapshots current `output/work/` into `output/published/`, and does not consume or promote v2 artifacts. The normal CLI and flat pipeline commands now use the native v2 boundary directly. Published artifacts are the only supported outputs. V2 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
+The native runtime does not silently fall back to a alternate pipeline. Its build and publication boundary writes verified artifacts under `output/current/`; it never promotes those artifacts into unverified output. `docs document publish` remains a separate document-lifecycle operation that snapshots current `output/work/` into `output/published/`, and does not consume or promote X20 artifacts. The normal CLI and flat pipeline commands now use the native X20 boundary directly. Published artifacts are the only supported outputs. Canonical X20 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
 
 ## Pipeline kernel
 
