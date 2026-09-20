@@ -50,8 +50,11 @@ class _FilesystemDocumentStore:
                 return Path(str(active["root"])).resolve() / "documents"
         return self.root
 
-    def list(self) -> list[dict[str, Any]]:
-        root = self._documents_root()
+    def list_for_workspace(self, workspace_root: str | Path) -> list[dict[str, Any]]:
+        return self._list_from_root(Path(workspace_root).expanduser().resolve() / "documents")
+
+    @staticmethod
+    def _list_from_root(root: Path) -> list[dict[str, Any]]:
         if not root.is_dir():
             return []
         items: list[dict[str, Any]] = []
@@ -64,6 +67,9 @@ class _FilesystemDocumentStore:
                 value.setdefault("id", path.parent.name)
                 items.append(value)
         return items
+
+    def list(self) -> list[dict[str, Any]]:
+        return self._list_from_root(self._documents_root())
 
     def get(self, document_id: str) -> dict[str, Any] | None:
         path = self._documents_root() / document_id / "document.json"

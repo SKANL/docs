@@ -360,6 +360,23 @@ class X20Application:
 
     def _create_run(self, request: Request) -> Response:
         data = request.json(object_only=True)
+        if self.workspace_registry is not None:
+            workspace_id = data.get("workspace_id")
+            if not isinstance(workspace_id, str) or not workspace_id:
+                raise APIError(
+                    "workspace_required",
+                    "workspace_id is required to create a run",
+                    400,
+                )
+            try:
+                workspace = self.workspace_registry.get(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            document_id = data.get("document_id")
+            if isinstance(document_id, str) and document_id:
+                manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
+                if not manifest.is_file():
+                    raise APIError("document_not_found", "Document not found in workspace", 404)
         if request.principal is not None:
             if request.principal.tenant_id is None or request.principal.organization_id is None:
                 raise AuthError(
@@ -693,7 +710,15 @@ class X20Application:
         return Response(200, canonical_json(build_openapi_document()).encode(), {"content-type": "application/json"})
 
     def _documents(self, request: Request) -> Response:
-        items = self.document_store.list() if self.document_store is not None else list(self.documents)
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if workspace_id and self.workspace_registry is not None and hasattr(self.document_store, "list_for_workspace"):
+            try:
+                workspace = self.workspace_registry.get(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            items = self.document_store.list_for_workspace(workspace["root"])
+        else:
+            items = self.document_store.list() if self.document_store is not None else list(self.documents)
         if request.principal is not None:
             items = [item for item in items if self._is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "documents")
