@@ -10,9 +10,6 @@ from .compiler import (
 from .ir import TEMPLATE_IR_VERSION, TemplateIR
 from .lowering import RendererLoweringMetadata
 from .source_adapter import (
-    deprecated_legacy_from_template,
-    deprecated_legacy_to_config,
-    deprecated_legacy_to_template,
     from_source_template,
     to_source_config,
     to_source_template,
@@ -26,9 +23,6 @@ __all__ = [
     "TemplateIR",
     "compile_template",
     "compile_template_json",
-    "deprecated_legacy_from_template",
-    "deprecated_legacy_to_config",
-    "deprecated_legacy_to_template",
     "from_source_template",
     "source_template",
     "to_source_config",

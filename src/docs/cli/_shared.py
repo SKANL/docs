@@ -404,7 +404,7 @@ class Deps:
 
 
 def _compile_template_compat(template: Template) -> TemplateIR | None:
-    """Compile when possible without making existing legacy templates fail."""
+    """Compile when possible without rejecting existing source templates."""
     try:
         return compile_template(template)
     except TemplateCompilationError:

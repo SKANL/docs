@@ -1,4 +1,4 @@
-"""Compile validated legacy templates into the versioned Template IR."""
+"""Compile validated source templates into the versioned Template IR."""
 
 from __future__ import annotations
 

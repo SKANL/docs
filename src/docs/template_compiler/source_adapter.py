@@ -27,8 +27,3 @@ def from_source_template(template: Template) -> dict[str, Any]:
     return template.model_dump(exclude_none=True, mode="python")
 
 
-# Deprecated compatibility aliases. Prefer the source_* names above.
-deprecated_legacy_from_template = from_source_template
-deprecated_legacy_to_config = to_source_config
-deprecated_legacy_to_template = to_source_template
-

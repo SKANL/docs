@@ -23,7 +23,7 @@ def load_template(name: str) -> Template:
     return Template.from_json((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def test_compile_and_lower_builtin_template_without_changing_legacy_config():
+def test_compile_and_lower_builtin_template_without_changing_source_config():
     template = load_template("documento-generico")
     ir = compile_template(template)
 
