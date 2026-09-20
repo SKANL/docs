@@ -187,6 +187,8 @@ export class ReviewApiClient {
   createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.request<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }); }
   createRun(input: { documentId:string; pipelineId?:string; format?:string }) { return this.request<Record<string,unknown>>("runs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
+  cancelRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
+  retryRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
   selectWorkspace(id:string) { return this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" }); }
   async importDocument(file: File, workspace: Workspace): Promise<ImportResult> {
     const bytes = new Uint8Array(await file.arrayBuffer());

@@ -21,7 +21,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     listWorkspaces: () => client.listWorkspaces().then(page => page.items),
     createWorkspace: input => client.createWorkspace(input),
     createDocument: input => client.createDocument(input),
-    createRun: input => client.createRun(input),
+    createRun: input => client.createRun(input), cancelRun: id => client.cancelRun(id), retryRun: id => client.retryRun(id),
     selectWorkspace: id => client.selectWorkspace(id),
     importDocument: (file, workspace) => client.importDocument(file, workspace),
     streamProgress: (runId, onEvent, signal) => client.streamProgress(runId, onEvent, signal),

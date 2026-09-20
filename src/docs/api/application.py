@@ -251,6 +251,8 @@ class X20Application:
             if len(parts) == 4:
                 if parts[3] == "cancel" and method == "POST":
                     return "runs:write"
+                if parts[3] == "retry" and method == "POST":
+                    return "runs:write"
                 if parts[3] == "progress" and method == "GET":
                     return "runs:read"
                 if parts[3] == "findings" and method == "GET":
@@ -290,6 +292,7 @@ class X20Application:
             return method == "GET"
         return (len(parts) == 4 and (
             (parts[3] == "cancel" and method == "POST")
+            or (parts[3] == "retry" and method == "POST")
             or (parts[3] in {"passport", "artifacts", "progress", "findings", "graph"} and method == "GET")
         )) or (len(parts) == 5 and parts[3] == "previews" and method == "GET")
 
@@ -324,6 +327,8 @@ class X20Application:
             return lambda request: self._run(run_id, request)
         if len(parts) == 4 and parts[3] == "cancel" and method == "POST":
             return lambda request: self._cancel(run_id, request)
+        if len(parts) == 4 and parts[3] == "retry" and method == "POST":
+            return lambda request: self._retry(run_id, request)
         if len(parts) == 4 and parts[3] == "passport" and method == "GET":
             return lambda request: self._passport(run_id, request)
         if len(parts) == 4 and parts[3] == "artifacts" and method == "GET":
@@ -503,6 +508,18 @@ class X20Application:
             cancelled = Run(run.id, "cancelled", run.payload, run.created_at)
             self.run_store.put(cancelled)
             return Response.json(cancelled.to_dict())
+
+    def _retry(self, run_id: str, request: Request) -> Response:
+        original = self._owned_run(run_id, request)
+        if original.status not in {"failed", "cancelled", "expired"}:
+            raise APIError("run_not_retryable", "Only failed, cancelled, or expired runs can be retried", 409)
+        payload = dict(original.payload)
+        retry_id = str(uuid4())
+        payload.update({"retry_of": run_id, "attempt": int(payload.get("attempt", 1)) + 1})
+        retried = Run(retry_id, payload=payload, created_at=datetime.now(UTC).isoformat())
+        self.run_store.put(retried)
+        self.queue.enqueue(retry_id, payload)
+        return Response.json(retried.to_dict(), 201)
 
     def _passport(self, run_id: str, request: Request) -> Response:
         self._owned_run(run_id, request)
