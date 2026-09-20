@@ -45,6 +45,7 @@ def _schemas() -> dict[str, Any]:
         "error": _item_schema("error", {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}}),
         "page": {"type": "object", "required": ["items", "next_cursor"], "properties": {"items": {"type": "array", "items": {}}, "next_cursor": {"type": ["string", "null"]}}},
         "document": _item_schema("document", {"id": {"type": "string"}, "name": {"type": "string"}, "status": _ref("status")}),
+        "workspace": _item_schema("workspace", {"id": {"type": "string"}, "name": {"type": "string"}, "root": {"type": "string"}}),
         "run": _item_schema("run", {"id": {"type": "string"}, "document_id": {"type": "string"}, "status": _ref("status"), "created_at": {"type": "string", "format": "date-time"}}),
         "finding": _item_schema("finding", {"id": {"type": "string"}, "run_id": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "status": _ref("status"), "message": {"type": "string"}}),
         "passport": _item_schema("passport", {"id": {"type": "string"}, "run_id": {"type": "string"}, "coverage": {"type": "number"}, "attestations": {"type": "integer"}}),
@@ -73,6 +74,17 @@ def build_openapi_document() -> dict[str, Any]:
             "Paginated response",
         )
     paths: dict[str, Any] = {
+        "/v1/workspaces": {
+            "get": _operation("List workspaces", page("workspace"), scopes=("workspaces:read",)),
+            "post": _operation("Create workspace", _json_response(_ref("workspace")), request={"$ref": "#/components/schemas/workspace"}, scopes=("workspaces:write",)),
+        },
+        "/v1/workspaces/{workspace_id}": {
+            "get": _operation("Get workspace", _json_response(_ref("workspace")), scopes=("workspaces:read",)),
+            "delete": _operation("Delete workspace", _json_response({"type": "object"}), scopes=("workspaces:write",)),
+        },
+        "/v1/workspaces/{workspace_id}/select": {
+            "post": _operation("Select workspace", _json_response(_ref("workspace")), scopes=("workspaces:write",)),
+        },
         "/v1/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",))},
         "/v1/documents/{document_id}": {
             "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",))

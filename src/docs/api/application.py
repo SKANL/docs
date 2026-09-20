@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from docs.application.graph_queries import GraphQueryService
+from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.domain.contracts import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
@@ -51,6 +52,7 @@ class X20Application:
         auth: Any = None,
         observability: ObservabilityPort | None = None,
         idempotency_persistence: Any = None,
+        workspace_registry: WorkspaceRegistry | None = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -74,6 +76,7 @@ class X20Application:
         self._route_lock = threading.RLock()
         self._auth = auth
         self.observability = observability or create_observability_from_env()
+        self.workspace_registry = workspace_registry
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -88,6 +91,8 @@ class X20Application:
             ("GET", "/v1/templates"),
             ("GET", "/v1/revisions"),
             ("GET", "/v1/publications"),
+            ("GET", "/v1/workspaces"),
+            ("POST", "/v1/workspaces"),
             ("POST", "/v1/baselines/promotions"),
             ("POST", "/v1/runs"),
         }
@@ -103,13 +108,15 @@ class X20Application:
         self._register_owned_route("GET", "/v1/templates", self._templates)
         self._register_owned_route("GET", "/v1/revisions", self._revisions)
         self._register_owned_route("GET", "/v1/publications", self._publications)
+        self._register_owned_route("GET", "/v1/workspaces", self._workspaces)
+        self._register_owned_route("POST", "/v1/workspaces", self._create_workspace)
         self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
         self._register_owned_route("POST", "/v1/runs", self._create_run)
 
     def dispatch(self, request: Request) -> Response:
         with self.observability.span("docs.api.request", {"method": request.method.upper()}):
             parts = request.route_path.strip("/").split("/")
-            if len(parts) >= 3 and parts[:2] in (["v1", "runs"], ["v1", "documents"]):
+            if len(parts) >= 3 and parts[:2] in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"]):
                 handler = self._dynamic_handler(request.method, request.route_path)
                 if handler is not None:
                     key = (request.method.upper(), request.route_path)
@@ -193,6 +200,8 @@ class X20Application:
         method = method.upper()
         path = urlsplit(path).path
         static_scopes = {
+            ("GET", "/v1/workspaces"): "workspaces:read",
+            ("POST", "/v1/workspaces"): "workspaces:write",
             ("GET", "/v1/graph"): "graph:read",
             ("GET", "/v1/documents"): "documents:read",
             ("GET", "/v1/findings"): "findings:read",
@@ -211,6 +220,13 @@ class X20Application:
         parts = path.strip("/").split("/")
         if any(not part for part in parts):
             return None
+        if parts[:2] == ["v1", "workspaces"]:
+            if len(parts) == 3 and method == "GET":
+                return "workspaces:read"
+            if len(parts) == 3 and method == "DELETE":
+                return "workspaces:write"
+            if len(parts) == 4 and parts[3] == "select" and method == "POST":
+                return "workspaces:write"
         if parts[:2] == ["v1", "documents"] and len(parts) in {3, 4}:
             if len(parts) == 3 and method == "GET":
                 return "documents:read"
@@ -252,7 +268,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"])
+            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"])
         ):
             return False
         if parts[:2] == ["v1", "documents"]:
@@ -282,6 +298,15 @@ class X20Application:
                 return lambda request: self._document_runs(resource_id, request)
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
                 return lambda request: self._revision(resource_id, request)
+            return None
+        if parts[:2] == ["v1", "workspaces"]:
+            workspace_id = resource_id
+            if len(parts) == 3 and method == "GET":
+                return lambda request: self._workspace(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "select" and method == "POST":
+                return lambda request: self._select_workspace(workspace_id, request)
+            if len(parts) == 3 and method == "DELETE":
+                return lambda request: self._delete_workspace(workspace_id, request)
             return None
         run_id = resource_id
         if len(parts) == 3 and parts[2] != "runs" and method == "GET":
@@ -333,6 +358,51 @@ class X20Application:
         self.run_store.put(run)
         self.queue.enqueue(run_id, dict(data))
         return Response.json(run.to_dict(), 201)
+
+    def _workspaces(self, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        return Response.json({"items": self.workspace_registry.list(), "active": _dict(self.workspace_registry.active())})
+
+    def _create_workspace(self, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        data = request.json(object_only=True)
+        try:
+            item = self.workspace_registry.create(str(data.get("name", "")), str(data.get("root", "")))
+        except WorkspaceRegistryError as exc:
+            status = 409 if str(exc) == "workspace_name_conflict" else 400
+            raise APIError(str(exc), str(exc), status) from exc
+        return Response.json(item, 201)
+
+    def _workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            return Response.json(self.workspace_registry.get(workspace_id))
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+
+    def _select_workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            return Response.json(self.workspace_registry.select(workspace_id))
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+
+    def _delete_workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            self.workspace_registry.delete(workspace_id)
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        return Response.json({"deleted": workspace_id})
 
     def _run(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)

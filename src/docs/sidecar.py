@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .api.application import X20Application
+from .application.workspaces import WorkspaceRegistry
 from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from .infrastructure.persistence.x20 import (
@@ -139,6 +140,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         passport_store=passport_store,
         artifact_store=artifact_store,
         graph_store=graph_store,
+        workspace_registry=WorkspaceRegistry(),
         router=Router(cors_origins=config.cors_origins),
     )
     return _HealthApplication(application, urlsplit(config.health_url).path, config.protocol)
