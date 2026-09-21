@@ -226,10 +226,10 @@ export class ReviewApiClient {
     try { globalThis.localStorage?.setItem("docs.review.workspace", workspace.id); } catch { /* offline/browser storage unavailable */ }
     return workspace;
   }
-  async importDocument(file: File, workspace: Workspace): Promise<ImportResult> {
+  async importDocument(file: File, workspace: Workspace, options: {documentId?:string;template?:string;title?:string} = {}): Promise<ImportResult> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
-    return this.request<ImportResult>("documents/import", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspace.id, filename:file.name, content_base64:btoa(binary)}) });
+    return this.request<ImportResult>("documents/import", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspace.id, filename:file.name, content_base64:btoa(binary), document_id:options.documentId, template:options.template, title:options.title}) });
   }
 
   previewUrl(value: string): string {
