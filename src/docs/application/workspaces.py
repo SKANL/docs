@@ -66,6 +66,7 @@ class WorkspaceRegistry:
             for item in self._read()["workspaces"]:
                 if str(Path(str(item["root"])).expanduser().resolve()) == resolved:
                     self._ensure_layout(Path(resolved))
+                    self._seed_builtin_templates(Path(resolved))
                     return dict(item)
         return self.create(name, resolved)
 
@@ -93,7 +94,9 @@ class WorkspaceRegistry:
 
     def select(self, workspace_id: str) -> dict[str, Any]:
         item = self.get(workspace_id)
-        self._ensure_layout(Path(str(item["root"])).expanduser().resolve())
+        root = Path(str(item["root"])).expanduser().resolve()
+        self._ensure_layout(root)
+        self._seed_builtin_templates(root)
         with self._lock:
             data = self._read()
             data["active"] = workspace_id

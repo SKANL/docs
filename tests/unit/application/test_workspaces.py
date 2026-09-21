@@ -65,3 +65,14 @@ def test_registry_seeds_builtin_templates_for_new_workspace(tmp_path: Path) -> N
     assert (templates / "documento-generico.json").is_file()
     assert (templates / "technical-report-srs.json").is_file()
     assert (templates / "reporte-estadia-tic.json").is_file()
+
+
+def test_registry_repairs_templates_when_selecting_existing_empty_workspace(tmp_path: Path) -> None:
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    item = registry.create("Primary", tmp_path / "one")
+    for template in (Path(item["root"]) / "templates").glob("*.json"):
+        template.unlink()
+
+    registry.select(item["id"])
+
+    assert (Path(item["root"]) / "templates" / "documento-generico.json").is_file()
