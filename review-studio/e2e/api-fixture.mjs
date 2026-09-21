@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,7 +14,17 @@ const uv = process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? "", "
 const child = spawn(uv, ["run", "--project", root, "python", "-m", "docs.sidecar", "--workspace", workspace, "--health-url", `${apiBase}/health`], { cwd: root, stdio: "inherit", windowsHide: true, env: { ...process.env, DOCS_SIDECAR_CORS_ORIGINS: "http://127.0.0.1:5173" } });
 child.on("error", error => { console.error(error); process.exit(1); });
 let proxy;
-const stop = async () => { proxy?.close(); if (!child.killed) child.kill(); await rm(workspace, { recursive: true, force: true }); };
+const stop = async () => {
+  proxy?.close();
+  if (!child.killed) {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    } else {
+      child.kill("SIGTERM");
+    }
+  }
+  await rm(workspace, { recursive: true, force: true });
+};
 process.once("SIGINT", async () => { await stop(); process.exit(130); });
 process.once("SIGTERM", async () => { await stop(); process.exit(143); });
 
