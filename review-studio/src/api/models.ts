@@ -1,5 +1,5 @@
 export type Status = "passed" | "warnings" | "failed" | "unverified";
-export type Run = { id:string; document:string; template:string; startedAt:string; duration:string; status:Status; findings:number; artifactCount:number };
+export type Run = { id:string; document:string; template:string; startedAt:string; duration:string; status:Status; findings:number; artifactCount:number; progress?:number };
 export type Finding = { id:string; title:string; severity:"critical"|"high"|"medium"|"low"; status:Status; location:string; summary:string; owner:string; updated:string };
 export type Artifact = { id:string; name:string; runId?:string; kind:"DOCX"|"PDF"|"HTML"|"PNG"; size:string; status:Status; pages?:number; checksum:string };
 export type EvidencePassport = { id:string; runId:string; verifiedAt:string; coverage:number; attestations:number; sources:number; claims:number; unresolved:number; entries?:Array<Record<string,unknown>> };

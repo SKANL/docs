@@ -123,6 +123,33 @@ function normalizeArtifactKind(value: unknown): Artifact["kind"] {
   return "DOCX";
 }
 
+function normalizeRun(raw: Record<string, unknown>): Run {
+  if ((typeof raw.document === "string" && typeof raw.startedAt === "string") ||
+      (Object.keys(raw).every(key => ["id", "schema"].includes(key)) && typeof raw.id === "string")) {
+    return raw as unknown as Run;
+  }
+  const payload = raw.payload && typeof raw.payload === "object" ? raw.payload as Record<string, unknown> : {};
+  const status = String(raw.status ?? "unverified") as Run["status"];
+  const createdAt = String(raw.created_at ?? "");
+  const started = typeof payload.started_at === "string" ? payload.started_at : createdAt;
+  const progress = payload.progress && typeof payload.progress === "object" ? payload.progress as Record<string, unknown> : {};
+  const results = payload.report && typeof payload.report === "object" ? (payload.report as Record<string, unknown>).execution : undefined;
+  const execution = results && typeof results === "object" ? results as Record<string, unknown> : {};
+  const stages = Array.isArray(execution.results) ? execution.results as Array<Record<string, unknown>> : [];
+  const findings = typeof payload.findings === "number" ? payload.findings : stages.reduce((count, stage) => count + (Array.isArray(stage.errors) ? stage.errors.length : 0) + (Array.isArray(stage.warnings) ? stage.warnings.length : 0), 0);
+  return {
+    id: String(raw.id ?? ""),
+    document: String(payload.document_id ?? "—"),
+    template: String(payload.template ?? "—"),
+    startedAt: started,
+    duration: typeof payload.duration_ms === "number" ? `${payload.duration_ms} ms` : "—",
+    status: ["passed", "warnings", "failed", "unverified", "queued", "running", "cancelled", "expired"].includes(status) ? status : "unverified",
+    findings,
+    artifactCount: typeof payload.artifact_count === "number" ? payload.artifact_count : stages.reduce((count, stage) => count + (Array.isArray(stage.artifacts) ? stage.artifacts.length : 0), 0),
+    progress: typeof progress.percent === "number" ? progress.percent : undefined,
+  };
+}
+
 function normalizeGraph(payload: unknown): { nodes:GraphNode[]; edges:GraphEdge[] } {
   const value = payload && typeof payload === "object" ? payload as { nodes?: unknown; edges?: unknown } : {};
   const rawNodes = Array.isArray(value.nodes) ? value.nodes as RawGraphNode[] : [];
@@ -193,7 +220,10 @@ export class ReviewApiClient {
     return this.request<unknown>(`${path}${query.size ? `?${query}` : ""}`).then(page<T>);
   }
 
-  listRuns(params?: ListParams) { return this.list<Run>("runs", params); }
+  listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => ({
+    ...result,
+    items: result.items.map(normalizeRun),
+  })); }
   async health() {
     const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
     if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
