@@ -40,7 +40,7 @@ def _item_schema(name: str, properties: dict[str, Any]) -> dict[str, Any]:
 
 
 def _schemas() -> dict[str, Any]:
-    status = {"type": "string", "enum": ["passed", "warnings", "failed", "unverified", "queued", "running", "cancelled"]}
+    status = {"type": "string", "enum": ["passed", "warnings", "failed", "unverified", "queued", "running", "cancelled", "expired"]}
     return {
         "status": status,
         "error": _item_schema("error", {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}}),
@@ -48,6 +48,8 @@ def _schemas() -> dict[str, Any]:
         "document": _item_schema("document", {"id": {"type": "string"}, "name": {"type": "string"}, "status": _ref("status")}),
         "section": _item_schema("section", {"id": {"type": "string"}, "filename": {"type": "string"}, "body": {"type": "string"}}),
         "workspace": _item_schema("workspace", {"id": {"type": "string"}, "name": {"type": "string"}, "root": {"type": "string"}}),
+        "import_job": _item_schema("import_job", {"id": {"type": "string"}, "workspace_id": {"type": "string"}, "document_id": {"type": ["string", "null"]}, "filename": {"type": "string"}, "mime_type": {"type": "string"}, "sha256": {"type": "string"}, "status": _ref("status")}),
+        "stage": _item_schema("stage", {"name": {"type": "string"}, "status": _ref("status"), "progress": {"type": "number"}, "started_at": {"type": ["string", "null"], "format": "date-time"}, "finished_at": {"type": ["string", "null"], "format": "date-time"}}),
         "run": _item_schema("run", {"id": {"type": "string"}, "document_id": {"type": "string"}, "status": _ref("status"), "created_at": {"type": "string", "format": "date-time"}}),
         "finding": _item_schema("finding", {"id": {"type": "string"}, "run_id": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "status": _ref("status"), "message": {"type": "string"}}),
         "passport": _item_schema("passport", {"id": {"type": "string"}, "run_id": {"type": "string"}, "coverage": {"type": "number"}, "attestations": {"type": "integer"}}),

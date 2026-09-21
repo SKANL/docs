@@ -130,6 +130,20 @@ def test_document_actions_document_workspace_format_and_policy_contract() -> Non
         assert schema["properties"]["policy"]["enum"] == ["draft", "strict", "release"]
 
 
+def test_import_job_and_stage_are_versioned_contracts() -> None:
+    schemas = build_openapi_document()["components"]["schemas"]
+
+    assert {
+        "id", "workspace_id", "document_id", "filename", "mime_type", "sha256", "status"
+    } == set(schemas["import_job"]["properties"])
+    assert schemas["import_job"]["properties"]["document_id"]["type"] == ["string", "null"]
+    assert {
+        "name", "status", "progress", "started_at", "finished_at"
+    } == set(schemas["stage"]["properties"])
+    assert schemas["stage"]["properties"]["progress"]["type"] == "number"
+    assert "expired" in schemas["status"]["enum"]
+
+
 def test_run_graph_reuses_the_graph_query_contract_and_scope() -> None:
     paths = build_openapi_document()["paths"]
     graph = paths["/v1/graph"]
