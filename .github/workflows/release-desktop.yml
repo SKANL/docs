@@ -1,0 +1,45 @@
+name: Release Review Studio Desktop
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: astral-sh/setup-uv@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build signed desktop bundles
+        working-directory: desktop
+        run: npm run build:windows
+      - name: Generate updater manifest
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $base = "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          python scripts/generate-update-manifest.py --version $version --base-url $base `
+            --msi "src-tauri/target/release/bundle/msi/Review Studio_0.1.0_x64_en-US.msi" `
+            --nsis "src-tauri/target/release/bundle/nsis/Review Studio_0.1.0_x64-setup.exe" `
+            --output latest.json
+      - name: Publish signed release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            desktop/src-tauri/target/release/bundle/msi/Review Studio_0.1.0_x64_en-US.msi
+            desktop/src-tauri/target/release/bundle/msi/Review Studio_0.1.0_x64_en-US.msi.sig
+            desktop/src-tauri/target/release/bundle/nsis/Review Studio_0.1.0_x64-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/Review Studio_0.1.0_x64-setup.exe.sig
+            desktop/latest.json

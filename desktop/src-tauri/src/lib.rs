@@ -474,6 +474,11 @@ fn sidecar_restart(
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCOTgxRTlGMzdENjkyMzUKUldRMWt0WTNueDZZRzgyY3Bhb3NWWGRMZnF2UmRJOE5sU1pMZnNzdVhJRWsxaVNZVDNRb2hDbkUK")
+                .build(),
+        )
         .manage(SidecarSupervisor::default())
         .invoke_handler(tauri::generate_handler![
             sidecar_handshake,

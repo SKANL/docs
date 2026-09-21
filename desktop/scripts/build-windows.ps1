@@ -4,6 +4,15 @@ $desktop = Split-Path -Parent $PSScriptRoot
 $sidecarDir = Join-Path $desktop 'sidecar'
 $configuredSidecar = $env:DOCS_SIDECAR_EXECUTABLE
 
+# Tauri expects the signing key contents, not only a path. Accept the path
+# form for local/CI ergonomics while keeping the private key outside Git.
+if (-not $env:TAURI_SIGNING_PRIVATE_KEY -and $env:TAURI_SIGNING_PRIVATE_KEY_PATH) {
+    if (-not (Test-Path $env:TAURI_SIGNING_PRIVATE_KEY_PATH -PathType Leaf)) {
+        throw "TAURI_SIGNING_PRIVATE_KEY_PATH does not point to a file: $env:TAURI_SIGNING_PRIVATE_KEY_PATH"
+    }
+    $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $env:TAURI_SIGNING_PRIVATE_KEY_PATH -Raw
+}
+
 Push-Location $desktop
 try {
     npm run sync:review-studio
