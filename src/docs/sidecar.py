@@ -885,6 +885,10 @@ def _persist_worker_evidence(
     )))
     report = value.get("report", {}) if isinstance(value, dict) else {}
     execution = report.get("execution", {}) if isinstance(report, dict) else {}
+    document_id = value.get("document_id") if isinstance(value, dict) else None
+    document_root = None
+    if isinstance(document_id, str) and document_id and workspace_root is not None:
+        document_root = workspace_root / "documents" / document_id
     for stage in execution.get("results", []) if isinstance(execution, dict) else []:
         if not isinstance(stage, dict):
             continue
@@ -893,7 +897,12 @@ def _persist_worker_evidence(
             raw_path = record.get("path")
             candidate = Path(str(raw_path)) if raw_path else None
             if candidate is not None and not candidate.is_absolute() and workspace_root is not None:
-                candidate = workspace_root / candidate
+                # Pipeline stage receipts are relative to the document's
+                # durable run directory, while externally published outputs
+                # may be relative to the workspace. Resolve the document
+                # boundary first, then retain the workspace fallback.
+                document_candidate = document_root / candidate if document_root is not None else None
+                candidate = document_candidate if document_candidate is not None and document_candidate.is_file() else workspace_root / candidate
             materialized = candidate is not None and candidate.is_file()
             if materialized:
                 digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
