@@ -17,7 +17,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .api.application import X20Application
-from .plugins import PluginRegistry
 from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
@@ -431,11 +430,6 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     findings_store = evidence_stores.finding()
     publication_store = evidence_stores.publication()
     publication_store = evidence_stores.publication()
-    plugin_registry = PluginRegistry()
-    plugin_roots = [config.workspace / ".docs" / "plugins"]
-    for workspace_entry in registry.list():
-        plugin_roots.append(Path(str(workspace_entry["root"])) / ".docs" / "plugins")
-    plugin_registry.discover(plugin_roots)
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
         from .cli._shared import Deps
         from .domain.workspace import Workspace
@@ -480,7 +474,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         passport_store=passport_store,
         artifact_store=artifact_store,
         graph_store=graph_store,
-        plugin_registry=plugin_registry,
+        # The core sidecar remains plugin-independent. Plugin discovery is an
+        # optional application concern and must never be required to start or
+        # execute the document pipeline.
+        plugin_registry=None,
         findings_store=findings_store,
         publication_store=publication_store,
         document_store=_FilesystemDocumentStore(config.workspace, registry),
