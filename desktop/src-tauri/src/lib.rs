@@ -98,7 +98,15 @@ impl SidecarSupervisor {
         }
         let executable_path = Path::new(executable);
         let mut command = Command::new(executable_path);
-        command.arg("--workspace").arg(workspace);
+        // Keep the child listener aligned with the supervisor probe. This is
+        // required for development/test ports and prevents a configured
+        // DOCS_SIDECAR_HEALTH_URL from probing one endpoint while the child
+        // silently binds the default 8765 endpoint.
+        command
+            .arg("--workspace")
+            .arg(workspace)
+            .arg("--health-url")
+            .arg(&self.health_url);
         configure_sidecar_command(&mut command);
         let child = command
             .current_dir(executable_path.parent().unwrap_or_else(|| Path::new(".")))
