@@ -33,7 +33,10 @@ pub enum SupervisorError {
 }
 
 const DEFAULT_HEALTH_URL: &str = "http://127.0.0.1:8765/health";
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+// Frozen sidecars load large rendering dependencies (PDFium, Pillow,
+// matplotlib) on first launch. Five seconds is enough on a warm checkout but
+// too short for a clean Windows install, so allow a bounded cold-start window.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
 const HEALTH_PROBE_TIMEOUT: Duration = Duration::from_millis(250);
 const DESKTOP_DATA_SCHEMA_VERSION: u32 = 1;
 
@@ -182,6 +185,12 @@ impl SidecarSupervisor {
             .parent()
             .unwrap_or(workspace)
             .join("sidecar.log");
+        // The supervisor owns this path; record it separately so a failed
+        // packaged startup can be diagnosed even when the UI never loads.
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path);
         let log = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -363,11 +372,21 @@ fn package_local_candidates(resource_dir: &Path) -> impl Iterator<Item = PathBuf
     })
 }
 
+fn normalize_executable_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(value) = path.to_str().and_then(|value| value.strip_prefix(r"\\?\")) {
+            return PathBuf::from(value);
+        }
+    }
+    path
+}
+
 fn resolve_sidecar_executable(app: &tauri::AppHandle) -> Result<PathBuf, SupervisorError> {
     if let Ok(configured) = std::env::var("DOCS_SIDECAR_EXECUTABLE") {
         let path = PathBuf::from(configured);
         if path.is_file() {
-            return Ok(path);
+            return Ok(normalize_executable_path(path));
         }
         return Err(SupervisorError::Resolve(
             "DOCS_SIDECAR_EXECUTABLE does not point to a file".to_owned(),
@@ -391,7 +410,7 @@ fn resolve_sidecar_executable(app: &tauri::AppHandle) -> Result<PathBuf, Supervi
                 .find(|path| path.is_file())
         })
         .ok_or(SupervisorError::NotFound);
-    candidate
+    candidate.map(normalize_executable_path)
 }
 
 #[derive(Deserialize)]
@@ -428,6 +447,10 @@ fn sidecar_start(
             message
         })?;
     let workspace = initialize_app_data(&app)?;
+    append_startup_log(
+        &app,
+        &format!("starting sidecar executable={} workspace={}", executable, workspace.display()),
+    );
     supervisor.start(executable, &workspace).map_err(|error| {
         let message = error.to_string();
         supervisor.fail(message.clone());
@@ -457,15 +480,13 @@ pub fn run() {
             initialize_app_data(&app.handle())?;
             append_startup_log(&app.handle(), "desktop setup initialized");
             let handle = app.handle().clone();
-            thread::spawn(move || {
-                let supervisor = handle.state::<SidecarSupervisor>();
-                if let Err(error) = sidecar_start(handle.clone(), supervisor) {
-                    append_startup_log(&handle, &format!("sidecar startup failed: {error}"));
-                    eprintln!("sidecar startup failed: {error}");
-                } else {
-                    append_startup_log(&handle, "sidecar startup succeeded");
-                }
-            });
+            let supervisor = handle.state::<SidecarSupervisor>();
+            if let Err(error) = sidecar_start(handle.clone(), supervisor) {
+                append_startup_log(&handle, &format!("sidecar startup failed: {error}"));
+                eprintln!("sidecar startup failed: {error}");
+            } else {
+                append_startup_log(&handle, "sidecar startup succeeded");
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
