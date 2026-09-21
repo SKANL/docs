@@ -87,7 +87,10 @@ class SourceImportService:
 
     @staticmethod
     def _document_id(value: str) -> str:
-        normalized = re.sub(r"[^a-zA-Z0-9_-]+", "-", value).strip("-_").lower()
+        # Workspace document manifests accept only lowercase letters, digits,
+        # and hyphens. Underscores are common in real filenames, so normalize
+        # them instead of returning an id that prepare/build later rejects.
+        normalized = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
         if not normalized:
             raise ImportError("invalid_document_id")
         return normalized[:80]

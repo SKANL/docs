@@ -31,6 +31,16 @@ def test_import_is_idempotent_for_same_content(tmp_path: Path) -> None:
     assert second["path"] == first["path"]
 
 
+def test_import_normalizes_underscores_to_workspace_safe_document_id(tmp_path: Path) -> None:
+    result = SourceImportService().import_base64(
+        tmp_path,
+        "source.pdf",
+        base64.b64encode(b"source").decode(),
+        document_id="Compilado_Anexo22_2025 (1)",
+    )
+    assert result["document_id"] == "compilado-anexo22-2025-1"
+
+
 @pytest.mark.parametrize(
     ("filename", "payload", "expected"),
     [

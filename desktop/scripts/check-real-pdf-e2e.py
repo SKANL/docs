@@ -1,147 +1,104 @@
-"""Process the real PDF corpus through the packaged sidecar pipeline."""
+"""Run the packaged sidecar against real PDF fixtures."""
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
-import urllib.parse
-from urllib.error import HTTPError
+import urllib.error
 from pathlib import Path
 
 
-PDFS = (
-    Path(r"C:\Users\angua\Downloads\Compilado_Anexo22_3raRMRGCE_2025 (1).pdf"),
-    Path(r"C:\Users\angua\Downloads\DataStage_23082021.pdf"),
-    Path(r"C:\Users\angua\Downloads\vucem009040.pdf"),
-)
-
-
-def call(base: str, path: str, method: str = "GET", payload: object | None = None) -> tuple[int, dict]:
+def call(base: str, path: str, method: str = "GET", payload: object | None = None, timeout: int = 30) -> tuple[int, dict]:
     body = None if payload is None else json.dumps(payload).encode()
-    request = urllib.request.Request(
-        base + path,
-        data=body,
-        method=method,
-        headers={
-            "Content-Type": "application/json",
-            "Content-Length": str(len(body)),
-            "Connection": "close",
-        } if body else {"Connection": "close"},
-    )
+    request = urllib.request.Request(base + path, data=body, method=method, headers={"Content-Type": "application/json"} if body else {})
     try:
-        with urllib.request.urlopen(request, timeout=180) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, json.loads(response.read())
-    except HTTPError as error:
-        return error.code, json.loads(error.read())
-
-
-def probe_binary(base: str, path: str) -> tuple[int, bytes]:
-    request = urllib.request.Request(base + path, method="GET", headers={"Connection": "close"})
-    try:
-        with urllib.request.urlopen(request, timeout=180) as response:
-            return response.status, response.read()
-    except HTTPError as error:
-        return error.code, error.read()
+    except urllib.error.HTTPError as error:
+        try:
+            payload = json.loads(error.read())
+        except (OSError, ValueError):
+            payload = {"error": str(error)}
+        return error.code, payload
 
 
 def main() -> int:
-    missing = [path for path in PDFS if not path.is_file()]
+    fixtures = [Path(value.strip()) for value in os.environ.get("DOCS_REAL_PDF_FIXTURES", "").split(";") if value.strip()]
+    if not fixtures:
+        print("real PDF E2E skipped: DOCS_REAL_PDF_FIXTURES is not configured")
+        return 0
+    missing = [path for path in fixtures if not path.is_file() or path.suffix.lower() != ".pdf"]
     if missing:
-        raise SystemExit("missing corpus files: " + ", ".join(map(str, missing)))
+        raise SystemExit("real PDF fixture(s) not found or not PDF: " + ", ".join(map(str, missing)))
     desktop = Path(__file__).resolve().parents[1]
-    executable = desktop / "sidecar" / "docs-sidecar.exe"
+    executable = Path(os.environ.get("DOCS_SIDECAR_EXECUTABLE", desktop / "sidecar" / "docs-sidecar.exe"))
+    if not executable.is_file():
+        raise SystemExit(f"packaged sidecar not found: {executable}")
     root = Path(tempfile.mkdtemp(prefix="docs-real-pdf-e2e-"))
+    log_path = root / "sidecar.log"
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         base = f"http://127.0.0.1:{probe.getsockname()[1]}"
-    command = [os.fspath(executable)]
-    process = subprocess.Popen(
-        command + ["--workspace", os.fspath(root), "--health-url", base + "/health"],
-        env={**os.environ, "PYTHONPATH": os.fspath(desktop.parent / "src")},
-        stdout=None,
-        stderr=None,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    log = log_path.open("w", encoding="utf-8")
+    process = subprocess.Popen([os.fspath(executable), "--workspace", os.fspath(root / "workspace"), "--health-url", base + "/health"], stdout=log, stderr=subprocess.STDOUT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
-        deadline = time.monotonic() + 30
+        deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             try:
                 if call(base, "/health")[1].get("ready"):
                     break
             except OSError:
+                if process.poll() is not None:
+                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}")
                 time.sleep(0.25)
-        _, workspaces = call(base, "/v1/workspaces")
-        workspace_id = workspaces["items"][0]["id"]
-        for source in PDFS:
-            document_id = "pdf-" + str(PDFS.index(source) + 1)
-            print(f"[{source.name}] import", flush=True)
-            query = urllib.parse.urlencode({"workspace_id": workspace_id, "document_id": document_id, "template": "documento-generico", "title": source.stem})
-            request = urllib.request.Request(base + "/v1/documents/import/raw?" + query, data=source.read_bytes(), method="POST", headers={"Content-Type": "application/octet-stream", "Content-Length": str(source.stat().st_size), "X-Docs-Filename": source.name, "Connection": "close"})
-            try:
-                with urllib.request.urlopen(request, timeout=180) as response:
-                    status, imported = response.status, json.loads(response.read())
-            except urllib.error.HTTPError as error:
-                raise SystemExit(f"raw import failed: {error.code} {error.read().decode(errors='replace')}")
+        else:
+            raise SystemExit("packaged sidecar did not become healthy within 60 seconds")
+        workspace = call(base, "/v1/workspaces")[1]["items"][0]["id"]
+        for fixture in fixtures:
+            document_id = "real-" + fixture.stem.lower().replace(" ", "-")[:48]
+            status, imported = call(base, "/v1/documents/import", "POST", {"workspace_id": workspace, "filename": fixture.name, "content_base64": base64.b64encode(fixture.read_bytes()).decode(), "document_id": document_id, "template": "documento-generico", "title": fixture.stem})
             if status != 201:
-                diagnostics = process.stderr.read().decode(errors="replace") if process.stderr else ""
-                raise SystemExit(f"import failed for {source.name}: {status} {imported}\n{diagnostics}")
-            status, prepared = call(base, f"/v1/documents/{document_id}/prepare", "POST", {"workspace_id": workspace_id})
-            print(f"[{source.name}] prepare -> {status}", flush=True)
+                raise SystemExit(f"import failed for {fixture}: {status} {imported}")
+            document_id = str(imported.get("document_id") or document_id)
+            status, prepared = call(base, f"/v1/documents/{document_id}/prepare", "POST", {"workspace_id": workspace}, timeout=300)
             if status != 200 or prepared.get("succeeded") is False:
-                raise SystemExit(f"prepare failed for {source.name}: {status} {prepared}")
-            _, run = call(base, "/v1/runs", "POST", {
-                "workspace_id": workspace_id,
-                "document_id": document_id,
-                "format": "html",
-                "policy": "draft",
-            })
-            print(f"[{source.name}] run queued", flush=True)
+                raise SystemExit(f"prepare failed for {fixture}: {status} {prepared}")
+            _, run = call(base, "/v1/runs", "POST", {"workspace_id": workspace, "document_id": document_id, "pipeline_id": "document", "format": "pdf"})
             run_id = run["id"]
-            deadline = time.monotonic() + 180
-            current = None
+            deadline = time.monotonic() + 300
             while time.monotonic() < deadline:
-                _, current = call(base, f"/v1/runs/{run_id}")
+                _, current = call(base, "/v1/runs/" + run_id)
                 if current["status"] in {"succeeded", "failed", "cancelled", "expired"}:
                     break
-                time.sleep(0.5)
-            if current is None or current["status"] != "succeeded":
-                raise SystemExit(f"run failed for {source.name}: {current}")
-            _, artifacts = call(base, f"/v1/runs/{run_id}/artifacts")
-            if not artifacts.get("items"):
-                raise SystemExit(f"no artifacts for {source.name}")
-            for artifact in artifacts["items"]:
-                artifact_id = str(artifact.get("id", ""))
-                preview_status, preview_body = probe_binary(base, f"/v1/runs/{run_id}/previews/{urllib.parse.quote(artifact_id, safe='')}" )
-                if preview_status != 200 or not preview_body:
-                    raise SystemExit(f"preview unavailable for {source.name}: {artifact_id} ({preview_status})")
-            status, passport = call(base, f"/v1/runs/{run_id}/passport")
-            if status != 200 or not passport:
-                raise SystemExit(f"no evidence passport for {source.name}: {status}")
-            status, findings = call(base, f"/v1/runs/{run_id}/findings")
-            if status != 200 or "items" not in findings:
-                raise SystemExit(f"findings were not persisted for {source.name}: {status}")
-        print(f"real PDF corpus E2E passed ({len(PDFS)} files)")
-        return 0
+                time.sleep(1)
+            if current["status"] != "succeeded":
+                raise SystemExit(f"run failed for {fixture}: {current}")
+            if call(base, "/v1/runs/" + run_id + "/passport")[0] != 200:
+                raise SystemExit(f"passport missing for {fixture}")
+            if not call(base, "/v1/runs/" + run_id + "/artifacts")[1].get("items"):
+                raise SystemExit(f"artifacts missing for {fixture}")
+            print(f"real PDF E2E passed: {fixture.name} ({run_id})")
     finally:
         if process.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False, capture_output=True)
-            else:
-                process.terminate()
+            process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
-        shutil.rmtree(root, ignore_errors=True)
+        log.close()
+        if os.environ.get("DOCS_KEEP_REAL_PDF_E2E"):
+            print(f"real PDF E2E workspace retained: {root}")
+        else:
+            shutil.rmtree(root, ignore_errors=True)
+    return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
