@@ -21,3 +21,13 @@ def test_self_hosted_factory_composes_real_authenticated_application(
     assert principal.tenant_id == "default"
     assert principal.organization_id == "default"
     assert (tmp_path / ".docs" / "workspaces.json").is_file()
+
+
+def test_self_hosted_factory_rejects_partial_oidc_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DOCS_OIDC_ISSUER", "https://issuer.example")
+    monkeypatch.setenv("DOCS_OIDC_AUDIENCE", "docs-api")
+    monkeypatch.delenv("DOCS_OIDC_JWKS_URL", raising=False)
+    with pytest.raises(ValueError, match="must be configured together"):
+        build_application(TransportConfig(workspace=tmp_path, mode="offline"))

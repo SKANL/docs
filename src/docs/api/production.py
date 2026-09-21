@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 from .auth import Principal
+from .oidc import BearerTokenValidator, JWKSCacheProvider
 from .server import TransportConfig
 from ..sidecar import SidecarConfig, build_application as build_sidecar_application
 
@@ -50,6 +51,26 @@ def _workspace_from_environment() -> Path | None:
 
 
 def _token_validator():
+    oidc_issuer = os.environ.get("DOCS_OIDC_ISSUER", "").strip()
+    oidc_audience = os.environ.get("DOCS_OIDC_AUDIENCE", "").strip()
+    oidc_jwks_url = os.environ.get("DOCS_OIDC_JWKS_URL", "").strip()
+    oidc_values = (oidc_issuer, oidc_audience, oidc_jwks_url)
+    if any(oidc_values):
+        if not all(oidc_values):
+            raise ValueError(
+                "DOCS_OIDC_ISSUER, DOCS_OIDC_AUDIENCE, and DOCS_OIDC_JWKS_URL "
+                "must be configured together"
+            )
+        return BearerTokenValidator(
+            issuer=oidc_issuer,
+            audience=oidc_audience,
+            key_provider=JWKSCacheProvider(
+                url=oidc_jwks_url,
+                ttl=float(os.environ.get("DOCS_OIDC_JWKS_TTL", "300")),
+                timeout=float(os.environ.get("DOCS_OIDC_JWKS_TIMEOUT", "5")),
+            ),
+            clock_skew=float(os.environ.get("DOCS_OIDC_CLOCK_SKEW", "30")),
+        )
     raw = os.environ.get("DOCS_API_TOKENS", "")
     entries = {}
     for item in raw.split(","):
