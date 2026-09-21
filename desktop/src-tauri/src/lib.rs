@@ -108,11 +108,23 @@ impl SidecarSupervisor {
             .arg("--health-url")
             .arg(&self.health_url);
         configure_sidecar_command(&mut command);
+        // Keep the console hidden for end users while preserving a durable,
+        // local diagnostic stream for startup/runtime failures. The file
+        // handle belongs to the child after spawn and is closed with it.
+        let log_path = workspace
+            .parent()
+            .unwrap_or(workspace)
+            .join("sidecar.log");
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)?;
+        let log_stderr = log.try_clone()?;
         let child = command
             .current_dir(executable_path.parent().unwrap_or_else(|| Path::new(".")))
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::from(log))
+            .stderr(Stdio::from(log_stderr))
             .spawn()?;
         state.child = Some(child);
         state.health = Health::starting();
