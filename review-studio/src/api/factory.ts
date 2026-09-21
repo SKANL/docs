@@ -19,7 +19,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     listBaselines: () => client.listBaselines().then(page => page.items),
     listRevisions: () => client.listRevisions().then(page => page.items),
     listPublications: () => client.listPublications().then(page => page.items),
-    listWorkspaces: () => client.listWorkspaces().then(page => page.items),
+    listWorkspaces: () => client.listWorkspaces(),
     createWorkspace: input => client.createWorkspace(input), renameWorkspace: (id, name) => client.renameWorkspace(id, name), deleteWorkspace: id => client.deleteWorkspace(id),
     getDocumentStatus: (documentId, workspaceId) => client.getDocumentStatus(documentId, workspaceId),
     createDocument: input => client.createDocument(input),

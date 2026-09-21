@@ -152,6 +152,7 @@ export class ReviewApiClient {
     this.requestFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.allowedPreviewOrigins = new Set(options.allowedPreviewOrigins ?? []);
+    try { this.selectedWorkspaceId = globalThis.localStorage?.getItem("docs.review.workspace") ?? undefined; } catch { this.selectedWorkspaceId = undefined; }
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -189,7 +190,19 @@ export class ReviewApiClient {
   listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params); }
   listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params); }
   listPublications(params?: ListParams) { return this.list<Publication>("publications", params); }
-  listWorkspaces() { return this.request<unknown>("workspaces").then(page<Workspace>); }
+  listWorkspaces() {
+    return this.request<unknown>("workspaces").then(raw => {
+      const items = page<Workspace>(raw).items;
+      const active = raw && typeof raw === "object" && "active" in raw ? (raw as { active?: Workspace }).active : undefined;
+      const persisted = this.selectedWorkspaceId && items.some(item => item.id === this.selectedWorkspaceId) ? this.selectedWorkspaceId : undefined;
+      const selected = persisted ?? active?.id ?? items[0]?.id;
+      if (selected) {
+        this.selectedWorkspaceId = selected;
+        try { globalThis.localStorage?.setItem("docs.review.workspace", selected); } catch { /* offline/browser storage unavailable */ }
+      }
+      return items;
+    });
+  }
   createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   renameWorkspace(id:string,name:string) { return this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) }); }
   deleteWorkspace(id:string) { return this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" }); }
@@ -202,6 +215,7 @@ export class ReviewApiClient {
   async selectWorkspace(id:string) {
     const workspace = await this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" });
     this.selectedWorkspaceId = workspace.id;
+    try { globalThis.localStorage?.setItem("docs.review.workspace", workspace.id); } catch { /* offline/browser storage unavailable */ }
     return workspace;
   }
   async importDocument(file: File, workspace: Workspace): Promise<ImportResult> {
