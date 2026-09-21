@@ -101,23 +101,37 @@ class SqliteFindingStore(_SqliteStore):
             connection.execute("CREATE INDEX IF NOT EXISTS x20_findings_run_id ON x20_findings(run_id)")
 
     def put(self, finding: dict[str, Any]) -> None:
+        envelope = {"schema": SCHEMA, "finding": dict(finding)}
         with self._connect() as connection:
             connection.execute(
                 "INSERT INTO x20_findings (id, run_id, payload) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
-                (str(finding["id"]), str(finding.get("run_id", "")), self._encode(finding)),
+                (str(finding["id"]), str(finding.get("run_id", "")), self._encode(envelope)),
             )
+
+    @classmethod
+    def _finding(cls, value: str) -> dict[str, Any]:
+        # Read old raw finding rows for compatibility, while all new rows use
+        # the same versioned envelope as the other X20 projections.
+        decoded = json.loads(value)
+        if not isinstance(decoded, dict):
+            raise ValueError("stored finding payload must be a JSON object")
+        if decoded.get("schema") == SCHEMA and isinstance(decoded.get("finding"), dict):
+            return dict(decoded["finding"])
+        if "id" in decoded and "run_id" in decoded:
+            return decoded
+        raise ValueError("unsupported stored finding payload schema")
 
     def list(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload FROM x20_findings ORDER BY id").fetchall()
-        return [self._decode(row[0]) for row in rows]
+        return [self._finding(row[0]) for row in rows]
 
     def list_for_run(self, run_id: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT payload FROM x20_findings WHERE run_id = ? ORDER BY id", (run_id,)
             ).fetchall()
-        return [self._decode(row[0]) for row in rows]
+        return [self._finding(row[0]) for row in rows]
 
 
 class SqliteArtifactStore(_SqliteStore):
