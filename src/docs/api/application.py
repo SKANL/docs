@@ -533,6 +533,7 @@ class X20Application:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             raise APIError(str(exc), str(exc), status) from exc
         self._seed_builtin_templates(Path(str(item["root"])))
+        self._refresh_plugins()
         return Response.json(item, 201)
 
     @staticmethod
@@ -1248,6 +1249,7 @@ class X20Application:
 
     def _plugins(self, request: Request) -> Response:
         if self.plugin_registry is not None:
+            self._refresh_plugins()
             items = [
                 {
                     "id": item.manifest.plugin_id,
@@ -1268,6 +1270,7 @@ class X20Application:
         """Return one registered plugin using the same normalized contract as the collection."""
         del request
         if self.plugin_registry is not None:
+            self._refresh_plugins()
             items = self.plugin_registry.list()
             for item in items:
                 if item.manifest.plugin_id == plugin_id:
@@ -1288,6 +1291,13 @@ class X20Application:
                 if str(value.get("id", value.get("plugin_id", ""))) == plugin_id:
                     return Response.json(value)
         raise APIError("not_found", "Plugin not found", 404)
+
+    def _refresh_plugins(self) -> None:
+        """Discover manifests from every registered workspace without executing them."""
+        if self.plugin_registry is None or self.workspace_registry is None:
+            return
+        roots = [Path(str(item["root"])) / "plugins" for item in self.workspace_registry.list()]
+        self.plugin_registry.discover(roots)
 
     def _promote_baseline(self, request: Request) -> Response:
         data = request.json(object_only=True)
