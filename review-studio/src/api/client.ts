@@ -241,14 +241,30 @@ export class ReviewApiClient {
   }
 
   async streamProgress(runId: string, onEvent: (event: ProgressEvent) => void, signal?: AbortSignal): Promise<void> {
-    const request = withSignal(signal, this.timeoutMs);
-    try {
-      const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress`), { signal: request.signal, headers: { Accept: "text/event-stream" } });
-      if (!response.ok) throw await errorFromResponse(response);
-      if (!response.body) throw new ApiError("Progress stream has no body", 502, "empty_stream");
-      await yieldSse(response.body, onEvent);
-    } finally { request.cancel(); }
+    let terminal = false;
+    while (!terminal) {
+      if (signal?.aborted) return;
+      const request = withSignal(signal, this.timeoutMs);
+      try {
+        const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress`), { signal: request.signal, headers: { Accept: "text/event-stream" } });
+        if (!response.ok) throw await errorFromResponse(response);
+        if (!response.body) throw new ApiError("Progress stream has no body", 502, "empty_stream");
+        await yieldSse(response.body, event => {
+          onEvent(event);
+          const status = (event.run as { status?: string } | undefined)?.status;
+          terminal = ["succeeded", "completed", "failed", "cancelled", "expired"].includes(String(status));
+        });
+      } finally { request.cancel(); }
+      if (!terminal) await waitForProgress(signal, 750);
+    }
   }
+}
+
+async function waitForProgress(signal: AbortSignal | undefined, delayMs: number): Promise<void> {
+  await new Promise<void>(resolve => {
+    const timer = globalThis.setTimeout(resolve, delayMs);
+    signal?.addEventListener("abort", () => { globalThis.clearTimeout(timer); resolve(); }, { once: true });
+  });
 }
 
 export async function yieldSse(stream: ReadableStream<Uint8Array>, onEvent: (event: ProgressEvent) => void): Promise<void> {
