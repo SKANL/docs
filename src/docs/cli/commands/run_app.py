@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 import typer
@@ -17,7 +18,9 @@ def _stores(ctx: typer.Context):
     deps, _ = _ctx(ctx)
     root = deps.workspace.documents_dir.parent.resolve()
     registry_path = root / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(registry_path if registry_path.is_file() else None)
+    registry = WorkspaceRegistry(
+        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+    )
     active = registry.active()
     if active is not None:
         root = Path(str(active["root"])).resolve()

@@ -33,7 +33,7 @@ from .infrastructure.persistence.x20 import (
 from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .workers.composition import WorkerComposition
 from .workers.runner import WorkerRunner
-from .domain.contracts import Artifact, Passport
+from .domain.contracts import Artifact, Passport, Run
 import hashlib
 
 _LOG = logging.getLogger("docs.sidecar")

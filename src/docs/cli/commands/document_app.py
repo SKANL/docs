@@ -1732,7 +1732,14 @@ def run_document(
         resolved = deps.resolve_context(ctx.obj.get("doc", ""))
         workspace_root = deps.workspace.documents_dir.parent.resolve()
         registry_path = workspace_root / ".docs" / "workspaces.json"
-        registry = WorkspaceRegistry(registry_path if registry_path.is_file() else None)
+        # A document configured by this cwd must never fall back to the
+        # process-wide active workspace. That fallback can enqueue a run for a
+        # different project and makes the detached worker fail against the
+        # wrong document. Use the workspace-local registry unless the caller
+        # explicitly supplied DOCS_WORKSPACE_REGISTRY.
+        registry = WorkspaceRegistry(
+            registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+        )
         active = registry.active()
         if active is None:
             raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
@@ -1808,7 +1815,9 @@ def _durable_evidence_stores(ctx: typer.Context):
     deps = ctx.obj["deps"]
     root = deps.workspace.documents_dir.parent.resolve()
     registry_path = root / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(registry_path if registry_path.is_file() else None)
+    registry = WorkspaceRegistry(
+        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+    )
     active = registry.active()
     if active is not None:
         root = Path(str(active["root"])).resolve()
