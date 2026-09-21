@@ -172,7 +172,11 @@ class X20Transport:
                 response = Response(204, b"", {})
             elif path == "/healthz":
                 response = Response.json({"status": "ok"})
-            elif path == "/health":
+            # The local sidecar owns `/health` and must be able to report
+            # workspace configuration errors. The remote X20 application has
+            # no health_path attribute, so it receives the transport-level
+            # compatibility response below.
+            elif path == "/health" and getattr(self.application, "health_path", None) != "/health":
                 ready = bool(self.ready_check())
                 response = Response.json(
                     {"ready": ready, "protocol": "docs-api/v1"},

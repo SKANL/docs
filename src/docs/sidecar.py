@@ -123,18 +123,27 @@ class _FilesystemTemplateStore:
 class _WorkspaceJsonCollectionStore:
     """Read JSON-backed baseline/revision records without inventing rows."""
 
-    def __init__(self, root: Path, kind: str) -> None:
+    def __init__(self, root: Path, kind: str, registry: WorkspaceRegistry | None = None) -> None:
         self.root = root.resolve()
         self.kind = kind
+        self.registry = registry
+
+    def _active_root(self) -> Path:
+        if self.registry is not None:
+            active = self.registry.active()
+            if active is not None:
+                return Path(str(active["root"])).resolve()
+        return self.root
 
     def list(self) -> list[dict[str, Any]]:
+        root = self._active_root()
         if self.kind == "baselines":
             paths = [
-                path for path in sorted((self.root / "baselines").glob("*.json"))
+                path for path in sorted((root / "baselines").glob("*.json"))
                 if path.name != "active.json"
             ]
         else:
-            paths = sorted((self.root / "documents").glob("*/sections/_revisions/revision-log.json"))
+            paths = sorted((root / "documents").glob("*/sections/_revisions/revision-log.json"))
         items: list[dict[str, Any]] = []
         for path in paths:
             try:
@@ -153,7 +162,7 @@ class _WorkspaceJsonCollectionStore:
                 if isinstance(item, dict):
                     record = dict(item)
                     record.setdefault("source_path", str(path))
-                    record.setdefault("workspace_root", str(self.root))
+                    record.setdefault("workspace_root", str(root))
                     items.append(record)
         return items
 
@@ -171,7 +180,7 @@ class _WorkspaceJsonCollectionStore:
         record = {**selected, "promoted": True}
         if metadata:
             record["promotion"] = dict(metadata)
-        target = self.root / "baselines" / "active.json"
+        target = self._active_root() / "baselines" / "active.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".json.tmp")
         temporary.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
@@ -720,8 +729,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         findings_store=findings_store,
         publication_store=publication_store,
         template_store=_FilesystemTemplateStore(config.workspace, registry),
-        baseline_store=_WorkspaceJsonCollectionStore(config.workspace, "baselines"),
-        revision_store=_WorkspaceJsonCollectionStore(config.workspace, "revisions"),
+        baseline_store=_WorkspaceJsonCollectionStore(config.workspace, "baselines", registry),
+        revision_store=_WorkspaceJsonCollectionStore(config.workspace, "revisions", registry),
         document_store=_FilesystemDocumentStore(config.workspace, registry),
         workspace_registry=registry,
         document_creator=create_document,
