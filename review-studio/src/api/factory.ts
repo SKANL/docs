@@ -9,6 +9,7 @@ export type ReviewApiEnvironment = {
 
 function remoteApi(client: ReviewApiClient): ReviewApi {
   return {
+    health: () => client.health(),
     listRuns: () => client.listRuns(),
     listDocuments: () => client.listDocuments(),
     listFindings: () => client.listFindings(),
@@ -20,6 +21,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     listBaselines: () => client.listBaselines(),
     listRevisions: () => client.listRevisions(),
     listPublications: () => client.listPublications(),
+    listPlugins: () => client.listPlugins(),
     listWorkspaces: () => client.listWorkspaces(),
     createWorkspace: input => client.createWorkspace(input), renameWorkspace: (id, name) => client.renameWorkspace(id, name), deleteWorkspace: id => client.deleteWorkspace(id),
     getDocumentStatus: (documentId, workspaceId) => client.getDocumentStatus(documentId, workspaceId),
