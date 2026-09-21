@@ -230,6 +230,7 @@ export class ReviewApiClient {
   }
   listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params).then(result => result.items); }
   getDocument(id:string) { return this.request<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
+  listDocumentRuns(id:string) { return this.request<{items:Record<string, unknown>[]}>("documents/" + encodeURIComponent(id) + "/runs").then(result => result.items.map(normalizeRun)); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items); }
   listArtifacts(params?: ListParams) {
     return this.list<Record<string, unknown>>("artifacts", params).then(result => result.items.map(raw => ({
