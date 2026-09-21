@@ -1,25 +1,22 @@
 import { expect, test } from "@playwright/test";
 
-test("loads sessions, findings, and graph data from the local API fixture", async ({ page }) => {
+test("renders real workspace, run, artifact, and provenance data", async ({ page }) => {
   await page.goto("/#runs");
-  await expect(page.getByRole("cell", { name: "fixture-session-1" })).toBeVisible();
-
-  await page.getByRole("link", { name: "Findings inbox" }).click();
-  await expect(page.getByRole("heading", { name: "Fixture finding" })).toBeVisible();
-
-  await page.getByRole("link", { name: "Semantic graph" }).click();
-  await expect(page.getByRole("img", { name: /semantic graph connecting/i })).toBeVisible();
-  await expect(page.getByText("Fixture claim")).toBeVisible();
+  await expect(page.getByRole("row", { name: /[0-9a-f]{8}-[0-9a-f]{4}-/i })).toBeVisible();
+  await expect(page.getByText(/Live progress|succeeded|passed|warnings/i).first()).toBeVisible();
+  await page.getByRole("link", { name: "Artifact preview" }).click();
+  await expect(page.getByRole("heading", { name: "Artifact & page preview" })).toBeVisible();
+  await page.getByRole("link", { name: "Evidence passport" }).click();
+  await expect(page.getByRole("heading", { name: "Evidence passport" })).toBeVisible();
 });
 
 test("supports skip-link keyboard navigation and visible focus", async ({ page }) => {
-  await page.goto("/#findings");
+  await page.goto("/#overview");
   await page.keyboard.press("Tab");
   const skip = page.getByRole("link", { name: "Skip to content" });
   await expect(skip).toBeFocused();
   await expect(skip).toHaveCSS("outline-style", "solid");
-
   await page.keyboard.press("Enter");
   await expect(page.locator("#main")).toBeFocused();
-  await expect(page.getByRole("textbox", { name: "Filter findings" })).toBeVisible();
+  await expect(page.getByText("Workspace setup")).toBeVisible();
 });
