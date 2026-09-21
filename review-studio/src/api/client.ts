@@ -229,6 +229,7 @@ export class ReviewApiClient {
     return await response.json() as { ready:boolean; protocol?:string; version?:string };
   }
   listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params).then(result => result.items); }
+  getDocument(id:string) { return this.request<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items); }
   listArtifacts(params?: ListParams) {
     return this.list<Record<string, unknown>>("artifacts", params).then(result => result.items.map(raw => ({
