@@ -998,7 +998,11 @@ class X20Application:
         elif self.revision_service is not None and hasattr(self.revision_service, "revise"):
             result = self.revision_service.revise(document_id, data)
         else:
-            result = {"document_id": document_id, **data}
+            # A revision is a mutating product operation.  Never acknowledge
+            # it with an echoed request when the real application service is
+            # absent: that creates a fake revision which cannot be audited or
+            # recovered from the workspace.
+            raise APIError("revision_unavailable", "Document revision is not configured", 501)
         return Response.json(_dict(result), 201)
 
     def _document_classification(self, document_id: str, request: Request) -> Response:
