@@ -14,12 +14,26 @@ from pathlib import Path
 import typer
 
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
+from docs.application.workspaces import WorkspaceRegistry
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.cli.commands.document_app import _capabilities_for
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 from docs.domain.normative import resolve_normative_settings
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
+
+
+def _activate_initialized_workspace() -> None:
+    """Make ``doc init`` immediately usable by the durable run commands.
+
+    The file-based config is enough for the legacy document commands, but the
+    asynchronous pipeline also needs a selected registry entry for its SQLite
+    state and local worker.  Registering the current directory here keeps a
+    freshly initialized workspace consistent across both command families.
+    """
+    registry = WorkspaceRegistry(Path.cwd() / ".docs" / "workspaces.json")
+    item = registry.ensure("Local workspace", Path.cwd())
+    registry.select(item["id"])
 
 
 @doc_app.command("init")
@@ -51,6 +65,7 @@ def doc_init(
         except (OSError, ValueError):
             existing = None
         if existing == new_config:
+            _activate_initialized_workspace()
             print(f"El workspace ya está inicializado ({config_path}).")
             return
         print(f"Ya existe `{config_path}` con otra configuración. Usa --force para sobrescribir.")
@@ -68,6 +83,8 @@ def doc_init(
     if not any(templates_path.glob("*.json")):
         for name in _list_builtin_names():
             (templates_path / f"{name}.json").write_text(_read_builtin(name), encoding="utf-8")
+
+    _activate_initialized_workspace()
 
     print(f"Workspace inicializado: {config_path}")
     print(f"documents_dir={documents_path}, templates_dir={templates_path}")

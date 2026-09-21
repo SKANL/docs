@@ -89,6 +89,8 @@ def test_doc_init_bootstraps_fresh_workspace(fresh_cwd):
     # templates_dir was empty -> seeded with the built-in templates.
     assert (fresh_cwd / "templates" / "documento-generico.json").exists()
     assert (fresh_cwd / "templates" / "reporte-estadia-tic.json").exists()
+    registry = json.loads((fresh_cwd / ".docs" / "workspaces.json").read_text(encoding="utf-8"))
+    assert registry["active"] == registry["workspaces"][0]["id"]
 
 
 def test_doc_init_rerun_reports_already_initialized(fresh_cwd):
