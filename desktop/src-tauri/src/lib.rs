@@ -91,11 +91,15 @@ fn initialize_app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 fn append_startup_log(app: &tauri::AppHandle, message: &str) {
-    let Ok(root) = app.path().app_data_dir() else { return };
-    let _ = std::fs::create_dir_all(&root);
-    let path = root.join("desktop-startup.log");
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{message}");
+    let mut paths = vec![std::env::temp_dir().join("docs-desktop-startup.log")];
+    if let Ok(root) = app.path().app_data_dir() {
+        let _ = std::fs::create_dir_all(&root);
+        paths.push(root.join("desktop-startup.log"));
+    }
+    for path in paths {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{message}");
+        }
     }
 }
 
