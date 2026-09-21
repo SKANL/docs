@@ -1679,7 +1679,9 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
 def run_document(
     ctx: typer.Context,
     formats: list[str] | None = typer.Option(None, "--format"),
-    policy: PipelineMode = typer.Option(PipelineMode.release, "--policy"),
+    policy: PipelineMode | None = typer.Option(None, "--policy"),
+    strict: bool = typer.Option(False, "--strict", help="Run with strict verification policy."),
+    release: bool = typer.Option(False, "--release", help="Run with release policy and publication checks."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Execute the real document pipeline synchronously from source to verified output.
@@ -1688,12 +1690,15 @@ def run_document(
     the same application pipeline used by build/release instead of creating a
     second implementation or returning a synthetic run result.
     """
+    if strict and release:
+        raise typer.BadParameter("--strict and --release are mutually exclusive")
+    selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release if release else PipelineMode.release)
     _run(
         ctx,
         "build",
         json_output,
         formats,
-        policy,
+        selected_policy,
         pipeline_id="document",
     )
 
