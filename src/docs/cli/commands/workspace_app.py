@@ -27,20 +27,29 @@ def list_workspaces(as_json: bool = typer.Option(False, "--json")) -> None:
 
 
 @workspace_app.command("create")
-def create_workspace(name: str, root: Path) -> None:
+def create_workspace(name: str, root: Path, as_json: bool = typer.Option(False, "--json")) -> None:
     """Create a workspace rooted at ROOT."""
     try:
         item = _registry().create(name, root)
     except WorkspaceRegistryError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    print(item["id"])
+    if as_json:
+        import json
+        print(json.dumps(item, ensure_ascii=False, sort_keys=True))
+    else:
+        print(item["id"])
 
 
 @workspace_app.command("use")
-def use_workspace(workspace_id: str) -> None:
+def use_workspace(workspace_id: str, as_json: bool = typer.Option(False, "--json")) -> None:
     """Select a registered workspace by id."""
     try:
-        print(_registry().select(workspace_id)["root"])
+        item = _registry().select(workspace_id)
+        if as_json:
+            import json
+            print(json.dumps(item, ensure_ascii=False, sort_keys=True))
+        else:
+            print(item["root"])
     except WorkspaceRegistryError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
