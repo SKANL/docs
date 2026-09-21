@@ -566,6 +566,13 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     registry = WorkspaceRegistry(config.workspace / ".docs" / "workspaces.json")
     configured_workspace = registry.ensure("Local workspace", config.workspace)
     _seed_builtin_templates(config.workspace)
+    # Plugin discovery is optional and declarative: manifests are inspected
+    # without importing or executing plugin code. The core remains fully
+    # operational when the workspace has no plugins.
+    from .plugins.registry import PluginRegistry
+
+    plugin_registry = PluginRegistry()
+    plugin_registry.discover([config.workspace / "plugins"])
     if registry.active() is None:
         registry.select(configured_workspace["id"])
     state_path = config.workspace / ".docs" / "x20.sqlite3"
@@ -725,7 +732,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         # The core sidecar remains plugin-independent. Plugin discovery is an
         # optional application concern and must never be required to start or
         # execute the document pipeline.
-        plugin_registry=None,
+        plugin_registry=plugin_registry,
         findings_store=findings_store,
         publication_store=publication_store,
         template_store=_FilesystemTemplateStore(config.workspace, registry),
