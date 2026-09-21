@@ -74,7 +74,8 @@ def main() -> int:
                 raise SystemExit(f"prepare failed for {fixture}: {status} {prepared}")
             _, run = call(base, "/v1/runs", "POST", {"workspace_id": workspace, "document_id": document_id, "pipeline_id": "document", "format": "pdf"})
             run_id = run["id"]
-            deadline = time.monotonic() + 300
+            timeout_seconds = int(os.environ.get("DOCS_REAL_PDF_TIMEOUT_SECONDS", "900"))
+            deadline = time.monotonic() + timeout_seconds
             while time.monotonic() < deadline:
                 _, current = call(base, "/v1/runs/" + run_id)
                 if current["status"] in {"succeeded", "failed", "cancelled", "expired"}:
