@@ -679,6 +679,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         serve(server, once=args.once)
     finally:
+        shutdown = getattr(application, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
         for name, handler in previous.items():
             signal.signal(getattr(signal, name), handler)
     return 0
