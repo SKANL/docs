@@ -16,6 +16,9 @@ def main() -> int:
         raise SystemExit("Tauri resources must include ../sidecar/*")
 
     rust = (desktop / "src-tauri/src/lib.rs").read_text(encoding="utf-8")
+    build_script = (desktop / "scripts/build-sidecar.ps1").read_text(encoding="utf-8")
+    if "--noconsole" not in build_script:
+        raise SystemExit("Windows sidecar must be built with --noconsole")
     required_fragments = (
         "resource_dir()",
         'resource_dir.join("sidecar").join(name)',
