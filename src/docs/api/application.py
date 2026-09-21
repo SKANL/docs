@@ -465,14 +465,32 @@ class X20Application:
         return Response.json(result, 201)
 
     def _document_action(self, document_id: str, action: str, request: Request) -> Response:
-        if self.document_action is None:
-            raise APIError("document_action_unavailable", "Document actions are not configured", 501)
         data = request.json(object_only=True) if request.body else {}
         workspace_id = str(data.get("workspace_id", ""))
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
             workspace = self.workspace_registry.get(workspace_id)
+            if action in {"build", "verify"}:
+                manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
+                if not manifest.is_file():
+                    raise APIError("document_not_found", "Document not found in workspace", 404)
+                run_id = str(data.get("run_id") or uuid4())
+                payload = {
+                    **data,
+                    "run_id": run_id,
+                    "workspace_id": workspace_id,
+                    "document_id": document_id,
+                    "pipeline_id": "document" if action == "build" else "document-verify",
+                    "policy": str(data.get("policy", "release")),
+                    "format": str(data.get("format", "docx")),
+                }
+                run = Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat())
+                self.run_store.put(run)
+                self.queue.enqueue(run_id, payload)
+                return Response.json(run.to_dict(), 202)
+            if self.document_action is None:
+                raise APIError("document_action_unavailable", "Document actions are not configured", 501)
             result = self.document_action(workspace["root"], document_id, action, data)
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
