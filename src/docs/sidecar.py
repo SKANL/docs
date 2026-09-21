@@ -591,6 +591,40 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         report = service.run(run_id, publish=action == "build", pipeline_id=pipeline_id)
         return report.to_dict()
 
+    def document_context(workspace_root: str, document_id: str) -> dict[str, Any]:
+        from .cli._shared import Deps
+        from .domain.workspace import Workspace
+
+        deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        resolved = deps.resolve_context(document_id)
+        statuses = deps.context.status(document_id, resolved.template)
+        return {
+            "document_id": document_id,
+            "topics": [
+                {
+                    "id": item.id,
+                    "title": item.title,
+                    "required": item.required,
+                    "exists": item.exists,
+                    "missing": item.missing,
+                }
+                for item in statuses
+            ],
+        }
+
+    def set_document_context(document_id: str, topic: str, field: str, value: str) -> dict[str, Any]:
+        from .cli._shared import Deps
+        from .domain.workspace import Workspace
+
+        active = registry.active()
+        if active is None:
+            raise RuntimeError("workspace_not_configured")
+        root = Path(str(active["root"]))
+        deps = Deps(Workspace(root / "documents", root / "templates"))
+        resolved = deps.resolve_context(document_id)
+        path = deps.context.set(document_id, resolved.template, topic, value, field)
+        return {"document_id": document_id, "topic": topic, "field": field, "path": str(path)}
+
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -610,6 +644,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         workspace_registry=registry,
         document_creator=create_document,
         document_action=document_action,
+        document_context_reader=lambda document_id: document_context(str(registry.get(registry.active()["id"])["root"]), document_id),
+        document_context_writer=set_document_context,
         router=Router(
             cors_origins=config.cors_origins,
             max_body_size=config.max_body_bytes,

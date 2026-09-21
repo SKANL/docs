@@ -113,6 +113,23 @@ def build_openapi_document() -> dict[str, Any]:
         "/v1/documents/{document_id}/status": {
             "get": _operation("Get document status", _json_response({"type": "object"}), scopes=("documents:read",))
         },
+        "/v1/documents/{document_id}/context": {
+            "get": _operation("Get document context status", _json_response({"type": "object"}), scopes=("documents:read",)),
+            "post": _operation(
+                "Set document context value",
+                _json_response({"type": "object"}),
+                request={
+                    "type": "object",
+                    "required": ["topic", "value"],
+                    "properties": {
+                        "topic": {"type": "string"},
+                        "field": {"type": "string"},
+                        "value": {"type": "string"},
+                    },
+                },
+                scopes=("documents:write",),
+            ),
+        },
         "/v1/documents/{document_id}/runs": {
             "get": _operation("List document runs", page("run"), scopes=("documents:read",))
         },

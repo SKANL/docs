@@ -62,6 +62,8 @@ class X20Application:
         import_service: SourceImportService | None = None,
         document_creator: Any = None,
         document_action: Any = None,
+        document_context_reader: Any = None,
+        document_context_writer: Any = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -89,6 +91,8 @@ class X20Application:
         self.import_service = import_service or SourceImportService()
         self.document_creator = document_creator
         self.document_action = document_action
+        self.document_context_reader = document_context_reader
+        self.document_context_writer = document_context_writer
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -254,6 +258,10 @@ class X20Application:
                 return "documents:write"
             if len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST":
                 return "documents:write"
+            if len(parts) == 4 and parts[3] == "context" and method == "GET":
+                return "documents:read"
+            if len(parts) == 4 and parts[3] == "context" and method == "POST":
+                return "documents:write"
         if parts[:2] == ["v1", "runs"]:
             if len(parts) == 3 and method == "GET":
                 return "runs:read"
@@ -294,11 +302,13 @@ class X20Application:
         ):
             return False
         if parts[:2] == ["v1", "documents"]:
-            return (len(parts) == 3 and method == "GET") or (
-                len(parts) == 4 and parts[3] == "runs" and method == "GET"
-            ) or (len(parts) == 4 and parts[3] == "revisions" and method == "POST") or (
-                len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST"
-            ) or (len(parts) == 4 and parts[3] == "status" and method == "GET"
+            return (
+                (len(parts) == 3 and method == "GET")
+                or (len(parts) == 4 and parts[3] == "runs" and method == "GET")
+                or (len(parts) == 4 and parts[3] == "revisions" and method == "POST")
+                or (len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST")
+                or (len(parts) == 4 and parts[3] == "status" and method == "GET")
+                or (len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"})
             )
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
@@ -328,6 +338,8 @@ class X20Application:
                 return lambda request: self._document_action(resource_id, parts[3], request)
             if len(parts) == 4 and parts[3] == "status" and method == "GET":
                 return lambda request: self._document_status(resource_id, request)
+            if len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"}:
+                return lambda request: self._document_context(resource_id, request)
             return None
         if parts[:2] == ["v1", "workspaces"]:
             workspace_id = resource_id
@@ -972,6 +984,26 @@ class X20Application:
         else:
             result = {"document_id": document_id, **data}
         return Response.json(_dict(result), 201)
+
+    def _document_context(self, document_id: str, request: Request) -> Response:
+        self._document(document_id, request)
+        if request.method.upper() == "GET":
+            if not callable(self.document_context_reader):
+                raise APIError("context_unavailable", "Document context is unavailable", 503)
+            return Response.json(_dict(self.document_context_reader(document_id)))
+        if not callable(self.document_context_writer):
+            raise APIError("context_unavailable", "Document context is unavailable", 503)
+        data = request.json(object_only=True)
+        topic = data.get("topic")
+        value = data.get("value")
+        field = data.get("field", "")
+        if not isinstance(topic, str) or not topic.strip() or not isinstance(value, str):
+            raise APIError("invalid_request", "topic and string value are required", 400)
+        try:
+            result = self.document_context_writer(document_id, topic, field, value)
+        except (ValueError, FileNotFoundError) as exc:
+            raise APIError("invalid_context", str(exc), 400) from exc
+        return Response.json(_dict(result), 200)
 
     def _baselines(self, request: Request) -> Response:
         return self._page(self._store_items(self.baseline_store, "list"), request, "baselines")
