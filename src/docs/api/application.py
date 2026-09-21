@@ -978,7 +978,10 @@ class X20Application:
         self._document(document_id, request)
         data = request.json(object_only=True)
         if callable(self.revision_service):
-            result = self.revision_service(document_id, data)
+            try:
+                result = self.revision_service(document_id, data)
+            except (ValueError, FileNotFoundError) as exc:
+                raise APIError("invalid_revision", str(exc), 400) from exc
         elif self.revision_service is not None and hasattr(self.revision_service, "revise"):
             result = self.revision_service.revise(document_id, data)
         else:
