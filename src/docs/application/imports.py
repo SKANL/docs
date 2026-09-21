@@ -6,6 +6,8 @@ import base64
 import hashlib
 import mimetypes
 import re
+import io
+import zipfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -111,13 +113,19 @@ class SourceImportService:
         if content.startswith(b"\x89PNG"):
             return "image/png"
         if content.startswith(b"PK\x03\x04"):
-            # DOCX/XLSX/PPTX are ZIP containers.  Do not import zipfile here;
-            # the ingest adapter owns archive validation and will provide the
-            # detailed diagnostic for malformed containers.
-            if b"word/" in content[:1024 * 1024]:
+            # DOCX/XLSX/PPTX are ZIP containers.  The ingest adapter owns
+            # detailed archive validation, but reading
+            # the central directory here gives accurate metadata even when
+            # the package names are compressed or appear after the first MB.
+            try:
+                with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                    names = set(archive.namelist())
+            except zipfile.BadZipFile:
+                names = set()
+            if "word/document.xml" in names:
                 return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            if b"xl/" in content[:1024 * 1024]:
+            if "xl/workbook.xml" in names:
                 return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            if b"ppt/" in content[:1024 * 1024]:
+            if "ppt/presentation.xml" in names:
                 return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         return cls._mime_type(filename)

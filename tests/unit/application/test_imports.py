@@ -1,4 +1,6 @@
 import base64
+import io
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -44,6 +46,16 @@ def test_import_records_detected_mime_from_content(
         tmp_path, filename, base64.b64encode(payload).decode()
     )
     assert result["mime_type"] == expected
+
+
+def test_import_detects_ooxml_document_from_zip_manifest(tmp_path: Path) -> None:
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as archive:
+        archive.writestr("word/document.xml", "<w:document/>")
+    result = SourceImportService().import_base64(
+        tmp_path, "renamed.bin", base64.b64encode(stream.getvalue()).decode()
+    )
+    assert result["mime_type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 @pytest.mark.parametrize(
