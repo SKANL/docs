@@ -90,6 +90,15 @@ fn initialize_app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(workspace)
 }
 
+fn append_startup_log(app: &tauri::AppHandle, message: &str) {
+    let Ok(root) = app.path().app_data_dir() else { return };
+    let _ = std::fs::create_dir_all(&root);
+    let path = root.join("desktop-startup.log");
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
 struct SupervisorState {
     child: Option<Child>,
     health: Health,
@@ -334,6 +343,7 @@ fn sidecar_names() -> [&'static str; 2] {
 }
 
 fn package_local_candidates(resource_dir: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    let parent = resource_dir.parent().unwrap_or(resource_dir);
     sidecar_names().into_iter().flat_map(|name| {
         [
             resource_dir.join("sidecar").join(name),
@@ -342,6 +352,8 @@ fn package_local_candidates(resource_dir: &Path) -> impl Iterator<Item = PathBuf
             // per-user install. Treat that directory as a package resource
             // location, not as a user-controlled workspace path.
             resource_dir.join("_up_").join("sidecar").join(name),
+            parent.join("sidecar").join(name),
+            parent.join("_up_").join("sidecar").join(name),
         ]
         .into_iter()
     })
@@ -439,11 +451,15 @@ pub fn run() {
         ])
         .setup(|app| {
             initialize_app_data(&app.handle())?;
+            append_startup_log(&app.handle(), "desktop setup initialized");
             let handle = app.handle().clone();
             thread::spawn(move || {
                 let supervisor = handle.state::<SidecarSupervisor>();
                 if let Err(error) = sidecar_start(handle.clone(), supervisor) {
+                    append_startup_log(&handle, &format!("sidecar startup failed: {error}"));
                     eprintln!("sidecar startup failed: {error}");
+                } else {
+                    append_startup_log(&handle, "sidecar startup succeeded");
                 }
             });
             Ok(())
