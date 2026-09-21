@@ -172,6 +172,12 @@ class X20Transport:
                 response = Response(204, b"", {})
             elif path == "/healthz":
                 response = Response.json({"status": "ok"})
+            elif path == "/health":
+                ready = bool(self.ready_check())
+                response = Response.json(
+                    {"ready": ready, "protocol": "docs-api/v1"},
+                    200 if ready else 503,
+                )
             elif path == "/readyz":
                 ready = bool(self.ready_check())
                 response = Response.json({"status": "ready" if ready else "not_ready"}, 200 if ready else 503)

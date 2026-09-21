@@ -131,10 +131,13 @@ def test_health_and_readiness_are_transport_endpoints():
     transport = X20Transport(app, TransportConfig(), ready_check=lambda: False)
 
     health, health_body = invoke(transport, "/healthz")
+    api_health, api_health_body = invoke(transport, "/health")
     readiness, readiness_body = invoke(transport, "/readyz")
 
     assert health["status"].startswith("200")
     assert json_body(health_body) == {"status": "ok"}
+    assert api_health["status"].startswith("503")
+    assert json_body(api_health_body) == {"ready": False, "protocol": "docs-api/v1"}
     assert readiness["status"].startswith("503")
     assert json_body(readiness_body) == {"status": "not_ready"}
     assert called is False
