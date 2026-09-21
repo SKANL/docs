@@ -31,6 +31,7 @@ from .infrastructure.persistence.x20 import (
     SqlitePublicationStore,
     SqliteRunStore,
 )
+from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .workers.composition import WorkerComposition
 from .workers.runner import WorkerRunner
 from .domain.contracts import Artifact, Passport
@@ -480,7 +481,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         workspace_registry=registry,
         document_creator=create_document,
         document_action=document_action,
-        router=Router(cors_origins=config.cors_origins),
+        router=Router(
+            cors_origins=config.cors_origins,
+            idempotency_persistence=SqliteIdempotencyStore(state_path),
+        ),
     )
     runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store, artifact_store, findings_store, publication_store)
     thread = threading.Thread(target=runner.run_until_stopped, name="docs-worker", daemon=True)
@@ -660,6 +664,7 @@ def build_server(config: SidecarConfig) -> GracefulHTTPServer:
         port=config.port,
         mode="offline",
         workspace=config.workspace,
+        max_request_body=120 * 1024 * 1024,
         cors_origins=config.cors_origins,
     )
     application = build_application(config)
