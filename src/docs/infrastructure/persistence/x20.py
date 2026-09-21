@@ -24,6 +24,12 @@ class _SqliteStore:
         self.path = path
         self.busy_timeout_ms = busy_timeout_ms
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Select WAL once during store construction. Repeating this PRAGMA on
+        # every request can contend with a long-running worker transaction and
+        # make otherwise cheap reads (run polling, progress, findings) block.
+        with sqlite3.connect(self.path, timeout=self.busy_timeout_ms / 1000) as connection:
+            connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
+            connection.execute("PRAGMA journal_mode = WAL")
         self._initialize()
 
     def _initialize(self) -> None:
@@ -31,7 +37,6 @@ class _SqliteStore:
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=self.busy_timeout_ms / 1000)
-        connection.execute("PRAGMA journal_mode = WAL")
         connection.execute(f"PRAGMA busy_timeout = {self.busy_timeout_ms}")
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
