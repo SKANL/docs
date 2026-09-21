@@ -649,14 +649,14 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             ],
         }
 
-    def set_document_context(document_id: str, topic: str, field: str, value: str) -> dict[str, Any]:
+    def set_document_context(document_id: str, topic: str, field: str, value: str, workspace_root: str | None = None) -> dict[str, Any]:
         from .cli._shared import Deps
         from .domain.workspace import Workspace
 
         active = registry.active()
-        if active is None:
+        if active is None and not workspace_root:
             raise RuntimeError("workspace_not_configured")
-        root = Path(str(active["root"]))
+        root = Path(workspace_root) if workspace_root else Path(str(active["root"]))
         deps = Deps(Workspace(root / "documents", root / "templates"))
         resolved = deps.resolve_context(document_id)
         path = deps.context.set(document_id, resolved.template, topic, value, field)
@@ -735,7 +735,9 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         workspace_registry=registry,
         document_creator=create_document,
         document_action=document_action,
-        document_context_reader=lambda document_id: document_context(str(registry.get(registry.active()["id"])["root"]), document_id),
+        document_context_reader=lambda document_id, workspace_root=None: document_context(
+            str(workspace_root or registry.get(registry.active()["id"])["root"]), document_id
+        ),
         document_context_writer=set_document_context,
         revision_service=revise_document,
         classification_service=document_classification,

@@ -1209,7 +1209,15 @@ class X20Application:
         if request.method.upper() == "GET":
             if not callable(self.document_context_reader):
                 raise APIError("context_unavailable", "Document context is unavailable", 503)
-            return Response.json(_dict(self.document_context_reader(document_id)))
+            workspace = self._request_workspace(request)
+            try:
+                value = self.document_context_reader(document_id, str(workspace["root"]))
+            except TypeError:
+                # Preserve the public one-argument application callback contract
+                # used by embedders while allowing the sidecar to enforce the
+                # requested workspace rather than its process-wide active one.
+                value = self.document_context_reader(document_id)
+            return Response.json(_dict(value))
         if not callable(self.document_context_writer):
             raise APIError("context_unavailable", "Document context is unavailable", 503)
         data = request.json(object_only=True)
@@ -1219,7 +1227,11 @@ class X20Application:
         if not isinstance(topic, str) or not topic.strip() or not isinstance(value, str):
             raise APIError("invalid_request", "topic and string value are required", 400)
         try:
-            result = self.document_context_writer(document_id, topic, field, value)
+            workspace = self._request_workspace(request)
+            try:
+                result = self.document_context_writer(document_id, topic, field, value, str(workspace["root"]))
+            except TypeError:
+                result = self.document_context_writer(document_id, topic, field, value)
         except (ValueError, FileNotFoundError) as exc:
             raise APIError("invalid_context", str(exc), 400) from exc
         return Response.json(_dict(result), 200)
