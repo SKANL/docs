@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $desktop = Split-Path -Parent $PSScriptRoot
 $sidecarDir = Join-Path $desktop 'sidecar'
 $configuredSidecar = $env:DOCS_SIDECAR_EXECUTABLE
+$tauriConfigOverride = $null
 
 # Tauri expects the signing key contents, not only a path. Accept the path
 # form for local/CI ergonomics while keeping the private key outside Git.
@@ -40,7 +41,18 @@ try {
     python scripts/check-sidecar-e2e.py
     if ($LASTEXITCODE -ne 0) { throw "Packaged sidecar end-to-end check failed (exit code $LASTEXITCODE)." }
 
-    npm run tauri build
+    if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+        # Local installer builds must remain usable without release credentials.
+        # Release/CI builds still require the private key and produce updater artifacts.
+        $tauriConfigOverride = Join-Path $desktop 'src-tauri\build-local.json'
+        Set-Content -LiteralPath $tauriConfigOverride -Value '{"bundle":{"createUpdaterArtifacts":false}}' -Encoding utf8
+        npm run tauri -- build --config src-tauri/build-local.json
+    } else {
+        npm run tauri build
+    }
 } finally {
+    if ($tauriConfigOverride -and (Test-Path $tauriConfigOverride -PathType Leaf)) {
+        Remove-Item -LiteralPath $tauriConfigOverride -Force -ErrorAction SilentlyContinue
+    }
     Pop-Location
 }
