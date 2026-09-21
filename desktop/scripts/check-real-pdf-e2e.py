@@ -107,11 +107,20 @@ def main() -> int:
             _, artifacts = call(base, f"/v1/runs/{run_id}/artifacts")
             if not artifacts.get("items"):
                 raise SystemExit(f"no artifacts for {source.name}")
+            status, passport = call(base, f"/v1/runs/{run_id}/passport")
+            if status != 200 or not passport:
+                raise SystemExit(f"no evidence passport for {source.name}: {status}")
+            status, findings = call(base, f"/v1/runs/{run_id}/findings")
+            if status != 200 or "items" not in findings:
+                raise SystemExit(f"findings were not persisted for {source.name}: {status}")
         print(f"real PDF corpus E2E passed ({len(PDFS)} files)")
         return 0
     finally:
         if process.poll() is None:
-            process.terminate()
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False, capture_output=True)
+            else:
+                process.terminate()
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
