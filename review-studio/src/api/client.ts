@@ -222,6 +222,7 @@ export class ReviewApiClient {
   }
 
   listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => result.items.map(normalizeRun)); }
+  getRun(id:string) { return this.request<Record<string, unknown>>("runs/" + encodeURIComponent(id)); }
   async health() {
     const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
     if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
