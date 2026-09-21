@@ -36,6 +36,8 @@ def test_worker_passport_contains_each_pipeline_stage_receipt() -> None:
         run_id = "run-1"
         state = "succeeded"
         attempt = 1
+        retry_of = "run-original"
+        worker_id = "worker-test"
         value = {"report": {"execution": {"results": [
             {"stage": "render", "ok": True, "outcome": "succeeded"},
             {"stage": "verify", "ok": True, "outcome": "succeeded"},
@@ -50,6 +52,8 @@ def test_worker_passport_contains_each_pipeline_stage_receipt() -> None:
     assert [entry["stage"] for entry in passports.value.entries[2:]] == ["pipeline_stage", "pipeline_stage"]
     assert [entry["name"] for entry in passports.value.entries[2:]] == ["render", "verify"]
     assert [entry["receipt"]["outcome"] for entry in passports.value.entries[2:]] == ["succeeded", "succeeded"]
+    assert passports.value.entries[0]["retry_of"] == "run-original"
+    assert passports.value.entries[0]["worker_id"] == "worker-test"
 
 
 def test_sidecar_accepts_workspace_from_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

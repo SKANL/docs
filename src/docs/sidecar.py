@@ -921,7 +921,13 @@ def _persist_worker_evidence(
     report = value.get("report", {}) if isinstance(value, dict) else {}
     execution = report.get("execution", {}) if isinstance(report, dict) else {}
     passport_entries: list[dict[str, Any]] = [
-        {"stage": "worker", "status": result.state, "attempt": result.attempt},
+        {
+            "stage": "worker",
+            "status": result.state,
+            "attempt": result.attempt,
+            "retry_of": result.retry_of,
+            "worker_id": result.worker_id,
+        },
         {"stage": "pipeline", "result": value},
     ]
     for stage in execution.get("results", ()) if isinstance(execution, dict) else ():
