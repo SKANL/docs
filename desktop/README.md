@@ -23,6 +23,18 @@ Run `npm run sync:review-studio` to refresh the local frontend bundle, or run
 artifacts. `npm run test:shell` checks that the placeholder is absent and that
 the packaging configuration is wired to the Review Studio build.
 
+## Real installer and PDF journeys
+
+`npm run build:windows` produces the MSI and NSIS installers. Without
+`TAURI_SIGNING_PRIVATE_KEY` (or `TAURI_SIGNING_PRIVATE_KEY_PATH`), it creates
+an unsigned local installer without updater artifacts; release builds must
+provide the private key for signed updates.
+
+For the packaged real-document journey, set `DOCS_REAL_PDF_FIXTURES` to a
+semicolon-separated list of PDF paths and run
+`python scripts/check-real-pdf-e2e.py`. Increase
+`DOCS_REAL_PDF_TIMEOUT_SECONDS` for large documents.
+
 ## Sidecar placement and health handshake
 
 The Rust supervisor behavior is unchanged. In an installed Windows bundle it
