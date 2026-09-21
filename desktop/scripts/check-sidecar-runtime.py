@@ -12,6 +12,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from process_cleanup import terminate_process_tree
+
 
 def main() -> int:
     desktop = Path(__file__).resolve().parents[1]
@@ -47,12 +49,7 @@ def main() -> int:
         print("packaged sidecar runtime smoke test passed")
         return 0
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        terminate_process_tree(process)
         shutil.rmtree(workspace, ignore_errors=True)
 
 

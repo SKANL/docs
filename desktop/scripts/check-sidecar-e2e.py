@@ -13,6 +13,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from process_cleanup import terminate_process_tree
+
 
 def call(base: str, path: str, method: str = "GET", payload: object | None = None) -> tuple[int, dict]:
     body = None if payload is None else json.dumps(payload).encode()
@@ -85,12 +87,7 @@ def main() -> int:
         print("packaged sidecar end-to-end smoke test passed")
         return 0
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        terminate_process_tree(process)
         shutil.rmtree(root, ignore_errors=True)
 
 

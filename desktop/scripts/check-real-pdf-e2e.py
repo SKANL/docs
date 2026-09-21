@@ -14,6 +14,8 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+from process_cleanup import terminate_process_tree
+
 
 def call(base: str, path: str, method: str = "GET", payload: object | None = None, timeout: int = 30) -> tuple[int, dict]:
     body = None if payload is None else json.dumps(payload).encode()
@@ -86,12 +88,7 @@ def main() -> int:
                 raise SystemExit(f"artifacts missing for {fixture}")
             print(f"real PDF E2E passed: {fixture.name} ({run_id})")
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        terminate_process_tree(process)
         log.close()
         if os.environ.get("DOCS_KEEP_REAL_PDF_E2E"):
             print(f"real PDF E2E workspace retained: {root}")

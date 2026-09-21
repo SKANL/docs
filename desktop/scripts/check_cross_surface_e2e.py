@@ -12,6 +12,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from process_cleanup import terminate_process_tree
+
 
 def run_cli_json(workspace: Path, *args: str) -> str:
     repo = Path(__file__).resolve().parents[2]
@@ -114,15 +116,7 @@ def main() -> int:
             assert_same_persisted_records({"id": "cross-surface", **api_document}, cli_document, current, cli_run)
             print("cross-surface packaged API -> CLI journey passed")
         finally:
-            if process.poll() is None:
-                if os.name == "nt":
-                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False, capture_output=True)
-                else:
-                    process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+            terminate_process_tree(process)
     return 0
 
 
