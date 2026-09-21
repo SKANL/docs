@@ -1788,27 +1788,60 @@ def run_document(
         result = {"id": run_id, "status": SqliteRunStore(state).get(run_id).status if SqliteRunStore(state).get(run_id) else "queued"}
         typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
         return
-    # Synchronous runs must be self-contained as well: ingest/normalize,
-    # compile structure, and create safe managed scaffolds before rendering.
-    # Authored sections remain protected by SectionService.
+    # Synchronous execution uses the same durable worker path as async runs.
+    # This keeps the CLI's two modes semantically identical: both create a
+    # real Run, execute the real pipeline, and persist passport/evidence.
+    if len(formats or ["docx"]) != 1:
+        raise typer.BadParameter("--sync supports exactly one --format")
     deps = ctx.obj["deps"]
     resolved = deps.resolve_context(ctx.obj.get("doc", ""))
-    source_pipeline = _source_pipeline(deps)
-    if source_pipeline is None:
-        raise typer.BadParameter("source ingest dependencies are unavailable")
-    prepared = source_pipeline.prepare(resolved.doc_id, deps.workspace.doc_root(resolved.doc_id), resolved.config)
-    if not prepared.get("succeeded"):
-        raise typer.BadParameter("document preparation failed; inspect the source pipeline report")
-    for section in resolved.template.sections:
-        deps.section.build_section(resolved.doc_id, resolved.template, section.id, resolved.config)
-    _run(
-        ctx,
-        "build",
-        json_output,
-        formats,
-        selected_policy,
-        pipeline_id="document",
+    workspace_root = deps.workspace.documents_dir.parent.resolve()
+    registry_path = workspace_root / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(
+        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
     )
+    active = registry.active()
+    if active is None:
+        raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
+    workspace_root = Path(str(active["root"])).resolve()
+    state = workspace_root / ".docs" / "x20.sqlite3"
+    run_id = str(uuid.uuid4())
+    payload = {
+        "run_id": run_id,
+        "document_id": resolved.doc_id,
+        "workspace_id": active["id"],
+        "pipeline_id": "document",
+        "format": (formats or ["docx"])[0],
+        "policy": selected_policy.value,
+    }
+    SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
+    SqliteJobQueue(state).enqueue(run_id, payload)
+    # Import lazily to avoid making the CLI composition root depend on the
+    # sidecar at import time; the worker composition remains the single
+    # implementation of execution and evidence finalization.
+    from docs.sidecar import _build_worker
+    from docs.infrastructure.persistence.x20 import (
+        SqliteFindingStore,
+        SqlitePublicationStore,
+    )
+
+    worker = _build_worker(
+        workspace_root,
+        SqliteJobQueue(state),
+        state,
+        SqliteRunStore(state),
+        SqlitePassportStore(state),
+        SqliteArtifactStore(state),
+        SqliteFindingStore(state),
+        SqlitePublicationStore(state),
+    )
+    result = worker.run_once()
+    if result is None:
+        raise typer.BadParameter(f"Unable to claim synchronous run: {run_id}")
+    final = SqliteRunStore(state).get(run_id)
+    status = final.status if final is not None else result.state
+    output = {"id": run_id, "status": status}
+    typer.echo(json.dumps(output, sort_keys=True) if json_output else f"{run_id}\t{status}")
 
 
 def _durable_evidence_stores(ctx: typer.Context):
