@@ -1685,6 +1685,7 @@ def run_document(
     strict: bool = typer.Option(False, "--strict", help="Run with strict verification policy."),
     release: bool = typer.Option(False, "--release", help="Run with release policy and publication checks."),
     async_run: bool = typer.Option(False, "--async", help="Queue the run and process it with a detached local worker."),
+    sync: bool = typer.Option(False, "--sync", help="Run synchronously in the current process (the default)."),
     watch: bool = typer.Option(False, "--watch", help="Wait for a queued asynchronous run to finish."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -1696,6 +1697,8 @@ def run_document(
     """
     if strict and release:
         raise typer.BadParameter("--strict and --release are mutually exclusive")
+    if async_run and sync:
+        raise typer.BadParameter("--async and --sync are mutually exclusive")
     selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release if release else PipelineMode.release)
     if watch and not async_run:
         raise typer.BadParameter("--watch requires --async")
