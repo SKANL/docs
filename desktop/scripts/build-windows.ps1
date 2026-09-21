@@ -27,7 +27,9 @@ try {
         throw 'No Windows sidecar was staged. Build-sidecar.ps1 must produce sidecar/docs-sidecar.exe.'
     }
     python scripts/check-sidecar-runtime.py
+    if ($LASTEXITCODE -ne 0) { throw "Packaged sidecar runtime check failed (exit code $LASTEXITCODE)." }
     python scripts/check-sidecar-e2e.py
+    if ($LASTEXITCODE -ne 0) { throw "Packaged sidecar end-to-end check failed (exit code $LASTEXITCODE)." }
 
     npm run tauri build
 } finally {
