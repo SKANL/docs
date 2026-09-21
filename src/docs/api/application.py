@@ -251,7 +251,7 @@ class X20Application:
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
                 return "documents:write"
-            if len(parts) == 4 and parts[3] in {"prepare", "build", "verify"} and method == "POST":
+            if len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST":
                 return "documents:write"
         if parts[:2] == ["v1", "runs"]:
             if len(parts) == 3 and method == "GET":
@@ -296,7 +296,7 @@ class X20Application:
             return (len(parts) == 3 and method == "GET") or (
                 len(parts) == 4 and parts[3] == "runs" and method == "GET"
             ) or (len(parts) == 4 and parts[3] == "revisions" and method == "POST") or (
-                len(parts) == 4 and parts[3] in {"prepare", "build", "verify"} and method == "POST"
+                len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST"
             ) or (len(parts) == 4 and parts[3] == "status" and method == "GET"
             )
         if len(parts) == 3 and parts[2] != "runs":
@@ -323,7 +323,7 @@ class X20Application:
                 return lambda request: self._document_runs(resource_id, request)
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
                 return lambda request: self._revision(resource_id, request)
-            if len(parts) == 4 and parts[3] in {"prepare", "build", "verify"} and method == "POST":
+            if len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST":
                 return lambda request: self._document_action(resource_id, parts[3], request)
             if len(parts) == 4 and parts[3] == "status" and method == "GET":
                 return lambda request: self._document_status(resource_id, request)
@@ -485,7 +485,7 @@ class X20Application:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
             workspace = self.workspace_registry.get(workspace_id)
-            if action in {"build", "verify"}:
+            if action in {"build", "verify", "publish"}:
                 manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
                 if not manifest.is_file():
                     raise APIError("document_not_found", "Document not found in workspace", 404)
@@ -495,8 +495,8 @@ class X20Application:
                     "run_id": run_id,
                     "workspace_id": workspace_id,
                     "document_id": document_id,
-                    "pipeline_id": "document" if action == "build" else "document-verify",
-                    "policy": str(data.get("policy", "release")),
+                    "pipeline_id": "document" if action == "build" else "document-verify" if action == "verify" else "document-publish",
+                    "policy": "release" if action == "publish" else str(data.get("policy", "release")),
                     "format": str(data.get("format", "docx")),
                 }
                 run = Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat())
