@@ -1605,6 +1605,18 @@ def _run_source_command(ctx: typer.Context, command: str, json_output: bool) -> 
         if command == "ingest"
         else service.prepare(resolved.doc_id, root, resolved.config)
     )
+    # ``prepare`` is the public bootstrap boundary: once sources are ready,
+    # create the managed section scaffolds exactly as ``build-section`` does.
+    # This keeps the documented workflow usable from CLI, worker, and API
+    # callers without regenerating authored sections.
+    if command == "prepare" and report.get("succeeded"):
+        scaffolds: list[str] = []
+        template = getattr(resolved, "template", None)
+        if template is not None:
+            for section in template.sections:
+                path = deps.section.build_section(resolved.doc_id, template, section.id, resolved.config)
+                scaffolds.append(str(path))
+        report["scaffolds"] = scaffolds
     output = json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     typer.echo(output if json_output else json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     if not report["succeeded"]:

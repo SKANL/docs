@@ -455,7 +455,13 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             pipeline = _source_pipeline(deps)
             if pipeline is None:
                 raise RuntimeError("source pipeline dependencies are unavailable")
-            return pipeline.prepare(document_id, deps.workspace.doc_root(document_id), resolved.config)
+            report = pipeline.prepare(document_id, deps.workspace.doc_root(document_id), resolved.config)
+            if report.get("succeeded"):
+                report["scaffolds"] = [
+                    str(deps.section.build_section(document_id, resolved.template, section.id, resolved.config))
+                    for section in resolved.template.sections
+                ]
+            return report
         pipeline_id = "document" if action == "build" else "document-verify"
         run_id = str(payload.get("run_id") or f"api-{action}-{uuid4().hex}")
         service = create_document_service(
@@ -559,6 +565,9 @@ def _build_worker(
             prepared = source_pipeline.prepare(document_id, deps.workspace.doc_root(document_id), deps.resolve_context(document_id).config)
             if not prepared.get("succeeded", False):
                 raise RuntimeError("document preparation failed; inspect intake evidence")
+            resolved = deps.resolve_context(document_id)
+            for section in resolved.template.sections:
+                deps.section.build_section(document_id, resolved.template, section.id, resolved.config)
             progress("pipeline", 35)
             service = create_document_service(
                 deps,
