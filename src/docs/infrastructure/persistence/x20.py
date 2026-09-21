@@ -69,14 +69,28 @@ class SqliteRunStore(_SqliteStore):
             )
 
     def get(self, run_id: str) -> Run | None:
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             row = connection.execute("SELECT payload FROM x20_runs WHERE id = ?", (run_id,)).fetchone()
         return None if row is None else Run.from_dict(self._decode(row[0]))
 
     def list(self) -> _builtins.list[Run]:
-        with self._connect() as connection:
+        with self._read_connection() as connection:
             rows = connection.execute("SELECT payload FROM x20_runs ORDER BY id").fetchall()
         return [Run.from_dict(self._decode(row[0])) for row in rows]
+
+    def _read_connection(self) -> sqlite3.Connection:
+        """Open a read-only connection that never participates in writes.
+
+        Run polling is the hottest API read path while a worker is rendering a
+        document. Keeping it independent from the writer connection prevents
+        a long pipeline transaction from serializing status/progress reads.
+        """
+        if not self.path.exists():
+            return self._connect()
+        uri = f"file:{self.path.as_posix()}?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=0.5)
+        connection.execute("PRAGMA query_only = ON")
+        return connection
 
 
 class SqlitePassportStore(_SqliteStore):
