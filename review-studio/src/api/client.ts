@@ -191,6 +191,7 @@ export class ReviewApiClient {
       items: result.items.map(raw => ({
         id: typeof raw.id === "string" ? raw.id : "artifact",
         name: typeof raw.name === "string" ? raw.name : typeof raw.id === "string" ? raw.id : "Unnamed artifact",
+        runId: typeof raw.run_id === "string" ? raw.run_id : undefined,
         kind: normalizeArtifactKind(raw.kind),
         size: typeof raw.size === "string" ? raw.size : typeof raw.size === "number" ? `${raw.size} bytes` : "Size unavailable",
         status: raw.status === "failed" || raw.status === "warnings" || raw.status === "passed" ? raw.status : "unverified",
@@ -278,6 +279,10 @@ export class ReviewApiClient {
       } finally { request.cancel(); }
       if (!terminal) await waitForProgress(signal, 750);
     }
+  }
+
+  artifactPreviewUrl(runId: string, artifactId: string): string {
+    return this.previewUrl(`runs/${encodeURIComponent(runId)}/previews/${encodeURIComponent(artifactId)}`);
   }
 }
 
