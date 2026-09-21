@@ -100,8 +100,19 @@ class _FilesystemTemplateStore:
         active = self.registry.active()
         return (Path(str(active["root"])) if active is not None else self.workspace).resolve() / "templates"
 
+    def _root_for(self, workspace_id: str | None = None) -> Path:
+        if workspace_id and self.registry is not None:
+            return Path(str(self.registry.get(workspace_id)["root"])).resolve() / "templates"
+        return self._root()
+
     def list(self) -> list[dict[str, Any]]:
-        root = self._root()
+        return self._list_root(self._root())
+
+    def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+        return self._list_root(self._root_for(workspace_id))
+
+    @staticmethod
+    def _list_root(root: Path) -> list[dict[str, Any]]:
         if not root.is_dir():
             return []
         items: list[dict[str, Any]] = []
@@ -135,8 +146,18 @@ class _WorkspaceJsonCollectionStore:
                 return Path(str(active["root"])).resolve()
         return self.root
 
+    def _root_for(self, workspace_id: str | None = None) -> Path:
+        if workspace_id and self.registry is not None:
+            return Path(str(self.registry.get(workspace_id)["root"])).resolve()
+        return self._active_root()
+
     def list(self) -> list[dict[str, Any]]:
-        root = self._active_root()
+        return self._list_root(self._active_root())
+
+    def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+        return self._list_root(self._root_for(workspace_id))
+
+    def _list_root(self, root: Path) -> list[dict[str, Any]]:
         if self.kind == "baselines":
             paths = [
                 path for path in sorted((root / "baselines").glob("*.json"))

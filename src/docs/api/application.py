@@ -1056,14 +1056,13 @@ class X20Application:
         return str(active["id"]) if active is not None else None
 
     def _templates(self, request: Request) -> Response:
-        return self._page(self._filter(self._store_items(self.template_store, "list"), request.query), request, "templates")
+        return self._page(self._filter(self._workspace_items(self.template_store, request), request.query), request, "templates")
 
     def _revisions(self, request: Request) -> Response:
-        return self._page(self._filter(self._store_items(self.revision_store, "list"), request.query), request, "revisions")
+        return self._page(self._filter(self._workspace_items(self.revision_store, request), request.query), request, "revisions")
 
     def _revision_detail(self, revision_id: str, request: Request) -> Response:
-        del request
-        revision = self._store_get(self.revision_store, revision_id, "id", "revision_id")
+        revision = next((item for item in self._workspace_items(self.revision_store, request) if any(str(_dict(item).get(key, "")) == revision_id for key in ("id", "revision_id"))), None)
         if revision is None:
             raise APIError("not_found", "Revision not found", 404)
         return Response.json(_dict(revision))
@@ -1238,11 +1237,10 @@ class X20Application:
         return Response.json(_dict(result), 200)
 
     def _baselines(self, request: Request) -> Response:
-        return self._page(self._store_items(self.baseline_store, "list"), request, "baselines")
+        return self._page(self._workspace_items(self.baseline_store, request), request, "baselines")
 
     def _baseline(self, baseline_id: str, request: Request) -> Response:
-        del request
-        baseline = self._store_get(self.baseline_store, baseline_id, "id", "baseline_id")
+        baseline = next((item for item in self._workspace_items(self.baseline_store, request) if any(str(_dict(item).get(key, "")) == baseline_id for key in ("id", "baseline_id"))), None)
         if baseline is None:
             raise APIError("not_found", "Baseline not found", 404)
         return Response.json(_dict(baseline))
@@ -1339,6 +1337,16 @@ class X20Application:
             return []
         result = callback(*args)
         return list(result or [])
+
+    def _workspace_items(self, store: Any, request: Request) -> list[Any]:
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if workspace_id and callable(getattr(store, "list_for_workspace", None)):
+            try:
+                self.workspace_registry.get(workspace_id) if self.workspace_registry is not None else None
+                return self._store_items(store, "list_for_workspace", workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+        return self._store_items(store, "list")
 
     @staticmethod
     def _store_get(store: Any, value: str, *keys: str) -> Any:
