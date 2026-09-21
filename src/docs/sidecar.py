@@ -582,6 +582,15 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         from .domain.workspace import Workspace
 
         deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        if action == "prepare" and not (deps.workspace.doc_root(document_id) / "document.json").is_file():
+            metadata_files = sorted((deps.workspace.doc_root(document_id) / "inbox").glob("*.import.json"))
+            if metadata_files:
+                metadata = json.loads(metadata_files[0].read_text(encoding="utf-8"))
+                deps.documents.create(
+                    document_id,
+                    str(metadata.get("template", "documento-generico")),
+                    str(metadata.get("title", document_id)),
+                )
         resolved = deps.resolve_context(document_id)
         if action == "prepare":
             pipeline = _source_pipeline(deps)

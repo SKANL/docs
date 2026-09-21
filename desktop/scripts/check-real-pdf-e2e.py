@@ -29,7 +29,11 @@ def call(base: str, path: str, method: str = "GET", payload: object | None = Non
         base + path,
         data=body,
         method=method,
-        headers={"Content-Type": "application/json"} if body else {},
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(len(body)),
+            "Connection": "close",
+        } if body else {"Connection": "close"},
     )
     try:
         with urllib.request.urlopen(request, timeout=180) as response:
@@ -52,8 +56,8 @@ def main() -> int:
     process = subprocess.Popen(
         command + ["--workspace", os.fspath(root), "--health-url", base + "/health"],
         env={**os.environ, "PYTHONPATH": os.fspath(desktop.parent / "src")},
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=None,
+        stderr=None,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     try:
@@ -68,6 +72,7 @@ def main() -> int:
         workspace_id = workspaces["items"][0]["id"]
         for source in PDFS:
             document_id = "pdf-" + str(PDFS.index(source) + 1)
+            print(f"[{source.name}] import", flush=True)
             payload = {
                 "workspace_id": workspace_id,
                 "document_id": document_id,
@@ -81,6 +86,7 @@ def main() -> int:
                 diagnostics = process.stderr.read().decode(errors="replace") if process.stderr else ""
                 raise SystemExit(f"import failed for {source.name}: {status} {imported}\n{diagnostics}")
             status, prepared = call(base, f"/v1/documents/{document_id}/prepare", "POST", {"workspace_id": workspace_id})
+            print(f"[{source.name}] prepare -> {status}", flush=True)
             if status != 200 or prepared.get("succeeded") is False:
                 raise SystemExit(f"prepare failed for {source.name}: {status} {prepared}")
             _, run = call(base, "/v1/runs", "POST", {
@@ -89,6 +95,7 @@ def main() -> int:
                 "format": "html",
                 "policy": "draft",
             })
+            print(f"[{source.name}] run queued", flush=True)
             run_id = run["id"]
             deadline = time.monotonic() + 180
             current = None

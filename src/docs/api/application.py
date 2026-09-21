@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import threading
 import ast
+import logging
+import json
 import mimetypes
 from importlib.resources import files
 from collections.abc import Iterable, Mapping
@@ -24,6 +26,8 @@ from .auth import AuthError, bearer_auth
 from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_openapi_document, canonical_json
+
+_LOG = logging.getLogger("docs.api.application")
 
 
 def _dict(value: Any) -> Any:
@@ -492,6 +496,7 @@ class X20Application:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         data = request.json(object_only=True)
+        _LOG.info("document_import_started")
         workspace_id = data.get("workspace_id")
         try:
             workspace = self.workspace_registry.get(str(workspace_id))
@@ -501,18 +506,16 @@ class X20Application:
                 str(data.get("content_base64", "")),
                 document_id=data.get("document_id"),
             )
-            # Import is a product operation, not merely a file copy. When the
-            # caller did not create the document first, materialize its real
-            # manifest now so the next prepare/build/verify step can run.
-            document_root = Path(str(workspace["root"])) / "documents" / str(result["document_id"])
-            manifest = document_root / "document.json"
-            if not manifest.is_file() and self.document_creator is not None:
-                result["document"] = self.document_creator(
-                    workspace["root"],
-                    str(result["document_id"]),
-                    str(data.get("template", "documento-generico")),
-                    str(data.get("title", result["document_id"])),
-                )
+            _LOG.info("document_source_persisted")
+            # Keep upload latency bounded. Document materialization is deferred
+            # to prepare, where the same operation is already part of the
+            # pipeline and can be observed/retried without holding the upload
+            # HTTP request open.
+            metadata = Path(str(result["path"])).with_suffix(".import.json")
+            metadata.write_text(json.dumps({
+                "template": str(data.get("template", "documento-generico")),
+                "title": str(data.get("title", result["document_id"])),
+            }, sort_keys=True), encoding="utf-8")
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         except ImportError as exc:

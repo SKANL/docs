@@ -35,7 +35,11 @@ _REASON = {
     500: "Internal Server Error",
     503: "Service Unavailable",
 }
-_REQUEST_BODY_TIMEOUT = 5.0
+# Local Desktop imports can legitimately carry large base64-encoded sources.
+# Five seconds is too aggressive on Windows when antivirus or filesystem
+# inspection throttles the request stream; the API must not classify a valid
+# upload as incomplete while the client is still transmitting it.
+_REQUEST_BODY_TIMEOUT = 120.0
 
 
 @dataclass(frozen=True)
