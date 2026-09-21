@@ -6,7 +6,7 @@ Standalone browser-first React + TypeScript + Vite foundation for reviewing docu
 npm install
 npm run dev
 
-Also available: npm run build, npm run typecheck, npm test, and npm run lint. There is no lint configuration yet; the lint script is intentionally a documented no-op while the foundation is being established.
+Also available: npm run build, npm run typecheck, npm test, and npm run lint. Lint runs ESLint over the production TypeScript source.
 
 For local development, `.env.development` points to the local sidecar at
 `http://127.0.0.1:8765/v1`; start the sidecar with an explicit workspace before
