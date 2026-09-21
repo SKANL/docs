@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from importlib.resources import files
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -41,7 +42,22 @@ class WorkspaceRegistry:
             item = {"id": uuid4().hex, "name": normalized, "root": str(resolved)}
             data["workspaces"].append(item)
             self._write(data)
+            self._seed_builtin_templates(resolved)
             return dict(item)
+
+    @staticmethod
+    def _seed_builtin_templates(root: Path) -> None:
+        """Make every newly-created workspace usable from CLI, API, or Desktop."""
+        templates = root / "templates"
+        templates.mkdir(parents=True, exist_ok=True)
+        if any(templates.glob("*.json")):
+            return
+        package = files("docs.templates.builtin")
+        for entry in package.iterdir():
+            if entry.name.endswith(".json"):
+                (templates / entry.name).write_text(
+                    entry.read_text(encoding="utf-8"), encoding="utf-8"
+                )
 
     def ensure(self, name: str, root: str | Path) -> dict[str, Any]:
         """Return the registered workspace for a root, creating it if needed."""
