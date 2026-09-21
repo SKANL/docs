@@ -287,6 +287,8 @@ class X20Application:
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
                 return "documents:write"
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return "documents:read"
             if len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST":
                 return "documents:write"
             if len(parts) == 4 and parts[3] == "context" and method == "GET":
