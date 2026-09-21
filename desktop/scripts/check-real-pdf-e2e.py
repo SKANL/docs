@@ -42,6 +42,15 @@ def call(base: str, path: str, method: str = "GET", payload: object | None = Non
         return error.code, json.loads(error.read())
 
 
+def probe_binary(base: str, path: str) -> tuple[int, bytes]:
+    request = urllib.request.Request(base + path, method="GET", headers={"Connection": "close"})
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            return response.status, response.read()
+    except HTTPError as error:
+        return error.code, error.read()
+
+
 def main() -> int:
     missing = [path for path in PDFS if not path.is_file()]
     if missing:
@@ -107,6 +116,11 @@ def main() -> int:
             _, artifacts = call(base, f"/v1/runs/{run_id}/artifacts")
             if not artifacts.get("items"):
                 raise SystemExit(f"no artifacts for {source.name}")
+            for artifact in artifacts["items"]:
+                artifact_id = str(artifact.get("id", ""))
+                preview_status, preview_body = probe_binary(base, f"/v1/runs/{run_id}/previews/{urllib.parse.quote(artifact_id, safe='')}" )
+                if preview_status != 200 or not preview_body:
+                    raise SystemExit(f"preview unavailable for {source.name}: {artifact_id} ({preview_status})")
             status, passport = call(base, f"/v1/runs/{run_id}/passport")
             if status != 200 or not passport:
                 raise SystemExit(f"no evidence passport for {source.name}: {status}")
