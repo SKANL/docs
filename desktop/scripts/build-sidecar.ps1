@@ -10,6 +10,7 @@ try {
     New-Item -ItemType Directory -Path $distDir -Force | Out-Null
     uv run pyinstaller --noconfirm --clean --onedir --name docs-sidecar `
         --paths src --distpath $distDir --workpath (Join-Path $sidecarDir 'pyinstaller-build') `
+        --hidden-import docs.infrastructure.provenance.ledger `
         tools/docs_sidecar.py
     Get-ChildItem $sidecarDir -Force | Where-Object { $_.Name -notin @('.gitkeep', 'pyinstaller-build', 'pyinstaller-dist') } | Remove-Item -Recurse -Force
     Get-ChildItem (Join-Path $distDir 'docs-sidecar') -Force | Copy-Item -Destination $sidecarDir -Recurse -Force
