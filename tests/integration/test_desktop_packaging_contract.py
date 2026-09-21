@@ -37,7 +37,7 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     assert "beforeDevCommand" in config["build"]
     assert "review-studio" in config["build"]["beforeDevCommand"]
     assert config["app"]["security"]["csp"] == (
-        "default-src 'self'; connect-src 'self' http://127.0.0.1:8765"
+        "default-src 'self'; connect-src 'self' http://127.0.0.1:*"
     )
 
     sidecar = (root / "desktop/scripts/build-sidecar.ps1").read_text(encoding="utf-8")
