@@ -4,11 +4,14 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 import typer
 
 from docs.cli._shared import _ctx
 from docs.application.workspaces import WorkspaceRegistry
+from docs.domain.contracts import Run
 from docs.infrastructure.persistence.x20 import SqliteJobQueue, SqliteRunStore
 
 run_app = typer.Typer(add_completion=False, help="Inspect and control durable runs.")
@@ -57,6 +60,25 @@ def cancel_run(ctx: typer.Context, run_id: str) -> None:
     if callable(cancel):
         cancel(run_id)
     typer.echo(json.dumps({"id": run_id, "status": "cancelled"}, sort_keys=True))
+
+
+@run_app.command("retry")
+def retry_run(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
+    """Queue a new attempt for a failed, cancelled, or expired run."""
+    store, queue = _stores(ctx)
+    original = store.get(run_id)
+    if original is None:
+        raise typer.BadParameter(f"Run not found: {run_id}")
+    if original.status not in {"failed", "cancelled", "expired"}:
+        raise typer.BadParameter("Only failed, cancelled, or expired runs can be retried")
+    payload = dict(original.payload)
+    retry_id = str(uuid4())
+    payload.update({"run_id": retry_id, "retry_of": run_id, "attempt": int(payload.get("attempt", 1)) + 1})
+    retried = Run(retry_id, payload=payload, created_at=datetime.now(UTC).isoformat())
+    store.put(retried)
+    queue.enqueue(retry_id, payload)
+    result = retried.to_dict()
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True) if json_output else retry_id)
 
 
 @run_app.command("watch")
