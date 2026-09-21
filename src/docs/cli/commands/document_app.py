@@ -16,6 +16,7 @@ import zipfile
 from collections.abc import Mapping
 from contextlib import closing, contextmanager, nullcontext
 from copy import deepcopy
+from datetime import UTC, datetime
 from difflib import unified_diff
 from html.parser import HTMLParser
 from pathlib import Path
@@ -1724,7 +1725,7 @@ def run_document(
             "format": (formats or ["docx"])[0],
             "policy": selected_policy.value,
         }
-        SqliteRunStore(state).put(Run(run_id, payload=payload))
+        SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
         SqliteJobQueue(state).enqueue(run_id, payload)
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         worker_env = os.environ.copy()

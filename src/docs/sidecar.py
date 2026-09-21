@@ -520,10 +520,12 @@ def _build_worker(
                 if selected is not None:
                     run_root = Path(str(selected["root"])).resolve()
             def progress(stage: str, percent: int) -> None:
+                existing = run_store.get(run_id)
                 run_store.put(Run(
                     run_id,
                     status="running",
                     payload={**payload, "progress": {"stage": stage, "percent": percent}},
+                    created_at=existing.created_at if existing is not None else "",
                 ))
             progress("prepare", 10)
             deps = Deps(Workspace(run_root / "documents", run_root / "templates"))
