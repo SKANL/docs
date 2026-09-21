@@ -634,6 +634,30 @@ def test_cancel_is_terminal_idempotent_and_queue_aware():
     assert application.queue.cancel_calls == ["r1"]
 
 
+def test_cancel_does_not_mutate_a_succeeded_run():
+    application = app()
+    application.run_store.put(Run("r1", status="succeeded", payload={}))
+
+    response = application.dispatch(Request("POST", "/v1/runs/r1/cancel"))
+
+    assert response.status == 200
+    assert application.run_store.get("r1").status == "succeeded"
+    assert application.queue.cancel_calls == []
+
+
+def test_retry_assigns_the_new_run_id_to_the_worker_payload():
+    application = app()
+    application.run_store.put(Run("r1", status="failed", payload={"document_id": "d1"}))
+
+    response = application.dispatch(Request("POST", "/v1/runs/r1/retry"))
+
+    assert response.status == 201
+    retry_id = body(response)["id"]
+    assert retry_id != "r1"
+    assert application.queue.calls[-1][0] == retry_id
+    assert application.queue.calls[-1][1]["run_id"] == retry_id
+
+
 def test_router_owns_idempotency_and_concurrent_replay():
     application = app()
     responses = []

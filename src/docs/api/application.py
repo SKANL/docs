@@ -640,7 +640,7 @@ class X20Application:
     def _cancel(self, run_id: str, request: Request) -> Response:
         with self._cancel_lock:
             run = self._owned_run(run_id, request)
-            if run.status in {"cancelled", "completed", "failed"}:
+            if run.status in {"cancelled", "completed", "succeeded", "failed", "expired"}:
                 return Response.json(run.to_dict())
             cancel = getattr(self.queue, "cancel", None)
             if callable(cancel):
@@ -655,7 +655,11 @@ class X20Application:
             raise APIError("run_not_retryable", "Only failed, cancelled, or expired runs can be retried", 409)
         payload = dict(original.payload)
         retry_id = str(uuid4())
-        payload.update({"retry_of": run_id, "attempt": int(payload.get("attempt", 1)) + 1})
+        payload.update({
+            "run_id": retry_id,
+            "retry_of": run_id,
+            "attempt": int(payload.get("attempt", 1)) + 1,
+        })
         retried = Run(retry_id, payload=payload, created_at=datetime.now(UTC).isoformat())
         self.run_store.put(retried)
         self.queue.enqueue(retry_id, payload)
