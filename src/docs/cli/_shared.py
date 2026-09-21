@@ -23,6 +23,7 @@ from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
+from docs.application.workspaces import WorkspaceRegistry
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.pdf_render import PdfRendererAdapter
@@ -104,8 +105,20 @@ def build_workspace() -> Workspace:
     workspace-config "Config Precedence Resolution"). Current hardcoded
     HARNESS_ROOT/documents & templates; no library equivalent (Judgment call
     2)."""
+    config = _load_workspace_config()
+    # A selected local workspace is the CLI's durable source of truth when no
+    # explicit per-cwd config or environment override is supplied. This keeps
+    # `docs workspace use` aligned with the sidecar and avoids silently
+    # operating on the harness checkout's default documents/ directory.
+    if config is None and not os.environ.get("DOCS_DOCUMENTS_DIR") and not os.environ.get("DOCS_TEMPLATES_DIR"):
+        local_registry = Path.cwd() / ".docs" / "workspaces.json"
+        registry = WorkspaceRegistry(local_registry if local_registry.is_file() else None)
+        active = registry.active()
+        if active is not None:
+            root = Path(str(active["root"])).resolve()
+            return Workspace(documents_dir=root / "documents", templates_dir=root / "templates")
     documents_dir, templates_dir = resolve_workspace_roots(
-        _load_workspace_config(), os.environ, (Path("documents"), Path("templates"))
+        config, os.environ, (Path("documents"), Path("templates"))
     )
     return Workspace(documents_dir=documents_dir, templates_dir=templates_dir)
 
