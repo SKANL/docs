@@ -553,7 +553,6 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     graph_store = _WorkspaceGraphStore(registry, config.workspace)
     findings_store = evidence_stores.finding()
     publication_store = evidence_stores.publication()
-    publication_store = evidence_stores.publication()
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
         from .cli._shared import Deps
         from .domain.workspace import Workspace
