@@ -1261,6 +1261,7 @@ class X20Application:
                     "sbom": item.sbom,
                 }
                 for item in self.plugin_registry.list()
+                if self._plugin_visible(item, request)
             ]
         else:
             items = self._store_items(self.plugin_store, "list") or list(self.plugins)
@@ -1268,12 +1269,11 @@ class X20Application:
 
     def _plugin(self, plugin_id: str, request: Request) -> Response:
         """Return one registered plugin using the same normalized contract as the collection."""
-        del request
         if self.plugin_registry is not None:
             self._refresh_plugins()
             items = self.plugin_registry.list()
             for item in items:
-                if item.manifest.plugin_id == plugin_id:
+                if item.manifest.plugin_id == plugin_id and self._plugin_visible(item, request):
                     return Response.json(
                         {
                             "id": item.manifest.plugin_id,
@@ -1291,6 +1291,26 @@ class X20Application:
                 if str(value.get("id", value.get("plugin_id", ""))) == plugin_id:
                     return Response.json(value)
         raise APIError("not_found", "Plugin not found", 404)
+
+    def _plugin_visible(self, item: Any, request: Request) -> bool:
+        """Keep plugin discovery isolated to the requested workspace."""
+        if self.workspace_registry is None:
+            return True
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        try:
+            workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        if workspace is None:
+            raise APIError("workspace_not_configured", "Select a workspace before reading plugins", 503)
+        source = getattr(item, "source", None)
+        if source is None:
+            return False
+        try:
+            Path(str(source)).resolve().relative_to((Path(str(workspace["root"])) / "plugins").resolve())
+            return True
+        except (ValueError, OSError):
+            return False
 
     def _refresh_plugins(self) -> None:
         """Discover manifests from every registered workspace without executing them."""
