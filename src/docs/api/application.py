@@ -847,7 +847,11 @@ class X20Application:
 
     def _graph(self, request: Request) -> Response:
         """Expose deterministic read-only graph queries without mutating the graph."""
-        if request.principal is not None:
+        # Authenticated graph access is safe only when the application has a
+        # workspace registry to scope the read model. Remote/self-hosted
+        # deployments provide that registry; standalone apps still fail
+        # closed rather than exposing a global graph to a principal.
+        if request.principal is not None and self.workspace_registry is None:
             raise APIError("not_found", "Graph not found", 404)
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
         graph_store = self.graph_store

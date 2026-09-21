@@ -81,6 +81,9 @@ def main() -> int:
                 raise SystemExit(f"remote run failed: {current}")
             assert call(base, f"/v1/runs/{run_id}/passport")[0] == 200
             assert call(base, f"/v1/runs/{run_id}/artifacts")[1].get("items")
+            graph_status, graph = call(base, f"/v1/graph?workspace_id={workspace_id}")
+            if graph_status != 200 or not isinstance(graph.get("nodes"), list):
+                raise SystemExit(f"remote graph read failed: {graph_status} {graph}")
             print("remote API end-to-end smoke test passed")
             return 0
         finally:
