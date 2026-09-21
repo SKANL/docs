@@ -30,6 +30,20 @@ def _dict(value: Any) -> Any:
     return value.to_dict() if hasattr(value, "to_dict") else dict(value) if isinstance(value, Mapping) else value
 
 
+_SUPPORTED_OUTPUT_FORMATS = frozenset({"docx", "pdf", "html"})
+
+
+def _output_format(value: object) -> str:
+    format_name = str(value or "docx").strip().lower()
+    if format_name not in _SUPPORTED_OUTPUT_FORMATS:
+        raise APIError(
+            "invalid_output_format",
+            f"format must be one of: {', '.join(sorted(_SUPPORTED_OUTPUT_FORMATS))}",
+            400,
+        )
+    return format_name
+
+
 class X20Application:
     """Compose X20 ports behind the versioned local HTTP API."""
 
@@ -384,6 +398,7 @@ class X20Application:
 
     def _create_run(self, request: Request) -> Response:
         data = request.json(object_only=True)
+        data["format"] = _output_format(data.get("format", "docx"))
         if self.workspace_registry is not None:
             workspace_id = data.get("workspace_id")
             if not isinstance(workspace_id, str) or not workspace_id:
@@ -538,7 +553,7 @@ class X20Application:
                     "document_id": document_id,
                     "pipeline_id": "document" if action == "build" else "document-verify" if action == "verify" else "document-publish",
                     "policy": "release" if action == "publish" else str(data.get("policy", "release")),
-                    "format": str(data.get("format", "docx")),
+                    "format": _output_format(data.get("format", "docx")),
                 }
                 run = Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat())
                 self.run_store.put(run)
