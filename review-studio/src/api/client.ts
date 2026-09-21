@@ -194,6 +194,11 @@ export class ReviewApiClient {
   }
 
   listRuns(params?: ListParams) { return this.list<Run>("runs", params); }
+  async health() {
+    const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
+    return await response.json() as { ready:boolean; protocol?:string; version?:string };
+  }
   listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params); }
   listArtifacts(params?: ListParams) {
