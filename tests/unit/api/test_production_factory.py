@@ -17,4 +17,7 @@ def test_self_hosted_factory_composes_real_authenticated_application(
     monkeypatch.setenv("DOCS_API_TOKENS", "secret=integration-user")
     application = build_application(TransportConfig(workspace=tmp_path, mode="offline"))
     assert application.auth is not None
+    principal = application.auth("secret")
+    assert principal.tenant_id == "default"
+    assert principal.organization_id == "default"
     assert (tmp_path / ".docs" / "workspaces.json").is_file()

@@ -67,6 +67,8 @@ def _token_validator():
                 "runs:read", "runs:write", "findings:read", "artifacts:read", "passport:read",
                 "graph:read", "baselines:read", "baselines:write", "plugins:read",
             }),
+            tenant_id=os.environ.get("DOCS_API_TENANT_ID", "default"),
+            organization_id=os.environ.get("DOCS_API_ORGANIZATION_ID", "default"),
         )
 
     return validate
