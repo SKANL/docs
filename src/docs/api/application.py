@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import ast
 import mimetypes
+from importlib.resources import files
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -424,7 +425,22 @@ class X20Application:
         except WorkspaceRegistryError as exc:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             raise APIError(str(exc), str(exc), status) from exc
+        self._seed_builtin_templates(Path(str(item["root"])))
         return Response.json(item, 201)
+
+    @staticmethod
+    def _seed_builtin_templates(workspace_root: Path) -> None:
+        """Make workspaces created through the API immediately importable."""
+        templates = workspace_root / "templates"
+        templates.mkdir(parents=True, exist_ok=True)
+        if any(templates.glob("*.json")):
+            return
+        package = files("docs.templates.builtin")
+        for entry in package.iterdir():
+            if entry.name.endswith(".json"):
+                (templates / entry.name).write_text(
+                    entry.read_text(encoding="utf-8"), encoding="utf-8"
+                )
 
     def _import_document(self, request: Request) -> Response:
         if self.workspace_registry is None:
