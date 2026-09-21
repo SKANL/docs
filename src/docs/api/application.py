@@ -278,7 +278,7 @@ class X20Application:
                 return "workspaces:write"
             if len(parts) == 4 and parts[3] == "select" and method == "POST":
                 return "workspaces:write"
-        if parts[:2] == ["v1", "documents"] and len(parts) in {3, 4}:
+        if parts[:2] == ["v1", "documents"] and len(parts) in {3, 4, 5}:
             if len(parts) == 3 and method == "GET":
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
@@ -294,6 +294,12 @@ class X20Application:
             if len(parts) == 4 and parts[3] == "classification" and method == "GET":
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "classification" and method == "POST":
+                return "documents:write"
+            if len(parts) == 4 and parts[3] == "sections" and method == "GET":
+                return "documents:read"
+            if len(parts) == 5 and parts[3] == "sections" and method == "GET":
+                return "documents:read"
+            if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
                 return "documents:write"
         if parts[:2] == ["v1", "runs"]:
             if len(parts) == 3 and method == "GET":
@@ -341,8 +347,11 @@ class X20Application:
                 or (len(parts) == 4 and parts[3] == "revisions" and method == "POST")
                 or (len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST")
                 or (len(parts) == 4 and parts[3] == "status" and method == "GET")
+                or (len(parts) == 4 and parts[3] == "sections" and method == "GET")
                 or (len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"})
                 or (len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"})
+                or (len(parts) == 5 and parts[3] == "sections" and method == "GET")
+                or (len(parts) == 5 and parts[3] == "sections" and method == "PUT")
             )
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
@@ -372,6 +381,12 @@ class X20Application:
                 return lambda request: self._document_action(resource_id, parts[3], request)
             if len(parts) == 4 and parts[3] == "status" and method == "GET":
                 return lambda request: self._document_status(resource_id, request)
+            if len(parts) == 4 and parts[3] == "sections" and method == "GET":
+                return lambda request: self._document_sections(resource_id, request)
+            if len(parts) == 5 and parts[3] == "sections" and method == "GET":
+                return lambda request: self._document_section(resource_id, parts[4], request)
+            if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
+                return lambda request: self._update_document_section(resource_id, parts[4], request)
             if len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"}:
                 return lambda request: self._document_context(resource_id, request)
             if len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"}:
@@ -631,6 +646,60 @@ class X20Application:
             "unsupported_stages": snapshot.unsupported_stages,
             "publication_blockers": snapshot.publication_blockers,
         })
+
+    def _document_sections(self, document_id: str, request: Request) -> Response:
+        """Read authored section bodies from the selected workspace.
+
+        This endpoint is deliberately read-only; edits continue through the
+        revision service so hashes and provenance cannot be bypassed.
+        """
+        self._document(document_id, request)
+        workspace = self._request_workspace(request)
+        root = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections"
+        items = []
+        for path in sorted(root.glob("*.md")) if root.is_dir() else []:
+            section_id = path.stem
+            body = path.read_text(encoding="utf-8")
+            items.append({"id": section_id, "filename": path.name, "body": body})
+        return Response.json({"document_id": document_id, "workspace_id": workspace["id"], "items": items})
+
+    def _document_section(self, document_id: str, section_id: str, request: Request) -> Response:
+        self._document_sections(document_id, request)
+        workspace = self._request_workspace(request)
+        safe_id = Path(section_id).name
+        if safe_id != section_id or not section_id or section_id in {".", ".."}:
+            raise APIError("invalid_section", "Invalid section identifier", 400)
+        path = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections" / f"{section_id}.md"
+        if not path.is_file():
+            raise APIError("section_not_found", "Section not found in workspace", 404)
+        return Response.json({"document_id": document_id, "workspace_id": workspace["id"], "id": section_id, "filename": path.name, "body": path.read_text(encoding="utf-8")})
+
+    def _update_document_section(self, document_id: str, section_id: str, request: Request) -> Response:
+        self._document_section(document_id, section_id, request)
+        data = request.json(object_only=True)
+        body = data.get("body")
+        if not isinstance(body, str):
+            raise APIError("invalid_section", "Section body must be a string", 400)
+        if self.revision_service is None:
+            raise APIError("revision_unavailable", "Document revision is not configured", 501)
+        revision = {"target_id": section_id, "new_body": body, "request": str(data.get("request") or "Review Studio section edit")}
+        try:
+            result = self.revision_service(document_id, revision) if callable(self.revision_service) else self.revision_service.revise(document_id, revision)
+        except (ValueError, FileNotFoundError) as exc:
+            raise APIError("invalid_revision", str(exc), 400) from exc
+        return Response.json(_dict(result), 200)
+
+    def _request_workspace(self, request: Request) -> Mapping[str, Any]:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        try:
+            workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        if workspace is None:
+            raise APIError("workspace_not_configured", "Select a workspace before reading document sections", 503)
+        return workspace
 
     def _workspace(self, workspace_id: str, request: Request) -> Response:
         del request

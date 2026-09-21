@@ -46,6 +46,7 @@ def _schemas() -> dict[str, Any]:
         "error": _item_schema("error", {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}}),
         "page": {"type": "object", "required": ["items", "next_cursor"], "properties": {"items": {"type": "array", "items": {}}, "next_cursor": {"type": ["string", "null"]}}},
         "document": _item_schema("document", {"id": {"type": "string"}, "name": {"type": "string"}, "status": _ref("status")}),
+        "section": _item_schema("section", {"id": {"type": "string"}, "filename": {"type": "string"}, "body": {"type": "string"}}),
         "workspace": _item_schema("workspace", {"id": {"type": "string"}, "name": {"type": "string"}, "root": {"type": "string"}}),
         "run": _item_schema("run", {"id": {"type": "string"}, "document_id": {"type": "string"}, "status": _ref("status"), "created_at": {"type": "string", "format": "date-time"}}),
         "finding": _item_schema("finding", {"id": {"type": "string"}, "run_id": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "status": _ref("status"), "message": {"type": "string"}}),
@@ -136,6 +137,13 @@ def build_openapi_document() -> dict[str, Any]:
         },
         "/v1/documents/{document_id}/status": {
             "get": _operation("Get document status", _json_response({"type": "object"}), scopes=("documents:read",))
+        },
+        "/v1/documents/{document_id}/sections": {
+            "get": _operation("List document sections", _json_response({"type": "object"}), scopes=("documents:read",))
+        },
+        "/v1/documents/{document_id}/sections/{section_id}": {
+            "get": _operation("Get document section", _json_response(_ref("section")), scopes=("documents:read",)),
+            "put": _operation("Update document section", _json_response(_ref("revision")), request={"type": "object", "required": ["body"], "properties": {"body": {"type": "string"}, "request": {"type": "string"}}}, scopes=("documents:write",))
         },
         "/v1/documents/{document_id}/context": {
             "get": _operation("Get document context status", _json_response({"type": "object"}), scopes=("documents:read",)),

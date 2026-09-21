@@ -15,6 +15,7 @@ import type {
   Workspace,
   ImportResult,
   DocumentRecord,
+  DocumentSection,
 } from "./models";
 
 export type Page<T> = { items: T[]; nextCursor?: string; total?: number };
@@ -252,6 +253,9 @@ export class ReviewApiClient {
   confirmDocumentClassification(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/classification", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   setDocumentContext(documentId:string,input:{topic:string;field?:string;value:string}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/context", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   reviseDocument(documentId:string,input:{target_id:string;new_body?:string;new_value?:string;request?:string;field?:string}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/revisions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  listDocumentSections(documentId:string) { return this.request<{items:DocumentSection[]}>("documents/"+encodeURIComponent(documentId)+"/sections").then(result=>result.items); }
+  getDocumentSection(documentId:string,sectionId:string) { return this.request<DocumentSection>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId)); }
+  updateDocumentSection(documentId:string,sectionId:string,body:string,request="Review Studio section edit") { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId), { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({body,request}) }); }
   createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.request<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }); }
   createRun(input: { documentId:string; workspaceId?:string; pipelineId?:string; format?:string }) { return this.request<Record<string,unknown>>("runs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,workspace_id:input.workspaceId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
   cancelRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
