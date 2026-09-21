@@ -7,12 +7,14 @@ Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted with
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 import typer
 
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
+from docs.domain.workspace_config import resolve_workspace_roots
 from docs.cli.commands.document_app import _capabilities_for
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 from docs.domain.normative import resolve_normative_settings
@@ -31,9 +33,15 @@ def doc_init(
     docs.config.json con las rutas resueltas y siembra las plantillas
     integradas si templates_dir está vacío (spec: workspace-config `doc init`
     Bootstrap Command; design.md item A, reutiliza `template use` de C)."""
-    deps, _ = _ctx(ctx)
-    resolved_documents = documents_dir or str(deps.workspace.documents_dir)
-    resolved_templates = templates_dir or str(deps.workspace.templates_dir)
+    _deps, _ = _ctx(ctx)
+    # `doc init` bootstraps the current directory; it must not inherit a
+    # previously selected workspace from the global registry. Otherwise a
+    # fresh workspace silently writes its config pointing at another project.
+    default_documents, default_templates = resolve_workspace_roots(
+        None, os.environ, (Path("documents"), Path("templates"))
+    )
+    resolved_documents = documents_dir or str(default_documents)
+    resolved_templates = templates_dir or str(default_templates)
     new_config = {"documents_dir": resolved_documents, "templates_dir": resolved_templates}
 
     config_path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
