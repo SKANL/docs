@@ -519,6 +519,13 @@ def _build_worker(
                     selected = None
                 if selected is not None:
                     run_root = Path(str(selected["root"])).resolve()
+            def progress(stage: str, percent: int) -> None:
+                run_store.put(Run(
+                    run_id,
+                    status="running",
+                    payload={**payload, "progress": {"stage": stage, "percent": percent}},
+                ))
+            progress("prepare", 10)
             deps = Deps(Workspace(run_root / "documents", run_root / "templates"))
             source_pipeline = _source_pipeline(deps)
             if source_pipeline is None:
@@ -526,6 +533,7 @@ def _build_worker(
             prepared = source_pipeline.prepare(document_id, deps.workspace.doc_root(document_id), deps.resolve_context(document_id).config)
             if not prepared.get("succeeded", False):
                 raise RuntimeError("document preparation failed; inspect intake evidence")
+            progress("pipeline", 35)
             service = create_document_service(
                 deps,
                 output_format=output_format,
@@ -541,6 +549,7 @@ def _build_worker(
                 pipeline_id=self.pipeline_id,
                 external_artifacts=external_artifacts,
             )
+            progress("finalize", 90)
             if not getattr(report, "succeeded", False):
                 raise RuntimeError("document pipeline failed; inspect run evidence for stage findings")
             return {
