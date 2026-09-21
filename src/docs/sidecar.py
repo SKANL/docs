@@ -139,7 +139,12 @@ class _WorkspaceJsonCollectionStore:
                 value = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            values = value if isinstance(value, list) else value.get("items", []) if isinstance(value, dict) else []
+            if isinstance(value, list):
+                values = value
+            elif isinstance(value, dict):
+                values = value.get("items", [value])
+            else:
+                values = []
             if not isinstance(values, list):
                 continue
             for item in values:
