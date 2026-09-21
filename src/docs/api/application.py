@@ -254,6 +254,7 @@ class X20Application:
             ("GET", "/v1/documents"): "documents:read",
             ("POST", "/v1/documents"): "documents:write",
             ("POST", "/v1/documents/import"): "documents:write",
+            ("POST", "/v1/documents/import/raw"): "documents:write",
             ("GET", "/v1/findings"): "findings:read",
             ("GET", "/v1/baselines"): "baselines:read",
             ("POST", "/v1/baselines/promotions"): "baselines:write",
