@@ -112,6 +112,14 @@ const confidenceScore = (value: unknown): number => {
   return 0;
 };
 
+function normalizeArtifactKind(value: unknown): Artifact["kind"] {
+  const kind = typeof value === "string" ? value.toUpperCase() : "";
+  if (kind.includes("PDF")) return "PDF";
+  if (kind.includes("HTML")) return "HTML";
+  if (kind.includes("PNG") || kind.includes("PREVIEW")) return "PNG";
+  return "DOCX";
+}
+
 function normalizeGraph(payload: unknown): { nodes:GraphNode[]; edges:GraphEdge[] } {
   const value = payload && typeof payload === "object" ? payload as { nodes?: unknown; edges?: unknown } : {};
   const rawNodes = Array.isArray(value.nodes) ? value.nodes as RawGraphNode[] : [];
@@ -177,7 +185,20 @@ export class ReviewApiClient {
   listRuns(params?: ListParams) { return this.list<Run>("runs", params); }
   listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params); }
-  listArtifacts(params?: ListParams) { return this.list<Artifact>("artifacts", params); }
+  listArtifacts(params?: ListParams) {
+    return this.list<Record<string, unknown>>("artifacts", params).then(result => ({
+      ...result,
+      items: result.items.map(raw => ({
+        id: typeof raw.id === "string" ? raw.id : "artifact",
+        name: typeof raw.name === "string" ? raw.name : typeof raw.id === "string" ? raw.id : "Unnamed artifact",
+        kind: normalizeArtifactKind(raw.kind),
+        size: typeof raw.size === "string" ? raw.size : typeof raw.size === "number" ? `${raw.size} bytes` : "Size unavailable",
+        status: raw.status === "failed" || raw.status === "warnings" || raw.status === "passed" ? raw.status : "unverified",
+        pages: typeof raw.pages === "number" ? raw.pages : undefined,
+        checksum: typeof raw.checksum === "string" ? raw.checksum : typeof raw.digest === "string" ? raw.digest : "Hash unavailable",
+      } satisfies Artifact)),
+    }));
+  }
   getPassport(runId: string) { return this.request<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
   getGraph() { const query = this.selectedWorkspaceId ? `?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}` : ""; return this.request<unknown>(`graph${query}`).then(normalizeGraph); }
   getGraphQuery(query: GraphQuery, id?: string) {
