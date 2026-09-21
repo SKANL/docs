@@ -19,6 +19,9 @@ def main() -> int:
     build_script = (desktop / "scripts/build-sidecar.ps1").read_text(encoding="utf-8")
     if "--noconsole" not in build_script:
         raise SystemExit("Windows sidecar must be built with --noconsole")
+    for fragment in ("--hidden-import docs.templates.builtin", "--collect-data docs.templates.builtin"):
+        if fragment not in build_script:
+            raise SystemExit(f"packaged sidecar must include built-in templates: {fragment}")
     required_fragments = (
         "resource_dir()",
         'resource_dir.join("sidecar").join(name)',
@@ -29,6 +32,15 @@ def main() -> int:
     missing = [fragment for fragment in required_fragments if fragment not in rust]
     if missing:
         raise SystemExit(f"sidecar supervisor contract is incomplete: {missing}")
+
+    # A fresh installed workspace seeds templates through importlib.resources.
+    # Keep this contract explicit so a successful PyInstaller build cannot
+    # silently produce a binary that only works with pre-populated workspaces.
+    sidecar_root = desktop / "sidecar"
+    if sidecar_root.exists():
+        template = next(sidecar_root.rglob("documento-generico.json"), None)
+        if template is None:
+            raise SystemExit("packaged sidecar is missing built-in template data")
 
     configured = os.environ.get("DOCS_SIDECAR_EXECUTABLE", "").strip()
     if configured and not Path(configured).is_file():

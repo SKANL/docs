@@ -16,6 +16,8 @@ try {
         --paths src --distpath $distDir --workpath (Join-Path $sidecarDir 'pyinstaller-build') `
         --hidden-import docs.infrastructure.provenance.ledger `
         --hidden-import docs.infrastructure.transform.system_transform `
+        --hidden-import docs.templates.builtin `
+        --collect-data docs.templates.builtin `
         --collect-submodules docs.infrastructure.transform `
         tools/docs_sidecar.py
     Get-ChildItem $sidecarDir -Force | Where-Object { $_.Name -notin @('.gitkeep', 'pyinstaller-build', 'pyinstaller-dist') } | Remove-Item -Recurse -Force

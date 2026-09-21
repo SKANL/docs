@@ -41,3 +41,5 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     sidecar = (root / "desktop/scripts/build-sidecar.ps1").read_text(encoding="utf-8")
     assert "pyinstaller" in sidecar
     assert "docs-sidecar.exe" in sidecar
+    assert "--hidden-import docs.templates.builtin" in sidecar
+    assert "--collect-data docs.templates.builtin" in sidecar
