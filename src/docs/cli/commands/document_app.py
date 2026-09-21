@@ -1368,6 +1368,7 @@ def _run(
                 command == "build"
                 and pipeline_id in {"document", "document-publish", "document-package"}
                 and bool(report_payload.get("succeeded"))
+                and (selected_policy is None or selected_policy.can_publish())
             ):
                 resolved = ctx.obj["deps"].resolve_context(selected_document)
                 _promote_release_candidate(
