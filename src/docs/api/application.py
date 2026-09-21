@@ -64,6 +64,7 @@ class X20Application:
         document_action: Any = None,
         document_context_reader: Any = None,
         document_context_writer: Any = None,
+        classification_service: Any = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -93,6 +94,7 @@ class X20Application:
         self.document_action = document_action
         self.document_context_reader = document_context_reader
         self.document_context_writer = document_context_writer
+        self.classification_service = classification_service
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -262,6 +264,10 @@ class X20Application:
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "context" and method == "POST":
                 return "documents:write"
+            if len(parts) == 4 and parts[3] == "classification" and method == "GET":
+                return "documents:read"
+            if len(parts) == 4 and parts[3] == "classification" and method == "POST":
+                return "documents:write"
         if parts[:2] == ["v1", "runs"]:
             if len(parts) == 3 and method == "GET":
                 return "runs:read"
@@ -309,6 +315,7 @@ class X20Application:
                 or (len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST")
                 or (len(parts) == 4 and parts[3] == "status" and method == "GET")
                 or (len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"})
+                or (len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"})
             )
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
@@ -340,6 +347,8 @@ class X20Application:
                 return lambda request: self._document_status(resource_id, request)
             if len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"}:
                 return lambda request: self._document_context(resource_id, request)
+            if len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"}:
+                return lambda request: self._document_classification(resource_id, request)
             return None
         if parts[:2] == ["v1", "workspaces"]:
             workspace_id = resource_id
@@ -991,6 +1000,15 @@ class X20Application:
         else:
             result = {"document_id": document_id, **data}
         return Response.json(_dict(result), 201)
+
+    def _document_classification(self, document_id: str, request: Request) -> Response:
+        if self.classification_service is None:
+            raise APIError("classification_unavailable", "Classification is not configured", 501)
+        try:
+            result = self.classification_service(document_id, request.json(object_only=True) if request.body else None)
+        except (ValueError, FileNotFoundError) as exc:
+            raise APIError("invalid_classification", str(exc), 400) from exc
+        return Response.json(result)
 
     def _document_context(self, document_id: str, request: Request) -> Response:
         self._document(document_id, request)

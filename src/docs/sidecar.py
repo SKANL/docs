@@ -662,6 +662,28 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             result = deps.revision.revise(document_id, resolved.template, **common, section_id=target_id, new_body=value)
         return result.to_dict()
 
+    def document_classification(document_id: str, payload: dict[str, Any] | None) -> dict[str, Any]:
+        """Expose the real ingest classification queue to every client surface."""
+        active = registry.active()
+        if active is None:
+            raise RuntimeError("workspace_not_configured")
+        queue_path = Path(str(active["root"])) / "documents" / document_id / "inbox" / "_classification-queue.json"
+        if not queue_path.is_file():
+            raise FileNotFoundError("classification queue is not available; run import or prepare first")
+        queue = json.loads(queue_path.read_text(encoding="utf-8"))
+        entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
+        if payload is not None:
+            relative_path = str(payload.get("relative_path", ""))
+            role = str(payload.get("confirmed_role", ""))
+            if not relative_path or role not in {"evidence", "example", "normative"}:
+                raise ValueError("relative_path and confirmed_role (evidence, example, or normative) are required")
+            matched = next((entry for entry in entries if str(entry.get("relative_path")) == relative_path), None)
+            if matched is None:
+                raise ValueError("classification source was not found")
+            matched["confirmed_role"] = role
+            queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return {"document_id": document_id, "items": entries}
+
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -684,6 +706,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         document_context_reader=lambda document_id: document_context(str(registry.get(registry.active()["id"])["root"]), document_id),
         document_context_writer=set_document_context,
         revision_service=revise_document,
+        classification_service=document_classification,
         router=Router(
             cors_origins=config.cors_origins,
             max_body_size=config.max_body_bytes,
