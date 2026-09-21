@@ -32,6 +32,9 @@ def test_build_workspace_default_when_nothing_set(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("DOCS_DOCUMENTS_DIR", raising=False)
     monkeypatch.delenv("DOCS_TEMPLATES_DIR", raising=False)
+    # Isolate the persistent X20 workspace registry from the developer's
+    # selected workspace; this test exercises cwd-relative defaults.
+    monkeypatch.setenv("DOCS_WORKSPACE_REGISTRY", str(tmp_path / "registry.json"))
     ws = build_workspace()
     assert ws.documents_dir == Path("documents")
     assert ws.templates_dir == Path("templates")
