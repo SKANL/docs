@@ -241,6 +241,7 @@ def build_openapi_document() -> dict[str, Any]:
                     "description": "Input identifier required by artifacts_derived_from_input.",
                     "schema": {"type": "string"},
                 },
+                {"name": "workspace_id", "in": "query", "schema": {"type": "string"}},
             ],
         },
         "/v1/findings": {"get": _operation("List findings", page("finding"), scopes=("findings:read",))},
