@@ -19,6 +19,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     getGraphQuery: (query, id) => client.getGraphQuery(query, id),
     listTemplates: () => client.listTemplates(),
     listBaselines: () => client.listBaselines(),
+    promoteBaseline: id => client.promoteBaseline(id),
     listRevisions: () => client.listRevisions(),
     listPublications: () => client.listPublications(),
     listPlugins: () => client.listPlugins(),
