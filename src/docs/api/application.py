@@ -162,7 +162,7 @@ class X20Application:
             parts = request.route_path.strip("/").split("/")
             if (
                 len(parts) >= 3
-                and parts[:2] in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"])
+                and parts[:2] in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"], ["v1", "artifacts"], ["v1", "revisions"], ["v1", "baselines"])
                 and request.route_path not in {"/v1/documents/import", "/v1/documents/import/raw"}
             ):
                 handler = self._dynamic_handler(request.method, request.route_path)
@@ -305,7 +305,7 @@ class X20Application:
                 return "documents:read"
             if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
                 return "documents:write"
-        if parts[:2] == ["v1", "plugins"] and len(parts) == 4 and method == "GET":
+        if parts[:2] == ["v1", "plugins"] and len(parts) == 3 and method == "GET":
             return "plugins:read"
         if parts[:2] == ["v1", "artifacts"]:
             if len(parts) == 3 and method == "GET":
@@ -369,7 +369,7 @@ class X20Application:
                 or (len(parts) == 5 and parts[3] == "sections" and method == "PUT")
             )
         if parts[:2] == ["v1", "plugins"]:
-            return len(parts) == 4 and method == "GET"
+            return len(parts) == 3 and method == "GET"
         if parts[:2] == ["v1", "artifacts"]:
             return (len(parts) == 3 and method == "GET") or (len(parts) == 4 and parts[3] == "previews" and method == "GET")
         if parts[:2] == ["v1", "revisions"]:
@@ -427,8 +427,8 @@ class X20Application:
                 return lambda request: self._delete_workspace(workspace_id, request)
             return None
         if parts[:2] == ["v1", "plugins"]:
-            if len(parts) == 4 and method == "GET":
-                return lambda request: self._plugin(parts[3], request)
+            if len(parts) == 3 and method == "GET":
+                return lambda request: self._plugin(resource_id, request)
             return None
         if parts[:2] == ["v1", "artifacts"]:
             if len(parts) == 3 and method == "GET":

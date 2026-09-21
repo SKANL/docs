@@ -929,6 +929,7 @@ def test_baselines_plugins_and_promotions_use_existing_store_contracts():
 
     baseline_page = application.dispatch(Request("GET", "/v1/baselines?limit=1"))
     plugin_page = application.dispatch(Request("GET", "/v1/plugins?limit=1"))
+    plugin_detail = application.dispatch(Request("GET", "/v1/plugins/plugin-a"))
     promoted = application.dispatch(
         Request("POST", "/v1/baselines/promotions", body={"baseline_id": "base-1", "target": "release"})
     )
@@ -937,6 +938,7 @@ def test_baselines_plugins_and_promotions_use_existing_store_contracts():
     assert body(baseline_page)["next_cursor"]
     assert body(plugin_page)["items"] == [{"id": "plugin-b", "version": "2"}]
     assert body(plugin_page)["next_cursor"]
+    assert body(plugin_detail) == {"id": "plugin-a", "version": "1"}
     assert body(promoted) == {"id": "base-1", "promoted": True, "status": "passed"}
     assert baselines.promotions == [("base-1", {"baseline_id": "base-1", "target": "release"})]
 
