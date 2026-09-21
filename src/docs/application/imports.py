@@ -52,7 +52,7 @@ class SourceImportService:
             temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
             temporary.write_bytes(content)
             temporary.replace(destination)
-        mime = mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+        mime = self._mime_type(safe_name)
         return {
             "id": f"import-{digest[:16]}",
             "document_id": doc,
@@ -78,3 +78,14 @@ class SourceImportService:
         if not normalized:
             raise ImportError("invalid_document_id")
         return normalized[:80]
+
+    @staticmethod
+    def _mime_type(filename: str) -> str:
+        # Python's Windows MIME registry does not consistently classify
+        # Markdown files. Keep import metadata useful for downstream ingest.
+        known = {
+            ".md": "text/markdown",
+            ".markdown": "text/markdown",
+            ".txt": "text/plain",
+        }
+        return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"

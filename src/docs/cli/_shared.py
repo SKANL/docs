@@ -516,6 +516,10 @@ def _standard_tokens(workspace: Workspace, doc_root: Path) -> dict[str, str]:
 
 
 def _computed_paths(doc_root: Path) -> dict[str, str]:
+    # Persist absolute paths.  SourcePipeline receives the document root as
+    # its resolution base; relative values here would otherwise be prefixed a
+    # second time (documents/<id>/documents/<id>/inbox).
+    doc_root = doc_root.resolve()
     sections = doc_root / "sections"
     context = doc_root / "context"
     corrections = doc_root / "corrections"

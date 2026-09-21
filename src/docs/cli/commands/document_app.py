@@ -68,6 +68,15 @@ document_app = typer.Typer(help="Workspace-backed document engineering commands.
 _BATCH_OUTPUT_PATHS = (Path("output") / "current", Path("output") / "release")
 
 
+def _source_mime_type(filename: str) -> str:
+    known = {
+        ".md": "text/markdown",
+        ".markdown": "text/markdown",
+        ".txt": "text/plain",
+    }
+    return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+
 def _source_pipeline(deps: Any) -> SourcePipeline | None:
     """Compose the source pipeline while tolerating older dependency fixtures."""
     ingest = getattr(deps, "ingest", None)
@@ -1630,7 +1639,7 @@ def import_source(
         "path": str(destination),
         "sha256": digest,
         "size": destination.stat().st_size,
-        "mime_type": mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+        "mime_type": _source_mime_type(source.name),
     }
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=None if json_output else 2, sort_keys=True))
 
