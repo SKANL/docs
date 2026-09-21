@@ -30,7 +30,8 @@ describe("ReviewApiClient", () => {
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
     await client.selectWorkspace("workspace-2");
     await client.getGraphQuery("unused_references");
-    expect(fetcher.mock.calls.at(-1)?.[0].toString()).toBe("https://review.test/v1/graph?query=unused_references&workspace_id=workspace-2");
+    const lastCall = fetcher.mock.calls[fetcher.mock.calls.length - 1];
+    expect(lastCall?.[0].toString()).toBe("https://review.test/v1/graph?query=unused_references&workspace_id=workspace-2");
   });
 
   it("normalizes backend graph nodes and edges without changing the UI shape", async () => {
