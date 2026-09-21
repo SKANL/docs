@@ -4,6 +4,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import uuid
+import os
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +72,9 @@ class OpendataloaderPdfAdapter:
 
     def _convert_batch(self, seed_src: Path, out_dir: Path, kind: str) -> None:
         candidates = self._discover_candidates(seed_src, out_dir, kind)
+        if os.environ.get("DOCS_PDF_FAST_FALLBACK", "0").strip().lower() in {"1", "true", "yes", "on"}:
+            self._fallback_extract(candidates, out_dir, kind)
+            return
         java = self.tool_resolver.resolve_java(self.paths)
         if not java:
             self._fallback_extract(candidates, out_dir, kind)
@@ -158,10 +162,18 @@ class OpendataloaderPdfAdapter:
     def _fallback_extract(self, candidates: list[Path], out_dir: Path, kind: str) -> None:
         for candidate in candidates:
             try:
-                import pypdfium2
+                try:
+                    from pypdf import PdfReader
 
-                reader = pypdfium2.PdfDocument(str(candidate))
-                pages = [reader[index].get_textpage().get_text_range() or "" for index in range(len(reader))]
+                    # Pure-Python extraction is deliberately preferred in the
+                    # sidecar fallback: malformed real-world PDFs must not be
+                    # able to take down the process through a native backend.
+                    pages = [(page.extract_text() or "") for page in PdfReader(str(candidate), strict=False).pages]
+                except ImportError:
+                    import pypdfium2
+
+                    reader = pypdfium2.PdfDocument(str(candidate))
+                    pages = [reader[index].get_textpage().get_text_range() or "" for index in range(len(reader))]
                 text = "\n\n".join(page.strip() for page in pages if page.strip()).strip()
                 if not text:
                     raise ValueError("PDF has no extractable text layer")

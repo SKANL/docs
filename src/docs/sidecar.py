@@ -956,6 +956,12 @@ def run(server: GracefulHTTPServer) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # A desktop/self-hosted sidecar must remain responsive when Java is
+    # installed but the optional OpenDataLoader JVM bridge stalls. The
+    # pypdfium2 text-layer path is deterministic and is the safe default for
+    # the long-running server process; deployments that explicitly manage
+    # the converter can opt back in with DOCS_PDF_FAST_FALLBACK=0.
+    os.environ.setdefault("DOCS_PDF_FAST_FALLBACK", "1")
     config = SidecarConfig.from_args(sys.argv[1:] if argv is None else argv)
     server = build_server(config)
 
