@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+import ast
+import mimetypes
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -909,7 +911,7 @@ class X20Application:
         return self._page(items, request, "findings")
 
     def _preview(self, run_id: str, name: str, request: Request) -> Response:
-        self._owned_run(run_id, request)
+        run = self._owned_run(run_id, request)
         artifact = self.artifact_store.get(name) if hasattr(self.artifact_store, "get") else None
         if artifact is None or _dict(artifact).get("run_id") != run_id:
             raise APIError("not_found", "Preview not found", 404)
@@ -918,6 +920,26 @@ class X20Application:
         if blob is not None:
             _, content = blob
             return Response(200, content, {"content-type": _dict(artifact).get("media_type") or "application/octet-stream"})
+        # Pipeline evidence may point at a real published artifact path while
+        # the optional BlobStore is not configured. Serve it only after
+        # resolving the run's workspace and enforcing containment; never trust
+        # an arbitrary path from artifact metadata.
+        payload = run.payload if isinstance(run.payload, Mapping) else {}
+        workspace_id = payload.get("workspace_id")
+        if self.workspace_registry is not None and isinstance(workspace_id, str):
+            try:
+                workspace_root = Path(str(self.workspace_registry.get(workspace_id)["root"])).resolve()
+                metadata = _dict(artifact).get("metadata", {})
+                raw_value = metadata.get("value") if isinstance(metadata, Mapping) else None
+                record = ast.literal_eval(raw_value) if isinstance(raw_value, str) else raw_value
+                candidate = Path(str(record.get("path"))) if isinstance(record, Mapping) and record.get("path") else None
+                if candidate is not None and candidate.is_file():
+                    resolved = candidate.resolve()
+                    resolved.relative_to(workspace_root)
+                    media_type = _dict(artifact).get("media_type") or mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+                    return Response(200, resolved.read_bytes(), {"content-type": media_type})
+            except (ValueError, OSError, SyntaxError, WorkspaceRegistryError):
+                pass
         return Response.json(_dict(artifact))
 
     def _revision(self, document_id: str, request: Request) -> Response:
