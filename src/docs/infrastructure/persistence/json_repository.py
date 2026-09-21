@@ -64,7 +64,10 @@ class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRep
         return self.workspace.doc_root(doc_id) / "document.json"
 
     def exists(self, doc_id: str) -> bool:
-        return self.workspace.doc_root(doc_id).exists()
+        # An import creates the document directory and inbox before the
+        # lifecycle manifest exists.  The directory alone is therefore not
+        # evidence that a document has been created.
+        return self._document_json(doc_id).is_file()
 
     def read_document(self, doc_id: str) -> Document:
         path = self._document_json(doc_id)

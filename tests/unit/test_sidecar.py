@@ -29,6 +29,17 @@ def test_sidecar_accepts_workspace_from_environment(monkeypatch: pytest.MonkeyPa
     assert SidecarConfig.from_args([]).workspace == tmp_path
 
 
+def test_sidecar_uses_a_configurable_import_body_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOCS_MAX_BODY_BYTES", "4194304")
+    assert SidecarConfig.from_args([]).max_body_bytes == 4194304
+
+
+def test_sidecar_rejects_invalid_import_body_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DOCS_MAX_BODY_BYTES", "not-a-number")
+    with pytest.raises(ValueError, match="DOCS_MAX_BODY_BYTES"):
+        SidecarConfig.from_args([])
+
+
 def test_sidecar_allows_review_studio_origin(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     server = build_server(config)
