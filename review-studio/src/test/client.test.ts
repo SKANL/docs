@@ -34,6 +34,38 @@ describe("ReviewApiClient", () => {
     expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v1/graph?query=findings_affected_by_revision&id=rev+1");
   });
 
+  it("maps the production X20 run envelope to the review model", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{
+      schema: "docs.x20/v1",
+      id: "run-real",
+      status: "succeeded",
+      created_at: "2026-09-21T12:00:00Z",
+      payload: {
+        document_id: "doc-real",
+        template: "technical-report-srs",
+        started_at: "2026-09-21T12:00:01Z",
+        duration_ms: 1250,
+        artifact_count: 3,
+        findings: 2,
+        progress: { percent: 100 },
+        report: { execution: { results: [{ artifacts: ["a", "b"], warnings: ["w"], errors: [] }] } },
+      },
+    }]}));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+
+    await expect(client.listRuns()).resolves.toMatchObject({ items: [{
+      id: "run-real",
+      document: "doc-real",
+      template: "technical-report-srs",
+      startedAt: "2026-09-21T12:00:01Z",
+      duration: "1250 ms",
+      status: "succeeded",
+      findings: 2,
+      artifactCount: 3,
+      progress: 100,
+    }] });
+  });
+
   it("attaches a configured bearer token without replacing request headers", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", accessToken: "token-123", fetch: fetcher });

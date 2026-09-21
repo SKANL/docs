@@ -143,7 +143,7 @@ function normalizeRun(raw: Record<string, unknown>): Run {
     template: String(payload.template ?? "—"),
     startedAt: started,
     duration: typeof payload.duration_ms === "number" ? `${payload.duration_ms} ms` : "—",
-    status: ["passed", "warnings", "failed", "unverified", "queued", "running", "cancelled", "expired"].includes(status) ? status : "unverified",
+    status: ["passed", "succeeded", "warnings", "failed", "unverified", "queued", "running", "cancelled", "expired"].includes(status) ? status : "unverified",
     findings,
     artifactCount: typeof payload.artifact_count === "number" ? payload.artifact_count : stages.reduce((count, stage) => count + (Array.isArray(stage.artifacts) ? stage.artifacts.length : 0), 0),
     progress: typeof progress.percent === "number" ? progress.percent : undefined,
