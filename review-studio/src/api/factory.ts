@@ -16,6 +16,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     getDocument: id => client.getDocument(id),
     listDocumentRuns: id => client.listDocumentRuns(id),
     listFindings: () => client.listFindings(),
+    listRunFindings: id => client.listRunFindings(id),
     listArtifacts: () => client.listArtifacts(),
     getArtifact: id => client.getArtifact(id),
     listArtifactPreviews: id => client.listArtifactPreviews(id),

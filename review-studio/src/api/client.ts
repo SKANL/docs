@@ -231,7 +231,8 @@ export class ReviewApiClient {
   listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params).then(result => result.items); }
   getDocument(id:string) { return this.request<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
   listDocumentRuns(id:string) { return this.request<{items:Record<string, unknown>[]}>("documents/" + encodeURIComponent(id) + "/runs").then(result => result.items.map(normalizeRun)); }
-  listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items); }
+  listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
+  listRunFindings(id:string) { return this.list<Finding>("runs/" + encodeURIComponent(id) + "/findings").then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
   listArtifacts(params?: ListParams) {
     return this.list<Record<string, unknown>>("artifacts", params).then(result => result.items.map(raw => ({
         id: typeof raw.id === "string" ? raw.id : "artifact",
