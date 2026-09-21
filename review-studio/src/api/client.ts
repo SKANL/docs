@@ -206,7 +206,14 @@ export class ReviewApiClient {
   }
   createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   renameWorkspace(id:string,name:string) { return this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) }); }
-  deleteWorkspace(id:string) { return this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" }); }
+  async deleteWorkspace(id:string) {
+    const result = await this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" });
+    if (this.selectedWorkspaceId === id) {
+      this.selectedWorkspaceId = undefined;
+      try { globalThis.localStorage?.removeItem("docs.review.workspace"); } catch { /* offline/browser storage unavailable */ }
+    }
+    return result;
+  }
   getDocumentStatus(documentId:string,workspaceId?:string) { const query=workspaceId?"?workspace_id="+encodeURIComponent(workspaceId):""; return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/status"+query); }
   createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.request<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }); }
   createRun(input: { documentId:string; workspaceId?:string; pipelineId?:string; format?:string }) { return this.request<Record<string,unknown>>("runs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,workspace_id:input.workspaceId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
