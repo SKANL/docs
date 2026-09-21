@@ -100,7 +100,11 @@ fn append_startup_log(app: &tauri::AppHandle, message: &str) {
         paths.push(root.join("desktop-startup.log"));
     }
     for path in paths {
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             let _ = writeln!(file, "{message}");
         }
     }
@@ -181,10 +185,7 @@ impl SidecarSupervisor {
         // Keep the console hidden for end users while preserving a durable,
         // local diagnostic stream for startup/runtime failures. The file
         // handle belongs to the child after spawn and is closed with it.
-        let log_path = workspace
-            .parent()
-            .unwrap_or(workspace)
-            .join("sidecar.log");
+        let log_path = workspace.parent().unwrap_or(workspace).join("sidecar.log");
         // The supervisor owns this path; record it separately so a failed
         // packaged startup can be diagnosed even when the UI never loads.
         let _ = std::fs::OpenOptions::new()
@@ -449,7 +450,11 @@ fn sidecar_start(
     let workspace = initialize_app_data(&app)?;
     append_startup_log(
         &app,
-        &format!("starting sidecar executable={} workspace={}", executable, workspace.display()),
+        &format!(
+            "starting sidecar executable={} workspace={}",
+            executable,
+            workspace.display()
+        ),
     );
     supervisor.start(executable, &workspace).map_err(|error| {
         let message = error.to_string();
@@ -480,13 +485,25 @@ pub fn run() {
             initialize_app_data(&app.handle())?;
             append_startup_log(&app.handle(), "desktop setup initialized");
             let handle = app.handle().clone();
-            let supervisor = handle.state::<SidecarSupervisor>();
-            if let Err(error) = sidecar_start(handle.clone(), supervisor) {
-                append_startup_log(&handle, &format!("sidecar startup failed: {error}"));
-                eprintln!("sidecar startup failed: {error}");
-            } else {
-                append_startup_log(&handle, "sidecar startup succeeded");
-            }
+            // Do not block Tauri setup on a cold PyInstaller startup. The
+            // supervisor owns the readiness state and the UI can observe it
+            // through `sidecar/health` while the sidecar warms up.
+            let startup_handle = handle.clone();
+            std::thread::Builder::new()
+                .name("docs-sidecar-startup".to_owned())
+                .spawn(move || {
+                    let supervisor = startup_handle.state::<SidecarSupervisor>();
+                    if let Err(error) = sidecar_start(startup_handle.clone(), supervisor) {
+                        append_startup_log(
+                            &startup_handle,
+                            &format!("sidecar startup failed: {error}"),
+                        );
+                        eprintln!("sidecar startup failed: {error}");
+                    } else {
+                        append_startup_log(&startup_handle, "sidecar startup succeeded");
+                    }
+                })
+                .map_err(|error| format!("spawn sidecar startup thread: {error}"))?;
             Ok(())
         })
         .build(tauri::generate_context!())
