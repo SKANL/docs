@@ -24,7 +24,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     createWorkspace: input => client.createWorkspace(input), renameWorkspace: (id, name) => client.renameWorkspace(id, name), deleteWorkspace: id => client.deleteWorkspace(id),
     getDocumentStatus: (documentId, workspaceId) => client.getDocumentStatus(documentId, workspaceId),
     createDocument: input => client.createDocument(input),
-    createRun: input => client.createRun(input), getDocumentClassification: id => client.getDocumentClassification(id), confirmDocumentClassification: (id,input) => client.confirmDocumentClassification(id,input), reviseDocument: (documentId, input) => client.reviseDocument(documentId, input), documentAction: (documentId, action, workspaceId) => client.documentAction(documentId, action, workspaceId), cancelRun: id => client.cancelRun(id), retryRun: id => client.retryRun(id),
+    createRun: input => client.createRun(input), getDocumentClassification: id => client.getDocumentClassification(id), confirmDocumentClassification: (id,input) => client.confirmDocumentClassification(id,input), reviseDocument: (documentId, input) => client.reviseDocument(documentId, input), documentAction: (documentId, action, workspaceId, format) => client.documentAction(documentId, action, workspaceId, format), cancelRun: id => client.cancelRun(id), retryRun: id => client.retryRun(id),
     selectWorkspace: id => client.selectWorkspace(id),
     importDocument: (file, workspace, options) => client.importDocument(file, workspace, options),
     artifactPreviewUrl: (runId, artifactId) => client.artifactPreviewUrl(runId, artifactId),
