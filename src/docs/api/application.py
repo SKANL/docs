@@ -437,6 +437,18 @@ class X20Application:
                 str(data.get("content_base64", "")),
                 document_id=data.get("document_id"),
             )
+            # Import is a product operation, not merely a file copy. When the
+            # caller did not create the document first, materialize its real
+            # manifest now so the next prepare/build/verify step can run.
+            document_root = Path(str(workspace["root"])) / "documents" / str(result["document_id"])
+            manifest = document_root / "document.json"
+            if not manifest.is_file() and self.document_creator is not None:
+                result["document"] = self.document_creator(
+                    workspace["root"],
+                    str(result["document_id"]),
+                    str(data.get("template", "documento-generico")),
+                    str(data.get("title", result["document_id"])),
+                )
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         except ImportError as exc:
