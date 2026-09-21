@@ -200,7 +200,8 @@ export class ReviewApiClient {
         this.selectedWorkspaceId = selected;
         try { globalThis.localStorage?.setItem("docs.review.workspace", selected); } catch { /* offline/browser storage unavailable */ }
       }
-      return items;
+      const selectedItem = selected ? items.find(item => item.id === selected) : undefined;
+      return selectedItem ? [selectedItem, ...items.filter(item => item.id !== selected)] : items;
     });
   }
   createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
