@@ -127,7 +127,10 @@ class _WorkspaceJsonCollectionStore:
 
     def list(self) -> list[dict[str, Any]]:
         if self.kind == "baselines":
-            paths = sorted((self.root / "baselines").glob("*.json"))
+            paths = [
+                path for path in sorted((self.root / "baselines").glob("*.json"))
+                if path.name != "active.json"
+            ]
         else:
             paths = sorted((self.root / "documents").glob("*/sections/_revisions/revision-log.json"))
         items: list[dict[str, Any]] = []
@@ -146,6 +149,27 @@ class _WorkspaceJsonCollectionStore:
                     record.setdefault("workspace_root", str(self.root))
                     items.append(record)
         return items
+
+    def promote(self, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+        """Persist an explicit active-baseline pointer atomically."""
+        if self.kind != "baselines":
+            return None
+        candidates = self.list()
+        selected = next(
+            (item for item in candidates if str(item.get("id", item.get("name", ""))) == baseline_id),
+            None,
+        )
+        if selected is None:
+            return None
+        record = {**selected, "promoted": True}
+        if metadata:
+            record["promotion"] = dict(metadata)
+        target = self.root / "baselines" / "active.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(target)
+        return record
 
 
 class _WorkspaceRunStore:

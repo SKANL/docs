@@ -126,6 +126,21 @@ def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) ->
         health_app.shutdown()
 
 
+def test_sidecar_promotes_a_real_workspace_baseline(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    health_app = build_application(config)
+    try:
+        baseline = tmp_path / "baselines" / "desktop.json"
+        baseline.write_text(json.dumps({"id": "desktop", "scope": "html"}), encoding="utf-8")
+        response = health_app.application.dispatch(
+            Request("POST", "/v1/baselines/promotions", body={"baseline_id": "desktop"})
+        )
+        assert response.status == 200
+        assert json.loads((tmp_path / "baselines" / "active.json").read_text(encoding="utf-8"))["promoted"] is True
+    finally:
+        health_app.shutdown()
+
+
 def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None:
     application = build_application(SidecarConfig(workspace=tmp_path))
 
