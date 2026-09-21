@@ -35,6 +35,7 @@ from .workers.composition import WorkerComposition
 from .workers.runner import WorkerRunner
 from .domain.contracts import Artifact, Passport, Run
 import hashlib
+from datetime import UTC, datetime
 from importlib.resources import files
 
 _LOG = logging.getLogger("docs.sidecar")
@@ -629,6 +630,38 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         path = deps.context.set(document_id, resolved.template, topic, value, field)
         return {"document_id": document_id, "topic": topic, "field": field, "path": str(path)}
 
+    def revise_document(document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .cli._shared import Deps
+        from .domain.workspace import Workspace
+        from .domain.normative import resolve_normative_settings
+
+        active = registry.active()
+        if active is None:
+            raise RuntimeError("workspace_not_configured")
+        root = Path(str(active["root"]))
+        deps = Deps(Workspace(root / "documents", root / "templates"))
+        resolved = deps.resolve_context(document_id)
+        target_id = str(payload.get("target_id") or payload.get("section_id") or payload.get("topic_id") or "")
+        request = str(payload.get("request") or "API revision")
+        value = payload.get("new_body", payload.get("new_value", payload.get("value")))
+        if not target_id or not isinstance(value, str):
+            raise ValueError("target_id and string new_body/new_value are required")
+        common = {
+            "config": resolved.config,
+            "request": request,
+            "strict": bool(payload.get("strict", False)),
+            "manifest_exists": False,
+            "manifest_size": 0,
+            "normative": resolve_normative_settings(resolved.config),
+            "now": datetime.now(UTC).isoformat(),
+        }
+        target_kind = deps.revision.resolve_target(resolved.template, target_id)
+        if target_kind == "topic":
+            result = deps.revision.revise_topic(document_id, resolved.template, **common, topic_id=target_id, new_value=value, field=str(payload.get("field", "")))
+        else:
+            result = deps.revision.revise(document_id, resolved.template, **common, section_id=target_id, new_body=value)
+        return result.to_dict()
+
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -650,6 +683,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         document_action=document_action,
         document_context_reader=lambda document_id: document_context(str(registry.get(registry.active()["id"])["root"]), document_id),
         document_context_writer=set_document_context,
+        revision_service=revise_document,
         router=Router(
             cors_origins=config.cors_origins,
             max_body_size=config.max_body_bytes,
