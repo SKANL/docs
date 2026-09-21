@@ -1630,6 +1630,33 @@ def ingest(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     _run_source_command(ctx, "ingest", json_output)
 
 
+@document_app.command("classify")
+def classify(
+    ctx: typer.Context,
+    relative_path: str | None = typer.Option(None, "--file"),
+    role: str | None = typer.Option(None, "--role"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect or confirm source roles in the real ingest classification queue."""
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    queue_path = deps.workspace.doc_root(resolved.doc_id) / "inbox" / "_classification-queue.json"
+    if not queue_path.is_file():
+        raise typer.BadParameter("classification queue is unavailable; run document ingest first")
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
+    if relative_path is not None or role is not None:
+        if not relative_path or role not in {"evidence", "example", "normative"}:
+            raise typer.BadParameter("--file and --role are required; role must be evidence, example, or normative")
+        entry = next((item for item in entries if str(item.get("relative_path")) == relative_path), None)
+        if entry is None:
+            raise typer.BadParameter("source is not present in the classification queue")
+        entry["confirmed_role"] = role
+        queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    result = {"document_id": resolved.doc_id, "items": entries}
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":") if json_output else None))
+
+
 @document_app.command("import")
 def import_source(
     ctx: typer.Context,
