@@ -11,6 +11,8 @@ try {
     uv run pyinstaller --noconfirm --clean --onedir --name docs-sidecar `
         --paths src --distpath $distDir --workpath (Join-Path $sidecarDir 'pyinstaller-build') `
         --hidden-import docs.infrastructure.provenance.ledger `
+        --hidden-import docs.infrastructure.transform.system_transform `
+        --collect-submodules docs.infrastructure.transform `
         tools/docs_sidecar.py
     Get-ChildItem $sidecarDir -Force | Where-Object { $_.Name -notin @('.gitkeep', 'pyinstaller-build', 'pyinstaller-dist') } | Remove-Item -Recurse -Force
     Get-ChildItem (Join-Path $distDir 'docs-sidecar') -Force | Copy-Item -Destination $sidecarDir -Recurse -Force
