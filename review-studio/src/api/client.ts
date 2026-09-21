@@ -255,6 +255,7 @@ export class ReviewApiClient {
     return this.request<unknown>(`graph?${params}`).then(normalizeGraphQuery);
   }
   listTemplates(params?: ListParams) { return this.list<Template>("templates", params); }
+  listPlugins(params?: ListParams) { return this.list<Record<string, unknown>>("plugins", params); }
   listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params); }
   listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params); }
   listPublications(params?: ListParams) { return this.list<Publication>("publications", params); }
