@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 
@@ -45,23 +48,81 @@ def assert_same_persisted_records(
             raise AssertionError(f"run payload {key} mismatch between API and CLI")
 
 
+def api_json(base: str, path: str, method: str = "GET", payload: object | None = None) -> dict[str, object]:
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        base + path,
+        data=body,
+        method=method,
+        headers={"Content-Type": "application/json"} if body is not None else {},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
 def main() -> int:
-    """Run a real CLI persistence journey in an isolated workspace."""
+    """Run a real packaged API -> CLI persistence journey in one workspace."""
+    executable = Path(__file__).resolve().parents[1] / "sidecar" / "docs-sidecar.exe"
+    if not executable.is_file():
+        raise SystemExit(f"packaged sidecar not found: {executable}")
     with tempfile.TemporaryDirectory(prefix="docs-cross-surface-") as directory:
         workspace = Path(directory)
-        repo = Path(__file__).resolve().parents[2]
-        cli = ["uv", "run", "--project", str(repo), "python", "-m", "docs.cli.main"]
-        subprocess.run([*cli, "doc", "init"], cwd=workspace, check=True)
-        subprocess.run(
-            [*cli, "doc", "new", "cross-surface", "--template", "documento-generico"],
-            cwd=workspace,
-            check=True,
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        process = subprocess.Popen(
+            [os.fspath(executable), "--workspace", os.fspath(workspace), "--health-url", base + "/health"],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        document = json.loads((workspace / "documents" / "cross-surface" / "document.json").read_text(encoding="utf-8"))
-        cli_document = json.loads(run_cli_json(workspace, "doc", "show", "cross-surface"))
-        if document.get("id") != cli_document.get("id"):
-            raise AssertionError("CLI could not read its persisted document")
-        print("cross-surface local CLI persistence journey passed")
+        try:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                try:
+                    if api_json(base, "/health").get("ready"):
+                        break
+                except OSError:
+                    time.sleep(0.25)
+            health = api_json(base, "/health")
+            if not health.get("ready"):
+                raise AssertionError(f"packaged API did not become healthy: {health}")
+            workspace_id = str(api_json(base, "/v1/workspaces")["items"][0]["id"])
+            imported = api_json(base, "/v1/documents/import", "POST", {
+                "workspace_id": workspace_id,
+                "filename": "cross-surface.md",
+                "content_base64": "I2Ny b3NzLXN1cmZhY2UKCkEgcmVhbCBjcm9zcy1zdXJmYWNlIGRvY3VtZW50Lg==".replace(" ", ""),
+                "document_id": "cross-surface",
+                "template": "documento-generico",
+                "title": "Cross Surface",
+            })
+            if imported.get("document_id") != "cross-surface":
+                raise AssertionError(f"API import failed: {imported}")
+            api_json(base, "/v1/documents/cross-surface/prepare", "POST", {"workspace_id": workspace_id})
+            queued = api_json(base, "/v1/runs", "POST", {"workspace_id": workspace_id, "document_id": "cross-surface", "pipeline_id": "document", "format": "docx"})
+            run_id = str(queued["id"])
+            current = api_json(base, "/v1/runs/" + run_id)
+            deadline = time.monotonic() + 120
+            while current.get("status") not in {"succeeded", "failed", "cancelled", "expired"} and time.monotonic() < deadline:
+                time.sleep(0.5)
+                current = api_json(base, "/v1/runs/" + run_id)
+            if current.get("status") != "succeeded":
+                raise AssertionError(f"API run failed: {current}")
+            cli_document = json.loads(run_cli_json(workspace, "doc", "show", "cross-surface"))
+            cli_runs = json.loads(run_cli_json(workspace, "run", "list"))
+            cli_run = next(item for item in cli_runs if item["id"] == run_id)
+            api_document = json.loads((workspace / "documents" / "cross-surface" / "document.json").read_text(encoding="utf-8"))
+            assert_same_persisted_records({"id": "cross-surface", **api_document}, cli_document, current, cli_run)
+            print("cross-surface packaged API -> CLI journey passed")
+        finally:
+            if process.poll() is None:
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False, capture_output=True)
+                else:
+                    process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
     return 0
 
 

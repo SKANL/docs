@@ -122,7 +122,7 @@ impl SidecarSupervisor {
 
         let mut state = self.state.lock().expect("sidecar mutex poisoned");
         if let Some(mut child) = state.child.take() {
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             let _ = child.wait();
         }
         state.health = Health::failed("sidecar health endpoint timed out");
@@ -132,7 +132,7 @@ impl SidecarSupervisor {
     pub fn shutdown(&self) {
         let mut state = self.state.lock().expect("sidecar mutex poisoned");
         if let Some(mut child) = state.child.take() {
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             let _ = child.wait();
         }
         state.health = Health::failed("sidecar is stopped");
@@ -152,6 +152,21 @@ impl SidecarSupervisor {
 fn configure_sidecar_command(command: &mut Command) {
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
+}
+
+fn terminate_process_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        // PyInstaller starts the Python worker as a child of the sidecar. A
+        // plain Child::kill only terminates the HTTP parent on Windows and
+        // leaves SQLite handles open in the orphaned worker. taskkill /T is
+        // the OS-level tree boundary used for clean desktop shutdown.
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &child.id().to_string(), "/T", "/F"]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        let _ = command.output();
+    }
+    let _ = child.kill();
 }
 
 impl Clone for Health {
