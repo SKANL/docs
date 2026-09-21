@@ -134,9 +134,9 @@ def test_import_job_and_stage_are_versioned_contracts() -> None:
     schemas = build_openapi_document()["components"]["schemas"]
 
     assert {
-        "id", "workspace_id", "document_id", "filename", "mime_type", "sha256", "status"
+        "id", "document_id", "filename", "path", "mime_type", "size", "sha256", "deduplicated"
     } == set(schemas["import_job"]["properties"])
-    assert schemas["import_job"]["properties"]["document_id"]["type"] == ["string", "null"]
+    assert schemas["import_job"]["properties"]["size"] == {"type": "integer", "minimum": 1}
     assert {
         "name", "status", "progress", "started_at", "finished_at"
     } == set(schemas["stage"]["properties"])
