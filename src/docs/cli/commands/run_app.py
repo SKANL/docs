@@ -16,7 +16,8 @@ run_app = typer.Typer(add_completion=False, help="Inspect and control durable ru
 def _stores(ctx: typer.Context):
     deps, _ = _ctx(ctx)
     root = deps.workspace.documents_dir.parent.resolve()
-    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    registry_path = root / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(registry_path if registry_path.is_file() else None)
     active = registry.active()
     if active is not None:
         root = Path(str(active["root"])).resolve()

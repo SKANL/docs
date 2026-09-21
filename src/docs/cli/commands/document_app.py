@@ -9,6 +9,7 @@ import mimetypes
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 import uuid
 import zipfile
@@ -27,7 +28,7 @@ from docs.application.artifact_build_service import (
     ArtifactBuildService,
 )
 from docs.application.workspaces import WorkspaceRegistry
-from docs.infrastructure.persistence.x20 import SqliteArtifactStore, SqliteFindingStore, SqlitePassportStore
+from docs.infrastructure.persistence.x20 import SqliteArtifactStore, SqliteFindingStore, SqliteJobQueue, SqlitePassportStore, SqliteRunStore
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
 from docs.application.package_release_service import PackageReleaseService
@@ -51,6 +52,7 @@ from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.contracts import Run
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
@@ -1682,6 +1684,8 @@ def run_document(
     policy: PipelineMode | None = typer.Option(None, "--policy"),
     strict: bool = typer.Option(False, "--strict", help="Run with strict verification policy."),
     release: bool = typer.Option(False, "--release", help="Run with release policy and publication checks."),
+    async_run: bool = typer.Option(False, "--async", help="Queue the run and process it with a detached local worker."),
+    watch: bool = typer.Option(False, "--watch", help="Wait for a queued asynchronous run to finish."),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Execute the real document pipeline synchronously from source to verified output.
@@ -1693,6 +1697,64 @@ def run_document(
     if strict and release:
         raise typer.BadParameter("--strict and --release are mutually exclusive")
     selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release if release else PipelineMode.release)
+    if watch and not async_run:
+        raise typer.BadParameter("--watch requires --async")
+    if async_run:
+        if len(formats or ["docx"]) != 1:
+            raise typer.BadParameter("--async supports exactly one --format")
+        deps = ctx.obj["deps"]
+        resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+        workspace_root = deps.workspace.documents_dir.parent.resolve()
+        registry_path = workspace_root / ".docs" / "workspaces.json"
+        registry = WorkspaceRegistry(registry_path if registry_path.is_file() else None)
+        active = registry.active()
+        if active is None:
+            raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
+        workspace_root = Path(str(active["root"])).resolve()
+        state = workspace_root / ".docs" / "x20.sqlite3"
+        run_id = str(uuid.uuid4())
+        payload = {
+            "run_id": run_id,
+            "document_id": resolved.doc_id,
+            "workspace_id": active["id"],
+            "pipeline_id": "document",
+            "format": (formats or ["docx"])[0],
+            "policy": selected_policy.value,
+        }
+        SqliteRunStore(state).put(Run(run_id, payload=payload))
+        SqliteJobQueue(state).enqueue(run_id, payload)
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        worker_env = os.environ.copy()
+        source_root = Path(__file__).resolve().parents[4]
+        worker_env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (os.fspath(source_root), worker_env.get("PYTHONPATH")) if part
+        )
+        worker_log = workspace_root / ".docs" / "worker.log"
+        worker_output = worker_log.open("ab")
+        subprocess.Popen(
+            [os.fspath(Path(os.sys.executable)), "-m", "docs.local_worker", "--workspace-root", os.fspath(workspace_root)],
+            cwd=os.fspath(workspace_root),
+            stdin=subprocess.DEVNULL,
+            stdout=worker_output,
+            stderr=worker_output,
+            env=worker_env,
+            creationflags=creationflags,
+            start_new_session=True,
+        )
+        worker_output.close()
+        if watch:
+            import time
+            store = SqliteRunStore(state)
+            while True:
+                item = store.get(run_id)
+                if item is None:
+                    raise typer.BadParameter(f"Run disappeared: {run_id}")
+                if item.status in {"succeeded", "completed", "failed", "cancelled", "expired"}:
+                    break
+                time.sleep(0.25)
+        result = {"id": run_id, "status": SqliteRunStore(state).get(run_id).status if SqliteRunStore(state).get(run_id) else "queued"}
+        typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
+        return
     _run(
         ctx,
         "build",
@@ -1706,7 +1768,8 @@ def run_document(
 def _durable_evidence_stores(ctx: typer.Context):
     deps = ctx.obj["deps"]
     root = deps.workspace.documents_dir.parent.resolve()
-    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    registry_path = root / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(registry_path if registry_path.is_file() else None)
     active = registry.active()
     if active is not None:
         root = Path(str(active["root"])).resolve()

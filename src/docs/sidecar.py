@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 from .api.application import X20Application
 from .plugins import PluginRegistry
-from .application.workspaces import WorkspaceRegistry
+from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from .infrastructure.persistence.x20 import (
@@ -463,7 +463,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         document_action=document_action,
         router=Router(cors_origins=config.cors_origins),
     )
-    runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store)
+    runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store, artifact_store, findings_store)
     thread = threading.Thread(target=runner.run_until_stopped, name="docs-worker", daemon=True)
     thread.start()
     return _HealthApplication(
@@ -481,6 +481,8 @@ def _build_worker(
     state_path: Path,
     run_store: SqliteRunStore,
     passport_store: SqlitePassportStore,
+    artifact_store: SqliteArtifactStore,
+    findings_store: SqliteFindingStore,
 ) -> WorkerRunner:
     """Compose the real local worker; no synthetic completion path is allowed."""
     from .cli._shared import Deps
@@ -506,8 +508,17 @@ def _build_worker(
             run_root = root
             workspace_id = payload.get("workspace_id")
             if isinstance(workspace_id, str) and workspace_id:
-                selected = registry.get(workspace_id)
-                run_root = Path(str(selected["root"])).resolve()
+                try:
+                    selected = registry.get(workspace_id)
+                except WorkspaceRegistryError:
+                    # A CLI worker may use the user-level registry while the
+                    # durable queue lives inside the workspace. The worker is
+                    # already scoped to ``root``; never resolve an arbitrary
+                    # payload path, but allow that registered identity to be
+                    # processed in the current worker boundary.
+                    selected = None
+                if selected is not None:
+                    run_root = Path(str(selected["root"])).resolve()
             deps = Deps(Workspace(run_root / "documents", run_root / "templates"))
             source_pipeline = _source_pipeline(deps)
             if source_pipeline is None:
@@ -522,10 +533,11 @@ def _build_worker(
                 pipeline_id=self.pipeline_id,
                 provenance_run_id=run_id,
             )
+            policy = str(payload.get("policy", "release"))
             report = service.run(
                 run_id,
                 inputs=inputs,
-                publish=True,
+                publish=policy != "draft",
                 pipeline_id=self.pipeline_id,
                 external_artifacts=external_artifacts,
             )
