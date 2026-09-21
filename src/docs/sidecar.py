@@ -389,7 +389,22 @@ class _WorkspacePublicationStore:
         run_id = str(value.get("run_id", ""))
         self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put(value)
     def list(self) -> list[dict[str, Any]]:
-        return [value for run in self.parent.run_store.list() for value in self.parent._stores_for_root(self.parent._root_for_run(run.id))[3].list() if value.get("run_id") == run.id]
+        return self._list_runs(self.parent.run_store.list())
+
+    def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+        runs = [
+            run for run in self.parent.run_store.list()
+            if isinstance(run.payload, Mapping) and str(run.payload.get("workspace_id", "")) == workspace_id
+        ]
+        return self._list_runs(runs)
+
+    def _list_runs(self, runs: list[Any]) -> list[dict[str, Any]]:
+        return [
+            value
+            for run in runs
+            for value in self.parent._stores_for_root(self.parent._root_for_run(run.id))[3].list()
+            if value.get("run_id") == run.id
+        ]
 
 
 class _WorkspaceGraphStore:

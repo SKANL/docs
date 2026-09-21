@@ -1068,7 +1068,7 @@ class X20Application:
         return Response.json(_dict(revision))
 
     def _publications(self, request: Request) -> Response:
-        return self._page(self._filter(self._store_items(self.publication_store, "list"), request.query), request, "publications")
+        return self._page(self._filter(self._workspace_items(self.publication_store, request), request.query), request, "publications")
 
     def _finding_is_owned(self, finding: Any, principal: Any) -> bool:
         data = _dict(finding)
