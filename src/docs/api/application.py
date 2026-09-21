@@ -305,6 +305,15 @@ class X20Application:
                 return "documents:write"
         if parts[:2] == ["v1", "plugins"] and len(parts) == 4 and method == "GET":
             return "plugins:read"
+        if parts[:2] == ["v1", "artifacts"]:
+            if len(parts) == 3 and method == "GET":
+                return "artifacts:read"
+            if len(parts) == 4 and parts[3] == "previews" and method == "GET":
+                return "artifacts:read"
+        if parts[:2] == ["v1", "revisions"] and len(parts) == 3 and method == "GET":
+            return "documents:read"
+        if parts[:2] == ["v1", "baselines"] and len(parts) == 3 and method == "GET":
+            return "baselines:read"
         if parts[:2] == ["v1", "runs"]:
             if len(parts) == 3 and method == "GET":
                 return "runs:read"
@@ -341,7 +350,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"])
+            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"], ["v1", "artifacts"], ["v1", "revisions"], ["v1", "baselines"])
         ):
             return False
         if parts[:2] == ["v1", "documents"]:
@@ -359,6 +368,12 @@ class X20Application:
             )
         if parts[:2] == ["v1", "plugins"]:
             return len(parts) == 4 and method == "GET"
+        if parts[:2] == ["v1", "artifacts"]:
+            return (len(parts) == 3 and method == "GET") or (len(parts) == 4 and parts[3] == "previews" and method == "GET")
+        if parts[:2] == ["v1", "revisions"]:
+            return len(parts) == 3 and method == "GET"
+        if parts[:2] == ["v1", "baselines"]:
+            return len(parts) == 3 and method == "GET"
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
         return (len(parts) == 4 and (
@@ -372,7 +387,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"])
+            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"], ["v1", "artifacts"], ["v1", "revisions"], ["v1", "baselines"])
         ):
             return None
         resource_id = parts[2]
@@ -413,6 +428,16 @@ class X20Application:
             if len(parts) == 4 and method == "GET":
                 return lambda request: self._plugin(parts[3], request)
             return None
+        if parts[:2] == ["v1", "artifacts"]:
+            if len(parts) == 3 and method == "GET":
+                return lambda request: self._artifact(resource_id, request)
+            if len(parts) == 4 and parts[3] == "previews" and method == "GET":
+                return lambda request: self._artifact_previews(resource_id, request)
+            return None
+        if parts[:2] == ["v1", "revisions"] and len(parts) == 3 and method == "GET":
+            return lambda request: self._revision_detail(resource_id, request)
+        if parts[:2] == ["v1", "baselines"] and len(parts) == 3 and method == "GET":
+            return lambda request: self._baseline(resource_id, request)
         run_id = resource_id
         if len(parts) == 3 and parts[2] != "runs" and method == "GET":
             return lambda request: self._run(run_id, request)
@@ -997,6 +1022,24 @@ class X20Application:
             ]
         return self._page(self._filter(items, request.query), request, "artifacts")
 
+    def _artifact(self, artifact_id: str, request: Request) -> Response:
+        artifact = self._store_get(self.artifact_store, artifact_id, "id")
+        if artifact is None:
+            raise APIError("not_found", "Artifact not found", 404)
+        run_id = _dict(artifact).get("run_id")
+        if run_id:
+            self._owned_run(str(run_id), request)
+        return Response.json(_dict(artifact))
+
+    def _artifact_previews(self, artifact_id: str, request: Request) -> Response:
+        self._artifact(artifact_id, request)
+        items = [
+            item for item in self._store_items(self.artifact_store, "list")
+            if str(_dict(item).get("parent_artifact_id", "")) == artifact_id
+            or str(_dict(item).get("artifact_id", "")) == artifact_id
+        ]
+        return self._page(items, request, "previews")
+
     def _workspace_filter(self, request: Request) -> str | None:
         """Scope collection endpoints to the selected workspace by default."""
         requested = request.query.get("workspace_id") if hasattr(request, "query") else None
@@ -1016,6 +1059,13 @@ class X20Application:
 
     def _revisions(self, request: Request) -> Response:
         return self._page(self._filter(self._store_items(self.revision_store, "list"), request.query), request, "revisions")
+
+    def _revision_detail(self, revision_id: str, request: Request) -> Response:
+        del request
+        revision = self._store_get(self.revision_store, revision_id, "id", "revision_id")
+        if revision is None:
+            raise APIError("not_found", "Revision not found", 404)
+        return Response.json(_dict(revision))
 
     def _publications(self, request: Request) -> Response:
         return self._page(self._filter(self._store_items(self.publication_store, "list"), request.query), request, "publications")
@@ -1177,6 +1227,13 @@ class X20Application:
     def _baselines(self, request: Request) -> Response:
         return self._page(self._store_items(self.baseline_store, "list"), request, "baselines")
 
+    def _baseline(self, baseline_id: str, request: Request) -> Response:
+        del request
+        baseline = self._store_get(self.baseline_store, baseline_id, "id", "baseline_id")
+        if baseline is None:
+            raise APIError("not_found", "Baseline not found", 404)
+        return Response.json(_dict(baseline))
+
     def _plugins(self, request: Request) -> Response:
         if self.plugin_registry is not None:
             items = [
@@ -1240,6 +1297,19 @@ class X20Application:
             return []
         result = callback(*args)
         return list(result or [])
+
+    @staticmethod
+    def _store_get(store: Any, value: str, *keys: str) -> Any:
+        getter = getattr(store, "get", None) if store is not None else None
+        if callable(getter):
+            result = getter(value)
+            if result is not None:
+                return result
+        for item in X20Application._store_items(store, "list"):
+            data = _dict(item)
+            if any(str(data.get(key, "")) == value for key in keys):
+                return item
+        return None
 
     @staticmethod
     def _filter(items: Iterable[Any], query: Mapping[str, str]) -> list[Any]:
