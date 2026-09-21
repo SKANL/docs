@@ -410,6 +410,10 @@ class X20Application:
                 }
             )
         run_id = data.get("id") or str(uuid4())
+        # Workers receive the queued payload, not the Run wrapper. Carry the
+        # authoritative generated id into that payload so a run created
+        # without a caller-supplied id can execute end-to-end.
+        data["run_id"] = run_id
         existing = self.run_store.get(run_id)
         if (
             existing is not None
