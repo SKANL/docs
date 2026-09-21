@@ -271,7 +271,8 @@ def build_openapi_document() -> dict[str, Any]:
                 _json_response(_ref("baseline")),
                 request={
                     "type": "object",
-                    "properties": {"baseline_id": {"type": "string"}, "id": {"type": "string"}},
+                    "properties": {"workspace_id": {"type": "string"}, "baseline_id": {"type": "string"}, "id": {"type": "string"}},
+                    "required": ["workspace_id"],
                     "anyOf": [{"required": ["baseline_id"]}, {"required": ["id"]}],
                 },
                 scopes=("baselines:write",),
