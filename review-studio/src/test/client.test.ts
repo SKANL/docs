@@ -43,6 +43,13 @@ describe("ReviewApiClient", () => {
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Accept: "application/json", Authorization: "Bearer token-123" } });
   });
 
+  it("passes the selected output format to document actions", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ id: "run-pdf" }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    await client.documentAction("doc-1", "build", "workspace-1", "pdf");
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ workspace_id: "workspace-1", format: "pdf" });
+  });
+
   it("scopes graph domain queries to the selected workspace", async () => {
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const path = new URL(input.toString()).pathname;
