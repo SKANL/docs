@@ -1008,7 +1008,7 @@ class X20Application:
             items = [
                 item for item in items
                 if (run := self.run_store.get(str(_dict(item).get("run_id", "")))) is not None
-                and _dict(run).get("payload", {}).get("workspace_id") in {workspace_id, None}
+                and _dict(run).get("payload", {}).get("workspace_id") == workspace_id
             ]
         if request.principal is not None:
             items = [item for item in items if self._finding_is_owned(item, request.principal)]
@@ -1021,7 +1021,7 @@ class X20Application:
             items = [
                 item for item in items
                 if (run := self.run_store.get(str(_dict(item).get("run_id", "")))) is not None
-                and _dict(run).get("payload", {}).get("workspace_id") in {workspace_id, None}
+                and _dict(run).get("payload", {}).get("workspace_id") == workspace_id
             ]
         return self._page(self._filter(items, request.query), request, "artifacts")
 
