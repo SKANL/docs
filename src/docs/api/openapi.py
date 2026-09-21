@@ -130,6 +130,22 @@ def build_openapi_document() -> dict[str, Any]:
                 scopes=("documents:write",),
             ),
         },
+        "/v1/documents/{document_id}/classification": {
+            "get": _operation("Get source classification queue", _json_response({"type": "object"}), scopes=("documents:read",)),
+            "post": _operation(
+                "Confirm source classification",
+                _json_response({"type": "object"}),
+                request={
+                    "type": "object",
+                    "required": ["relative_path", "confirmed_role"],
+                    "properties": {
+                        "relative_path": {"type": "string"},
+                        "confirmed_role": {"type": "string", "enum": ["evidence", "example", "normative"]},
+                    },
+                },
+                scopes=("documents:write",),
+            ),
+        },
         "/v1/documents/{document_id}/runs": {
             "get": _operation("List document runs", page("run"), scopes=("documents:read",))
         },
