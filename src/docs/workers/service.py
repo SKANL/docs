@@ -466,7 +466,22 @@ class WorkerService:
 
     def _put_run(self, run_id: str, status: str, payload: Mapping[str, Any]) -> None:
         if self.run_store is not None:
-            self.run_store.put(Run(run_id, status=status, payload=dict(payload)))
+            # Status/progress updates are partial. Preserve the immutable run
+            # identity and request metadata so the API can still associate a
+            # completed run with its workspace, document, policy and retry
+            # lineage.
+            get_run = getattr(self.run_store, "get", None)
+            existing = get_run(run_id) if callable(get_run) else None
+            merged = dict(existing.payload) if existing is not None else {}
+            merged.update(payload)
+            self.run_store.put(
+                Run(
+                    run_id,
+                    status=status,
+                    payload=merged,
+                    created_at=existing.created_at if existing is not None else "",
+                )
+            )
 
     def _finalize(self, result: WorkerResult) -> WorkerResult:
         prior = self._claim_finalization(result.job_id)
