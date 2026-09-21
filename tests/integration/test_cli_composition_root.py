@@ -41,7 +41,7 @@ _EXPECTED_FLAT_COMMANDS = {
 }
 _EXPECTED_GROUPS = {
     "source": {"ingest"},
-    "document": {"create", "release", "status", "build", "verify", "plan", "inspect", "diff", "package", "publish", "ingest", "prepare", "baseline"},
+    "document": {"create", "release", "status", "build", "verify", "plan", "inspect", "diff", "package", "publish", "ingest", "prepare", "baseline", "import", "run", "passport", "evidence"},
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
     # 1b/1c); `use` added PR3 of agent-agnostic-real-world-usability (item C,
     # built-in template provisioning) -- deliberate surface growth, not drift.
@@ -55,6 +55,9 @@ _EXPECTED_GROUPS = {
     "doc": {"current", "delete", "init", "list", "new", "rename", "revise", "show", "status", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
+    # X20 end-to-end workspace and durable-run surfaces.
+    "workspace": {"list", "create", "use", "rename", "delete", "status"},
+    "run": {"list", "show", "cancel", "watch"},
 }
 
 
