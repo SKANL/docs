@@ -27,6 +27,9 @@ jobs:
       - name: Build signed desktop bundles
         working-directory: desktop
         run: npm run build:windows
+      - name: Validate clean installer and sidecar
+        working-directory: desktop
+        run: npm run test:installer
       - name: Generate updater manifest
         working-directory: desktop
         shell: pwsh
