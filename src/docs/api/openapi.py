@@ -107,6 +107,18 @@ def build_openapi_document() -> dict[str, Any]:
                 scopes=("documents:write",),
             )
         },
+        "/v1/documents/import/raw": {
+            "post": _operation(
+                "Import binary document source",
+                _json_response({"type": "object"}),
+                request={
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Raw source bytes; workspace_id, document_id, template, and title are query parameters.",
+                },
+                scopes=("documents:write",),
+            )
+        },
         "/v1/documents/{document_id}": {
             "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",))
         },
