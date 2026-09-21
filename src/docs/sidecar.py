@@ -9,6 +9,7 @@ import os
 import signal
 import sys
 import threading
+from datetime import UTC, datetime
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,7 @@ from .infrastructure.persistence.x20 import (
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
+    SqlitePublicationStore,
     SqliteRunStore,
 )
 from .workers.composition import WorkerComposition
@@ -189,14 +191,14 @@ class _WorkspaceEvidenceStores:
         self.registry = registry
         self.run_store = run_store
         self.fallback_root = fallback_root.resolve()
-        self._stores: dict[str, tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore]] = {}
+        self._stores: dict[str, tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]] = {}
 
-    def _stores_for_root(self, root: str | Path) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore]:
+    def _stores_for_root(self, root: str | Path) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]:
         resolved = Path(root).expanduser().resolve()
         key = str(resolved)
         if key not in self._stores:
             state = resolved / ".docs" / "x20.sqlite3"
-            self._stores[key] = (SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state))
+            self._stores[key] = (SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state), SqlitePublicationStore(state))
         return self._stores[key]
 
     def _root_for_run(self, run_id: str) -> Path:
@@ -218,6 +220,9 @@ class _WorkspaceEvidenceStores:
 
     def finding(self) -> "_WorkspaceFindingStore":
         return _WorkspaceFindingStore(self)
+
+    def publication(self) -> "_WorkspacePublicationStore":
+        return _WorkspacePublicationStore(self)
 
 
 class _WorkspacePassportStore:
@@ -251,6 +256,17 @@ class _WorkspaceFindingStore:
     def list(self) -> list[dict[str, Any]]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
     def list_for_run(self, run_id: str) -> list[dict[str, Any]]: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
+
+
+class _WorkspacePublicationStore:
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    @property
+    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+    def put(self, value: dict[str, Any]) -> None:
+        run_id = str(value.get("run_id", ""))
+        self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put(value)
+    def list(self) -> list[dict[str, Any]]:
+        return [value for run in self.parent.run_store.list() for value in self.parent._stores_for_root(self.parent._root_for_run(run.id))[3].list() if value.get("run_id") == run.id]
 
 
 class _WorkspaceGraphStore:
@@ -412,6 +428,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     artifact_store = evidence_stores.artifact()
     graph_store = _WorkspaceGraphStore(registry, config.workspace)
     findings_store = evidence_stores.finding()
+    publication_store = evidence_stores.publication()
+    publication_store = evidence_stores.publication()
     plugin_registry = PluginRegistry()
     plugin_roots = [config.workspace / ".docs" / "plugins"]
     for workspace_entry in registry.list():
@@ -457,13 +475,14 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         graph_store=graph_store,
         plugin_registry=plugin_registry,
         findings_store=findings_store,
+        publication_store=publication_store,
         document_store=_FilesystemDocumentStore(config.workspace, registry),
         workspace_registry=registry,
         document_creator=create_document,
         document_action=document_action,
         router=Router(cors_origins=config.cors_origins),
     )
-    runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store, artifact_store, findings_store)
+    runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store, artifact_store, findings_store, publication_store)
     thread = threading.Thread(target=runner.run_until_stopped, name="docs-worker", daemon=True)
     thread.start()
     return _HealthApplication(
@@ -483,6 +502,7 @@ def _build_worker(
     passport_store: SqlitePassportStore,
     artifact_store: SqliteArtifactStore,
     findings_store: SqliteFindingStore,
+    publication_store: Any,
 ) -> WorkerRunner:
     """Compose the real local worker; no synthetic completion path is allowed."""
     from .cli._shared import Deps
@@ -554,6 +574,18 @@ def _build_worker(
             progress("finalize", 90)
             if not getattr(report, "succeeded", False):
                 raise RuntimeError("document pipeline failed; inspect run evidence for stage findings")
+            if self.pipeline_id == "document-publish":
+                publication_store.put({
+                    "id": run_id,
+                    "run_id": run_id,
+                    "document_id": document_id,
+                    "workspace_id": workspace_id,
+                    "environment": str(payload.get("environment", "local")),
+                    "artifact": document_id,
+                    "published_at": datetime.now(UTC).isoformat(),
+                    "approver": str(payload.get("approver", "local-worker")),
+                    "status": "passed",
+                })
             return {
                 "pipeline_id": self.pipeline_id,
                 "document_id": document_id,

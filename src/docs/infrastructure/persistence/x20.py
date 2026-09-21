@@ -185,6 +185,38 @@ class SqliteGraphStore(_SqliteStore):
         return Graph() if row is None else Graph.from_dict(self._decode(row[0]))
 
 
+class SqlitePublicationStore(_SqliteStore):
+    """Durable publication projection exposed by the API and Review Studio."""
+
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS x20_publications (id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+            )
+
+    def put(self, publication: dict[str, Any]) -> None:
+        identifier = str(publication.get("id", ""))
+        if not identifier:
+            raise ValueError("publication id is required")
+        envelope = {"schema": SCHEMA, "publication": dict(publication)}
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT INTO x20_publications (id, payload) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
+                (identifier, self._encode(envelope)),
+            )
+
+    def list(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT payload FROM x20_publications ORDER BY id").fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            value = self._decode(row[0]).get("publication")
+            if isinstance(value, dict):
+                result.append(dict(value))
+        return result
+
+
 class SqliteJobQueue(_SqliteStore):
     def __init__(
         self,

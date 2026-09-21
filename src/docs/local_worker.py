@@ -10,6 +10,7 @@ from .infrastructure.persistence.x20 import (
     SqliteFindingStore,
     SqliteJobQueue,
     SqlitePassportStore,
+    SqlitePublicationStore,
     SqliteRunStore,
 )
 from .sidecar import _build_worker
@@ -27,6 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     passport_store = SqlitePassportStore(state)
     artifact_store = SqliteArtifactStore(state)
     findings_store = SqliteFindingStore(state)
+    publication_store = SqlitePublicationStore(state)
     runner = _build_worker(
         root,
         queue,
@@ -35,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         passport_store,
         artifact_store,
         findings_store,
+        publication_store,
     )
     runner.run_until_stopped(args.iterations)
     return 0
