@@ -4,6 +4,20 @@ import { ApiError, ReviewApiClient, yieldSse } from "../api/client";
 const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" }, ...init });
 
 describe("ReviewApiClient", () => {
+  it("retries transient startup connection failures before surfacing an error", async () => {
+    let attempts = 0;
+    const client = new ReviewApiClient({
+      baseUrl: "http://review.test/v1",
+      fetch: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new TypeError("Failed to fetch");
+        return jsonResponse({ items: [{ id: "run-after-startup" }] });
+      },
+    });
+
+    await expect(client.listRuns()).resolves.toMatchObject({ items: [{ id: "run-after-startup" }] });
+    expect(attempts).toBe(3);
+  });
   it("builds typed paginated /v1 requests", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{ id: "run-1" }], next_cursor: "next", total: 4 }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });

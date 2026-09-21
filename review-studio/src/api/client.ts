@@ -67,6 +67,7 @@ export type ReviewClientOptions = {
 export type ListParams = { cursor?: string; limit?: number; workspaceId?: string };
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+const STARTUP_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000];
 
 function joinUrl(baseUrl: string, path: string): URL {
   return new URL(path.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
@@ -164,13 +165,19 @@ export class ReviewApiClient {
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const request = withSignal(init.signal ?? undefined, this.timeoutMs);
-    try {
-      const response = await this.requestFetch(joinUrl(this.baseUrl, path), { ...init, signal: request.signal, headers: { Accept: "application/json", ...init.headers } });
-      if (!response.ok) throw await errorFromResponse(response);
-      if (response.status === 204) return undefined as T;
-      return await response.json() as T;
-    } finally { request.cancel(); }
+    for (let attempt = 0; ; attempt += 1) {
+      const request = withSignal(init.signal ?? undefined, this.timeoutMs);
+      try {
+        const response = await this.requestFetch(joinUrl(this.baseUrl, path), { ...init, signal: request.signal, headers: { Accept: "application/json", ...init.headers } });
+        if (!response.ok) throw await errorFromResponse(response);
+        if (response.status === 204) return undefined as T;
+        return await response.json() as T;
+      } catch (error) {
+        const retryable = error instanceof TypeError && !init.signal?.aborted && attempt < STARTUP_RETRY_DELAYS_MS.length;
+        if (!retryable) throw error;
+        await new Promise(resolve => globalThis.setTimeout(resolve, STARTUP_RETRY_DELAYS_MS[attempt]));
+      } finally { request.cancel(); }
+    }
   }
 
   private list<T>(path: string, params: ListParams = {}) {
