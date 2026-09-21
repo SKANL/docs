@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -167,8 +168,9 @@ class OpendataloaderPdfAdapter:
                 sha8 = sha256_hex(candidate.read_bytes())[:8]
                 final = ingested_output_path(out_dir, candidate.stem, kind, sha8)
                 final.parent.mkdir(parents=True, exist_ok=True)
-                final.write_text(f"# {candidate.stem}\n\n{text}\n", encoding="utf-8")
-                self._results[candidate] = final
+                temporary = final.with_name(f".{final.name}.{uuid.uuid4().hex}.tmp")
+                temporary.write_text(f"# {candidate.stem}\n\n{text}\n", encoding="utf-8")
+                self._results[candidate] = atomic_finalize(temporary, final)
             except Exception as exc:
                 self._results[candidate] = RuntimeError(
                     f"No se pudo extraer texto de {candidate.name} con el fallback PDF: {exc}"
