@@ -26,7 +26,7 @@ def call(base: str, path: str, method: str = "GET", payload: object | None = Non
 
 def main() -> int:
     desktop = Path(__file__).resolve().parents[1]
-    executable = desktop / "sidecar" / "docs-sidecar.exe"
+    executable = Path(os.environ.get("DOCS_SIDECAR_EXECUTABLE", desktop / "sidecar" / "docs-sidecar.exe"))
     if not executable.is_file():
         raise SystemExit(f"packaged sidecar not found: {executable}")
     root = Path(tempfile.mkdtemp(prefix="docs-sidecar-e2e-"))
@@ -39,12 +39,18 @@ def main() -> int:
     )
     try:
         deadline = time.monotonic() + 20
+        healthy = False
         while time.monotonic() < deadline:
             try:
                 if call(base, "/health")[1].get("ready"):
+                    healthy = True
                     break
             except OSError:
+                if process.poll() is not None:
+                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}")
                 time.sleep(0.25)
+        if not healthy:
+            raise SystemExit("packaged sidecar did not become healthy within 20 seconds")
         _, workspaces = call(base, "/v1/workspaces")
         workspace_id = workspaces["items"][0]["id"]
         source = base64.b64encode(b"# Packaged E2E\n\nA real sidecar document.").decode()

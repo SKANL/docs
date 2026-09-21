@@ -26,4 +26,4 @@ if ($sevenZip) {
     Write-Warning '7z is unavailable; skipped inspection of compressed NSIS contents.'
 }
 
-Write-Output 'installer artifacts and sidecar resource passed'
+Write-Output 'installer artifacts and packaged sidecar resource passed'
