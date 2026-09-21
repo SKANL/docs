@@ -70,6 +70,12 @@ def main() -> int:
             raise SystemExit(f"run failed: {current}")
         if call(base, "/v1/runs/" + run_id + "/passport")[0] != 200:
             raise SystemExit("successful run did not produce a passport")
+        _, artifacts = call(base, "/v1/runs/" + run_id + "/artifacts")
+        if not artifacts.get("items"):
+            raise SystemExit("successful run did not produce artifacts")
+        _, findings = call(base, "/v1/runs/" + run_id + "/findings")
+        if "items" not in findings:
+            raise SystemExit("successful run did not expose findings")
         print("packaged sidecar end-to-end smoke test passed")
         return 0
     finally:
