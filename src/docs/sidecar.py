@@ -607,6 +607,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
                     "required": item.required,
                     "exists": item.exists,
                     "missing": item.missing,
+                    "fields": [
+                        {"key": field.key, "label": field.label, "required": field.required}
+                        for field in next((topic.fields for topic in resolved.template.context_schema.topics if topic.id == item.id), ())
+                    ],
                 }
                 for item in statuses
             ],
