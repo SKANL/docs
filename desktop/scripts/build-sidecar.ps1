@@ -8,7 +8,11 @@ $distDir = Join-Path $sidecarDir 'pyinstaller-dist'
 Push-Location $root
 try {
     New-Item -ItemType Directory -Path $distDir -Force | Out-Null
-    uv run pyinstaller --noconfirm --clean --onedir --name docs-sidecar `
+    # The sidecar is supervised by Tauri and must never create a visible
+    # console window for desktop users. Keep stdout/stderr available to the
+    # supervisor when launched from a terminal, but use a windowless Windows
+    # subsystem in packaged builds.
+    uv run pyinstaller --noconfirm --clean --onedir --noconsole --name docs-sidecar `
         --paths src --distpath $distDir --workpath (Join-Path $sidecarDir 'pyinstaller-build') `
         --hidden-import docs.infrastructure.provenance.ledger `
         --hidden-import docs.infrastructure.transform.system_transform `
