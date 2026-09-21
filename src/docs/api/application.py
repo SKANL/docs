@@ -436,6 +436,10 @@ class X20Application:
                 }
             )
         run_id = data.get("id") or str(uuid4())
+        # A direct run request uses the same build pipeline as the document
+        # action endpoint.  The worker contract requires this explicit
+        # identifier; omitting it leaves a queued job that can never execute.
+        data.setdefault("pipeline_id", "document")
         # Workers receive the queued payload, not the Run wrapper. Carry the
         # authoritative generated id into that payload so a run created
         # without a caller-supplied id can execute end-to-end.
