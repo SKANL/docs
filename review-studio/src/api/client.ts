@@ -254,7 +254,9 @@ export class ReviewApiClient {
   }
   listTemplates(params?: ListParams) { return this.list<Template>("templates", params).then(result => result.items); }
   listPlugins(params?: ListParams) { return this.list<Record<string, unknown>>("plugins", params).then(result => result.items); }
+  getPlugin(id:string) { return this.request<Record<string, unknown>>("plugins/" + encodeURIComponent(id)); }
   listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params).then(result => result.items); }
+  getBaseline(id:string) { return this.request<Record<string, unknown>>("baselines/" + encodeURIComponent(id)); }
   promoteBaseline(id:string) { return this.request<Record<string, unknown>>("baselines/promotions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({baseline_id:id, ...(this.selectedWorkspaceId ? {workspace_id:this.selectedWorkspaceId} : {})}) }); }
   listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params).then(result => result.items); }
   getRevision(id:string) { return this.request<Record<string, unknown>>("revisions/" + encodeURIComponent(id)); }
