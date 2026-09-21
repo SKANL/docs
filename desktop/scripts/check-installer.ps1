@@ -2,8 +2,14 @@ $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $bundle = Join-Path $root 'src-tauri/target/release/bundle'
-$msi = Join-Path $bundle 'msi/Review Studio_0.1.0_x64_en-US.msi'
-$nsis = Join-Path $bundle 'nsis/Review Studio_0.1.0_x64-setup.exe'
+$msi = Get-ChildItem (Join-Path $bundle 'msi') -Filter '*.msi' -File | Select-Object -First 1
+$nsis = Get-ChildItem (Join-Path $bundle 'nsis') -Filter '*-setup.exe' -File | Select-Object -First 1
+
+if (-not $msi -or -not $nsis) {
+    throw 'Installer artifacts were not found in the Tauri bundle directories.'
+}
+$msi = $msi.FullName
+$nsis = $nsis.FullName
 
 foreach ($path in @($msi, $nsis)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
