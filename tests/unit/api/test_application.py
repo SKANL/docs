@@ -770,7 +770,17 @@ def test_application_scope_policy_does_not_overmatch_dynamic_routes():
 
 def test_run_progress_is_exposed_as_sse():
     application = app()
-    application.run_store.put(Run("r1", "running", {"document_id": "d1"}, "2026-01-01T00:00:00+00:00"))
+    application.run_store.put(
+        Run(
+            "r1",
+            "running",
+            {
+                "document_id": "d1",
+                "progress": {"stage": "verify", "percent": 75},
+            },
+            "2026-01-01T00:00:00+00:00",
+        )
+    )
 
     response = application.dispatch(Request("GET", "/v1/runs/r1/progress"))
 
@@ -778,6 +788,9 @@ def test_run_progress_is_exposed_as_sse():
     assert response.headers["content-type"] == "text/event-stream"
     assert response.body.startswith(b"id: r1\nevent: progress\n")
     assert b'"id":"r1"' in response.body
+    assert b'"type":"verify"' in response.body
+    assert b'"progress":75' in response.body
+    assert b'"message":"verify: 75%"' in response.body
 
 
 @pytest.mark.parametrize(

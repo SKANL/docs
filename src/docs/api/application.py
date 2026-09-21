@@ -626,9 +626,17 @@ class X20Application:
 
     def _progress(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)
+        payload = dict(run.payload) if isinstance(run.payload, Mapping) else {}
+        checkpoint = payload.get("progress") if isinstance(payload.get("progress"), Mapping) else {}
+        event = {
+            "type": str(checkpoint.get("stage", run.status)),
+            "progress": checkpoint.get("percent"),
+            "message": f"{checkpoint.get('stage', run.status)}: {checkpoint.get('percent', 0)}%",
+            "run": run.to_dict(),
+        }
         return Response(
             200,
-            encode_sse_event("progress", run.to_dict(), event_id=run.id).encode(),
+            encode_sse_event("progress", event, event_id=run.id).encode(),
             {"content-type": "text/event-stream", "cache-control": "no-cache"},
         )
 
