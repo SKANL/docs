@@ -3,6 +3,7 @@ import type { ReviewApi } from "./models";
 
 export type ReviewApiEnvironment = {
   apiBaseUrl?: string;
+  accessToken?: string;
   fetch?: typeof globalThis.fetch;
 };
 
@@ -31,7 +32,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
   };
 }
 
-export function createReviewApi(environment: ReviewApiEnvironment = { apiBaseUrl: import.meta.env.VITE_DOCS_API_BASE_URL }): ReviewApi {
+export function createReviewApi(environment: ReviewApiEnvironment = { apiBaseUrl: import.meta.env.VITE_DOCS_API_BASE_URL, accessToken: import.meta.env.VITE_DOCS_API_TOKEN }): ReviewApi {
   if (!environment.apiBaseUrl) throw new ApiConfigurationError("Review API is not configured. Set VITE_DOCS_API_BASE_URL before starting Review Studio.");
-  return remoteApi(new ReviewApiClient({ baseUrl: environment.apiBaseUrl, fetch: environment.fetch }));
+  return remoteApi(new ReviewApiClient({ baseUrl: environment.apiBaseUrl, accessToken: environment.accessToken, fetch: environment.fetch }));
 }

@@ -59,6 +59,7 @@ export function formatApiError(error: unknown, resource: string): string {
 
 export type ReviewClientOptions = {
   baseUrl?: string;
+  accessToken?: string;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
   allowedPreviewOrigins?: readonly string[];
@@ -153,6 +154,7 @@ export class ReviewApiClient {
   readonly baseUrl: string;
   private readonly requestFetch: typeof globalThis.fetch;
   private readonly timeoutMs: number;
+  private readonly accessToken?: string;
   private readonly allowedPreviewOrigins: Set<string>;
   private selectedWorkspaceId?: string;
 
@@ -160,6 +162,7 @@ export class ReviewApiClient {
     this.baseUrl = new URL(options.baseUrl ?? "/v1", globalThis.location?.href ?? "http://localhost/").toString().replace(/\/$/, "");
     this.requestFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.accessToken = options.accessToken?.trim() || undefined;
     this.allowedPreviewOrigins = new Set(options.allowedPreviewOrigins ?? []);
     try { this.selectedWorkspaceId = globalThis.localStorage?.getItem("docs.review.workspace") ?? undefined; } catch { this.selectedWorkspaceId = undefined; }
   }
@@ -168,7 +171,7 @@ export class ReviewApiClient {
     for (let attempt = 0; ; attempt += 1) {
       const request = withSignal(init.signal ?? undefined, this.timeoutMs);
       try {
-        const response = await this.requestFetch(joinUrl(this.baseUrl, path), { ...init, signal: request.signal, headers: { Accept: "application/json", ...init.headers } });
+        const response = await this.requestFetch(joinUrl(this.baseUrl, path), { ...init, signal: request.signal, headers: { Accept: "application/json", ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}), ...init.headers } });
         if (!response.ok) throw await errorFromResponse(response);
         if (response.status === 204) return undefined as T;
         return await response.json() as T;

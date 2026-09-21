@@ -34,6 +34,15 @@ describe("ReviewApiClient", () => {
     expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v1/graph?query=findings_affected_by_revision&id=rev+1");
   });
 
+  it("attaches a configured bearer token without replacing request headers", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", accessToken: "token-123", fetch: fetcher });
+
+    await client.listRuns();
+
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Accept: "application/json", Authorization: "Bearer token-123" } });
+  });
+
   it("scopes graph domain queries to the selected workspace", async () => {
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const path = new URL(input.toString()).pathname;
