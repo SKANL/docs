@@ -69,16 +69,11 @@ class OpendataloaderPdfAdapter:
         return ingested_output_path(out_dir, path.stem, kind, sha8).exists()
 
     def _convert_batch(self, seed_src: Path, out_dir: Path, kind: str) -> None:
+        candidates = self._discover_candidates(seed_src, out_dir, kind)
         java = self.tool_resolver.resolve_java(self.paths)
         if not java:
-            error = RuntimeError(
-                "Java (JRE 11+) no está disponible en PATH. opendataloader-pdf lo "
-                "requiere para ingerir archivos PDF; instálalo y vuelve a intentar."
-            )
-            self._results[seed_src] = error
+            self._fallback_extract(candidates, out_dir, kind)
             return
-
-        candidates = self._discover_candidates(seed_src, out_dir, kind)
 
         # Temp-then-atomic-rename (binding constraint carried from PR5
         # fresh-review round 2): conversion runs entirely inside a scratch
@@ -150,3 +145,31 @@ class OpendataloaderPdfAdapter:
                     self._results[candidate] = RuntimeError(
                         f"No se pudo convertir {candidate.name} con opendataloader-pdf: {cause}"
                     )
+
+            # A packaged Desktop installation may include the Python core but
+            # not a JVM. Preserve the real PDF workflow with a deterministic
+            # text-layer fallback instead of turning an optional converter
+            # into a product-wide import failure.
+            missing = [candidate for candidate in candidates if isinstance(self._results.get(candidate), RuntimeError)]
+            if missing:
+                self._fallback_extract(missing, out_dir, kind)
+
+    def _fallback_extract(self, candidates: list[Path], out_dir: Path, kind: str) -> None:
+        for candidate in candidates:
+            try:
+                import pypdfium2
+
+                reader = pypdfium2.PdfDocument(str(candidate))
+                pages = [reader[index].get_textpage().get_text_range() or "" for index in range(len(reader))]
+                text = "\n\n".join(page.strip() for page in pages if page.strip()).strip()
+                if not text:
+                    raise ValueError("PDF has no extractable text layer")
+                sha8 = sha256_hex(candidate.read_bytes())[:8]
+                final = ingested_output_path(out_dir, candidate.stem, kind, sha8)
+                final.parent.mkdir(parents=True, exist_ok=True)
+                final.write_text(f"# {candidate.stem}\n\n{text}\n", encoding="utf-8")
+                self._results[candidate] = final
+            except Exception as exc:
+                self._results[candidate] = RuntimeError(
+                    f"No se pudo extraer texto de {candidate.name} con el fallback PDF: {exc}"
+                )

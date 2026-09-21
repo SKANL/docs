@@ -156,7 +156,7 @@ def test_resolve_java_executable_uses_configured_bin_when_which_misses(monkeypat
     assert resolve_java_executable({"java_bin": str(fake_java)}) == str(fake_java)
 
 
-def test_missing_java_reports_clear_error_and_leaves_no_partial_output(tmp_path: Path):
+def test_missing_java_uses_deterministic_text_fallback(tmp_path: Path):
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     src = _write_pdf(inbox / "doc.pdf", "Hello")
@@ -164,10 +164,10 @@ def test_missing_java_reports_clear_error_and_leaves_no_partial_output(tmp_path:
     out_dir.mkdir()
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(None))
 
-    with pytest.raises(RuntimeError, match=r"[Jj]ava"):
-        adapter.ingest(src, out_dir, "pdf")
+    output = adapter.ingest(src, out_dir, "pdf")
 
-    assert list(out_dir.iterdir()) == []
+    assert output.is_file()
+    assert "Hello" in output.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(not _HAS_JAVA, reason="Java not installed")
