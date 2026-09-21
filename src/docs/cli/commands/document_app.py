@@ -1765,7 +1765,7 @@ def run_document(
         # wrong document. Use the workspace-local registry unless the caller
         # explicitly supplied DOCS_WORKSPACE_REGISTRY.
         registry = WorkspaceRegistry(
-            registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+            registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
         )
         active = registry.active()
         if active is None:
@@ -1836,7 +1836,7 @@ def run_document(
     workspace_root = deps.workspace.documents_dir.parent.resolve()
     registry_path = workspace_root / ".docs" / "workspaces.json"
     registry = WorkspaceRegistry(
-        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
     )
     active = registry.active()
     if active is None:
@@ -1887,7 +1887,7 @@ def _durable_evidence_stores(ctx: typer.Context):
     root = deps.workspace.documents_dir.parent.resolve()
     registry_path = root / ".docs" / "workspaces.json"
     registry = WorkspaceRegistry(
-        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
     )
     active = registry.active()
     if active is not None:

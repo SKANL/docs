@@ -22,7 +22,7 @@ def _stores(ctx: typer.Context):
     root = deps.workspace.documents_dir.parent.resolve()
     registry_path = root / ".docs" / "workspaces.json"
     registry = WorkspaceRegistry(
-        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or registry_path
+        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
     )
     active = registry.active()
     if active is not None:
