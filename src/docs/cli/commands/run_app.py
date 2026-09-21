@@ -59,6 +59,7 @@ def cancel_run(ctx: typer.Context, run_id: str) -> None:
     cancel = getattr(queue, "cancel", None)
     if callable(cancel):
         cancel(run_id)
+    store.put(Run(item.id, "cancelled", item.payload, item.created_at))
     typer.echo(json.dumps({"id": run_id, "status": "cancelled"}, sort_keys=True))
 
 
