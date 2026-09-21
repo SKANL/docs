@@ -16,6 +16,10 @@ try {
     Get-ChildItem (Join-Path $distDir 'docs-sidecar') -Force | Copy-Item -Destination $sidecarDir -Recurse -Force
     $sidecarExecutable = Join-Path $sidecarDir 'docs-sidecar.exe'
     if (-not (Test-Path $sidecarExecutable -PathType Leaf)) { throw 'PyInstaller did not produce docs-sidecar.exe.' }
+    # Import-time smoke test: a successful PyInstaller build is not enough;
+    # lazy imports must also resolve in the frozen runtime.
+    & $sidecarExecutable --help | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Frozen sidecar failed its --help smoke test (exit code $LASTEXITCODE)." }
 } finally {
     Pop-Location
 }
