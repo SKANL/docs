@@ -79,6 +79,7 @@ class X20Application:
         document_context_reader: Any = None,
         document_context_writer: Any = None,
         classification_service: Any = None,
+        workspace_scoped_auth: bool = False,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -109,6 +110,7 @@ class X20Application:
         self.document_context_reader = document_context_reader
         self.document_context_writer = document_context_writer
         self.classification_service = classification_service
+        self.workspace_scoped_auth = workspace_scoped_auth
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
@@ -657,18 +659,22 @@ class X20Application:
         self._require_owned(run, request, "Run")
         return run
 
-    @staticmethod
-    def _require_owned(resource: Any, request: Request, resource_name: str) -> None:
+    def _require_owned(self, resource: Any, request: Request, resource_name: str) -> None:
         principal = request.principal
-        if principal is None or X20Application._is_owned(resource, principal):
+        if principal is None or self._is_owned(resource, principal):
             return
 
         raise APIError("not_found", f"{resource_name} not found", 404)
 
-    @staticmethod
-    def _is_owned(resource: Any, principal: Any) -> bool:
+    def _is_owned(self, resource: Any, principal: Any) -> bool:
         data = _dict(resource)
         ownership = data.get("payload", data) if isinstance(data, Mapping) else {}
+        if self.workspace_scoped_auth and isinstance(ownership, Mapping):
+            # Self-hosted deployments have one configured workspace boundary;
+            # legacy manifests created before tenant metadata existed remain
+            # owned by that authenticated workspace, not anonymous globally.
+            if "tenant_id" not in ownership and "organization_id" not in ownership:
+                return principal.tenant_id is not None and principal.organization_id is not None
         return not (
             not isinstance(ownership, Mapping)
             or principal.tenant_id is None
