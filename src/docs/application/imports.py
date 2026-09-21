@@ -52,7 +52,7 @@ class SourceImportService:
             temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
             temporary.write_bytes(content)
             temporary.replace(destination)
-        mime = self._mime_type(safe_name)
+        mime = self._detect_mime(content, safe_name)
         return {
             "id": f"import-{digest[:16]}",
             "document_id": doc,
@@ -89,3 +89,35 @@ class SourceImportService:
             ".txt": "text/plain",
         }
         return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+    @classmethod
+    def _detect_mime(cls, content: bytes, filename: str) -> str:
+        """Prefer content signatures over a caller-controlled extension.
+
+        The filename is retained for display and routing, but import metadata
+        must describe the bytes that were actually stored.  ZIP-based Office
+        documents are distinguished from arbitrary ZIP files by their OOXML
+        marker; unknown formats retain the extension fallback so existing
+        adapters can report a useful unsupported-input finding.
+        """
+        if content.startswith(b"%PDF-"):
+            return "application/pdf"
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "image/png"
+        if content.startswith(b"\xff\xd8\xff"):
+            return "image/jpeg"
+        if content.startswith(b"GIF87a") or content.startswith(b"GIF89a"):
+            return "image/gif"
+        if content.startswith(b"\x89PNG"):
+            return "image/png"
+        if content.startswith(b"PK\x03\x04"):
+            # DOCX/XLSX/PPTX are ZIP containers.  Do not import zipfile here;
+            # the ingest adapter owns archive validation and will provide the
+            # detailed diagnostic for malformed containers.
+            if b"word/" in content[:1024 * 1024]:
+                return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            if b"xl/" in content[:1024 * 1024]:
+                return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if b"ppt/" in content[:1024 * 1024]:
+                return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        return cls._mime_type(filename)

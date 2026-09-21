@@ -30,6 +30,23 @@ def test_import_is_idempotent_for_same_content(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("filename", "payload", "expected"),
+    [
+        ("renamed.bin", b"%PDF-1.7\n", "application/pdf"),
+        ("renamed.bin", b"\x89PNG\r\n\x1a\n", "image/png"),
+        ("renamed.bin", b"\xff\xd8\xff\xe0", "image/jpeg"),
+    ],
+)
+def test_import_records_detected_mime_from_content(
+    tmp_path: Path, filename: str, payload: bytes, expected: str
+) -> None:
+    result = SourceImportService().import_base64(
+        tmp_path, filename, base64.b64encode(payload).decode()
+    )
+    assert result["mime_type"] == expected
+
+
+@pytest.mark.parametrize(
     ("filename", "payload", "error"),
     [
         ("../escape.pdf", b"x", "invalid_filename"),
