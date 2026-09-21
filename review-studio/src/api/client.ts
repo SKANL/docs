@@ -220,21 +220,16 @@ export class ReviewApiClient {
     return this.request<unknown>(`${path}${query.size ? `?${query}` : ""}`).then(page<T>);
   }
 
-  listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => ({
-    ...result,
-    items: result.items.map(normalizeRun),
-  })); }
+  listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => result.items.map(normalizeRun)); }
   async health() {
     const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
     if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
     return await response.json() as { ready:boolean; protocol?:string; version?:string };
   }
-  listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params); }
-  listFindings(params?: ListParams) { return this.list<Finding>("findings", params); }
+  listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params).then(result => result.items); }
+  listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items); }
   listArtifacts(params?: ListParams) {
-    return this.list<Record<string, unknown>>("artifacts", params).then(result => ({
-      ...result,
-      items: result.items.map(raw => ({
+    return this.list<Record<string, unknown>>("artifacts", params).then(result => result.items.map(raw => ({
         id: typeof raw.id === "string" ? raw.id : "artifact",
         name: typeof raw.name === "string" ? raw.name : typeof raw.id === "string" ? raw.id : "Unnamed artifact",
         runId: typeof raw.run_id === "string" ? raw.run_id : undefined,
@@ -243,8 +238,7 @@ export class ReviewApiClient {
         status: raw.status === "failed" || raw.status === "warnings" || raw.status === "passed" ? raw.status : "unverified",
         pages: typeof raw.pages === "number" ? raw.pages : undefined,
         checksum: typeof raw.checksum === "string" ? raw.checksum : typeof raw.digest === "string" ? raw.digest : "Hash unavailable",
-      } satisfies Artifact)),
-    }));
+      } satisfies Artifact)));
   }
   getPassport(runId: string) { return this.request<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
   getGraph() { const query = this.selectedWorkspaceId ? `?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}` : ""; return this.request<unknown>(`graph${query}`).then(normalizeGraph); }
@@ -254,11 +248,11 @@ export class ReviewApiClient {
     if (this.selectedWorkspaceId) params.set("workspace_id", this.selectedWorkspaceId);
     return this.request<unknown>(`graph?${params}`).then(normalizeGraphQuery);
   }
-  listTemplates(params?: ListParams) { return this.list<Template>("templates", params); }
-  listPlugins(params?: ListParams) { return this.list<Record<string, unknown>>("plugins", params); }
-  listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params); }
-  listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params); }
-  listPublications(params?: ListParams) { return this.list<Publication>("publications", params); }
+  listTemplates(params?: ListParams) { return this.list<Template>("templates", params).then(result => result.items); }
+  listPlugins(params?: ListParams) { return this.list<Record<string, unknown>>("plugins", params).then(result => result.items); }
+  listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params).then(result => result.items); }
+  listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params).then(result => result.items); }
+  listPublications(params?: ListParams) { return this.list<Publication>("publications", params).then(result => result.items); }
   listWorkspaces() {
     return this.request<unknown>("workspaces").then(raw => {
       const items = page<Workspace>(raw).items;

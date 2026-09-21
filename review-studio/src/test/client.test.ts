@@ -15,13 +15,13 @@ describe("ReviewApiClient", () => {
       },
     });
 
-    await expect(client.listRuns()).resolves.toMatchObject({ items: [{ id: "run-after-startup" }] });
+    await expect(client.listRuns()).resolves.toEqual([{ id: "run-after-startup" }]);
     expect(attempts).toBe(3);
   });
   it("builds typed paginated /v1 requests", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{ id: "run-1" }], next_cursor: "next", total: 4 }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
-    await expect(client.listRuns({ cursor: "a b", limit: 2 })).resolves.toEqual({ items: [{ id: "run-1" }], nextCursor: "next", total: 4 });
+    await expect(client.listRuns({ cursor: "a b", limit: 2 })).resolves.toEqual([{ id: "run-1" }]);
     expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v1/runs?cursor=a+b&limit=2");
   });
 
@@ -53,7 +53,7 @@ describe("ReviewApiClient", () => {
     }]}));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
 
-    await expect(client.listRuns()).resolves.toMatchObject({ items: [{
+    await expect(client.listRuns()).resolves.toMatchObject([{
       id: "run-real",
       document: "doc-real",
       template: "technical-report-srs",
@@ -63,7 +63,7 @@ describe("ReviewApiClient", () => {
       findings: 2,
       artifactCount: 3,
       progress: 100,
-    }] });
+    }]);
   });
 
   it("attaches a configured bearer token without replacing request headers", async () => {

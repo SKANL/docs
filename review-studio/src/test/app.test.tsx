@@ -8,12 +8,12 @@ import type { ReviewApi } from "../api/models";
 const apiFrom = (fetch: typeof globalThis.fetch): ReviewApi => {
   const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch });
   return {
-    listRuns: () => client.listRuns().then(page => page.items),
-    listFindings: () => client.listFindings().then(page => page.items),
-    listArtifacts: () => client.listArtifacts().then(page => page.items),
+    listRuns: () => client.listRuns(),
+    listFindings: () => client.listFindings(),
+    listArtifacts: () => client.listArtifacts(),
     getPassport: id => client.getPassport(id), getGraph: () => client.getGraph(), getGraphQuery: (q, id) => client.getGraphQuery(q, id),
-    listTemplates: () => client.listTemplates().then(page => page.items), listBaselines: () => client.listBaselines().then(page => page.items),
-    listRevisions: () => client.listRevisions().then(page => page.items), listPublications: () => client.listPublications().then(page => page.items),
+    listTemplates: () => client.listTemplates(), listBaselines: () => client.listBaselines(),
+    listRevisions: () => client.listRevisions(), listPublications: () => client.listPublications(),
   };
 };
 
