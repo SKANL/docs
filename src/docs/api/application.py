@@ -535,7 +535,6 @@ class X20Application:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             raise APIError(str(exc), str(exc), status) from exc
         self._seed_builtin_templates(Path(str(item["root"])))
-        self._refresh_plugins()
         return Response.json(item, 201)
 
     @staticmethod
@@ -1249,7 +1248,7 @@ class X20Application:
 
     def _plugins(self, request: Request) -> Response:
         if self.plugin_registry is not None:
-            self._refresh_plugins()
+            registry = self._plugin_registry_for_request(request)
             items = [
                 {
                     "id": item.manifest.plugin_id,
@@ -1260,8 +1259,7 @@ class X20Application:
                     "artifact_digest": item.artifact_digest,
                     "sbom": item.sbom,
                 }
-                for item in self.plugin_registry.list()
-                if self._plugin_visible(item, request)
+                for item in registry.list()
             ]
         else:
             items = self._store_items(self.plugin_store, "list") or list(self.plugins)
@@ -1270,10 +1268,9 @@ class X20Application:
     def _plugin(self, plugin_id: str, request: Request) -> Response:
         """Return one registered plugin using the same normalized contract as the collection."""
         if self.plugin_registry is not None:
-            self._refresh_plugins()
-            items = self.plugin_registry.list()
+            items = self._plugin_registry_for_request(request).list()
             for item in items:
-                if item.manifest.plugin_id == plugin_id and self._plugin_visible(item, request):
+                if item.manifest.plugin_id == plugin_id:
                     return Response.json(
                         {
                             "id": item.manifest.plugin_id,
@@ -1292,10 +1289,10 @@ class X20Application:
                     return Response.json(value)
         raise APIError("not_found", "Plugin not found", 404)
 
-    def _plugin_visible(self, item: Any, request: Request) -> bool:
-        """Keep plugin discovery isolated to the requested workspace."""
+    def _plugin_registry_for_request(self, request: Request) -> Any:
+        """Build a workspace-local registry so same-id plugins cannot collide."""
         if self.workspace_registry is None:
-            return True
+            return self.plugin_registry
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
         try:
             workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
@@ -1303,21 +1300,14 @@ class X20Application:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         if workspace is None:
             raise APIError("workspace_not_configured", "Select a workspace before reading plugins", 503)
-        source = getattr(item, "source", None)
-        if source is None:
-            return False
         try:
-            Path(str(source)).resolve().relative_to((Path(str(workspace["root"])) / "plugins").resolve())
-            return True
-        except (ValueError, OSError):
-            return False
-
-    def _refresh_plugins(self) -> None:
-        """Discover manifests from every registered workspace without executing them."""
-        if self.plugin_registry is None or self.workspace_registry is None:
-            return
-        roots = [Path(str(item["root"])) / "plugins" for item in self.workspace_registry.list()]
-        self.plugin_registry.discover(roots)
+            registry = type(self.plugin_registry)()
+            registry.discover([Path(str(workspace["root"])) / "plugins"])
+            return registry
+        except (TypeError, AttributeError):
+            # Embedded callers may provide a custom registry implementation;
+            # retain its contract instead of making plugin listing mandatory.
+            return self.plugin_registry
 
     def _promote_baseline(self, request: Request) -> Response:
         data = request.json(object_only=True)
