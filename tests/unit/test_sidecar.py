@@ -11,6 +11,7 @@ import pytest
 from docs.domain.contracts import Run
 from docs.api.http import Request
 from docs.sidecar import SidecarConfig, build_application, build_server, run
+from docs.sidecar import _persist_worker_evidence
 
 
 def test_sidecar_defaults_are_loopback_and_protocol_stable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -21,6 +22,34 @@ def test_sidecar_defaults_are_loopback_and_protocol_stable(monkeypatch: pytest.M
     assert config.port == 8765
     assert config.protocol == "docs-sidecar/v1"
     assert "http://localhost:1420" in config.cors_origins
+
+
+def test_worker_passport_contains_each_pipeline_stage_receipt() -> None:
+    class Store:
+        def __init__(self) -> None:
+            self.value = None
+
+        def put(self, value) -> None:
+            self.value = value
+
+    class Result:
+        run_id = "run-1"
+        state = "succeeded"
+        attempt = 1
+        value = {"report": {"execution": {"results": [
+            {"stage": "render", "ok": True, "outcome": "succeeded"},
+            {"stage": "verify", "ok": True, "outcome": "succeeded"},
+        ]}}}
+
+    passports, artifacts, findings = Store(), Store(), Store()
+    _persist_worker_evidence(passports, artifacts, findings, Result())
+
+    assert [entry["stage"] for entry in passports.value.entries] == [
+        "worker", "pipeline", "pipeline_stage", "pipeline_stage"
+    ]
+    assert [entry["stage"] for entry in passports.value.entries[2:]] == ["pipeline_stage", "pipeline_stage"]
+    assert [entry["name"] for entry in passports.value.entries[2:]] == ["render", "verify"]
+    assert [entry["receipt"]["outcome"] for entry in passports.value.entries[2:]] == ["succeeded", "succeeded"]
 
 
 def test_sidecar_accepts_workspace_from_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

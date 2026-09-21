@@ -918,12 +918,19 @@ def _persist_worker_evidence(
 ) -> None:
     """Persist the real pipeline result as the run's durable evidence passport."""
     value = result.value if isinstance(result.value, dict) else {"value": result.value}
-    passport_store.put(Passport(result.run_id, entries=(
-        {"stage": "worker", "status": result.state, "attempt": result.attempt},
-        {"stage": "pipeline", "result": value},
-    )))
     report = value.get("report", {}) if isinstance(value, dict) else {}
     execution = report.get("execution", {}) if isinstance(report, dict) else {}
+    passport_entries: list[dict[str, Any]] = [
+        {"stage": "worker", "status": result.state, "attempt": result.attempt},
+        {"stage": "pipeline", "result": value},
+    ]
+    for stage in execution.get("results", ()) if isinstance(execution, dict) else ():
+        if isinstance(stage, Mapping):
+            # Preserve the complete stage receipt in the immutable passport so
+            # Review Studio and downstream consumers can explain what ran.
+            receipt = dict(stage)
+            passport_entries.append({"stage": "pipeline_stage", "name": receipt.get("stage", "unknown"), "receipt": receipt})
+    passport_store.put(Passport(result.run_id, entries=tuple(passport_entries)))
     document_id = value.get("document_id") if isinstance(value, dict) else None
     document_root = None
     if isinstance(document_id, str) and document_id and workspace_root is not None:
