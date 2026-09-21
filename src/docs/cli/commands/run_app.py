@@ -56,6 +56,8 @@ def cancel_run(ctx: typer.Context, run_id: str) -> None:
     item = store.get(run_id)
     if item is None:
         raise typer.BadParameter(f"Run not found: {run_id}")
+    if item.status in {"succeeded", "completed", "failed", "expired", "cancelled"}:
+        raise typer.BadParameter(f"Run is already terminal: {item.status}")
     cancel = getattr(queue, "cancel", None)
     if callable(cancel):
         cancel(run_id)
