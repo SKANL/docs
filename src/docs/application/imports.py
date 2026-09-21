@@ -36,6 +36,17 @@ class SourceImportService:
             raise ImportError("invalid_base64") from exc
         if not content:
             raise ImportError("empty_source")
+        return self.import_bytes(workspace_root, safe_name, content, document_id=document_id)
+
+    def import_bytes(
+        self,
+        workspace_root: str | Path,
+        filename: str,
+        content: bytes,
+        *,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
+        safe_name = self._filename(filename)
         if len(content) > self.max_bytes:
             raise ImportError("source_too_large")
         root = Path(workspace_root).expanduser().resolve()

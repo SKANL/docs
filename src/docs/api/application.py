@@ -132,6 +132,7 @@ class X20Application:
             ("GET", "/v1/workspaces"),
             ("POST", "/v1/workspaces"),
             ("POST", "/v1/documents/import"),
+            ("POST", "/v1/documents/import/raw"),
             ("POST", "/v1/documents"),
             ("POST", "/v1/baselines/promotions"),
             ("POST", "/v1/runs"),
@@ -151,6 +152,7 @@ class X20Application:
         self._register_owned_route("GET", "/v1/workspaces", self._workspaces)
         self._register_owned_route("POST", "/v1/workspaces", self._create_workspace)
         self._register_owned_route("POST", "/v1/documents/import", self._import_document)
+        self._register_owned_route("POST", "/v1/documents/import/raw", self._import_raw_document)
         self._register_owned_route("POST", "/v1/documents", self._create_document)
         self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
         self._register_owned_route("POST", "/v1/runs", self._create_run)
@@ -520,6 +522,28 @@ class X20Application:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         except ImportError as exc:
             raise APIError(str(exc), str(exc), 400) from exc
+        return Response.json(result, 201)
+
+    def _import_raw_document(self, request: Request) -> Response:
+        """Import binary source bytes without base64/JSON buffering."""
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        workspace_id = str(request.query.get("workspace_id", ""))
+        try:
+            workspace = self.workspace_registry.get(workspace_id)
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        if not isinstance(request.body, (bytes, bytearray)) or not request.body:
+            raise APIError("empty_source", "Source body is empty", 400)
+        filename = str(request.headers.get("x-docs-filename", "source.bin"))
+        result = self.import_service.import_bytes(
+            workspace["root"], filename, bytes(request.body), document_id=request.query.get("document_id")
+        )
+        metadata = Path(str(result["path"])).with_suffix(".import.json")
+        metadata.write_text(json.dumps({
+            "template": request.query.get("template", "documento-generico"),
+            "title": request.query.get("title", result["document_id"]),
+        }, sort_keys=True), encoding="utf-8")
         return Response.json(result, 201)
 
     def _create_document(self, request: Request) -> Response:

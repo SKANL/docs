@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import shutil
@@ -12,6 +11,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.parse
 from urllib.error import HTTPError
 from pathlib import Path
 
@@ -73,15 +73,10 @@ def main() -> int:
         for source in PDFS:
             document_id = "pdf-" + str(PDFS.index(source) + 1)
             print(f"[{source.name}] import", flush=True)
-            payload = {
-                "workspace_id": workspace_id,
-                "document_id": document_id,
-                "filename": source.name,
-                "content_base64": base64.b64encode(source.read_bytes()).decode(),
-                "template": "documento-generico",
-                "title": source.stem,
-            }
-            status, imported = call(base, "/v1/documents/import", "POST", payload)
+            query = urllib.parse.urlencode({"workspace_id": workspace_id, "document_id": document_id, "template": "documento-generico", "title": source.stem})
+            request = urllib.request.Request(base + "/v1/documents/import/raw?" + query, data=source.read_bytes(), method="POST", headers={"Content-Type": "application/octet-stream", "Content-Length": str(source.stat().st_size), "X-Docs-Filename": source.name, "Connection": "close"})
+            with urllib.request.urlopen(request, timeout=180) as response:
+                status, imported = response.status, json.loads(response.read())
             if status != 201:
                 diagnostics = process.stderr.read().decode(errors="replace") if process.stderr else ""
                 raise SystemExit(f"import failed for {source.name}: {status} {imported}\n{diagnostics}")
