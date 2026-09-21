@@ -1780,6 +1780,19 @@ def run_document(
         result = {"id": run_id, "status": SqliteRunStore(state).get(run_id).status if SqliteRunStore(state).get(run_id) else "queued"}
         typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
         return
+    # Synchronous runs must be self-contained as well: ingest/normalize,
+    # compile structure, and create safe managed scaffolds before rendering.
+    # Authored sections remain protected by SectionService.
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    source_pipeline = _source_pipeline(deps)
+    if source_pipeline is None:
+        raise typer.BadParameter("source ingest dependencies are unavailable")
+    prepared = source_pipeline.prepare(resolved.doc_id, deps.workspace.doc_root(resolved.doc_id), resolved.config)
+    if not prepared.get("succeeded"):
+        raise typer.BadParameter("document preparation failed; inspect the source pipeline report")
+    for section in resolved.template.sections:
+        deps.section.build_section(resolved.doc_id, resolved.template, section.id, resolved.config)
     _run(
         ctx,
         "build",
