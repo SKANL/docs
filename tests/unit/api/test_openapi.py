@@ -144,6 +144,15 @@ def test_import_job_and_stage_are_versioned_contracts() -> None:
     assert "expired" in schemas["status"]["enum"]
 
 
+def test_run_schema_matches_the_docs_x20_contract_shape() -> None:
+    run = build_openapi_document()["components"]["schemas"]["run"]
+
+    assert set(run["properties"]) == {"schema", "id", "status", "payload", "created_at"}
+    assert run["properties"]["schema"]["const"] == "docs.x20/v1"
+    assert run["properties"]["payload"] == {"type": "object"}
+    assert "document_id" not in run["properties"]
+
+
 def test_run_graph_reuses_the_graph_query_contract_and_scope() -> None:
     paths = build_openapi_document()["paths"]
     graph = paths["/v1/graph"]
