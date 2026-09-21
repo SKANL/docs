@@ -5,21 +5,25 @@ on:
     tags:
       - "desktop-v*"
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - uses: astral-sh/setup-uv@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4.7.0
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
       - name: Build signed desktop bundles
         working-directory: desktop
         run: npm run build:windows
@@ -37,7 +41,7 @@ jobs:
             --nsis $nsis.FullName `
             --output latest.json
       - name: Publish signed release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a4f117a9dd5572319a486154ec1147aebabd285c # master
         with:
           generate_release_notes: true
           files: |
