@@ -39,8 +39,8 @@ def build_application(config: TransportConfig):
     )
     if application.application is None:
         raise RuntimeError("self-hosted API application failed to initialize")
-    application.application.auth = validator
-    return application.application
+    application.auth = validator
+    return application
 
 
 def _workspace_from_environment() -> Path | None:

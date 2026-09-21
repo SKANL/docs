@@ -458,6 +458,17 @@ class _HealthApplication:
         self.worker_runner = worker_runner
         self.worker_thread = worker_thread
 
+    @property
+    def auth(self) -> Any:
+        """Expose the composed application's validator to docs-api transport."""
+        return getattr(self.application, "auth", None)
+
+    @auth.setter
+    def auth(self, validator: Any) -> None:
+        if self.application is None:
+            raise RuntimeError("cannot configure auth without an application")
+        self.application.auth = validator
+
     def shutdown(self) -> None:
         if self.worker_runner is not None:
             self.worker_runner.stop()
