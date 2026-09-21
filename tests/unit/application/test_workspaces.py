@@ -55,3 +55,13 @@ def test_registry_provisions_isolated_workspace_layout(tmp_path: Path) -> None:
 
     expected = {"documents", "templates", "assets", "runs", "artifacts", "baselines", "passports", ".docs"}
     assert {path.name for path in Path(item["root"]).iterdir()} >= expected
+
+
+def test_registry_seeds_builtin_templates_for_new_workspace(tmp_path: Path) -> None:
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    item = registry.create("Primary", tmp_path / "one")
+
+    templates = Path(item["root"]) / "templates"
+    assert (templates / "documento-generico.json").is_file()
+    assert (templates / "technical-report-srs.json").is_file()
+    assert (templates / "reporte-estadia-tic.json").is_file()
