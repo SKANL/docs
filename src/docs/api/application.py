@@ -160,7 +160,11 @@ class X20Application:
     def dispatch(self, request: Request) -> Response:
         with self.observability.span("docs.api.request", {"method": request.method.upper()}):
             parts = request.route_path.strip("/").split("/")
-            if len(parts) >= 3 and parts[:2] in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"]):
+            if (
+                len(parts) >= 3
+                and parts[:2] in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"])
+                and request.route_path not in {"/v1/documents/import", "/v1/documents/import/raw"}
+            ):
                 handler = self._dynamic_handler(request.method, request.route_path)
                 if handler is not None:
                     key = (request.method.upper(), request.route_path)
