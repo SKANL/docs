@@ -338,6 +338,10 @@ fn package_local_candidates(resource_dir: &Path) -> impl Iterator<Item = PathBuf
         [
             resource_dir.join("sidecar").join(name),
             resource_dir.join(name),
+            // NSIS places bundled resources under `_up_` during a fresh
+            // per-user install. Treat that directory as a package resource
+            // location, not as a user-controlled workspace path.
+            resource_dir.join("_up_").join("sidecar").join(name),
         ]
         .into_iter()
     })
@@ -495,5 +499,13 @@ mod tests {
         };
         let encoded = serde_json::to_string(&schema).expect("serialize schema");
         assert!(encoded.contains("\"version\":1"));
+    }
+
+    #[test]
+    fn package_candidates_include_nsis_resource_directory() {
+        let candidates: Vec<_> = package_local_candidates(Path::new("C:/Review Studio/resources"))
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+        assert!(candidates.iter().any(|path| path.contains("_up_")));
     }
 }
