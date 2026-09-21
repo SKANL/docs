@@ -21,8 +21,9 @@ def _operation(
     *,
     request: dict[str, Any] | None = None,
     scopes: tuple[str, ...] = (),
+    success_status: int = 200,
 ) -> dict[str, Any]:
-    operation: dict[str, Any] = {"operationId": summary.lower().replace(" ", "_"), "summary": summary, "security": [{"bearerAuth": []}, {"apiKeyAuth": []}], "responses": {"200": response, "400": _json_response(_ref("error"), "Invalid request"), "401": _json_response(_ref("error"), "Authentication required"), "404": _json_response(_ref("error"), "Resource not found")}}
+    operation: dict[str, Any] = {"operationId": summary.lower().replace(" ", "_"), "summary": summary, "security": [{"bearerAuth": []}, {"apiKeyAuth": []}], "responses": {str(success_status): response, "400": _json_response(_ref("error"), "Invalid request"), "401": _json_response(_ref("error"), "Authentication required"), "404": _json_response(_ref("error"), "Resource not found")}}
     if request is not None:
         operation["requestBody"] = {"required": True, "content": {"application/json": {"schema": request}}}
     if scopes:
@@ -97,6 +98,8 @@ def build_openapi_document() -> dict[str, Any]:
                     "properties": {
                         "workspace_id": {"type": "string"},
                         "document_id": {"type": "string"},
+                        "template": {"type": "string"},
+                        "title": {"type": "string"},
                         "filename": {"type": "string"},
                         "content_base64": {"type": "string", "contentEncoding": "base64"},
                     },
@@ -114,8 +117,8 @@ def build_openapi_document() -> dict[str, Any]:
             "get": _operation("List document runs", page("run"), scopes=("documents:read",))
         },
         "/v1/documents/{document_id}/prepare": {"post": _operation("Prepare document", _json_response(_ref("document")), scopes=("documents:write",))},
-        "/v1/documents/{document_id}/build": {"post": _operation("Build document", _json_response(_ref("run")), scopes=("documents:write",))},
-        "/v1/documents/{document_id}/verify": {"post": _operation("Verify document", _json_response(_ref("run")), scopes=("documents:write",))},
+        "/v1/documents/{document_id}/build": {"post": _operation("Build document", _json_response(_ref("run")), scopes=("documents:write",), success_status=202)},
+        "/v1/documents/{document_id}/verify": {"post": _operation("Verify document", _json_response(_ref("run")), scopes=("documents:write",), success_status=202)},
         "/v1/documents/{document_id}/revisions": {
             "post": _operation("Create document revision", _json_response(_ref("revision")), scopes=("documents:write",))
         },
