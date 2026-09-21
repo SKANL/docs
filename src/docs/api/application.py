@@ -274,6 +274,8 @@ class X20Application:
         if parts[:2] == ["v1", "workspaces"]:
             if len(parts) == 3 and method == "GET":
                 return "workspaces:read"
+            if len(parts) == 3 and method == "PATCH":
+                return "workspaces:write"
             if len(parts) == 3 and method == "DELETE":
                 return "workspaces:write"
             if len(parts) == 4 and parts[3] == "select" and method == "POST":

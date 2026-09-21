@@ -810,6 +810,7 @@ def test_application_bearer_challenge_is_returned_for_missing_credentials():
         ("GET", "/v1/documents", "documents:read"),
         ("GET", "/v1/documents/d1", "documents:read"),
         ("GET", "/v1/documents/d1/runs", "documents:read"),
+        ("PATCH", "/v1/workspaces/w1", "workspaces:write"),
         ("POST", "/v1/documents/d1/revisions", "documents:write"),
         ("GET", "/v1/findings", "findings:read"),
         ("GET", "/v1/runs/r1", "runs:read"),
