@@ -117,6 +117,19 @@ def test_review_studio_graph_query_aliases_and_id_are_documented() -> None:
     assert parameters["input_id"]["schema"] == {"type": "string"}
 
 
+def test_document_actions_document_workspace_format_and_policy_contract() -> None:
+    paths = build_openapi_document()["paths"]
+    expected = {"workspace_id", "run_id", "format", "policy"}
+
+    for action in ("prepare", "build", "verify", "publish"):
+        operation = paths[f"/v1/documents/{{document_id}}/{action}"]["post"]
+        schema = operation["requestBody"]["content"]["application/json"]["schema"]
+        assert set(schema["properties"]) == expected
+        assert schema["required"] == ["workspace_id"]
+        assert schema["properties"]["format"]["enum"] == ["docx", "html", "pdf"]
+        assert schema["properties"]["policy"]["enum"] == ["draft", "strict", "release"]
+
+
 def test_run_graph_reuses_the_graph_query_contract_and_scope() -> None:
     paths = build_openapi_document()["paths"]
     graph = paths["/v1/graph"]

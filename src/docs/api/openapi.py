@@ -74,6 +74,18 @@ def build_openapi_document() -> dict[str, Any]:
             },
             "Paginated response",
         )
+
+    document_action_request = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["workspace_id"],
+        "properties": {
+            "workspace_id": {"type": "string"},
+            "run_id": {"type": "string"},
+            "format": {"type": "string", "enum": ["docx", "html", "pdf"]},
+            "policy": {"type": "string", "enum": ["draft", "strict", "release"]},
+        },
+    }
     paths: dict[str, Any] = {
         "/v1/workspaces": {
             "get": _operation("List workspaces", page("workspace"), scopes=("workspaces:read",)),
@@ -161,10 +173,10 @@ def build_openapi_document() -> dict[str, Any]:
         "/v1/documents/{document_id}/runs": {
             "get": _operation("List document runs", page("run"), scopes=("documents:read",))
         },
-        "/v1/documents/{document_id}/prepare": {"post": _operation("Prepare document", _json_response(_ref("document")), scopes=("documents:write",))},
-        "/v1/documents/{document_id}/build": {"post": _operation("Build document", _json_response(_ref("run")), scopes=("documents:write",), success_status=202)},
-        "/v1/documents/{document_id}/verify": {"post": _operation("Verify document", _json_response(_ref("run")), scopes=("documents:write",), success_status=202)},
-        "/v1/documents/{document_id}/publish": {"post": _operation("Publish document", _json_response(_ref("run")), scopes=("documents:write",), success_status=202)},
+        "/v1/documents/{document_id}/prepare": {"post": _operation("Prepare document", _json_response(_ref("document")), request=document_action_request, scopes=("documents:write",))},
+        "/v1/documents/{document_id}/build": {"post": _operation("Build document", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
+        "/v1/documents/{document_id}/verify": {"post": _operation("Verify document", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
+        "/v1/documents/{document_id}/publish": {"post": _operation("Publish document", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
         "/v1/documents/{document_id}/revisions": {
             "post": _operation("Create document revision", _json_response(_ref("revision")), scopes=("documents:write",))
         },
