@@ -35,6 +35,60 @@ pub enum SupervisorError {
 const DEFAULT_HEALTH_URL: &str = "http://127.0.0.1:8765/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 const HEALTH_PROBE_TIMEOUT: Duration = Duration::from_millis(250);
+const DESKTOP_DATA_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DesktopDataSchema {
+    version: u32,
+}
+
+fn initialize_app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("app data directory: {error}"))?;
+    let workspace = root.join("workspace");
+    let directories = [
+        "documents",
+        "templates",
+        "assets",
+        "runs",
+        "artifacts",
+        "baselines",
+        "passports",
+        ".docs",
+    ];
+    for directory in directories {
+        std::fs::create_dir_all(workspace.join(directory))
+            .map_err(|error| format!("create workspace/{directory}: {error}"))?;
+    }
+
+    let schema_path = workspace.join(".docs").join("desktop-data-schema.json");
+    if schema_path.is_file() {
+        let existing = std::fs::read(&schema_path)
+            .map_err(|error| format!("read desktop data schema: {error}"))?;
+        let schema: DesktopDataSchema = serde_json::from_slice(&existing)
+            .map_err(|error| format!("parse desktop data schema: {error}"))?;
+        if schema.version > DESKTOP_DATA_SCHEMA_VERSION {
+            return Err(format!(
+                "desktop data schema {} is newer than this application supports ({DESKTOP_DATA_SCHEMA_VERSION})",
+                schema.version
+            ));
+        }
+        return Ok(workspace);
+    }
+    let schema = DesktopDataSchema {
+        version: DESKTOP_DATA_SCHEMA_VERSION,
+    };
+    let encoded = serde_json::to_vec_pretty(&schema)
+        .map_err(|error| format!("encode desktop data schema: {error}"))?;
+    let temporary = schema_path.with_extension("json.tmp");
+    std::fs::write(&temporary, encoded)
+        .map_err(|error| format!("write desktop data schema: {error}"))?;
+    std::fs::rename(&temporary, &schema_path)
+        .map_err(|error| format!("publish desktop data schema: {error}"))?;
+    Ok(workspace)
+}
 
 struct SupervisorState {
     child: Option<Child>,
@@ -353,12 +407,7 @@ fn sidecar_start(
             supervisor.fail(message.clone());
             message
         })?;
-    let workspace = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("app data directory: {error}"))?
-        .join("workspace");
-    std::fs::create_dir_all(&workspace).map_err(|error| error.to_string())?;
+    let workspace = initialize_app_data(&app)?;
     supervisor.start(executable, &workspace).map_err(|error| {
         let message = error.to_string();
         supervisor.fail(message.clone());
@@ -385,6 +434,7 @@ pub fn run() {
             sidecar_restart
         ])
         .setup(|app| {
+            initialize_app_data(&app.handle())?;
             let handle = app.handle().clone();
             thread::spawn(move || {
                 let supervisor = handle.state::<SidecarSupervisor>();
@@ -436,5 +486,14 @@ mod tests {
 
         assert!(probe_health(&format!("http://{address}/health")));
         server.join().expect("join test health endpoint");
+    }
+
+    #[test]
+    fn desktop_data_schema_is_versioned() {
+        let schema = DesktopDataSchema {
+            version: DESKTOP_DATA_SCHEMA_VERSION,
+        };
+        let encoded = serde_json::to_string(&schema).expect("serialize schema");
+        assert!(encoded.contains("\"version\":1"));
     }
 }
