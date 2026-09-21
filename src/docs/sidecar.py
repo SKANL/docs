@@ -118,6 +118,36 @@ class _FilesystemTemplateStore:
         return items
 
 
+class _WorkspaceJsonCollectionStore:
+    """Read JSON-backed baseline/revision records without inventing rows."""
+
+    def __init__(self, root: Path, kind: str) -> None:
+        self.root = root.resolve()
+        self.kind = kind
+
+    def list(self) -> list[dict[str, Any]]:
+        if self.kind == "baselines":
+            paths = sorted((self.root / "baselines").glob("*.json"))
+        else:
+            paths = sorted((self.root / "documents").glob("*/sections/_revisions/revision-log.json"))
+        items: list[dict[str, Any]] = []
+        for path in paths:
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            values = value if isinstance(value, list) else value.get("items", []) if isinstance(value, dict) else []
+            if not isinstance(values, list):
+                continue
+            for item in values:
+                if isinstance(item, dict):
+                    record = dict(item)
+                    record.setdefault("source_path", str(path))
+                    record.setdefault("workspace_root", str(self.root))
+                    items.append(record)
+        return items
+
+
 class _WorkspaceRunStore:
     """Route durable run records to the SQLite database of their workspace."""
 
@@ -545,6 +575,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         findings_store=findings_store,
         publication_store=publication_store,
         template_store=_FilesystemTemplateStore(config.workspace, registry),
+        baseline_store=_WorkspaceJsonCollectionStore(config.workspace, "baselines"),
+        revision_store=_WorkspaceJsonCollectionStore(config.workspace, "revisions"),
         document_store=_FilesystemDocumentStore(config.workspace, registry),
         workspace_registry=registry,
         document_creator=create_document,
