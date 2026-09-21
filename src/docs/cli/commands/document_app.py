@@ -1790,7 +1790,12 @@ def run_document(
             part for part in (os.fspath(source_root), worker_env.get("PYTHONPATH")) if part
         )
         worker_log = workspace_root / ".docs" / "worker.log"
-        worker_output = worker_log.open("ab")
+        # Windows keeps redirected handles alive across a detached process
+        # boundary more aggressively than POSIX. The durable run/passport is
+        # the authoritative structured record; avoid holding the workspace
+        # log open after the worker exits so temporary workspaces and clean
+        # shutdowns are actually removable. POSIX keeps the diagnostic file.
+        worker_output = subprocess.DEVNULL if os.name == "nt" else worker_log.open("ab")
         subprocess.Popen(
             [os.fspath(Path(os.sys.executable)), "-m", "docs.local_worker", "--workspace-root", os.fspath(workspace_root)],
             cwd=os.fspath(workspace_root),
@@ -1798,10 +1803,16 @@ def run_document(
             stdout=worker_output,
             stderr=worker_output,
             env=worker_env,
+            # The worker is intentionally detached from the CLI, but it must
+            # not inherit unrelated descriptors (especially on Windows). An
+            # inherited log handle keeps temporary workspaces locked after a
+            # successful run and makes clean shutdown impossible.
+            close_fds=True,
             creationflags=creationflags,
             start_new_session=True,
         )
-        worker_output.close()
+        if hasattr(worker_output, "close"):
+            worker_output.close()
         if watch:
             import time
             store = SqliteRunStore(state)
