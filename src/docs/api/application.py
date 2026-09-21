@@ -303,6 +303,8 @@ class X20Application:
                 return "documents:read"
             if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
                 return "documents:write"
+        if parts[:2] == ["v1", "plugins"] and len(parts) == 4 and method == "GET":
+            return "plugins:read"
         if parts[:2] == ["v1", "runs"]:
             if len(parts) == 3 and method == "GET":
                 return "runs:read"
@@ -339,7 +341,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"])
+            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"])
         ):
             return False
         if parts[:2] == ["v1", "documents"]:
@@ -355,6 +357,8 @@ class X20Application:
                 or (len(parts) == 5 and parts[3] == "sections" and method == "GET")
                 or (len(parts) == 5 and parts[3] == "sections" and method == "PUT")
             )
+        if parts[:2] == ["v1", "plugins"]:
+            return len(parts) == 4 and method == "GET"
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
         return (len(parts) == 4 and (
@@ -368,7 +372,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"])
+            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"])
         ):
             return None
         resource_id = parts[2]
@@ -404,6 +408,10 @@ class X20Application:
                 return lambda request: self._select_workspace(workspace_id, request)
             if len(parts) == 3 and method == "DELETE":
                 return lambda request: self._delete_workspace(workspace_id, request)
+            return None
+        if parts[:2] == ["v1", "plugins"]:
+            if len(parts) == 4 and method == "GET":
+                return lambda request: self._plugin(parts[3], request)
             return None
         run_id = resource_id
         if len(parts) == 3 and parts[2] != "runs" and method == "GET":
@@ -1186,6 +1194,31 @@ class X20Application:
         else:
             items = self._store_items(self.plugin_store, "list") or list(self.plugins)
         return self._page(items, request, "plugins")
+
+    def _plugin(self, plugin_id: str, request: Request) -> Response:
+        """Return one registered plugin using the same normalized contract as the collection."""
+        del request
+        if self.plugin_registry is not None:
+            items = self.plugin_registry.list()
+            for item in items:
+                if item.manifest.plugin_id == plugin_id:
+                    return Response.json(
+                        {
+                            "id": item.manifest.plugin_id,
+                            "version": item.manifest.version,
+                            "capabilities": sorted(item.manifest.capabilities),
+                            "trust": item.trust,
+                            "digest": item.digest,
+                            "artifact_digest": item.artifact_digest,
+                            "sbom": item.sbom,
+                        }
+                    )
+        else:
+            for item in self._store_items(self.plugin_store, "list") or list(self.plugins):
+                value = _dict(item)
+                if str(value.get("id", value.get("plugin_id", ""))) == plugin_id:
+                    return Response.json(value)
+        raise APIError("not_found", "Plugin not found", 404)
 
     def _promote_baseline(self, request: Request) -> Response:
         data = request.json(object_only=True)
