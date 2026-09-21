@@ -265,8 +265,9 @@ export class ReviewApiClient {
   }
   async importDocument(file: File, workspace: Workspace, options: {documentId?:string;template?:string;title?:string} = {}): Promise<ImportResult> {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
-    return this.request<ImportResult>("documents/import", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspace.id, filename:file.name, content_base64:btoa(binary), document_id:options.documentId, template:options.template, title:options.title}) });
+    const query = new URLSearchParams({workspace_id:workspace.id, template:options.template??"documento-generico", title:options.title??file.name});
+    if (options.documentId) query.set("document_id", options.documentId);
+    return this.request<ImportResult>("documents/import/raw?" + query.toString(), { method:"POST", headers:{"Content-Type":file.type||"application/octet-stream", "X-Docs-Filename":file.name}, body:bytes });
   }
 
   previewUrl(value: string): string {
