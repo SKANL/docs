@@ -7,9 +7,10 @@ import pytest
 from docs.api.application import X20Application
 from docs.api.auth import Principal
 from docs.api.enterprise import TokenBucketRateLimiter
-from docs.api.http import Request, Response, Router
+from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
+from docs.application.workspaces import WorkspaceRegistry
 from docs.domain.contracts import Artifact, Graph, Passport, Run
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 
@@ -113,6 +114,50 @@ def test_openapi_documents_owned_document_scope_operations():
     assert paths["/v1/documents/{document_id}"]["get"]["x-rbac-scopes"] == ["documents:read"]
     assert paths["/v1/documents/{document_id}/runs"]["get"]["x-rbac-scopes"] == ["documents:read"]
     assert paths["/v1/documents/{document_id}/revisions"]["post"]["x-rbac-scopes"] == ["documents:write"]
+
+
+def section_app(tmp_path, revision_service=None):
+    root = tmp_path / "workspace"
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Sections", root)
+    registry.select(workspace["id"])
+    document_root = root / "documents" / "d1"
+    (document_root / "sections").mkdir(parents=True)
+    (document_root / "document.json").write_text('{"id":"d1","title":"D1"}', encoding="utf-8")
+    (document_root / "sections" / "intro.md").write_text("Original", encoding="utf-8")
+    return X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), documents=[{"id": "d1"}], workspace_registry=registry,
+        revision_service=revision_service,
+    )
+
+
+def test_document_section_routes_list_get_and_reject_traversal(tmp_path):
+    application = section_app(tmp_path)
+
+    listed = application.dispatch(Request("GET", "/v1/documents/d1/sections"))
+    fetched = application.dispatch(Request("GET", "/v1/documents/d1/sections/intro"))
+    with pytest.raises(APIError, match="Invalid section identifier"):
+        application._document_section("d1", "../document", Request("GET", "/v1/documents/d1/sections/../document"))
+
+    assert body(listed)["items"] == [{"id": "intro", "filename": "intro.md", "body": "Original"}]
+    assert body(fetched)["body"] == "Original"
+
+
+def test_put_document_section_uses_configured_revision_service(tmp_path):
+    calls = []
+
+    class RevisionService:
+        def revise(self, document_id, revision):
+            calls.append((document_id, revision))
+            return {"diff_path": "sections/_revisions/intro.1.diff"}
+
+    response = section_app(tmp_path, RevisionService()).dispatch(
+        Request("PUT", "/v1/documents/d1/sections/intro", body={"body": "Revised", "request": "Clarify"})
+    )
+
+    assert response.status == 200
+    assert calls == [("d1", {"target_id": "intro", "new_body": "Revised", "request": "Clarify"})]
 
 
 def test_list_runs_returns_empty_page_from_injected_store():
