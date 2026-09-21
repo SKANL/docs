@@ -282,7 +282,7 @@ def build_openapi_document() -> dict[str, Any]:
     paths["/v1/runs/{run_id}/graph"] = copy.deepcopy(paths["/v1/graph"])
     paths["/v1/runs/{run_id}/graph"]["get"]["operationId"] = "get_run_graph"
     paths["/v1/runs/{run_id}/graph"]["get"]["summary"] = "Get run graph"
-    paged_paths = {"/v1/documents", "/v1/findings", "/v1/artifacts", "/v1/templates", "/v1/revisions", "/v1/publications", "/v1/runs/{run_id}/artifacts", "/v1/artifacts/{artifact_id}/previews", "/v1/baselines", "/v1/plugins"}
+    paged_paths = {"/v1/documents", "/v1/findings", "/v1/artifacts", "/v1/templates", "/v1/revisions", "/v1/publications", "/v1/runs", "/v1/runs/{run_id}/artifacts", "/v1/artifacts/{artifact_id}/previews", "/v1/baselines", "/v1/plugins"}
     for path, item in paths.items():
         parameters = []
         for segment in ("document_id", "run_id", "artifact_id", "revision_id", "baseline_id", "plugin_id"):
@@ -290,7 +290,7 @@ def build_openapi_document() -> dict[str, Any]:
                 parameters.append(_parameter(segment))
         parameters.extend(item.get("parameters", ()))
         if path in paged_paths:
-            parameters.extend([_parameter("limit", "query", {"type": "integer", "minimum": 1, "maximum": 100}), _parameter("cursor", "query", {"type": "string"})])
+            parameters.extend([_parameter("limit", "query", {"type": "integer", "minimum": 1, "maximum": 100}), _parameter("cursor", "query", {"type": "string"}), _parameter("workspace_id", "query", {"type": "string"})])
         if parameters:
             item["parameters"] = parameters
     return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "1.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}, {"apiKeyAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}, "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"}}, "schemas": _schemas()}}
