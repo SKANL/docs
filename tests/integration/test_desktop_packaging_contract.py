@@ -31,6 +31,7 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
 
     package = json.loads((root / "desktop/package.json").read_text(encoding="utf-8"))
     assert package["scripts"]["check:sidecar"] == "python scripts/check-sidecar-packaging.py"
+    assert package["scripts"]["check:sidecar:runtime"] == "python scripts/check-sidecar-runtime.py"
     assert package["scripts"]["build:sidecar"].endswith("scripts/build-sidecar.ps1")
     assert "beforeDevCommand" in config["build"]
     assert "review-studio" in config["build"]["beforeDevCommand"]
@@ -43,3 +44,7 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     assert "docs-sidecar.exe" in sidecar
     assert "--hidden-import docs.templates.builtin" in sidecar
     assert "--collect-data docs.templates.builtin" in sidecar
+    runtime_check = root / "desktop/scripts/check-sidecar-runtime.py"
+    assert runtime_check.is_file()
+    assert "docs-sidecar/v1" in runtime_check.read_text(encoding="utf-8")
+    assert "check-sidecar-runtime.py" in build_script.read_text(encoding="utf-8")

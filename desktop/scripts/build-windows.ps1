@@ -26,6 +26,7 @@ try {
     if (-not $packaged) {
         throw 'No Windows sidecar was staged. Build-sidecar.ps1 must produce sidecar/docs-sidecar.exe.'
     }
+    python scripts/check-sidecar-runtime.py
 
     npm run tauri build
 } finally {
