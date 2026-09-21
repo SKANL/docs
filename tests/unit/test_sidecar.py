@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from docs.domain.contracts import Run
+from docs.api.http import Request
 from docs.sidecar import SidecarConfig, build_application, build_server, run
 
 
@@ -110,6 +111,19 @@ def test_sidecar_runs_endpoint_reads_workspace_backed_store(tmp_path: Path) -> N
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    health_app = build_application(config)
+    try:
+        response = health_app.application.dispatch(Request("GET", "/v1/templates"))
+        payload = json.loads(response.body)
+        ids = {item["id"] for item in payload["items"]}
+        assert response.status == 200
+        assert {"documento-generico", "technical-report-srs", "reporte-estadia-tic"} <= ids
+    finally:
+        health_app.shutdown()
 
 
 def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None:

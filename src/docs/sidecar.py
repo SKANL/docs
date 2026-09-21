@@ -87,6 +87,37 @@ class _FilesystemDocumentStore:
         return value
 
 
+class _FilesystemTemplateStore:
+    """Expose the selected workspace's real template manifests to Review Studio."""
+
+    def __init__(self, workspace: Path, registry: WorkspaceRegistry) -> None:
+        self.workspace = workspace.resolve()
+        self.registry = registry
+
+    def _root(self) -> Path:
+        active = self.registry.active()
+        return (Path(str(active["root"])) if active is not None else self.workspace).resolve() / "templates"
+
+    def list(self) -> list[dict[str, Any]]:
+        root = self._root()
+        if not root.is_dir():
+            return []
+        items: list[dict[str, Any]] = []
+        for path in sorted(root.glob("*.json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(value, dict):
+                continue
+            value.setdefault("id", path.stem)
+            value.setdefault("version", value.get("template_version", "1"))
+            value["source_path"] = str(path)
+            value["updated"] = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat()
+            items.append(value)
+        return items
+
+
 class _WorkspaceRunStore:
     """Route durable run records to the SQLite database of their workspace."""
 
@@ -513,6 +544,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         plugin_registry=None,
         findings_store=findings_store,
         publication_store=publication_store,
+        template_store=_FilesystemTemplateStore(config.workspace, registry),
         document_store=_FilesystemDocumentStore(config.workspace, registry),
         workspace_registry=registry,
         document_creator=create_document,
