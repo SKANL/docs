@@ -1314,10 +1314,14 @@ class X20Application:
         baseline_id = data.get("baseline_id") or data.get("id")
         if not baseline_id:
             raise APIError("invalid_request", "baseline_id is required", 400)
-        promote = getattr(self.baseline_store, "promote", None)
+        workspace_id = data.get("workspace_id")
+        if self.workspace_registry is not None and not isinstance(workspace_id, str):
+            raise APIError("workspace_required", "workspace_id is required to promote a baseline", 400)
+        promote_for_workspace = getattr(self.baseline_store, "promote_for_workspace", None)
+        promote = promote_for_workspace if isinstance(workspace_id, str) and callable(promote_for_workspace) else getattr(self.baseline_store, "promote", None)
         if not callable(promote):
             raise APIError("not_found", "Baseline not found", 404)
-        result = promote(baseline_id, data)
+        result = promote(workspace_id, baseline_id, data) if promote is promote_for_workspace else promote(baseline_id, data)
         if result is None:
             raise APIError("not_found", "Baseline not found", 404)
         return Response.json(_dict(result))

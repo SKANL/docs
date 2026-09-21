@@ -189,9 +189,17 @@ class _WorkspaceJsonCollectionStore:
 
     def promote(self, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
         """Persist an explicit active-baseline pointer atomically."""
+        return self._promote_in_root(self._active_root(), baseline_id, metadata)
+
+    def promote_for_workspace(self, workspace_id: str, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+        """Promote a baseline without relying on process-global active state."""
+        return self._promote_in_root(self._root_for(workspace_id), baseline_id, metadata)
+
+    def _promote_in_root(self, root: Path, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+        """Persist an active pointer under one validated workspace root."""
         if self.kind != "baselines":
             return None
-        candidates = self.list()
+        candidates = self._list_root(root)
         selected = next(
             (item for item in candidates if str(item.get("id", item.get("name", ""))) == baseline_id),
             None,
@@ -201,7 +209,7 @@ class _WorkspaceJsonCollectionStore:
         record = {**selected, "promoted": True}
         if metadata:
             record["promotion"] = dict(metadata)
-        target = self._active_root() / "baselines" / "active.json"
+        target = root / "baselines" / "active.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(".json.tmp")
         temporary.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")

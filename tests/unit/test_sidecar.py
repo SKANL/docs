@@ -165,8 +165,10 @@ def test_sidecar_promotes_a_real_workspace_baseline(tmp_path: Path) -> None:
     try:
         baseline = tmp_path / "baselines" / "desktop.json"
         baseline.write_text(json.dumps({"id": "desktop", "scope": "html"}), encoding="utf-8")
+        workspaces = json.loads(health_app.application.dispatch(Request("GET", "/v1/workspaces")).body)
+        workspace_id = workspaces["active"]["id"]
         response = health_app.application.dispatch(
-            Request("POST", "/v1/baselines/promotions", body={"baseline_id": "desktop"})
+            Request("POST", "/v1/baselines/promotions", body={"baseline_id": "desktop", "workspace_id": workspace_id})
         )
         assert response.status == 200
         assert json.loads((tmp_path / "baselines" / "active.json").read_text(encoding="utf-8"))["promoted"] is True
