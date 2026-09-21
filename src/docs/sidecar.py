@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import multiprocessing
 import os
 import signal
 import sys
@@ -473,6 +474,9 @@ class _HealthApplication:
         if self.worker_runner is not None:
             self.worker_runner.stop()
         if self.worker_thread is not None and self.worker_thread.is_alive():
+            terminate = getattr(self.worker_thread, "terminate", None)
+            if callable(terminate):
+                terminate()
             self.worker_thread.join(timeout=5)
 
     def __call__(self, environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
@@ -723,16 +727,42 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             idempotency_persistence=SqliteIdempotencyStore(state_path),
         ),
     )
-    runner = _build_worker(config.workspace, queue, state_path, run_store, passport_store, artifact_store, findings_store, publication_store)
-    thread = threading.Thread(target=runner.run_until_stopped, name="docs-worker", daemon=True)
-    thread.start()
+    # Heavy document work runs in a separate process. A Python thread would
+    # share the GIL with HTML/PDF parsing and could make the API appear dead
+    # while the worker is healthy but busy.
+    process = multiprocessing.Process(
+        target=_worker_process_main,
+        args=(config.workspace,),
+        name="docs-worker",
+        daemon=True,
+    )
+    process.start()
     return _HealthApplication(
         application,
         urlsplit(config.health_url).path,
         config.protocol,
-        worker_runner=runner,
-        worker_thread=thread,
+        worker_thread=process,
     )
+
+
+def _worker_process_main(workspace: Path) -> None:
+    root = Path(workspace).resolve()
+    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    state_path = root / ".docs" / "x20.sqlite3"
+    queue = _WorkspaceJobQueue(registry, root)
+    run_store = _WorkspaceRunStore(registry, root)
+    evidence = _WorkspaceEvidenceStores(registry, run_store, root)
+    runner = _build_worker(
+        root,
+        queue,
+        state_path,
+        run_store,
+        evidence.passport(),
+        evidence.artifact(),
+        evidence.finding(),
+        evidence.publication(),
+    )
+    runner.run_until_stopped()
 
 
 def _build_worker(
@@ -956,6 +986,7 @@ def run(server: GracefulHTTPServer) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    multiprocessing.freeze_support()
     # A desktop/self-hosted sidecar must remain responsive when Java is
     # installed but the optional OpenDataLoader JVM bridge stalls. The
     # pypdfium2 text-layer path is deterministic and is the safe default for
