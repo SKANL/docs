@@ -16,6 +16,7 @@ import type {
   ImportResult,
   DocumentRecord,
   DocumentSection,
+  DocumentContextTopic,
 } from "./models";
 
 export type Page<T> = { items: T[]; nextCursor?: string; total?: number };
@@ -278,7 +279,7 @@ export class ReviewApiClient {
     return result;
   }
   getDocumentStatus(documentId:string,workspaceId?:string) { const query=workspaceId?"?workspace_id="+encodeURIComponent(workspaceId):""; return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/status"+query); }
-  getDocumentContext(documentId:string) { return this.request<{document_id:string;topics:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/context"); }
+  getDocumentContext(documentId:string) { return this.request<{document_id:string;topics:DocumentContextTopic[]}>("documents/"+encodeURIComponent(documentId)+"/context"); }
   getDocumentClassification(documentId:string) { return this.request<{document_id:string;items:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/classification"); }
   confirmDocumentClassification(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/classification", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   setDocumentContext(documentId:string,input:{topic:string;field?:string;value:string}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/context", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
