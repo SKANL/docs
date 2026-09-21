@@ -617,7 +617,13 @@ def _build_worker(
         SqliteLeaseStore(state_path),
         run_store=run_store,
         passport_store=passport_store,
-        finalizer=lambda result: _persist_worker_evidence(passport_store, artifact_store, findings_store, result),
+        finalizer=lambda result: _persist_worker_evidence(
+            passport_store,
+            artifact_store,
+            findings_store,
+            result,
+            workspace_root=root,
+        ),
     )
     original_handle = composition.handle
 
@@ -629,7 +635,14 @@ def _build_worker(
     return WorkerRunner(composition.create_service(), poll_interval=0.2)
 
 
-def _persist_worker_evidence(passport_store: SqlitePassportStore, artifact_store: SqliteArtifactStore, findings_store: SqliteFindingStore, result: Any) -> None:
+def _persist_worker_evidence(
+    passport_store: Any,
+    artifact_store: Any,
+    findings_store: Any,
+    result: Any,
+    *,
+    workspace_root: Path | None = None,
+) -> None:
     """Persist the real pipeline result as the run's durable evidence passport."""
     value = result.value if isinstance(result.value, dict) else {"value": result.value}
     passport_store.put(Passport(result.run_id, entries=(
@@ -642,14 +655,25 @@ def _persist_worker_evidence(passport_store: SqlitePassportStore, artifact_store
         if not isinstance(stage, dict):
             continue
         for index, produced in enumerate(stage.get("artifacts", ())):
-            encoded = str(produced).encode("utf-8")
-            digest = hashlib.sha256(encoded).hexdigest()
+            record = dict(produced) if isinstance(produced, Mapping) else {"value": produced}
+            raw_path = record.get("path")
+            candidate = Path(str(raw_path)) if raw_path else None
+            if candidate is not None and not candidate.is_absolute() and workspace_root is not None:
+                candidate = workspace_root / candidate
+            materialized = candidate is not None and candidate.is_file()
+            if materialized:
+                digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                record["size_bytes"] = candidate.stat().st_size
+            else:
+                encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+                digest = hashlib.sha256(encoded).hexdigest()
             artifact_store.put(Artifact(
                 id=f"{result.run_id}-{stage.get('stage', 'stage')}-{index}",
                 run_id=result.run_id,
                 kind=str(stage.get("stage", "artifact")),
                 digest=digest,
-                metadata={"value": str(produced), "source": "pipeline"},
+                media_type=str(record.get("media_type", "")),
+                metadata={"value": record, "source": "pipeline", "materialized": materialized},
             ))
         for severity, messages in (("error", stage.get("errors", ())), ("warning", stage.get("warnings", ()) )):
             for index, message in enumerate(messages):
