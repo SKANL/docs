@@ -27,6 +27,7 @@ try {
         throw 'No Windows sidecar was staged. Build-sidecar.ps1 must produce sidecar/docs-sidecar.exe.'
     }
     python scripts/check-sidecar-runtime.py
+    python scripts/check-sidecar-e2e.py
 
     npm run tauri build
 } finally {

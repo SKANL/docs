@@ -9,6 +9,7 @@
     "test:shell": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1",
     "check:sidecar": "python scripts/check-sidecar-packaging.py",
     "check:sidecar:runtime": "python scripts/check-sidecar-runtime.py",
+    "check:sidecar:e2e": "python scripts/check-sidecar-e2e.py",
     "build:sidecar": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
     "build": "tauri build",
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
