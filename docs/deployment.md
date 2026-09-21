@@ -19,6 +19,27 @@ deployment explicitly needs a public bind:
 docs-api --config api.json --host 127.0.0.1 --port 8000
 ```
 
+The repository ships a first-party self-hosted factory. A minimal `api.json`
+for it is:
+
+```json
+{
+  "application_factory": "docs.api.production:build_application",
+  "transport": {
+    "workspace": "C:/srv/doc-harness/workspace",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "mode": "production",
+    "cors_origins": ["https://review.example.com"]
+  }
+}
+```
+
+Set `DOCS_API_TOKENS` outside the configuration file, for example
+`token-value=review-user`. The factory fails closed when no workspace or token
+is configured and uses the same durable SQLite workspace and worker pipeline as
+the local sidecar.
+
 Use `--allow-public-bind` only with a reviewed network policy. TLS termination,
 authentication, rate limiting, and request-size policy belong at the reverse
 proxy as well as in the application. Forward `Host`, `X-Forwarded-Proto`,
