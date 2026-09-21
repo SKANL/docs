@@ -241,6 +241,8 @@ export class ReviewApiClient {
         checksum: typeof raw.checksum === "string" ? raw.checksum : typeof raw.digest === "string" ? raw.digest : "Hash unavailable",
       } satisfies Artifact)));
   }
+  getArtifact(id:string) { return this.request<Record<string, unknown>>("artifacts/" + encodeURIComponent(id)); }
+  listArtifactPreviews(id:string) { return this.list<Record<string, unknown>>("artifacts/" + encodeURIComponent(id) + "/previews").then(result => result.items); }
   getPassport(runId: string) { return this.request<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
   getGraph() { const query = this.selectedWorkspaceId ? `?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}` : ""; return this.request<unknown>(`graph${query}`).then(normalizeGraph); }
   getGraphQuery(query: GraphQuery, id?: string) {
@@ -254,6 +256,7 @@ export class ReviewApiClient {
   listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params).then(result => result.items); }
   promoteBaseline(id:string) { return this.request<Record<string, unknown>>("baselines/promotions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({baseline_id:id, ...(this.selectedWorkspaceId ? {workspace_id:this.selectedWorkspaceId} : {})}) }); }
   listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params).then(result => result.items); }
+  getRevision(id:string) { return this.request<Record<string, unknown>>("revisions/" + encodeURIComponent(id)); }
   listPublications(params?: ListParams) { return this.list<Publication>("publications", params).then(result => result.items); }
   listWorkspaces() {
     return this.request<unknown>("workspaces").then(raw => {
