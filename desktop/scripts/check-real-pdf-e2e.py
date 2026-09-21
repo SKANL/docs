@@ -75,8 +75,11 @@ def main() -> int:
             print(f"[{source.name}] import", flush=True)
             query = urllib.parse.urlencode({"workspace_id": workspace_id, "document_id": document_id, "template": "documento-generico", "title": source.stem})
             request = urllib.request.Request(base + "/v1/documents/import/raw?" + query, data=source.read_bytes(), method="POST", headers={"Content-Type": "application/octet-stream", "Content-Length": str(source.stat().st_size), "X-Docs-Filename": source.name, "Connection": "close"})
-            with urllib.request.urlopen(request, timeout=180) as response:
-                status, imported = response.status, json.loads(response.read())
+            try:
+                with urllib.request.urlopen(request, timeout=180) as response:
+                    status, imported = response.status, json.loads(response.read())
+            except urllib.error.HTTPError as error:
+                raise SystemExit(f"raw import failed: {error.code} {error.read().decode(errors='replace')}")
             if status != 201:
                 diagnostics = process.stderr.read().decode(errors="replace") if process.stderr else ""
                 raise SystemExit(f"import failed for {source.name}: {status} {imported}\n{diagnostics}")

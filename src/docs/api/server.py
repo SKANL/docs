@@ -351,14 +351,15 @@ class X20Transport:
 
     def _external_path(self, environ: Mapping[str, Any]) -> str:
         path = urlsplit(str(environ.get("PATH_INFO", "/"))).path or "/"
+        query = str(environ.get("QUERY_STRING", ""))
         base = self.config.base_path
         if base != "/":
             if path == base:
                 return "/"
             if not path.startswith(f"{base}/"):
-                return path
+                return f"{path}?{query}" if query else path
             path = path[len(base) :]
-        return path or "/"
+        return f"{path or '/'}?{query}" if query else (path or "/")
 
     @staticmethod
     def _header(environ: Mapping[str, Any], name: str) -> str | None:
