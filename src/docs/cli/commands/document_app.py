@@ -24,10 +24,7 @@ from typing import Any
 
 import typer
 
-from docs.application.artifact_build_service import (
-    ArtifactBuildError,
-    ArtifactBuildService,
-)
+from docs.application.artifact_render_service import ArtifactRenderService
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
 from docs.application.package_service import (
@@ -509,6 +506,10 @@ def create_document_service(
         "attested_artifact_sha256": None,
     }
     scratch_dirs: list[Path] = []
+    artifact_renderer = ArtifactRenderService(
+        scratch_factory=_scratch_directory,
+        validator=_verify_readable_artifact,
+    )
 
     def active_context() -> Any:
         resolved = deps.resolve_context(document)
@@ -615,34 +616,19 @@ def create_document_service(
         return operation if callable(operation) else None
 
     def _build_with_format(format_name: str) -> tuple[bool, str]:
-        resolved = state["resolved"]
         renderers = getattr(deps, "renderers", {})
-        renderer = renderers.get(format_name) if isinstance(renderers, Mapping) else None
-        if renderer is None:
-            return False, f"renderer does not provide {format_name} output"
-        config = deepcopy(state["config"])
-        config.setdefault("output", {})["format"] = format_name
-        service = ArtifactBuildService(
-            build=lambda doc_id, build_config, output: renderer.build(
-                doc_id, build_config, output=output
-            ),
-            scratch_factory=_scratch_directory,
-            validator=_verify_readable_artifact,
+        outcome = artifact_renderer.build_format(
+            renderers=renderers if isinstance(renderers, Mapping) else {},
+            format_name=format_name,
+            document_id=state["resolved"].doc_id,
+            config=state["config"],
+            scratch_parent=initial_root,
         )
-        try:
-            result = service.build(
-                document_id=resolved.doc_id,
-                config=config,
-                output_format=format_name,
-                scratch_parent=initial_root,
-            )
-        except ArtifactBuildError as exc:
-            if exc.reason == "missing":
-                return True, f"omitted: {exc}"
-            return False, str(exc)
-        scratch_dirs.append(result.scratch_dir)
-        state.setdefault("artifacts", {})[format_name] = result.artifact
-        return True, str(result.artifact)
+        if outcome.scratch_dir is not None:
+            scratch_dirs.append(outcome.scratch_dir)
+        if outcome.succeeded and outcome.artifact is not None:
+            state.setdefault("artifacts", {})[format_name] = outcome.artifact
+        return outcome.succeeded, outcome.detail
 
     def _structural_audit() -> tuple[bool, str]:
         service = _stage_service("structural_audit_service")
@@ -897,34 +883,24 @@ def create_document_service(
         # later provenance verification.
         runs_dir = initial_root / "runs"
         retained_dir = runs_dir / "v2-artifacts"
-        if any(path.is_symlink() for path in (initial_root, runs_dir, retained_dir, *runs_dir.parents)):
-            return False, "render retention path must not contain symlinked directories"
-        retained_dir.mkdir(parents=True, exist_ok=True)
-        retained_identity = _directory_identity(retained_dir)
-        service = ArtifactBuildService(
-            build=lambda doc_id, config, output: state["renderer"].build(doc_id, config, output=output),
-            scratch_factory=_scratch_directory,
-            validator=_verify_readable_artifact,
+        outcome = artifact_renderer.render_and_retain(
+            renderer=state["renderer"],
+            format_name=output_format,
+            document_id=resolved.doc_id,
+            config=state["config"],
+            runs_dir=runs_dir,
+            retained_dir=retained_dir,
+            build_token=build_token,
+            directory_guard=directory_handle_guard,
+            directory_identity=_directory_identity,
+            assert_directory_identity=_assert_directory_identity,
         )
-        try:
-            result = service.build(
-                document_id=resolved.doc_id,
-                config=state["config"],
-                output_format=output_format,
-                scratch_parent=runs_dir,
-            )
-        except ArtifactBuildError as exc:
-            return False, str(exc)
-        scratch_dirs.append(result.scratch_dir)
-        retained = retained_dir / f"{build_token}.{result.artifact.name}"
-        with directory_handle_guard(retained_dir):
-            os.replace(result.artifact, retained)
-        try:
-            _assert_directory_identity(retained_dir, retained_identity, operation="render retention")
-        except (OSError, RuntimeError) as exc:
-            return False, str(exc)
-        state["artifact"] = retained
-        return successful("render", str(state["artifact"]))
+        if outcome.scratch_dir is not None:
+            scratch_dirs.append(outcome.scratch_dir)
+        if outcome.succeeded:
+            state["artifact"] = outcome.artifact
+            return successful("render", outcome.detail)
+        return False, outcome.detail
 
     def audit() -> tuple[bool, str]:
         if output_format == "docx":
