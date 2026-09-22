@@ -24,6 +24,8 @@ from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
+from docs.application.package_publication_service import PackagePublicationService
+from docs.application.package_service import PackageService, assert_directory_identity
 from docs.application.pdf_render import PdfRendererAdapter
 from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
@@ -42,6 +44,7 @@ from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
+from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
@@ -54,6 +57,7 @@ from docs.infrastructure.ingest.filetype_detector_adapter import FiletypeDetecto
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
 from docs.infrastructure.ingest.pandoc_ingest_adapter import PandocIngestAdapter
+from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
@@ -169,6 +173,7 @@ class ApplicationComposition:
     verification: DocumentVerificationService
     structural_audit_service: StructuralAuditService
     artifact_reports: ArtifactReportService
+    package_publications: PackagePublicationService
     rules_manifest_state: Any
 
     def __init__(
@@ -379,6 +384,15 @@ class ApplicationComposition:
         )
         self.structural_audit_service = structural_audit_service
         self.artifact_reports = ArtifactReportService()
+        self.package_publications = PackagePublicationService(
+            archive_writer=PackageService(
+                lock=owned_directory_lock,
+                directory_guard=directory_handle_guard,
+                normalize_docx_zip_timestamps=normalize_docx_zip_timestamps,
+                assert_directory_identity=assert_directory_identity,
+            ),
+            lock=owned_directory_lock,
+        )
         self.rules_manifest_state = _rules_manifest_state
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:

@@ -177,8 +177,9 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     assert {
         "_native_document_review",
         "_native_package_release",
-        "_write_package_archive",
     } <= functions
+    assert "_write_package_archive" not in functions
+    assert "deps.package_publications.package" in source
     assert '"package-release": stage_provider.operation("package_release") or _native_package_release' in source
     assert '"evidence-review": _review_stage_operation(' in source
     assert '"consistency-review": _review_stage_operation(' in source
@@ -196,41 +197,8 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
         for node in ast.walk(review_stage)
     )
 
-    explicit_stages = next(
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AnnAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == "explicit_stages"
-        and isinstance(node.value, ast.Dict)
-    )
-    visual_stage = next(
-        value
-        for key, value in zip(explicit_stages.keys, explicit_stages.values, strict=True)
-        if isinstance(key, ast.Constant) and key.value == "visual_review"
-    )
-    assert isinstance(visual_stage, ast.IfExp)
-    # DOCX must use the injected rendered QA too. Runtime routing is covered by
-    # test_v2_docx_visual_review_routes_real_qa_despite_native_callback.
-    assert isinstance(visual_stage.body, ast.Lambda)
-    assert isinstance(visual_stage.body.body, ast.Call)
-    assert isinstance(visual_stage.body.body.func, ast.Name)
-    assert visual_stage.body.body.func.id == "_review_stage"
-    assert isinstance(visual_stage.body.body.args[0], ast.Constant)
-    assert visual_stage.body.body.args[0].value == "visual-review"
-    assert any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_callable_stage"
-        and len(node.args) == 1
-        and isinstance(node.args[0], ast.Constant)
-        and node.args[0].value == "visual_review"
-        for node in ast.walk(visual_stage.orelse)
-    )
-    assert any(
-        isinstance(node, ast.Name) and node.id == "_native_visual_review"
-        for node in ast.walk(visual_stage.orelse)
-    )
+    assert "explicit_stages = assemble_explicit_stage_operations(" in source
+    assert '"visual_review": _native_visual_review' in source
 
 
 def test_workspace_bridge_keeps_audit_and_verify_fallbacks_callable() -> None:

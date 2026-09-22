@@ -39,6 +39,8 @@ DEPENDENCY_FIELDS = {
     "run_recorder",
     "verification",
     "structural_audit_service",
+    "artifact_reports",
+    "package_publications",
     "rules_manifest_state",
 }
 

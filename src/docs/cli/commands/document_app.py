@@ -8,13 +8,12 @@ import json
 import mimetypes
 import os
 import shutil
-import stat
 import subprocess
 import tempfile
 import uuid
 import zipfile
 from collections.abc import Mapping
-from contextlib import closing, contextmanager, nullcontext
+from contextlib import closing, contextmanager
 from copy import deepcopy
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -24,14 +23,8 @@ from typing import Any
 import typer
 
 from docs.application.artifact_render_service import ArtifactRenderService
-from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
 from docs.application.document_input_stages import DocumentInputStageService
-from docs.application.package_service import (
-    PackageFile,
-    PackagePublicationError,
-    PackageService,
-)
 from docs.application.pipeline_assembly import (
     assemble_explicit_stage_operations,
     assemble_pipeline_resources,
@@ -52,7 +45,6 @@ from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
-from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
@@ -558,8 +550,8 @@ def create_document_service(
         atomic_file_writer=getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
         artifact=lambda: state.get("artifact"),
         manifest=lambda: state.get("manifest"),
-        package_writer=lambda candidate, staging: _write_package_archive(
-            candidate, staging, _allow_staging=True, _lock_held=True
+        package_writer=lambda candidate, staging: deps.package_publications.package(
+            candidate, staging, allow_staging=True, lock_held=True
         ),
         candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
         verify_current_build=pipeline_id == "document-package",
@@ -814,7 +806,7 @@ def create_document_service(
                 # Staging changes only the pathname. Its content hash maps to
                 # the manifest artifact while the attestation remains verified
                 # against the original provenance run.
-                _write_package_archive(candidate, staging, _allow_staging=True, _lock_held=True)
+                deps.package_publications.package(candidate, staging, allow_staging=True, lock_held=True)
             finally:
                 shutil.rmtree(staging, ignore_errors=True)
         state["package_candidate"] = candidate
@@ -1798,137 +1790,6 @@ def _artifact_payload(ctx: typer.Context, path: Path) -> dict[str, object]:
     return ctx.obj["deps"].artifact_reports.inspect(path)
 
 
-def _require_contained(path: Path, root: Path, label: str) -> None:
-    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
-        raise typer.BadParameter(f"publish refuses symlinked {label}: {path.name}")
-    try:
-        path.resolve(strict=False).relative_to(root.resolve(strict=False))
-    except ValueError as exc:
-        raise typer.BadParameter(f"publish {label} path escapes its intended root") from exc
-
-
-def _package_files(
-    source_dir: Path, *, _allow_staging: bool = False, _verify_attestation: bool = True
-) -> tuple[tuple[str, bytes], ...]:
-    """Validate the complete artifact set before creating a package."""
-    valid_source = source_dir.name == "current" and source_dir.parent.name == "output"
-    valid_staging = (
-        _allow_staging
-        and source_dir.name.startswith(".x20-package-")
-        and source_dir.parent.name == "output"
-    )
-    if not (valid_source or valid_staging):
-        raise typer.BadParameter("package requires an output/current source directory")
-    if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):
-        raise typer.BadParameter("package refuses a symlinked source boundary")
-    candidates = tuple(sorted(source_dir.rglob("*"), key=lambda path: path.relative_to(source_dir).as_posix()))
-    unsafe = next((path for path in candidates if path.is_symlink()), None)
-    if unsafe is not None:
-        raise typer.BadParameter(f"package refuses symlinked path: {unsafe.name}")
-    files = tuple(path for path in candidates if path.is_file() and not path.is_symlink())
-    artifacts = tuple(path for path in files if not path.name.endswith(".manifest.json"))
-    if not artifacts:
-        raise typer.BadParameter("package requires at least one artifact")
-    document_root = source_dir.parent.parent
-    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
-    expected_manifests: set[Path] = set()
-    snapshots: dict[str, bytes] = {}
-    generation_identity: tuple[tuple[object, ...], dict[str, tuple[tuple[str, str], ...]]] | None = None
-    for artifact in artifacts:
-        manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
-        if not manifest_path.is_file():
-            raise typer.BadParameter(f"package requires a matching manifest for {artifact.name}")
-        try:
-            artifact_bytes = _read_package_file(artifact, document_root)
-            manifest_bytes = _read_package_file(manifest_path, document_root)
-            manifest = BuildManifest.from_dict(json.loads(manifest_bytes.decode(encoding="utf-8")))
-            manifest.validate_for_publication()
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            raise typer.BadParameter(f"package requires a valid manifest for {artifact.name}: {exc}") from exc
-        artifact_digest = hashlib.sha256(artifact_bytes).hexdigest()
-        matching = [
-            entry
-            for entry in manifest.artifacts
-            if (
-                entry.path == str(artifact.resolve())
-                or (_allow_staging and entry.sha256 == artifact_digest)
-            )
-        ]
-        if len(matching) != 1 or matching[0].sha256 != artifact_digest:
-            raise typer.BadParameter(f"package requires the manifest artifact hash to match {artifact.name}")
-        if _verify_attestation and not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
-            raise typer.BadParameter(f"package requires a verifiable provenance attestation for {artifact.name}")
-        shared_identity = (
-            manifest.document_id,
-            manifest.source_hash,
-            manifest.template_hash,
-            manifest.template_ir_hash,
-            manifest.config_hash,
-            manifest.context_hash,
-            tuple(sorted(manifest.asset_hashes.items())),
-        )
-        format_name = artifact.suffix.lstrip(".")
-        renderer_identity = tuple(sorted(manifest.renderer_versions.items()))
-        if generation_identity is None:
-            generation_identity = (shared_identity, {format_name: renderer_identity})
-        elif shared_identity != generation_identity[0]:
-            raise typer.BadParameter(
-                f"package refuses mixed source generation for {artifact.name}"
-            )
-        elif format_name in generation_identity[1] and renderer_identity != generation_identity[1][format_name]:
-            raise typer.BadParameter(
-                f"package refuses mixed renderer generation for {artifact.name}"
-            )
-        else:
-            generation_identity[1][format_name] = renderer_identity
-        expected_manifests.add(manifest_path)
-        snapshots[artifact.relative_to(source_dir).as_posix()] = artifact_bytes
-        snapshots[manifest_path.relative_to(source_dir).as_posix()] = manifest_bytes
-    actual_manifests = {path for path in files if path.name.endswith(".manifest.json")}
-    if actual_manifests != expected_manifests:
-        raise typer.BadParameter("package requires each manifest to match one artifact")
-    return tuple((relative, snapshots[relative]) for relative in sorted(snapshots))
-
-
-def _read_package_file(path: Path, document_root: Path) -> bytes:
-    """Read one immutable package input through a regular-file descriptor."""
-    try:
-        path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
-    except (OSError, ValueError) as exc:
-        raise typer.BadParameter(f"package file escapes document root: {path.name}") from exc
-    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
-        raise typer.BadParameter(f"package refuses symlinked path: {path.name}")
-    resolved = path.resolve(strict=True)
-    ancestors = tuple(
-        (ancestor, (os.stat(ancestor, follow_symlinks=False).st_dev, os.stat(ancestor, follow_symlinks=False).st_ino))
-        for ancestor in (document_root, *path.parents)
-        if ancestor.exists()
-    )
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as exc:
-        raise typer.BadParameter(f"package refuses unsafe file: {path.name}: {exc}") from exc
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode) or path.is_symlink():
-            raise typer.BadParameter(f"package requires a regular non-symlink file: {path.name}")
-        if any(
-            (os.stat(ancestor, follow_symlinks=False).st_dev, os.stat(ancestor, follow_symlinks=False).st_ino) != identity
-            for ancestor, identity in ancestors
-        ):
-            raise typer.BadParameter(f"package path boundary changed while reading: {path.name}")
-        opened = os.fstat(descriptor)
-        expected = os.stat(resolved, follow_symlinks=False)
-        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
-            raise typer.BadParameter(f"package input changed while reading: {path.name}")
-        with os.fdopen(descriptor, "rb") as handle:
-            descriptor = -1
-            return handle.read()
-    finally:
-        if descriptor != -1:
-            os.close(descriptor)
-
-
 def _directory_identity(path: Path) -> tuple[int, int]:
     identity = os.stat(path, follow_symlinks=False)
     return identity.st_dev, identity.st_ino
@@ -1941,39 +1802,9 @@ def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operati
 
 @contextmanager
 def _package_lock(output: Path):
-    """Serialize package read/merge/write transactions across processes."""
+    """Serialize existing release-package merge and publication transactions."""
     with owned_directory_lock(output.with_name(output.name + ".lock")):
         yield
-
-
-def _write_package_archive(
-    output: Path,
-    source_dir: Path,
-    *,
-    _allow_staging: bool = False,
-    _verify_attestation: bool = True,
-    _lock_held: bool = False,
-) -> None:
-    """Validate v2 package inputs and delegate atomic archive publication."""
-    with nullcontext() if _lock_held else _package_lock(output):
-        files = _package_files(
-            source_dir,
-            _allow_staging=_allow_staging,
-            _verify_attestation=_verify_attestation,
-        )
-        try:
-            PackageService(
-                lock=owned_directory_lock,
-                directory_guard=directory_handle_guard,
-                normalize_docx_zip_timestamps=normalize_docx_zip_timestamps,
-                assert_directory_identity=_assert_directory_identity,
-            ).write(
-                output,
-                tuple(PackageFile(relative, content) for relative, content in files),
-                lock_held=True,
-            )
-        except PackagePublicationError as exc:
-            raise typer.BadParameter(str(exc)) from exc
 
 
 @document_app.command("baseline")
@@ -2032,7 +1863,10 @@ def package(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Package verified derived artifacts atomically as a ZIP archive."""
-    _write_package_archive(output, source_dir)
+    try:
+        ctx.obj["deps"].package_publications.package(output, source_dir)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     payload = {"path": str(output.resolve()), "artifact": _artifact_payload(ctx, output)}
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
 
@@ -2046,31 +1880,12 @@ def publish(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Publish one verified artifact only under a policy that permits release."""
-    selected = PipelinePolicy(policy)
-    if not selected.can_publish():
-        raise typer.BadParameter("publish requires --policy strict or --policy release")
-    manifest_path = source.with_suffix(source.suffix + ".manifest.json")
-    document_root = source.parent.parent.parent
-    if source.parent.name != "current" or source.parent.parent.name != "output":
-        raise typer.BadParameter("publish requires an artifact with its matching manifest")
-    _require_contained(source, document_root / "output" / "current", "source")
-    _require_contained(manifest_path, document_root / "output" / "current", "manifest")
-    if not manifest_path.is_file():
-        raise typer.BadParameter("publish requires an artifact with its matching manifest")
-    _require_contained(destination, document_root, "destination")
+    publication_service = ctx.obj["deps"].package_publications
     try:
-        manifest_bytes = _read_package_file(manifest_path, document_root)
-        manifest = BuildManifest.from_dict(json.loads(manifest_bytes.decode(encoding="utf-8")))
-        manifest.validate_for_publication()
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise typer.BadParameter(f"publish requires a valid manifest: {exc}") from exc
-    source_identity = str(source.resolve())
-    source_bytes = _read_package_file(source, document_root)
-    _require_contained(source, document_root / "output" / "current", "source")
-    _require_contained(manifest_path, document_root / "output" / "current", "manifest")
-    matching = [artifact for artifact in manifest.artifacts if artifact.path == source_identity]
-    if len(matching) != 1 or matching[0].sha256 != hashlib.sha256(source_bytes).hexdigest():
-        raise typer.BadParameter("publish requires the manifest artifact hash to match the source")
+        prepared = publication_service.preflight_publish(source, destination, policy=policy)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    document_root = source.parent.parent.parent
     output_format = source.suffix.removeprefix(".")
     try:
         resolved, config, renderer = _resolve_publish_inputs(ctx, document_root, output_format)
@@ -2083,40 +1898,16 @@ def publish(
         )
     except Exception as exc:
         raise typer.BadParameter(f"publish requires resolvable current inputs: {exc}") from exc
-    for field, label in (
-        ("template_hash", "template"),
-        ("template_ir_hash", "template IR"),
-        ("config_hash", "config"),
-        ("context_hash", "context"),
-        ("asset_hashes", "asset"),
-        ("renderer_versions", "renderer"),
-        ("source_hash", "source inputs"),
-    ):
-        if field == "template_ir_hash" and not getattr(manifest, field):
-            continue
-        if current[field] != getattr(manifest, field):
-            raise typer.BadParameter(f"publish requires unchanged {label} identity")
-    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
-    if not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
-        raise typer.BadParameter("publish requires a present, verifiable provenance attestation")
-    destination_manifest = destination.with_suffix(destination.suffix + ".manifest.json")
-    def write_publication(scratch: Path) -> None:
-        (scratch / "artifact").write_bytes(source_bytes)
-        (scratch / "manifest").write_bytes(manifest_bytes)
-
-    publication = AtomicTransform().run(
-        TransformSpec(
-            expected_outputs=("artifact", "manifest"),
-            destinations=(destination, destination_manifest),
-        ),
-        write_publication,
-    )
-    if not publication.ok:
-        raise typer.BadParameter(f"publish failed: {publication.error}")
+    try:
+        result = publication_service.publish(
+            prepared, current_identities=current
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     payload = {
         "published": True,
-        "artifact": _artifact_payload(ctx, destination),
-        "manifest": str(destination_manifest.resolve()),
-        "warnings": list(publication.warnings),
+        "artifact": _artifact_payload(ctx, result.artifact),
+        "manifest": str(result.manifest.resolve()),
+        "warnings": list(result.warnings),
     }
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
