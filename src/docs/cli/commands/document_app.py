@@ -40,7 +40,6 @@ from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
 from docs.application.pipeline_service import PipelineService
 from docs.application.provenance import ProvenanceLedger
 from docs.application.review_stages import ReviewStageService
-from docs.application.stage_provider import StageProvider
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli.commands.source_app import create_source_pipeline, run_source_command
@@ -564,41 +563,11 @@ def create_document_service(
     state["run_id"] = provenance_run_id or f"cli-build-{output_format}-{uuid.uuid4().hex}"
     build_token = uuid.uuid4().hex
 
-    stage_services: dict[str, Any] = {}
-    service_names = {
-        "generate_visuals_service",
-        "structural_audit_service",
-        "rules_manifest_state",
-        "generate_visuals",
-        "compose_cover",
-        "structural_audit",
-        "ingest_sources",
-        "normalize_sources",
-        "compile_structure",
-        "build_html",
-        "build_pdf",
-        "accessibility_review",
-        "visual_review",
-        "reproducibility_check",
-        "evidence_review",
-        "consistency_review",
-        "package_release",
-    }
-    for name in service_names:
-        service = getattr(deps, name, None)
-        if service is not None:
-            stage_services[name] = service
     def ensure_assets() -> tuple[bool, str]:
         return resolve_assets()
 
-    stage_provider = StageProvider(
-        stage_services,
-        config=state["config"],
-        output_format=output_format,
-        ensure_assets=ensure_assets,
-    )
     release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-    stage_services["package_release_service"] = PackageReleaseService(
+    package_release_service = PackageReleaseService(
         artifact=lambda: state.get("artifact"),
         manifest=lambda: state.get("manifest"),
         document_id=initial.doc_id,
@@ -618,11 +587,11 @@ def create_document_service(
         # operation without strengthening the boundary.
         verify_current_build=pipeline_id == "document-package",
     )
-    stage_provider = StageProvider(
-        stage_services,
+    stage_provider = deps.create_stage_provider(
         config=state["config"],
         output_format=output_format,
         ensure_assets=ensure_assets,
+        extra_services={"package_release_service": package_release_service},
     )
     source_pipeline = create_source_pipeline(deps)
     review_stage_service = None

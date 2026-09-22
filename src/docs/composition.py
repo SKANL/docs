@@ -415,6 +415,25 @@ class ApplicationComposition:
         """Build source preparation from this composition's shared adapters."""
         return SourcePipeline(self.ingest, self.markdown_normalizer, self.atomic_file_writer)
 
+    def create_stage_provider(
+        self,
+        *,
+        config: dict[str, Any],
+        output_format: str,
+        ensure_assets: Any,
+        extra_services: dict[str, Any] | None = None,
+    ) -> Any:
+        """Register this application's pipeline-stage services and defaults."""
+        from docs.application.pipeline_assembly import assemble_stage_provider
+
+        return assemble_stage_provider(
+            self,
+            config=config,
+            output_format=output_format,
+            ensure_assets=ensure_assets,
+            extra_services=extra_services,
+        )
+
     def create_document_pipeline(
         self,
         *,

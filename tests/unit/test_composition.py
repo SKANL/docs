@@ -77,6 +77,25 @@ def test_compose_application_builds_the_source_pipeline_from_its_shared_dependen
     assert source_pipeline.ingest_service is composition.ingest
 
 
+def test_application_composition_owns_stage_provider_registration(tmp_path: Path) -> None:
+    from docs.application.stage_provider import StageProvider
+    from docs.composition import compose_application
+
+    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+    visual_service = object()
+    composition.generate_visuals_service = visual_service
+
+    provider = composition.create_stage_provider(
+        config={"paths": {"sections_dir": str(tmp_path / "sections"), "assets_dir": str(tmp_path / "assets")}},
+        output_format="docx",
+        ensure_assets=lambda: (True, "assets ready"),
+    )
+
+    assert isinstance(provider, StageProvider)
+    assert provider.get("generate_visuals_service") is visual_service
+    assert provider.operation("generate_visuals") is not None
+
+
 def test_application_composition_builds_document_pipeline_with_shared_observability(tmp_path: Path) -> None:
     from docs.application.pipeline_service import PipelineService
     from docs.composition import compose_application
