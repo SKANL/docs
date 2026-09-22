@@ -576,7 +576,7 @@
       }
     ],
     "gap": "document-diff and document-inspect are read-only artifact operations, not stage-backed pipelines; stage-backed boundaries are registered, inspectable with document plan, and dispatchable.",
-    "dispatch": "src/docs/application/pipeline_service.py::PipelineService.run(pipeline_id=...)",
+    "dispatch": "src/docs/application/pipeline_service.py::PipelineService.execute(PipelineRequest)",
     "cli": "src/docs/cli/commands/document_app.py::plan,build,verify; src/docs/cli/commands/source_app.py::source_ingest"
   },
   "public_commands": {

@@ -9,6 +9,10 @@ reverse proxy (TLS, auth, rate limits)
                  └── shared workspace + durable stores
 ```
 
+## Shared application composition
+
+CLI, API, and worker bootstraps use `compose_application` from `src/docs/composition.py` to construct the shared application dependencies and `PipelineService`. This is dependency composition only: it does not absorb process-specific concerns. Keep API bind address, port, CORS, authentication and transport settings in the API configuration; keep queue backend, worker identity, leases, polling, retry, and shutdown settings in worker configuration. Each process may supply its own workspace and observability instance to the shared factory.
+
 ## API process
 
 `docs-api` wraps an application factory and exposes `/healthz`, `/readyz`, and

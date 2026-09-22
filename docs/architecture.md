@@ -98,11 +98,7 @@ errors. A failed visual stage blocks its dependent cover and document build.
 
 The kernel validates stage names, artifact contracts, dependency availability, duplicate producers, and cycles before execution. Each stage produces a named `<stage>-complete` contract in the current bridge. Execution is fail-fast for a failed required stage. Optional stages can report visible `skipped` or `unsupported` outcomes; policy decides whether those warnings are acceptable.
 
-The current workspace bridge wires all public stage adapters through
-`StageProvider`, the single composition-root boundary for resolving stage
-services. Tests may intentionally construct a partial service map to exercise
-dependency failure behavior, but the CLI composition root does not rely on
-that partial map for a normal document build.
+The shared composition in `src/docs/composition.py` constructs the application dependencies and `PipelineService`. The service owns registration and execution of the stage graph; `_PipelineExecutor` remains a private mechanical executor used by that service, not a second public pipeline API. Do not describe or integrate a separate `PipelineRuntime` application layer. Tests may inject partial operations to exercise dependency failures.
 
 ## Policies and capabilities
 
@@ -121,3 +117,10 @@ A publishable artifact must be under `output/current/`, have a matching `<artifa
 ## Format boundaries
 
 DOCX uses the existing format audit and QA adapters. HTML is decoded as UTF-8 and must contain exactly one HTML root and one body root. PDF must start with `%PDF-` and reopen with the available PDF reader with at least one page and valid render dimensions. Non-DOCX formats are not silently treated as DOCX. PDF is derived and therefore not byte-deterministic.
+
+
+## Composition entry points
+
+`compose_application(workspace=None, observability=None)` in `src/docs/composition.py` is the shared application factory. It resolves or accepts the workspace and observability dependencies and returns a typed `ApplicationComposition`. The CLI root (`src/docs/cli/main.py`), API bootstrap, and worker composition use this shared dependency graph rather than assembling duplicate business services.
+
+The factory does not own process lifecycle or transport configuration. CLI argument parsing and local workspace selection, API host/port/auth/CORS settings, and worker queue/lease/polling/retry settings remain specific to those process bootstraps. Keep these operational concerns separate from reusable application composition.
