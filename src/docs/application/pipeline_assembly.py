@@ -3,9 +3,142 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from docs.application.package_release_service import PackageReleaseService
+from docs.application.pipeline_components import ArtifactStore
+from docs.application.provenance import ProvenanceLedger
 from docs.application.stage_provider import StageProvider
+from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
+
+
+@dataclass(frozen=True)
+class PipelineResources:
+    capabilities: ToolCapabilityRegistry
+    ledger: ProvenanceLedger
+    artifact_store: ArtifactStore
+    publication: PackageReleaseService
+
+
+def assemble_pipeline_resources(
+    *,
+    renderer: Any,
+    output_format: str,
+    document_root: Path,
+    paths: dict[str, object],
+    atomic_file_writer: Any,
+    artifact: Any = None,
+    manifest: Any = None,
+    package_writer: Any = None,
+    candidate_sink: Any = None,
+    verify_current_build: bool = False,
+) -> PipelineResources:
+    """Compose durable pipeline state and release publication collaborators."""
+    capabilities = list(_renderer_capabilities(renderer))
+    capabilities.extend(
+        (
+            ToolCapability(
+                "pillow",
+                "",
+                module="PIL",
+                requirement="required for image inspection",
+                degradation="skip image-specific checks",
+            ),
+            ToolCapability(
+                "pypdfium2",
+                "",
+                module="pypdfium2",
+                required=output_format == "pdf",
+                requirement="required for PDF page rendering",
+                degradation="skip PDF rendering",
+            ),
+        )
+    )
+    if output_format == "pdf":
+        capabilities.append(
+            ToolCapability(
+                "soffice",
+                "soffice",
+                required=True,
+                requirement="required to derive PDF from DOCX",
+                degradation="skip PDF derivation in draft mode",
+            )
+        )
+    capabilities.extend(_visual_capabilities(document_root))
+    tool_resolver = SystemToolResolverAdapter()
+    resolvers = {
+        "pandoc": tool_resolver.resolve_pandoc,
+        "soffice": tool_resolver.resolve_libreoffice,
+        "libreoffice": tool_resolver.resolve_libreoffice,
+        "java": tool_resolver.resolve_java,
+        "mmdc": tool_resolver.resolve_mmdc,
+        "resvg": tool_resolver.resolve_resvg,
+    }
+    registry = ToolCapabilityRegistry(
+        capabilities,
+        NativeToolCapabilityDetector(
+            tool_resolver.tool_version,
+            executable_resolver=lambda executable, configured: (
+                resolvers[executable](configured) if executable in resolvers else None
+            ),
+            paths=paths,
+        ),
+    )
+    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
+    store = ArtifactStore(document_root / "runs" / "v2-stage-artifacts", atomic_file_writer)
+    release_root = document_root / "output" / "release"
+    publication = PackageReleaseService(
+        artifact=artifact or (lambda: None),
+        manifest=manifest or (lambda: None),
+        document_id=document_root.name,
+        output_format=output_format,
+        source_dir=document_root / "output" / "current",
+        destination=release_root / f"{document_root.name}.zip",
+        ledger=ledger,
+        write_package=package_writer or (lambda candidate, staging: None),
+        candidate_sink=candidate_sink or (lambda candidate: None),
+        verify_current_build=verify_current_build,
+    )
+    return PipelineResources(registry, ledger, store, publication)
+
+
+def _renderer_capabilities(renderer: Any) -> tuple[ToolCapability, ...]:
+    declared: list[ToolCapability] = []
+    for attribute, required in (("required_capabilities", True), ("optional_capabilities", False)):
+        values = getattr(renderer, attribute, ())
+        if isinstance(values, str):
+            values = (values,)
+        if not isinstance(values, (list, tuple, set, frozenset)):
+            continue
+        for value in values:
+            if isinstance(value, ToolCapability):
+                declared.append(
+                    ToolCapability(value.name, value.executable, required or value.required, module=value.module)
+                )
+            elif isinstance(value, str) and value:
+                declared.append(ToolCapability(value, value, required))
+    return tuple(declared)
+
+
+def _visual_capabilities(document_root: Path) -> tuple[ToolCapability, ...]:
+    import json
+
+    try:
+        specs = json.loads((document_root / "sections" / "visual-specs.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return ()
+    if not isinstance(specs, list):
+        return ()
+    types = {item.get("type") for item in specs if isinstance(item, Mapping) and isinstance(item.get("type"), str)}
+    result = [ToolCapability("resvg", "resvg", degradation="skip vector visual generation")] if types else []
+    if "mermaid" in types:
+        result.append(ToolCapability("mmdc", "mmdc", degradation="skip Mermaid visual generation"))
+    return tuple(result)
+
 
 _STAGE_SERVICE_NAMES = frozenset(
     {
@@ -40,9 +173,7 @@ def assemble_stage_provider(
 ) -> StageProvider:
     """Register application capabilities and resolve defaults in one place."""
     services = {
-        name: service
-        for name in _STAGE_SERVICE_NAMES
-        if (service := getattr(dependencies, name, None)) is not None
+        name: service for name in _STAGE_SERVICE_NAMES if (service := getattr(dependencies, name, None)) is not None
     }
     if extra_services:
         services.update(extra_services)

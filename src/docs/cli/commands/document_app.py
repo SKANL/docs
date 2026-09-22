@@ -30,13 +30,13 @@ from docs.application.artifact_build_service import (
 )
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
-from docs.application.package_release_service import PackageReleaseService
 from docs.application.package_service import (
     PackageFile,
     PackagePublicationError,
     PackageService,
 )
-from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
+from docs.application.pipeline_assembly import assemble_pipeline_resources
+from docs.application.pipeline_components import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineService
 from docs.application.provenance import ProvenanceLedger
 from docs.application.review_stages import ReviewStageService
@@ -521,9 +521,6 @@ def create_document_service(
     initial = active_context()
     initial_root = deps.workspace.doc_root(initial.doc_id)
     initial_root.mkdir(parents=True, exist_ok=True)
-    capabilities = _capabilities_for(
-        state["renderer"], output_format, initial_root, state["config"].get("paths", {})
-    )
     destination = publication_destination or (
         initial_root / "output" / "current" / f"{initial.doc_id}.{output_format}"
     )
@@ -547,12 +544,23 @@ def create_document_service(
         candidate = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
         if candidate.is_file():
             state["package_candidate"] = candidate
-    ledger = ProvenanceLedger(initial_root / "runs" / "provenance.json", trusted_root=initial_root)
-    stage_artifact_root = initial_root / "runs" / "v2-stage-artifacts"
-    artifact_store = ArtifactStore(
-        stage_artifact_root,
-        getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
+    resources = assemble_pipeline_resources(
+        renderer=state["renderer"],
+        output_format=output_format,
+        document_root=initial_root,
+        paths=state["config"].get("paths", {}) or {},
+        atomic_file_writer=getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
+        artifact=lambda: state.get("artifact"),
+        manifest=lambda: state.get("manifest"),
+        package_writer=lambda candidate, staging: _write_package_archive(
+            candidate, staging, _allow_staging=True, _lock_held=True
+        ),
+        candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
+        verify_current_build=pipeline_id == "document-package",
     )
+    capabilities = resources.capabilities
+    ledger = resources.ledger
+    artifact_store = resources.artifact_store
     state["stage_artifacts"] = []
     manifest_service = BuildManifestService(
         input_identities=_current_input_identities,
@@ -567,26 +575,7 @@ def create_document_service(
         return resolve_assets()
 
     release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-    package_release_service = PackageReleaseService(
-        artifact=lambda: state.get("artifact"),
-        manifest=lambda: state.get("manifest"),
-        document_id=initial.doc_id,
-        output_format=output_format,
-        source_dir=initial_root / "output" / "current",
-        destination=release_destination,
-        ledger=ledger,
-        write_package=lambda candidate, staging: _write_package_archive(
-            candidate, staging, _allow_staging=True, _lock_held=True
-        ),
-        candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
-        # A standalone package boundary receives the persisted
-        # artifact/manifest pair from the current build and must verify that
-        # pair against provenance before it can produce a release candidate.
-        # The full build already attests the in-memory generation in its
-        # provenance stage; rechecking it here would duplicate the ledger
-        # operation without strengthening the boundary.
-        verify_current_build=pipeline_id == "document-package",
-    )
+    package_release_service = resources.publication
     stage_provider = deps.create_stage_provider(
         config=state["config"],
         output_format=output_format,
