@@ -108,6 +108,23 @@ def test_openapi_endpoint_returns_deterministic_json_without_workspace():
     assert first.body == second.body == canonical_json(build_openapi_document()).encode()
 
 
+def test_contract_census_distinguishes_live_routes_from_openapi_only_operations():
+    application = app()
+    paths = build_openapi_document()["paths"]
+
+    # These two routes are live runtime capabilities omitted from today's schema.
+    assert application._dynamic_handler("GET", "/v1/runs/r1/findings") is not None
+    assert application._dynamic_handler("GET", "/v1/runs/r1/previews/a1") is not None
+    assert "/v1/runs/{run_id}/findings" not in paths
+    assert "/v1/runs/{run_id}/previews/{name}" not in paths
+
+    # These operations are described by OpenAPI but have no matching runtime handler.
+    assert "post" in paths["/v1/baselines"]
+    assert "post" in paths["/v1/baselines/{baseline_id}/promote"]
+    assert application._dynamic_handler("POST", "/v1/baselines") is None
+    assert application._dynamic_handler("POST", "/v1/baselines/b1/promote") is None
+
+
 def test_openapi_documents_owned_document_scope_operations():
     paths = build_openapi_document()["paths"]
 
