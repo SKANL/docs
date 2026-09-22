@@ -37,10 +37,7 @@ from docs.application.package_service import (
     PackageService,
 )
 from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
-from docs.application.pipeline_service import (
-    PipelineService,
-    PublicationSpec,
-)
+from docs.application.pipeline_service import PipelineService
 from docs.application.provenance import ProvenanceLedger
 from docs.application.review_stages import ReviewStageService
 from docs.application.stage_provider import StageProvider
@@ -1157,16 +1154,17 @@ def create_document_service(
     operations.update(
         {name.replace("_", "-"): operation for name, operation in explicit_stages.items()}
     )
-    return PipelineService(
+    return deps.create_document_pipeline(
         operations=operations,
-        publication=PublicationSpec(
-            (f"primary.{output_format}", f"primary.{output_format}.manifest.json", f"{initial.doc_id}.zip"),
-            (destination, manifest_destination, release_destination),
-            publish,
+        expected_outputs=(
+            f"primary.{output_format}",
+            f"primary.{output_format}.manifest.json",
+            f"{initial.doc_id}.zip",
         ),
+        destinations=(destination, manifest_destination, release_destination),
+        operation=publish,
         capabilities=capabilities,
         ledger=ledger,
-        atomic_transform=AtomicTransform(),
         policy=policy,
         run_id_sink=lambda value: state.__setitem__("run_id", value),
         excluded_stages=frozenset(
@@ -1176,7 +1174,6 @@ def create_document_service(
         artifact_store=artifact_store,
         record_sink=state["stage_artifacts"].extend,
         run_start=state["stage_artifacts"].clear,
-        observability=getattr(deps, "observability", None),
     )
 
 

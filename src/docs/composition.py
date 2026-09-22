@@ -415,6 +415,43 @@ class ApplicationComposition:
         """Build source preparation from this composition's shared adapters."""
         return SourcePipeline(self.ingest, self.markdown_normalizer, self.atomic_file_writer)
 
+    def create_document_pipeline(
+        self,
+        *,
+        operations: Any,
+        expected_outputs: tuple[str, ...],
+        destinations: tuple[Path, ...],
+        operation: Any,
+        capabilities: Any,
+        ledger: Any,
+        policy: Any = None,
+        run_id_sink: Any = None,
+        excluded_stages: frozenset[str] = frozenset(),
+        cleanup: Any = None,
+        artifact_store: Any = None,
+        record_sink: Any = None,
+        run_start: Any = None,
+    ) -> Any:
+        """Assemble the document pipeline at the canonical composition root."""
+        from docs.application.atomic_transform import AtomicTransform
+        from docs.application.pipeline_service import PipelineService, PublicationSpec
+
+        return PipelineService(
+            operations=operations,
+            publication=PublicationSpec(expected_outputs, destinations, operation),
+            capabilities=capabilities,
+            ledger=ledger,
+            atomic_transform=AtomicTransform(),
+            policy=policy,
+            run_id_sink=run_id_sink,
+            excluded_stages=excluded_stages,
+            cleanup=cleanup,
+            artifact_store=artifact_store,
+            record_sink=record_sink,
+            run_start=run_start,
+            observability=self.observability,
+        )
+
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
         """Resolve the active `DocumentRendererPort` from `config["output"]["format"]`
         (default `"docx"`) against the `renderers` registry built at construction."""

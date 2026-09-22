@@ -77,6 +77,36 @@ def test_compose_application_builds_the_source_pipeline_from_its_shared_dependen
     assert source_pipeline.ingest_service is composition.ingest
 
 
+def test_application_composition_builds_document_pipeline_with_shared_observability(tmp_path: Path) -> None:
+    from docs.application.pipeline_service import PipelineService
+    from docs.composition import compose_application
+    from docs.domain.provenance import ProvenanceLedger
+    from docs.domain.tool_capability import ToolCapabilityRegistry
+
+    observability = object()
+    composition = compose_application(
+        Workspace(tmp_path / "documents", tmp_path / "templates"), observability=observability
+    )
+    def publish() -> None:
+        return None
+
+    pipeline = composition.create_document_pipeline(
+        operations={},
+        expected_outputs=(),
+        destinations=(),
+        operation=publish,
+        capabilities=ToolCapabilityRegistry(()),
+        ledger=ProvenanceLedger(tmp_path / "provenance.json"),
+    )
+
+    assert isinstance(pipeline, PipelineService)
+    assert pipeline._publication.operation is publish
+    assert pipeline._publication.expected_outputs == ()
+    assert pipeline._publication.destinations == ()
+    assert type(pipeline._atomic_transform).__name__ == "AtomicTransform"
+    assert all(runtime._executor.observability is observability for runtime in pipeline._runtimes.values())
+
+
 def test_compose_application_resolves_default_workspace_and_observability(monkeypatch, tmp_path: Path) -> None:
     from docs import composition as composition_module
 
