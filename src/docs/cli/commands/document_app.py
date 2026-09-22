@@ -35,7 +35,10 @@ from docs.application.package_service import (
     PackagePublicationError,
     PackageService,
 )
-from docs.application.pipeline_assembly import assemble_pipeline_resources
+from docs.application.pipeline_assembly import (
+    assemble_explicit_stage_operations,
+    assemble_pipeline_resources,
+)
 from docs.application.pipeline_components import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineService
 from docs.application.provenance import ProvenanceLedger
@@ -548,6 +551,7 @@ def create_document_service(
         renderer=state["renderer"],
         output_format=output_format,
         document_root=initial_root,
+        document_id=initial.doc_id,
         paths=state["config"].get("paths", {}) or {},
         atomic_file_writer=getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
         artifact=lambda: state.get("artifact"),
@@ -966,37 +970,20 @@ def create_document_service(
             return passed, detail
         return successful("verify")
 
-    explicit_stages: dict[str, Any] = {
-        "generate_visuals": stage_provider.operation("generate_visuals"),
-        "compose_cover": stage_provider.operation("compose_cover"),
-        "structural_audit": _structural_audit if _stage_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
-        "accessibility_review": (
-            (lambda: _review_stage("accessibility-review"))
-            if review_stage_service is not None and output_format != "docx"
-            else _callable_stage("accessibility_review")
-            or ((lambda: _review_stage("accessibility-review")) if review_stage_service is not None else _native_accessibility_review)
-        ),
-        "visual_review": (
-            (lambda: _review_stage("visual-review"))
-            if review_stage_service is not None
-            else _callable_stage("visual_review")
-            or ((lambda: _review_stage("visual-review")) if review_stage_service is not None else _native_visual_review)
-        ),
-        "reproducibility_check": _callable_stage("reproducibility_check") or (
-            (lambda: _review_stage("reproducibility-check"))
-            if review_stage_service is not None
-            else _native_reproducibility_check
-        ),
-    }
-    if output_format != "html":
-        explicit_stages["build_html"] = lambda: _build_with_format("html")
-    else:
-        explicit_stages["build_html"] = render
-    if output_format != "pdf":
-        explicit_stages["build_pdf"] = lambda: _build_with_format("pdf")
-    else:
-        explicit_stages["build_pdf"] = render
-    explicit_stages = {name: operation for name, operation in explicit_stages.items() if operation is not None}
+    explicit_stages = assemble_explicit_stage_operations(
+        stage_provider,
+        callbacks={
+            "structural_audit": _structural_audit,
+            "accessibility_review": _native_accessibility_review,
+            "visual_review": _native_visual_review,
+            "reproducibility_check": _native_reproducibility_check,
+            "review_stage": lambda name: lambda: _review_stage(name),
+            "build_with_format": lambda name: lambda: _build_with_format(name),
+            "render": render,
+        },
+        output_format=output_format,
+        review_stages_available=review_stage_service is not None,
+    )
 
     def provenance() -> tuple[bool, str]:
         if pipeline_id == "document-publish":

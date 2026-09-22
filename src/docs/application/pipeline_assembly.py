@@ -29,6 +29,7 @@ def assemble_pipeline_resources(
     renderer: Any,
     output_format: str,
     document_root: Path,
+    document_id: str,
     paths: dict[str, object],
     atomic_file_writer: Any,
     artifact: Any = None,
@@ -94,10 +95,10 @@ def assemble_pipeline_resources(
     publication = PackageReleaseService(
         artifact=artifact or (lambda: None),
         manifest=manifest or (lambda: None),
-        document_id=document_root.name,
+        document_id=document_id,
         output_format=output_format,
         source_dir=document_root / "output" / "current",
-        destination=release_root / f"{document_root.name}.zip",
+        destination=release_root / f"{document_id}.zip",
         ledger=ledger,
         write_package=package_writer or (lambda candidate, staging: None),
         candidate_sink=candidate_sink or (lambda candidate: None),
@@ -183,3 +184,58 @@ def assemble_stage_provider(
         output_format=output_format,
         ensure_assets=ensure_assets,
     )
+
+
+def assemble_explicit_stage_operations(
+    stage_provider: StageProvider,
+    *,
+    callbacks: Mapping[str, Any],
+    output_format: str,
+    review_stages_available: bool,
+) -> dict[str, Any]:
+    """Bind stage-provider capabilities and format-aware review operations."""
+
+    def callable_stage(name: str) -> Any:
+        operation = stage_provider.get(name)
+        return operation if callable(operation) else None
+
+    review_stage = callbacks["review_stage"]
+    operations: dict[str, Any] = {
+        "generate_visuals": stage_provider.operation("generate_visuals"),
+        "compose_cover": stage_provider.operation("compose_cover"),
+        "structural_audit": (
+            callbacks["structural_audit"]
+            if stage_provider.get("structural_audit_service") is not None
+            else callable_stage("structural_audit")
+        ),
+        "accessibility_review": (
+            review_stage("accessibility-review")
+            if review_stages_available and output_format != "docx"
+            else callable_stage("accessibility_review")
+            or (
+                review_stage("accessibility-review")
+                if review_stages_available
+                else callbacks["accessibility_review"]
+            )
+        ),
+        "visual_review": (
+            review_stage("visual-review")
+            if review_stages_available
+            else callable_stage("visual_review") or callbacks["visual_review"]
+        ),
+        "reproducibility_check": (
+            callable_stage("reproducibility_check")
+            or (
+                review_stage("reproducibility-check")
+                if review_stages_available
+                else callbacks["reproducibility_check"]
+            )
+        ),
+    }
+    operations["build_html"] = (
+        callbacks["build_with_format"]("html") if output_format != "html" else callbacks["render"]
+    )
+    operations["build_pdf"] = (
+        callbacks["build_with_format"]("pdf") if output_format != "pdf" else callbacks["render"]
+    )
+    return {name: operation for name, operation in operations.items() if operation is not None}
