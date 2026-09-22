@@ -15,12 +15,17 @@ source_app = typer.Typer(help="Source ingestion and normalization commands.")
 
 def create_source_pipeline(deps: Any) -> SourcePipeline | None:
     """Build the source use case from the shared application composition."""
+    factory = getattr(deps, "create_source_pipeline", None)
+    if callable(factory):
+        return factory()
     ingest = getattr(deps, "ingest", None)
     if ingest is None:
         return None
-    normalizer = getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter()
-    file_writer = getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter()
-    return SourcePipeline(ingest, normalizer, file_writer)
+    return SourcePipeline(
+        ingest,
+        getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter(),
+        getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
+    )
 
 
 def run_source_command(ctx: typer.Context, command: str, json_output: bool) -> None:

@@ -4,9 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from docs.domain.workspace import Workspace
 from docs.workers.composition import (
     PipelineJobConfiguration,
     WorkerComposition,
+    compose_worker,
     create_production_worker,
     create_production_worker_factory,
 )
@@ -93,6 +95,17 @@ def test_create_service_wires_options_and_handler(tmp_path):
     assert service.worker_id == "worker"
     assert service.lease_ttl_seconds == 9
     assert service.max_retries == 2
+
+
+
+def test_compose_worker_reuses_application_observability(tmp_path):
+    from docs.composition import compose_application
+
+    observability = object()
+    application = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"), observability)
+    composition = compose_worker(application, lambda _: object(), tmp_path, Queue(), Leases())
+
+    assert composition._service.observability is observability
 
 
 def test_production_factory_composes_durable_sqlite_worker_dependencies(tmp_path):

@@ -30,6 +30,7 @@ from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
 from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
+from docs.application.source_pipeline import SourcePipeline
 from docs.application.status import StatusService
 from docs.application.structural_audit import StructuralAuditService
 from docs.application.workspaces import WorkspaceRegistry
@@ -126,9 +127,47 @@ def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
         return False, 0
 
 
+@dataclass(init=False)
 class ApplicationComposition:
     """Composition root — builds every adapter + service exactly as the
     integration-test _service() helpers do, plus config assembly."""
+
+    workspace: Workspace
+    observability: ObservabilityPort
+    document_repository: JsonDocumentRepository
+    context_repository: JsonContextRepository
+    source_repository: FilesystemSourceRepository
+    renderers: dict[str, DocumentRendererPort]
+    markdown_normalizer: MdNormalizeAdapter
+    atomic_file_writer: AtomicFileAdapter
+    svg_rasterizer: Any | None
+    ingest: IngestService
+    visual_renderers: dict[str, Any]
+    generate_visuals_service: GenerateVisualsService | None
+    pdf_classifier: Any | None
+    pdf_text_editor: Any | None
+    pdf_render: Any | None
+    assets: AssetService
+    evidence: EvidenceService
+    review: ReviewService
+    collection: CollectionService
+    context_pack: ContextPackService
+    docx: DocxRendererAdapter
+    format_audit: FormatAuditService
+    render_verification: RenderVerificationService
+    qa: QaService
+    doctor: DoctorService
+    documents: DocumentService
+    corrections: CorrectionsService
+    context: ContextService
+    section: SectionService
+    status: StatusService
+    revision: RevisionService
+    history: RunHistoryService
+    run_recorder: RunRecorderService
+    verification: DocumentVerificationService
+    structural_audit_service: StructuralAuditService
+    rules_manifest_state: Any
 
     def __init__(
         self,
@@ -371,6 +410,10 @@ class ApplicationComposition:
             memory=FilesystemTranslationMemory(memory_dir),
         )
         return service, translator
+
+    def create_source_pipeline(self) -> SourcePipeline:
+        """Build source preparation from this composition's shared adapters."""
+        return SourcePipeline(self.ingest, self.markdown_normalizer, self.atomic_file_writer)
 
     def resolve_renderer(self, config: dict[str, Any]) -> DocumentRendererPort:
         """Resolve the active `DocumentRendererPort` from `config["output"]["format"]`

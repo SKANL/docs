@@ -5,13 +5,37 @@ import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
-from docs.domain.contracts import Run
+import docs.sidecar as sidecar
 from docs.api.http import Request
-from docs.sidecar import SidecarConfig, build_application, build_server, run
-from docs.sidecar import _persist_worker_evidence
+from docs.domain.contracts import Run
+from docs.domain.workspace import Workspace
+from docs.sidecar import SidecarConfig, _persist_worker_evidence, build_application, build_server, run
+
+
+def test_sidecar_worker_bootstrap_reuses_the_shared_application_composition(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    observability = object()
+    calls = []
+    application = type("Application", (), {"observability": observability})()
+
+    monkeypatch.setattr(sidecar, "compose_application", lambda workspace: calls.append(workspace) or application)
+
+    runner = sidecar._build_worker(
+        tmp_path,
+        object(),
+        tmp_path / "worker.sqlite3",
+        object(),
+        object(),
+        object(),
+        object(),
+        object(),
+    )
+
+    assert calls == [Workspace(tmp_path / "documents", tmp_path / "templates")]
+    assert runner._service.observability is observability
 
 
 def test_sidecar_defaults_are_loopback_and_protocol_stable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -38,7 +62,7 @@ def test_worker_passport_contains_each_pipeline_stage_receipt() -> None:
         attempt = 1
         retry_of = "run-original"
         worker_id = "worker-test"
-        value = {"report": {"execution": {"results": [
+        value: ClassVar[dict[str, object]] = {"report": {"execution": {"results": [
             {"stage": "render", "ok": True, "outcome": "succeeded"},
             {"stage": "verify", "ok": True, "outcome": "succeeded"},
         ]}}}

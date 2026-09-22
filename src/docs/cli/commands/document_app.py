@@ -68,12 +68,6 @@ from docs.infrastructure.persistence.x20 import (
 )
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
-
-def _source_pipeline(deps: Any):
-    """Compatibility bridge retained until the worker composition migrates."""
-    return create_source_pipeline(deps)
-
-
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
 _BATCH_OUTPUT_PATHS = (Path("output") / "current", Path("output") / "release")

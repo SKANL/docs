@@ -24,6 +24,7 @@ from .api.application import X20Application
 from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from .composition import compose_application
 from .domain.contracts import Artifact, Passport, Run
 from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .infrastructure.persistence.x20 import (
@@ -36,7 +37,7 @@ from .infrastructure.persistence.x20 import (
     SqlitePublicationStore,
     SqliteRunStore,
 )
-from .workers.composition import WorkerComposition
+from .workers.composition import compose_worker
 from .workers.runner import WorkerRunner
 
 _LOG = logging.getLogger("docs.sidecar")
@@ -639,7 +640,6 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
 
     def document_action(workspace_root: str, document_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         from .cli.commands.document_app import create_document_service
-        from .cli.commands.source_app import create_source_pipeline
         from .composition import compose_application
         from .domain.workspace import Workspace
 
@@ -655,9 +655,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
                 )
         resolved = deps.resolve_context(document_id)
         if action == "prepare":
-            pipeline = create_source_pipeline(deps)
-            if pipeline is None:
-                raise RuntimeError("source pipeline dependencies are unavailable")
+            pipeline = deps.create_source_pipeline()
             report = pipeline.prepare(document_id, deps.workspace.doc_root(document_id), resolved.config)
             if report.get("succeeded"):
                 report["scaffolds"] = [
@@ -849,8 +847,7 @@ def _build_worker(
     publication_store: Any,
 ) -> WorkerRunner:
     """Compose the real local worker; no synthetic completion path is allowed."""
-    from .cli._shared import Deps
-    from .cli.commands.document_app import _source_pipeline, create_document_service
+    from .cli.commands.document_app import create_document_service
     from .domain.workspace import Workspace
 
     root = workspace.resolve()
@@ -892,10 +889,8 @@ def _build_worker(
                     created_at=existing.created_at if existing is not None else "",
                 ))
             progress("prepare", 10)
-            deps = Deps(Workspace(run_root / "documents", run_root / "templates"))
-            source_pipeline = _source_pipeline(deps)
-            if source_pipeline is None:
-                raise RuntimeError("source pipeline dependencies are unavailable")
+            deps = compose_application(Workspace(run_root / "documents", run_root / "templates"))
+            source_pipeline = deps.create_source_pipeline()
             prepared = source_pipeline.prepare(document_id, deps.workspace.doc_root(document_id), deps.resolve_context(document_id).config)
             if not prepared.get("succeeded", False):
                 raise RuntimeError("document preparation failed; inspect intake evidence")
@@ -947,7 +942,9 @@ def _build_worker(
 
     # The worker handler needs the immutable payload for document_id while
     # still receiving the validated paths from WorkerComposition.
-    composition = WorkerComposition(
+    application = compose_application(Workspace(root / "documents", root / "templates"))
+    composition = compose_worker(
+        application,
         factory,
         root,
         queue,
