@@ -17,7 +17,6 @@ if not sys.stdout.isatty():
     typer.core.HAS_RICH = False
     typer.main.HAS_RICH = False
 
-from docs.cli._shared import Deps
 from docs.cli.commands.asset_app import asset_app
 from docs.cli.commands.collection_app import collection_app
 from docs.cli.commands.context_app import context_app
@@ -25,12 +24,16 @@ from docs.cli.commands.core_app import core_app
 from docs.cli.commands.doc_app import doc_app
 from docs.cli.commands.document_app import document_app
 from docs.cli.commands.docx_app import docx_app
+from docs.cli.commands.run_app import run_app
 from docs.cli.commands.section_app import section_app
 from docs.cli.commands.source_app import source_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
 from docs.cli.commands.workspace_app import workspace_app
-from docs.cli.commands.run_app import run_app
+from docs.composition import compose_application
+
+# Compatibility injection seam for existing command tests.
+Deps = compose_application
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 

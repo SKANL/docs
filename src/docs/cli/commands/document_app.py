@@ -28,8 +28,6 @@ from docs.application.artifact_build_service import (
     ArtifactBuildError,
     ArtifactBuildService,
 )
-from docs.application.workspaces import WorkspaceRegistry
-from docs.infrastructure.persistence.x20 import SqliteArtifactStore, SqliteFindingStore, SqliteJobQueue, SqlitePassportStore, SqliteRunStore
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
 from docs.application.package_release_service import PackageReleaseService
@@ -45,23 +43,36 @@ from docs.application.pipeline_service import (
 )
 from docs.application.provenance import ProvenanceLedger
 from docs.application.review_stages import ReviewStageService
-from docs.application.source_pipeline import SourcePipeline
 from docs.application.stage_provider import StageProvider
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
+from docs.application.workspaces import WorkspaceRegistry
+from docs.cli.commands.source_app import create_source_pipeline, run_source_command
 from docs.domain.artifacts import BuildManifest
+from docs.domain.contracts import Run
 from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
-from docs.domain.contracts import Run
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
-from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
+from docs.infrastructure.persistence.x20 import (
+    SqliteArtifactStore,
+    SqliteFindingStore,
+    SqliteJobQueue,
+    SqlitePassportStore,
+    SqliteRunStore,
+)
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
+
+
+def _source_pipeline(deps: Any):
+    """Compatibility bridge retained until the worker composition migrates."""
+    return create_source_pipeline(deps)
+
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
@@ -75,16 +86,6 @@ def _source_mime_type(filename: str) -> str:
         ".txt": "text/plain",
     }
     return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-
-
-def _source_pipeline(deps: Any) -> SourcePipeline | None:
-    """Compose the source pipeline while tolerating older dependency fixtures."""
-    ingest = getattr(deps, "ingest", None)
-    if ingest is None:
-        return None
-    normalizer = getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter()
-    file_writer = getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter()
-    return SourcePipeline(ingest, normalizer, file_writer)
 
 
 def _write_manifest_text(path: Path, content: str) -> None:
@@ -632,7 +633,7 @@ def create_document_service(
         output_format=output_format,
         ensure_assets=ensure_assets,
     )
-    source_pipeline = _source_pipeline(deps)
+    source_pipeline = create_source_pipeline(deps)
     review_stage_service = None
     if all(
         service is not None
@@ -1594,40 +1595,10 @@ def release(
     )
 
 
-def _run_source_command(ctx: typer.Context, command: str, json_output: bool) -> None:
-    deps = ctx.obj["deps"]
-    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
-    root = deps.workspace.doc_root(resolved.doc_id)
-    service = _source_pipeline(deps)
-    if service is None:
-        raise typer.BadParameter("source ingest dependencies are unavailable")
-    report = (
-        service.ingest(resolved.doc_id, root, resolved.config)
-        if command == "ingest"
-        else service.prepare(resolved.doc_id, root, resolved.config)
-    )
-    # ``prepare`` is the public bootstrap boundary: once sources are ready,
-    # create the managed section scaffolds exactly as ``build-section`` does.
-    # This keeps the documented workflow usable from CLI, worker, and API
-    # callers without regenerating authored sections.
-    if command == "prepare" and report.get("succeeded"):
-        scaffolds: list[str] = []
-        template = getattr(resolved, "template", None)
-        if template is not None:
-            for section in template.sections:
-                path = deps.section.build_section(resolved.doc_id, template, section.id, resolved.config)
-                scaffolds.append(str(path))
-        report["scaffolds"] = scaffolds
-    output = json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    typer.echo(output if json_output else json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
-    if not report["succeeded"]:
-        raise typer.Exit(code=1)
-
-
 @document_app.command("ingest")
 def ingest(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")) -> None:
     """Ingest document sources through the native v2 source stage."""
-    _run_source_command(ctx, "ingest", json_output)
+    run_source_command(ctx, "ingest", json_output)
 
 
 @document_app.command("classify")
@@ -1687,7 +1658,7 @@ def import_source(
 @document_app.command("prepare")
 def prepare(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")) -> None:
     """Ingest, normalize, and compile the document source structure."""
-    _run_source_command(ctx, "prepare", json_output)
+    run_source_command(ctx, "prepare", json_output)
 
 
 @document_app.command("status")
@@ -1749,7 +1720,7 @@ def run_document(
         raise typer.BadParameter("--strict and --release are mutually exclusive")
     if async_run and sync:
         raise typer.BadParameter("--async and --sync are mutually exclusive")
-    selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release if release else PipelineMode.release)
+    selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release)
     if watch and not async_run:
         raise typer.BadParameter("--watch requires --async")
     if async_run:
@@ -1857,11 +1828,11 @@ def run_document(
     # Import lazily to avoid making the CLI composition root depend on the
     # sidecar at import time; the worker composition remains the single
     # implementation of execution and evidence finalization.
-    from docs.sidecar import _build_worker
     from docs.infrastructure.persistence.x20 import (
         SqliteFindingStore,
         SqlitePublicationStore,
     )
+    from docs.sidecar import _build_worker
 
     worker = _build_worker(
         workspace_root,

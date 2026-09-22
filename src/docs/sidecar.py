@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import multiprocessing
@@ -10,34 +11,33 @@ import os
 import signal
 import sys
 import threading
-from datetime import UTC, datetime
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from .api.application import X20Application
-from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
+from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from .domain.contracts import Artifact, Passport, Run
+from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .infrastructure.persistence.x20 import (
     SqliteArtifactStore,
-    SqliteGraphStore,
     SqliteFindingStore,
+    SqliteGraphStore,
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
     SqlitePublicationStore,
     SqliteRunStore,
 )
-from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .workers.composition import WorkerComposition
 from .workers.runner import WorkerRunner
-from .domain.contracts import Artifact, Passport, Run
-import hashlib
-from datetime import UTC, datetime
-from importlib.resources import files
 
 _LOG = logging.getLogger("docs.sidecar")
 
@@ -339,20 +339,20 @@ class _WorkspaceEvidenceStores:
             if isinstance(workspace_id, str) and workspace_id:
                 try:
                     return Path(str(self.registry.get(workspace_id)["root"])).resolve()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _LOG.debug("workspace lookup failed for run %s: %s", run_id, exc)
         return self.fallback_root
 
-    def passport(self) -> "_WorkspacePassportStore":
+    def passport(self) -> _WorkspacePassportStore:
         return _WorkspacePassportStore(self)
 
-    def artifact(self) -> "_WorkspaceArtifactStore":
+    def artifact(self) -> _WorkspaceArtifactStore:
         return _WorkspaceArtifactStore(self)
 
-    def finding(self) -> "_WorkspaceFindingStore":
+    def finding(self) -> _WorkspaceFindingStore:
         return _WorkspaceFindingStore(self)
 
-    def publication(self) -> "_WorkspacePublicationStore":
+    def publication(self) -> _WorkspacePublicationStore:
         return _WorkspacePublicationStore(self)
 
 
@@ -372,7 +372,8 @@ class _WorkspaceArtifactStore:
     def get(self, artifact_id: str) -> Any:
         for root in [self.parent._root_for_run(run.id) for run in self.parent.run_store.list()]:
             value = self.parent._stores_for_root(root)[1].get(artifact_id)
-            if value is not None: return value
+            if value is not None:
+                return value
         return None
     def list(self) -> list[Any]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
@@ -629,19 +630,20 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     findings_store = evidence_stores.finding()
     publication_store = evidence_stores.publication()
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
-        from .cli._shared import Deps
+        from .composition import compose_application
         from .domain.workspace import Workspace
 
-        deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        deps = compose_application(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
         document = deps.documents.create(document_id, template, title)
         return document.model_dump()
 
     def document_action(workspace_root: str, document_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
-        from .cli._shared import Deps
-        from .cli.commands.document_app import _source_pipeline, create_document_service
+        from .cli.commands.document_app import create_document_service
+        from .cli.commands.source_app import create_source_pipeline
+        from .composition import compose_application
         from .domain.workspace import Workspace
 
-        deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        deps = compose_application(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
         if action == "prepare" and not (deps.workspace.doc_root(document_id) / "document.json").is_file():
             metadata_files = sorted((deps.workspace.doc_root(document_id) / "inbox").glob("*.import.json"))
             if metadata_files:
@@ -653,7 +655,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
                 )
         resolved = deps.resolve_context(document_id)
         if action == "prepare":
-            pipeline = _source_pipeline(deps)
+            pipeline = create_source_pipeline(deps)
             if pipeline is None:
                 raise RuntimeError("source pipeline dependencies are unavailable")
             report = pipeline.prepare(document_id, deps.workspace.doc_root(document_id), resolved.config)
@@ -676,10 +678,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         return report.to_dict()
 
     def document_context(workspace_root: str, document_id: str) -> dict[str, Any]:
-        from .cli._shared import Deps
+        from .composition import compose_application
         from .domain.workspace import Workspace
 
-        deps = Deps(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+        deps = compose_application(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
         resolved = deps.resolve_context(document_id)
         statuses = deps.context.status(document_id, resolved.template)
         return {
@@ -701,28 +703,28 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         }
 
     def set_document_context(document_id: str, topic: str, field: str, value: str, workspace_root: str | None = None) -> dict[str, Any]:
-        from .cli._shared import Deps
+        from .composition import compose_application
         from .domain.workspace import Workspace
 
         active = registry.active()
         if active is None and not workspace_root:
             raise RuntimeError("workspace_not_configured")
         root = Path(workspace_root) if workspace_root else Path(str(active["root"]))
-        deps = Deps(Workspace(root / "documents", root / "templates"))
+        deps = compose_application(Workspace(root / "documents", root / "templates"))
         resolved = deps.resolve_context(document_id)
         path = deps.context.set(document_id, resolved.template, topic, value, field)
         return {"document_id": document_id, "topic": topic, "field": field, "path": str(path)}
 
     def revise_document(document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        from .cli._shared import Deps
-        from .domain.workspace import Workspace
+        from .composition import compose_application
         from .domain.normative import resolve_normative_settings
+        from .domain.workspace import Workspace
 
         active = registry.active()
         if active is None:
             raise RuntimeError("workspace_not_configured")
         root = Path(str(active["root"]))
-        deps = Deps(Workspace(root / "documents", root / "templates"))
+        deps = compose_application(Workspace(root / "documents", root / "templates"))
         resolved = deps.resolve_context(document_id)
         target_id = str(payload.get("target_id") or payload.get("section_id") or payload.get("topic_id") or "")
         request = str(payload.get("request") or "API revision")

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from docs import composition as application_composition
 from docs.api.application import X20Application
-from docs.cli import _shared
 from docs.cli._shared import Deps
 from docs.domain.workspace import Workspace
 from docs.workers import composition
@@ -30,7 +30,7 @@ def _api_kwargs():
 
 def test_cli_composition_invokes_environment_observability_factory(monkeypatch, tmp_path):
     marker = object()
-    monkeypatch.setattr(_shared, "create_observability_from_env", lambda: marker)
+    monkeypatch.setattr(application_composition, "create_observability_from_env", lambda: marker)
     workspace = Workspace(tmp_path / "documents", tmp_path / "templates")
 
     dependencies = Deps(workspace)
