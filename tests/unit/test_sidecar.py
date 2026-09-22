@@ -5,7 +5,7 @@ import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 
@@ -14,6 +14,101 @@ from docs.api.http import Request
 from docs.domain.contracts import Run
 from docs.domain.workspace import Workspace
 from docs.sidecar import SidecarConfig, _persist_worker_evidence, build_application, build_server, run
+
+
+def test_api_document_creation_composes_the_requested_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from docs.api.http import Request
+    from docs.application.workspaces import WorkspaceRegistry
+    from docs.domain.models.document import Document
+
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    registry_path = tmp_path / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(registry_path)
+    first = registry.create("First", first_root)
+    second = registry.create("Second", second_root)
+    registry.select(first["id"])
+    calls: list[Workspace] = []
+
+    class Documents:
+        def create(self, document_id: str, template: str, title: str) -> Document:
+            return Document(id=document_id, title=title, template=template)
+
+    class Composition:
+        documents = Documents()
+
+    def compose(workspace: Workspace) -> Composition:
+        calls.append(workspace)
+        return Composition()
+
+    monkeypatch.setattr("docs.composition.compose_application", compose)
+    application = build_application(SidecarConfig(workspace=tmp_path))
+    try:
+        response = application.application.dispatch(Request(
+            "POST",
+            "/v1/documents",
+            body=json.dumps({"workspace_id": second["id"], "document_id": "target", "title": "Target"}).encode(),
+            headers={"Content-Type": "application/json"},
+        ))
+        assert response.status == 201
+        assert calls == [Workspace(second_root / "documents", second_root / "templates")]
+        assert registry.active()["id"] == first["id"]
+    finally:
+        application.shutdown()
+
+
+def test_api_context_reads_compose_each_requested_workspace_without_leakage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from docs.api.http import Request
+    from docs.application.workspaces import WorkspaceRegistry
+
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    registry_path = tmp_path / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(registry_path)
+    first = registry.create("First", first_root)
+    second = registry.create("Second", second_root)
+    registry.select(first["id"])
+    calls: list[Path] = []
+
+    class Context:
+        def status(self, document_id: str, template: Any) -> list[Any]:
+            return []
+
+    class Composition:
+        context = Context()
+
+        def __init__(self, workspace: Workspace) -> None:
+            self.workspace = workspace
+
+        def resolve_context(self, document_id: str) -> Any:
+            calls.append(self.workspace.documents_dir)
+            return type("Resolved", (), {"template": type("Template", (), {"context_schema": type("Schema", (), {"topics": []})()})()})()
+
+    def compose(workspace: Workspace) -> Composition:
+        return Composition(workspace)
+
+    monkeypatch.setattr("docs.composition.compose_application", compose)
+    application = build_application(SidecarConfig(workspace=tmp_path))
+    try:
+        for workspace in (first, second):
+            (Path(str(workspace["root"])) / "documents" / "doc").mkdir(parents=True, exist_ok=True)
+            (Path(str(workspace["root"])) / "documents" / "doc" / "document.json").write_text(
+                json.dumps({"id": "doc", "title": "Doc"}), encoding="utf-8"
+            )
+            response = application.application.dispatch(Request(
+                "GET",
+                f"/v1/documents/doc/context?workspace_id={workspace['id']}",
+            ))
+            assert response.status == 200
+            assert json.loads(response.body)["document_id"] == "doc"
+        assert calls == [first_root / "documents", second_root / "documents"]
+        assert registry.active()["id"] == first["id"]
+    finally:
+        application.shutdown()
 
 
 def test_sidecar_worker_bootstrap_reuses_the_shared_application_composition(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
