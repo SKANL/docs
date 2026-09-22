@@ -1,6 +1,6 @@
 import pytest
 
-from docs.cli.commands.document_app import _renderer_capabilities
+from docs.application.document_pipeline import _renderer_capabilities
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 

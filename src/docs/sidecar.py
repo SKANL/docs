@@ -639,7 +639,6 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         return document.model_dump()
 
     def document_action(workspace_root: str, document_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
-        from .cli.commands.document_app import create_document_service
         from .composition import compose_application
         from .domain.workspace import Workspace
 
@@ -665,8 +664,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             return report
         pipeline_id = "document" if action == "build" else "document-verify"
         run_id = str(payload.get("run_id") or f"api-{action}-{uuid4().hex}")
-        service = create_document_service(
-            deps,
+        service = deps.create_document_pipeline_service(
+
             output_format=str(payload.get("format", "docx")),
             document=document_id,
             pipeline_id=pipeline_id,
@@ -847,7 +846,6 @@ def _build_worker(
     publication_store: Any,
 ) -> WorkerRunner:
     """Compose the real local worker; no synthetic completion path is allowed."""
-    from .cli.commands.document_app import create_document_service
     from .domain.workspace import Workspace
 
     root = workspace.resolve()
@@ -898,8 +896,8 @@ def _build_worker(
             for section in resolved.template.sections:
                 deps.section.build_section(document_id, resolved.template, section.id, resolved.config)
             progress("pipeline", 35)
-            service = create_document_service(
-                deps,
+            service = deps.create_document_pipeline_service(
+
                 output_format=output_format,
                 document=document_id,
                 pipeline_id=self.pipeline_id,

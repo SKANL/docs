@@ -451,6 +451,32 @@ class ApplicationComposition:
             extra_services=extra_services,
         )
 
+    def create_document_pipeline_service(
+        self,
+        output_format: str = "docx",
+        policy: Any = None,
+        document: str = "",
+        pipeline_id: str = "document",
+        provenance_run_id: str | None = None,
+        publication_destination: Path | None = None,
+        artifact_path: Path | None = None,
+        manifest_path: Path | None = None,
+    ) -> Any:
+        """Create the application-owned document pipeline use case."""
+        from docs.application.document_pipeline import create_document_pipeline_service
+
+        return create_document_pipeline_service(
+            self,
+            output_format=output_format,
+            policy=policy,
+            document=document,
+            pipeline_id=pipeline_id,
+            provenance_run_id=provenance_run_id,
+            publication_destination=publication_destination,
+            artifact_path=artifact_path,
+            manifest_path=manifest_path,
+        )
+
     def create_document_pipeline(
         self,
         *,

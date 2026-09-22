@@ -140,3 +140,11 @@ def test_compose_application_resolves_default_workspace_and_observability(monkey
 
     assert composition.workspace is workspace
     assert composition.observability is observability
+
+
+def test_application_composition_owns_document_pipeline_use_case(tmp_path: Path) -> None:
+    from docs.composition import compose_application
+
+    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+
+    assert callable(composition.create_document_pipeline_service)

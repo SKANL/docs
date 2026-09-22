@@ -13,12 +13,12 @@ from pathlib import Path
 
 import typer
 
-from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
+from docs.application.document_pipeline import _capabilities_for
 from docs.application.workspaces import WorkspaceRegistry
-from docs.domain.workspace_config import resolve_workspace_roots
-from docs.cli.commands.document_app import _capabilities_for
+from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 from docs.domain.normative import resolve_normative_settings
+from docs.domain.workspace_config import resolve_workspace_roots
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
 
