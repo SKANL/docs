@@ -37,6 +37,7 @@ from docs.application.pipeline_assembly import (
     assemble_pipeline_resources,
 )
 from docs.application.pipeline_components import PUBLIC_PIPELINES
+from docs.application.pipeline_publication import PipelinePublication
 from docs.application.pipeline_service import PipelineService
 from docs.application.provenance import ProvenanceLedger
 from docs.application.review_stages import ReviewStageService
@@ -960,30 +961,19 @@ def create_document_service(
         output_format=output_format,
         review_stages_available=review_stage_service is not None,
     )
+    publication_service = PipelinePublication(manifest_service, ledger)
 
     def provenance() -> tuple[bool, str]:
         if pipeline_id == "document-publish":
-            artifact = state.get("artifact")
-            manifest = state.get("manifest")
-            if not isinstance(manifest, BuildManifest):
-                return False, "publish requires an attested artifact/manifest pair"
-            try:
-                manifest.validate_for_publication()
-            except ValueError as exc:
-                return False, str(exc)
-            artifact_digest = sha256_file(artifact) if isinstance(artifact, Path) else ""
-            if (
-                not isinstance(artifact, Path)
-                or manifest.document_id != initial.doc_id
-                or not any(item.sha256 == artifact_digest for item in manifest.artifacts)
-                or not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation())
-            ):
-                return False, "publish requires an attested artifact/manifest pair"
-            state["attested_artifact_sha256"] = artifact_digest
-            return successful("provenance", "reused verified artifact and manifest")
-        resolved = state["resolved"]
-        manifest = manifest_service.create_manifest(
-            resolved=resolved,
+            passed, detail, digest = publication_service.record_existing(
+                initial.doc_id, state.get("artifact"), state.get("manifest")
+            )
+            if not passed:
+                return False, detail
+            state["attested_artifact_sha256"] = digest
+            return successful("provenance", detail)
+        manifest = publication_service.record_build(
+            resolved=state["resolved"],
             config=state["config"],
             renderer=state["renderer"],
             root=initial_root,
@@ -994,56 +984,21 @@ def create_document_service(
             verification=state.get("verification"),
             stage_artifacts=tuple(state["stage_artifacts"]),
         )
-        manifest.validate_for_publication()
         state["manifest"] = manifest
-        manifest_service.record_provenance(
-            ledger,
-            state["run_id"],
-            initial_root,
-            state["artifact"],
-            manifest,
-        )
         return successful("provenance")
 
     def publish(scratch: Path) -> None:
-        staged = scratch / f"primary.{output_format}"
-        staged_manifest = scratch / f"primary.{output_format}.manifest.json"
-        staged_package = scratch / f"{initial.doc_id}.zip"
-        staged.parent.mkdir(parents=True, exist_ok=True)
-        artifact = state.get("artifact")
-        manifest = state.get("manifest")
-        if pipeline_id == "document-publish":
-            persisted_manifest = state.get("manifest_path")
-            expected_digest = state.get("attested_artifact_sha256")
-            if (
-                not isinstance(artifact, Path)
-                or not isinstance(manifest, BuildManifest)
-                or not isinstance(persisted_manifest, Path)
-                or not isinstance(expected_digest, str)
-                or persisted_manifest.is_symlink()
-            ):
-                raise RuntimeError("publish requires an attested artifact/manifest pair")
-            shutil.copyfile(artifact, staged)
-            shutil.copyfile(persisted_manifest, staged_manifest)
-            try:
-                staged_manifest_data = BuildManifest.from_dict(
-                    json.loads(staged_manifest.read_text(encoding="utf-8"))
-                )
-            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                raise RuntimeError("persisted manifest changed before publication") from exc
-            if staged_manifest_data != manifest:
-                raise RuntimeError("persisted manifest changed before publication")
-        else:
-            if not isinstance(artifact, Path) or not isinstance(manifest, BuildManifest):
-                raise RuntimeError("publish requires a verified artifact and manifest")
-            shutil.copyfile(artifact, staged)
-            manifest_service.write_manifest(manifest, staged_manifest)
-        package_candidate = state.get("package_candidate")
-        if not isinstance(package_candidate, Path) or not package_candidate.is_file():
-            raise RuntimeError("package-release completed without a safe release candidate")
-        shutil.copyfile(package_candidate, staged_package)
-        if pipeline_id == "document-publish" and sha256_file(staged) != expected_digest:
-            raise RuntimeError("artifact changed before publication")
+        publication_service.stage(
+            scratch=scratch,
+            artifact=state.get("artifact"),
+            manifest=state.get("manifest"),
+            package_candidate=state.get("package_candidate"),
+            document_id=initial.doc_id,
+            output_format=output_format,
+            existing=pipeline_id == "document-publish",
+            persisted_manifest=state.get("manifest_path"),
+            expected_digest=state.get("attested_artifact_sha256"),
+        )
 
     manifest_destination = destination.with_suffix(destination.suffix + ".manifest.json")
     release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
