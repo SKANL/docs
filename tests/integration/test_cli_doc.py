@@ -81,6 +81,21 @@ def test_doc_list_empty_message(ws):
     assert "No hay documentos" in result.output
 
 
+def test_document_inspect_and_diff_use_the_composed_artifact_report_service(ws):
+    left = ws / "before.txt"
+    right = ws / "after.txt"
+    left.write_text("before\n", encoding="utf-8")
+    right.write_text("after\n", encoding="utf-8")
+
+    inspection = runner.invoke(app, ["document", "inspect", str(left), "--json"])
+    comparison = runner.invoke(app, ["document", "diff", str(left), str(right), "--json"])
+
+    assert inspection.exit_code == 0, inspection.output
+    assert json.loads(inspection.output)["path"] == str(left.resolve())
+    assert comparison.exit_code == 0, comparison.output
+    assert json.loads(comparison.output)["text_diff"]
+
+
 # ── PR2: workspace config + `doc init` bootstrap (design.md item A) ────────
 
 

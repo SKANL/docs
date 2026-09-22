@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.application.artifact_report_service import ArtifactReportService
 from docs.application.asset import AssetService
 from docs.application.collection import CollectionService
 from docs.application.context import ContextService
@@ -167,6 +168,7 @@ class ApplicationComposition:
     run_recorder: RunRecorderService
     verification: DocumentVerificationService
     structural_audit_service: StructuralAuditService
+    artifact_reports: ArtifactReportService
     rules_manifest_state: Any
 
     def __init__(
@@ -376,6 +378,7 @@ class ApplicationComposition:
             review_service, evidence_repo, format_audit_service, qa_service
         )
         self.structural_audit_service = structural_audit_service
+        self.artifact_reports = ArtifactReportService()
         self.rules_manifest_state = _rules_manifest_state
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:

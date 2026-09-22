@@ -17,7 +17,6 @@ from collections.abc import Mapping
 from contextlib import closing, contextmanager, nullcontext
 from copy import deepcopy
 from datetime import UTC, datetime
-from difflib import unified_diff
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,7 @@ import typer
 from docs.application.artifact_render_service import ArtifactRenderService
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.build_manifest_service import BuildManifestService
+from docs.application.document_input_stages import DocumentInputStageService
 from docs.application.package_service import (
     PackageFile,
     PackagePublicationError,
@@ -616,6 +616,18 @@ def create_document_service(
         operation = _stage_service(name)
         return operation if callable(operation) else None
 
+    input_stages = DocumentInputStageService(
+        document_id=initial.doc_id,
+        document_root=initial_root,
+        output_format=output_format,
+        state=state,
+        resolve_context=lambda: deps.resolve_context(document),
+        resolve_renderer=deps.resolve_renderer,
+        figure_pipeline=getattr(getattr(deps, "ingest", None), "figures", None),
+        source_pipeline=source_pipeline,
+        fallback_stage=_callable_stage,
+    )
+
     def _build_with_format(format_name: str) -> tuple[bool, str]:
         renderers = getattr(deps, "renderers", {})
         outcome = artifact_renderer.build_format(
@@ -812,58 +824,19 @@ def create_document_service(
         return True, detail or f"{name} completed"
 
     def resolve_config() -> tuple[bool, str]:
-        resolved = active_context()
-        return successful("resolve-config", f"document={resolved.doc_id}")
+        return input_stages.resolve_config()
 
     def resolve_template() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        return successful("resolve-template", f"template={resolved.template.type}")
+        return input_stages.resolve_template()
 
     def resolve_context() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        return successful("resolve-context", f"document={resolved.doc_id}")
+        return input_stages.resolve_context_stage()
 
     def resolve_assets() -> tuple[bool, str]:
-        # A migrated workspace may already contain authored figure assets and
-        # bindings but no ingest-generated catalog.  Reconstruct that derived
-        # catalog from the existing assets once, without touching authored
-        # Markdown or replacing a non-empty curated catalog.
-        configured_paths = state["config"].get("paths", {})
-        sections_dir = Path(configured_paths.get("sections_dir", initial_root / "sections"))
-        catalog_path = sections_dir / "figure-catalog.json"
-        bindings_path = sections_dir / "figure-bindings.json"
-        figure_pipeline = getattr(getattr(deps, "ingest", None), "figures", None)
-        if figure_pipeline is not None and bindings_path.is_file():
-            try:
-                catalog = json.loads(catalog_path.read_text(encoding="utf-8")) if catalog_path.is_file() else {}
-                if not catalog.get("figures"):
-                    assets_dir = Path(configured_paths.get("assets_dir", initial_root / "assets")) / "figures"
-                    candidates = tuple(
-                        (path, path.relative_to(initial_root).as_posix())
-                        for path in sorted(assets_dir.iterdir(), key=lambda item: item.name)
-                        if path.is_file() and path.suffix.casefold() in {".png", ".jpg", ".jpeg", ".svg"}
-                    ) if assets_dir.is_dir() else ()
-                    if candidates:
-                        figure_pipeline.build_figure_catalog_for(
-                            Path(configured_paths.get("inbox_dir", initial_root / "inbox")),
-                            sections_dir,
-                            list(candidates),
-                            [],
-                            entries=[],
-                            assets_dir=None,
-                        )
-                        return successful("resolve-assets", f"catalogued {len(candidates)} existing figure assets")
-            except (OSError, TypeError, ValueError, AttributeError) as exc:
-                return False, f"could not resolve existing figure assets: {exc}"
-        return successful("resolve-assets")
+        return input_stages.resolve_assets()
 
     def _source_stage(name: str) -> tuple[bool, str]:
-        if source_pipeline is None:
-            operation = _callable_stage(name.replace("-", "_"))
-            if operation is None:
-                return False, f"{name} service is not configured"
-            return operation()
-        return source_pipeline.run_stage(name, initial.doc_id, initial_root, state["config"])
+        return input_stages.source_stage(name)
 
     def _review_stage_operation(stage: str, fallback: Any) -> Any:
         if review_stage_service is not None:
@@ -871,10 +844,7 @@ def create_document_service(
         return fallback
 
     def validate_contracts() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        if getattr(state["renderer"], "output_format", "") != output_format:
-            return False, f"renderer does not provide {output_format} output"
-        return successful("validate-contracts", f"document={resolved.doc_id}")
+        return input_stages.validate_contracts()
 
     def render() -> tuple[bool, str]:
         resolved = state["resolved"]
@@ -1824,14 +1794,8 @@ def verify(
     _run(ctx, "verify", json_output, formats, policy, dimensions, pipeline_id)
 
 
-def _artifact_payload(path: Path) -> dict[str, object]:
-    digest = sha256_file(path)
-    return {
-        "path": str(path.resolve()),
-        "media_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-        "sha256": digest,
-        "size_bytes": path.stat().st_size,
-    }
+def _artifact_payload(ctx: typer.Context, path: Path) -> dict[str, object]:
+    return ctx.obj["deps"].artifact_reports.inspect(path)
 
 
 def _require_contained(path: Path, root: Path, label: str) -> None:
@@ -2039,43 +2003,37 @@ def baseline(
 
 @document_app.command("inspect")
 def inspect(
+    ctx: typer.Context,
     artifact: Path = typer.Argument(..., exists=True, readable=True),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Inspect an artifact identity without modifying it."""
-    payload = _artifact_payload(artifact)
+    payload = _artifact_payload(ctx, artifact)
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
 
 
 @document_app.command("diff")
 def diff(
+    ctx: typer.Context,
     left: Path = typer.Argument(..., exists=True, readable=True),
     right: Path = typer.Argument(..., exists=True, readable=True),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Compare two derived artifacts by identity and readable text when available."""
-    left_payload = _artifact_payload(left)
-    right_payload = _artifact_payload(right)
-    changes: list[str] = []
-    try:
-        left_text = left.read_text(encoding="utf-8").splitlines(keepends=True)
-        right_text = right.read_text(encoding="utf-8").splitlines(keepends=True)
-        changes = list(unified_diff(left_text, right_text, fromfile=str(left), tofile=str(right)))
-    except UnicodeDecodeError:
-        changes = []
-    payload = {"same": left_payload["sha256"] == right_payload["sha256"], "left": left_payload, "right": right_payload, "text_diff": changes}
+    payload = ctx.obj["deps"].artifact_reports.compare(left, right)
     typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
 
 
 @document_app.command("package")
 def package(
+    ctx: typer.Context,
     source_dir: Path = typer.Argument(..., exists=True, file_okay=False),
     output: Path = typer.Argument(...),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Package verified derived artifacts atomically as a ZIP archive."""
     _write_package_archive(output, source_dir)
-    payload = {"path": str(output.resolve()), "artifact": _artifact_payload(output)}
+    payload = {"path": str(output.resolve()), "artifact": _artifact_payload(ctx, output)}
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
 
 
@@ -2157,7 +2115,7 @@ def publish(
         raise typer.BadParameter(f"publish failed: {publication.error}")
     payload = {
         "published": True,
-        "artifact": _artifact_payload(destination),
+        "artifact": _artifact_payload(ctx, destination),
         "manifest": str(destination_manifest.resolve()),
         "warnings": list(publication.warnings),
     }
