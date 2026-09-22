@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -142,6 +143,7 @@ def _service(
     policy: PipelinePolicy | None = None,
     capabilities: ToolCapabilityRegistry | None = None,
     artifact_store: ArtifactStore | None = None,
+    ledger: ProvenanceLedger | None = None,
 ) -> PipelineService:
     stage_names = {
         "resolve_config": "resolve-config",
@@ -177,7 +179,7 @@ def _service(
         operations=operations,
         publication=dependencies.publication,
         capabilities=capabilities if capabilities is not None else ToolCapabilityRegistry(()),
-        ledger=ProvenanceLedger(tmp_path / "provenance.json"),
+        ledger=ledger or ProvenanceLedger(tmp_path / "provenance.json"),
         atomic_transform=AtomicTransform(),
         policy=policy,
         artifact_store=artifact_store,
@@ -190,7 +192,21 @@ def _replace_dependencies(dependencies: SimpleNamespace, **changes: object) -> S
 
 def test_runs_current_adapters_in_order_and_publishes_atomically_after_verification(tmp_path: Path) -> None:
     calls: list[str] = []
-    service = _service(tmp_path, _dependencies(tmp_path, calls))
+    source = tmp_path / "source.md"
+    source.write_text("source body", encoding="utf-8")
+    rendered = tmp_path / "rendered" / "document.txt"
+    rendered.parent.mkdir()
+    rendered.write_bytes(b"rendered document")
+    ledger = ProvenanceLedger(tmp_path / "provenance.json")
+    dependencies = _dependencies(tmp_path, calls)
+
+    def record_provenance() -> tuple[bool, str]:
+        calls.append("provenance")
+        ledger.record_run("publish-success", inputs=(source,), outputs=(rendered,))
+        return True, "provenance"
+
+    dependencies.provenance = record_provenance
+    service = _service(tmp_path, dependencies, ledger=ledger)
 
     report = service.run("publish-success")
 
@@ -219,11 +235,24 @@ def test_runs_current_adapters_in_order_and_publishes_atomically_after_verificat
     ]
     assert (tmp_path / "published" / "document.txt").read_text(encoding="utf-8") == "published document"
     assert service.definition.plan() == EXPECTED_DAG_PLAN
+    verification = next(result for result in report.execution.results if result.stage == "editorial-review")
+    published = next(result for result in report.execution.results if result.stage == "publish-draft")
+    assert verification.ok is True
+    assert report.provenance == {
+        "run_id": "publish-success",
+        "inputs": {"source.md": hashlib.sha256(b"source body").hexdigest()},
+        "outputs": {"rendered/document.txt": hashlib.sha256(b"rendered document").hexdigest()},
+    }
+    assert ledger.verify_run("publish-success") is True
+    assert published.artifacts[0].sha256 == hashlib.sha256(b"published document").hexdigest()
 
 
 def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls, verification_ok=False))
+    destination = tmp_path / "published" / "document.txt"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"previous verified output\n")
 
     report = service.run("publish-blocked")
 
@@ -243,7 +272,7 @@ def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
         "audit",
         "verify",
     ]
-    assert not (tmp_path / "published" / "document.txt").exists()
+    assert destination.read_bytes() == b"previous verified output\n"
 
 
 def test_exports_reusable_full_stage_ids() -> None:

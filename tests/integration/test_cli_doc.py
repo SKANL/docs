@@ -23,11 +23,25 @@ def ws(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_doc_new_creates_and_activates(ws):
+def test_doc_new_is_the_canonical_creation_path_and_activates(ws):
     result = runner.invoke(app, ["doc", "new", "alpha"])
     assert result.exit_code == 0
     assert "creado desde `tesina`" in result.output
     assert runner.invoke(app, ["doc", "current"]).output.strip() == "alpha"
+
+
+@pytest.mark.parametrize(
+    ("command", "document_id"),
+    [
+        (["doc", "new", "canonical"], "canonical"),
+        (["document", "create", "legacy"], "legacy"),
+    ],
+)
+def test_document_creation_paths_currently_create_and_activate(ws, command, document_id):
+    result = runner.invoke(app, command)
+
+    assert result.exit_code == 0, result.output
+    assert runner.invoke(app, ["doc", "current"]).output.strip() == document_id
 
 
 def test_doc_list_marks_active(ws):
