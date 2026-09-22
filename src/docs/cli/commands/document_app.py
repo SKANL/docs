@@ -24,6 +24,7 @@ from docs.application.document_pipeline import (
     _resolve_publish_inputs,
 )
 from docs.application.pipeline_components import PUBLIC_PIPELINES
+from docs.application.pipeline_service import PipelineRequest
 from docs.application.provenance import ProvenanceLedger
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
 from docs.application.workspaces import WorkspaceRegistry
@@ -55,8 +56,6 @@ def _source_mime_type(filename: str) -> str:
         ".txt": "text/plain",
     }
     return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-
-
 
 
 def _promote_release_candidate(
@@ -109,8 +108,18 @@ def _run(
         resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
         root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
         with owned_directory_lock(root / "runs" / ".x20-batch.lock"):
-            return _run(ctx, command, json_output, formats, policy, dimensions, pipeline_id,
-                        artifact_path, manifest_path, _batch_lock_held=True)
+            return _run(
+                ctx,
+                command,
+                json_output,
+                formats,
+                policy,
+                dimensions,
+                pipeline_id,
+                artifact_path,
+                manifest_path,
+                _batch_lock_held=True,
+            )
     selected_document = ctx.obj.get("doc", "")
     if formats is None:
         resolved = ctx.obj["deps"].resolve_context(selected_document)
@@ -141,15 +150,16 @@ def _run(
             if current.exists() and not current.is_symlink():
                 shutil.copytree(current, batch_backup / relative)
         _write_batch_journal(batch_journal, batch_root, batch_backup, batch_paths)
+
     def restore_batch() -> None:
         if batch_journal is not None:
             _recover_batch_transaction(batch_journal, _lock_held=True)
+
     try:
         for output_format in requested:
             selected_policy = PipelinePolicy(policy) if policy is not None else None
             provenance_run_id = f"cli-build-{output_format}-{uuid.uuid4().hex}" if command == "build" else None
             service = ctx.obj["deps"].create_document_pipeline_service(
-
                 output_format,
                 selected_policy,
                 document=selected_document,
@@ -172,11 +182,11 @@ def _run(
                     source_manifest = manifest_path
                     if source_manifest is None:
                         resolved = ctx.obj["deps"].resolve_context(selected_document)
-                        source_artifact = (
-                            resolved.config.get("paths", {}).get("output_draft_dir")
-                        )
+                        source_artifact = resolved.config.get("paths", {}).get("output_draft_dir")
                         source_manifest = (
-                            Path(source_artifact).parent / "current" / f"{resolved.doc_id}.{output_format}.manifest.json"
+                            Path(source_artifact).parent
+                            / "current"
+                            / f"{resolved.doc_id}.{output_format}.manifest.json"
                             if isinstance(source_artifact, str)
                             else None
                         )
@@ -192,13 +202,15 @@ def _run(
                         }
                     except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
                         external_artifacts = set()
-            report = service.run(
-                provenance_run_id or f"cli-{command}-{output_format}",
-                publish=command == "build"
-                and pipeline_id in {"document", "document-publish"}
-                and (selected_policy is None or selected_policy.can_publish()),
-                pipeline_id=pipeline_id,
-                external_artifacts=external_artifacts,
+            report = service.execute(
+                PipelineRequest(
+                    run_id=provenance_run_id or f"cli-{command}-{output_format}",
+                    publish=command == "build"
+                    and pipeline_id in {"document", "document-publish"}
+                    and (selected_policy is None or selected_policy.can_publish()),
+                    pipeline_id=pipeline_id,
+                    external_artifacts=(tuple(external_artifacts) if external_artifacts is not None else None),
+                )
             )
             report_payload = report.to_dict()
             if dimensions:
@@ -223,9 +235,7 @@ def _run(
                             and isinstance(item.get("stage"), str)
                             and stage_dimensions.get(item["stage"]) in selected
                         ]
-                        report_payload["succeeded"] = all(
-                            item.get("ok", False) for item in execution["results"]
-                        )
+                        report_payload["succeeded"] = all(item.get("ok", False) for item in execution["results"])
                 report_payload["dimensions"] = [dimension.value for dimension in dimensions]
             item: dict[str, Any] = {
                 "command": command,
@@ -255,7 +265,9 @@ def _run(
                 ):
                     artifact = Path(draft_dir).parent / "current" / f"{resolved.doc_id}.{output_format}"
                     if artifact.is_file():
-                        ledger = ProvenanceLedger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
+                        ledger = ProvenanceLedger(
+                            resolved_root / "runs" / "provenance.json", trusted_root=resolved_root
+                        )
                         recorded = ledger.load_attestation(provenance_run_id or "")
                         if recorded is None:
                             raise RuntimeError("missing pre-publication build attestation")
@@ -309,7 +321,10 @@ def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[P
 
 
 def _batch_snapshot(directory: Path) -> dict[str, list[object]]:
-    if any(path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0) for path in (directory, *directory.parents)):
+    if any(
+        path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0)
+        for path in (directory, *directory.parents)
+    ):
         raise RuntimeError("batch recovery refuses redirected paths")
     if not directory.exists():
         return {}
@@ -322,8 +337,12 @@ def _batch_snapshot(directory: Path) -> dict[str, list[object]]:
         if path.is_file():
             identity = path.stat()
             snapshot[path.relative_to(directory).as_posix()] = [
-                sha256_file(path), identity.st_dev, identity.st_ino,
-                identity.st_size, identity.st_mtime_ns, identity.st_ctime_ns,
+                sha256_file(path),
+                identity.st_dev,
+                identity.st_ino,
+                identity.st_size,
+                identity.st_mtime_ns,
+                identity.st_ctime_ns,
             ]
         elif not path.is_dir():
             raise RuntimeError("batch recovery refuses non-regular paths")
@@ -361,10 +380,13 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     root = journal.parent.parent.resolve()
     backup = Path(payload["backup"])
     paths = _BATCH_OUTPUT_PATHS
-    if (Path(payload["root"]).resolve() != root
-            or journal.resolve() != _batch_journal_path(root)
-            or backup.parent.resolve() != root or not backup.name.startswith(".x20-batch-")
-            or payload.get("paths") != [path.as_posix() for path in paths]):
+    if (
+        Path(payload["root"]).resolve() != root
+        or journal.resolve() != _batch_journal_path(root)
+        or backup.parent.resolve() != root
+        or not backup.name.startswith(".x20-batch-")
+        or payload.get("paths") != [path.as_posix() for path in paths]
+    ):
         raise RuntimeError("batch recovery path scope is invalid")
     if not isinstance(payload.get("expected"), dict) or not isinstance(payload.get("saved"), dict):
         raise RuntimeError("batch recovery ownership unavailable; preserve journal for manual recovery")
@@ -525,8 +547,12 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
         **(dict(current_v2) if isinstance(current_v2, Mapping) else {}),
         "capabilities": capability_registry.report(),
         "capability_diagnostics": capability_registry.diagnostics(),
-        "unsupported_stages": (dict(current_v2).get("unsupported_stages", []) if isinstance(current_v2, Mapping) else []),
-        "publication_blockers": (dict(current_v2).get("publication_blockers", []) if isinstance(current_v2, Mapping) else []),
+        "unsupported_stages": (
+            dict(current_v2).get("unsupported_stages", []) if isinstance(current_v2, Mapping) else []
+        ),
+        "publication_blockers": (
+            dict(current_v2).get("publication_blockers", []) if isinstance(current_v2, Mapping) else []
+        ),
         "public_pipelines": [spec.pipeline_id for spec in PUBLIC_PIPELINES],
     }
     typer.echo(
@@ -574,7 +600,9 @@ def run_document(
         # wrong document. Use the workspace-local registry unless the caller
         # explicitly supplied DOCS_WORKSPACE_REGISTRY.
         registry = WorkspaceRegistry(
-            registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+            registry_path
+            if registry_path.is_file()
+            else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
         )
         active = registry.active()
         if active is None:
@@ -606,7 +634,13 @@ def run_document(
         # shutdowns are actually removable. POSIX keeps the diagnostic file.
         worker_output = subprocess.DEVNULL if os.name == "nt" else worker_log.open("ab")
         subprocess.Popen(
-            [os.fspath(Path(os.sys.executable)), "-m", "docs.local_worker", "--workspace-root", os.fspath(workspace_root)],
+            [
+                os.fspath(Path(os.sys.executable)),
+                "-m",
+                "docs.local_worker",
+                "--workspace-root",
+                os.fspath(workspace_root),
+            ],
             cwd=os.fspath(workspace_root),
             stdin=subprocess.DEVNULL,
             stdout=worker_output,
@@ -624,6 +658,7 @@ def run_document(
             worker_output.close()
         if watch:
             import time
+
             store = SqliteRunStore(state)
             while True:
                 item = store.get(run_id)
@@ -632,7 +667,10 @@ def run_document(
                 if item.status in {"succeeded", "completed", "failed", "cancelled", "expired"}:
                     break
                 time.sleep(0.25)
-        result = {"id": run_id, "status": SqliteRunStore(state).get(run_id).status if SqliteRunStore(state).get(run_id) else "queued"}
+        result = {
+            "id": run_id,
+            "status": SqliteRunStore(state).get(run_id).status if SqliteRunStore(state).get(run_id) else "queued",
+        }
         typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
         return
     # Synchronous execution uses the same durable worker path as async runs.
@@ -645,7 +683,9 @@ def run_document(
     workspace_root = deps.workspace.documents_dir.parent.resolve()
     registry_path = workspace_root / ".docs" / "workspaces.json"
     registry = WorkspaceRegistry(
-        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+        registry_path
+        if registry_path.is_file()
+        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
     )
     active = registry.active()
     if active is None:
@@ -696,7 +736,9 @@ def _durable_evidence_stores(ctx: typer.Context):
     root = deps.workspace.documents_dir.parent.resolve()
     registry_path = root / ".docs" / "workspaces.json"
     registry = WorkspaceRegistry(
-        registry_path if registry_path.is_file() else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+        registry_path
+        if registry_path.is_file()
+        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
     )
     active = registry.active()
     if active is not None:
@@ -713,7 +755,11 @@ def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer
     if passport is None:
         raise typer.BadParameter(f"Passport not found for run: {run_id}")
     payload = passport.to_dict()
-    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
 
 
 @document_app.command("evidence")
@@ -728,7 +774,13 @@ def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer
         "artifacts": [item.to_dict() for item in artifact_store.list_for_run(run_id)],
         "findings": finding_store.list_for_run(run_id),
     }
-    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
+
+
 @document_app.command("plan")
 def plan(
     ctx: typer.Context,
@@ -861,7 +913,11 @@ def diff(
 ) -> None:
     """Compare two derived artifacts by identity and readable text when available."""
     payload = ctx.obj["deps"].artifact_reports.compare(left, right)
-    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
 
 
 @document_app.command("package")
@@ -908,9 +964,7 @@ def publish(
     except Exception as exc:
         raise typer.BadParameter(f"publish requires resolvable current inputs: {exc}") from exc
     try:
-        result = publication_service.publish(
-            prepared, current_identities=current
-        )
+        result = publication_service.publish(prepared, current_identities=current)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     payload = {

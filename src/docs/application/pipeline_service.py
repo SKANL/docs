@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.pipeline_components import ArtifactStore, PipelinePlanner, PipelineRegistry
-from docs.application.pipeline_executor import PipelineReport, StageHandler
-from docs.application.pipeline_runtime import PipelineRuntime, PipelineRuntimeReport
+from docs.application.pipeline_executor import PipelineReport, StageHandler, _PipelineExecutor
 from docs.application.provenance import ProvenanceLedger
-from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
-from docs.domain.pipeline_policy import PipelinePolicy
+from docs.domain.pipeline_kernel import (
+    ArtifactContract,
+    ArtifactRecord,
+    PipelineDefinition,
+    StageResult,
+    StageSpec,
+    deterministic_json,
+)
+from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapabilityRegistry
 from docs.observability import ObservabilityPort
 
@@ -47,6 +54,34 @@ FULL_STAGE_IDS = (
 )
 
 
+def _finding_code(message: str) -> str:
+    """Recover a structured finding code from a human-readable stage message."""
+    if message.startswith("[") and "]" in message:
+        return message[1 : message.index("]")]
+    return message
+
+
+@dataclass(frozen=True)
+class DocumentPipelineReport:
+    """Stable report produced by the application-owned pipeline use case."""
+
+    capabilities: dict[str, dict[str, str | bool | None]]
+    execution: PipelineReport
+    provenance: dict[str, Any] | None
+    succeeded: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "capabilities": self.capabilities,
+            "execution": self.execution.to_dict(),
+            "provenance": self.provenance,
+            "succeeded": self.succeeded,
+        }
+
+    def to_json(self) -> str:
+        return deterministic_json(self.to_dict())
+
+
 @dataclass(frozen=True)
 class PublicationSpec:
     """The staged output contract for a publication operation."""
@@ -56,11 +91,24 @@ class PublicationSpec:
     operation: PublicationOperation
 
 
+@dataclass(frozen=True)
+class PipelineRequest:
+    """Immutable instruction for one application-owned pipeline execution."""
+
+    run_id: str
+    inputs: tuple[Path, ...] = ()
+    outputs: tuple[Path, ...] = ()
+    publish: bool = True
+    pipeline_id: str = "document"
+    external_artifacts: tuple[str, ...] | None = None
+    excluded_stages: frozenset[str] = frozenset()
+
+
 StageOperationMap = Mapping[str, StageOperation]
 
 
 class PipelineService:
-    """Execute stage services through a reusable v2 pipeline definition."""
+    """Own document pipeline execution and its stable application report."""
 
     def __init__(
         self,
@@ -78,75 +126,57 @@ class PipelineService:
         record_sink: Callable[[tuple[ArtifactRecord, ...]], None] | None = None,
         run_start: Callable[[], None] | None = None,
         observability: ObservabilityPort | None = None,
+        definition: PipelineDefinition | None = None,
     ) -> None:
         self._operations = operations
         self._publication = publication
         self._atomic_transform = atomic_transform
         self._capabilities = capabilities
         self._policy = policy
+        self._ledger = ledger
         self._artifact_store = artifact_store
         self._record_sink = record_sink
         self._run_start = run_start
         self.registry = PipelineRegistry()
-        definition = self._definition(excluded_stages)
+        custom_definition = definition is not None
+        definition = definition or self._definition(excluded_stages)
         self._contracts = {contract.name: contract for contract in definition.artifacts}
         stage_names = {stage.name for stage in definition.stages}
-        handlers = {
-            name: handler
-            for name, handler in self._handlers().items()
-            if name in stage_names
-        }
+        handlers = {name: handler for name, handler in self._handlers().items() if name in stage_names}
         self.registry.register("document", definition, handlers)
-        self.registry.register_catalog(definition, handlers)
+        if not custom_definition:
+            self.registry.register_catalog(definition, handlers)
         registered = self.registry.resolve("document")
         self.planner = PipelinePlanner()
         self.definition = registered.definition
         self.stage_plan = self.planner.plan(self.definition)
-        self._runtimes = {
-            name: PipelineRuntime(
-                entry.definition,
-                entry.handlers,
-                capabilities,
-                ledger,
-                policy,
-                observability,
-            )
-            for name, entry in (
-                (pipeline, self.registry.resolve(pipeline))
-                for pipeline in self.registry.names()
-            )
+        self._executors = {
+            name: _PipelineExecutor(entry.definition, entry.handlers, observability)
+            for name, entry in ((pipeline, self.registry.resolve(pipeline)) for pipeline in self.registry.names())
         }
-        self._runtime = self._runtimes["document"]
         self._run_id_sink = run_id_sink
         self._cleanup = cleanup
         self._completion_artifacts: dict[Path, bytes | None] | None = None
         self._active_run_id = ""
 
-    def run(
-        self,
-        run_id: str,
-        *,
-        inputs: Iterable[Path] = (),
-        publish: bool = True,
-        pipeline_id: str = "document",
-        external_artifacts: Iterable[str] | None = None,
-    ) -> PipelineRuntimeReport:
-        """Run the v2 pipeline, optionally stopping before publication."""
-        if pipeline_id not in self._runtimes:
+    def execute(self, request: PipelineRequest) -> DocumentPipelineReport:
+        """Execute one immutable request and return the established report."""
+        run_id = request.run_id
+        inputs = request.inputs
+        publish = request.publish
+        pipeline_id = request.pipeline_id
+        external_artifacts = request.external_artifacts
+        if pipeline_id not in self._executors:
             raise ValueError(f"pipeline is not registered: {pipeline_id}")
         if publish and pipeline_id not in {"document", "document-publish"}:
-            raise ValueError(
-                "only the full document pipeline or document-publish pipeline may publish"
-            )
+            raise ValueError("only the full document pipeline or document-publish pipeline may publish")
         if self._run_start is not None:
             self._run_start()
         succeeded = False
         self._completion_artifacts = {}
         self._active_run_id = run_id
         try:
-            materialized_external = (
-                tuple(external_artifacts) if external_artifacts is not None else None
-            )
+            materialized_external = tuple(external_artifacts) if external_artifacts is not None else None
             definition = self.registry.resolve(pipeline_id).definition
             supplied_external = (
                 definition.external_artifacts
@@ -155,7 +185,7 @@ class PipelineService:
             )
             missing_external = sorted(definition.external_artifacts - supplied_external)
             if missing_external:
-                return PipelineRuntimeReport(
+                return DocumentPipelineReport(
                     capabilities=self._capabilities.report(),
                     execution=PipelineReport(
                         (
@@ -176,16 +206,13 @@ class PipelineService:
                 missing_capabilities = self._capabilities.missing_required()
                 if missing_capabilities:
                     capability_error = tuple(
-                        f"required capability unavailable: {name}"
-                        for name in missing_capabilities
+                        f"required capability unavailable: {name}" for name in missing_capabilities
                     )
-                    results = [
-                        StageResult("capabilities", False, errors=capability_error)
-                    ]
+                    results = [StageResult("capabilities", False, errors=capability_error)]
                     for stage_name in ("record-provenance", "package-release", "publish-draft"):
                         if stage_name in {stage.name for stage in definition.stages}:
                             results.append(StageResult(stage_name, False, errors=capability_error))
-                    return PipelineRuntimeReport(
+                    return DocumentPipelineReport(
                         capabilities=self._capabilities.report(),
                         execution=PipelineReport(tuple(results)),
                         provenance=None,
@@ -193,20 +220,20 @@ class PipelineService:
                     )
             if self._run_id_sink is not None:
                 self._run_id_sink(run_id)
-            excluded: frozenset[str] = (
+            excluded: frozenset[str] = request.excluded_stages | (
                 frozenset()
                 if publish
                 else frozenset(
-                    {"publish-draft"}
-                    | ({"package-release"} if pipeline_id != "document-package" else set())
+                    {"publish-draft"} | ({"package-release"} if pipeline_id != "document-package" else set())
                 )
             )
             if not publish and run_id.startswith("cli-verify-"):
                 excluded = excluded | frozenset({"record-provenance"})
-            report = self._runtimes[pipeline_id].run(
-                run_id,
+            report = self._execute_registered(
+                pipeline_id,
+                run_id=run_id,
                 inputs=inputs,
-                outputs=self._publication.destinations if publish else (),
+                outputs=(request.outputs or (self._publication.destinations if publish else ())),
                 excluded_stages=excluded,
                 external_artifacts=supplied_external,
             )
@@ -227,10 +254,7 @@ class PipelineService:
                             publication_block_errors,
                             result.outcome,
                         )
-                        if (
-                            result.stage in {"record-provenance", "package-release", "publish-draft"}
-                            and result.ok
-                        )
+                        if (result.stage in {"record-provenance", "package-release", "publish-draft"} and result.ok)
                         else result
                         for result in results
                     ]
@@ -241,20 +265,16 @@ class PipelineService:
                     for artifact in result.artifacts
                 }
                 for stage in definition.stages:
-                    if (
-                        stage.name not in {"package-release", "publish-draft"}
-                        or stage.name in executed
-                    ):
+                    if stage.name not in {"package-release", "publish-draft"} or stage.name in executed:
                         continue
-                    unavailable = tuple(
-                        artifact for artifact in stage.requires if artifact not in available
-                    )
+                    unavailable = tuple(artifact for artifact in stage.requires if artifact not in available)
                     publication_error = (
                         "required dependency unavailable: " + ", ".join(unavailable)
                         if unavailable
-                        else "; ".join(publication_block_errors or (
-                            "required dependency unavailable: " + ", ".join(stage.requires),
-                        ))
+                        else "; ".join(
+                            publication_block_errors
+                            or ("required dependency unavailable: " + ", ".join(stage.requires),)
+                        )
                     )
                     results.append(
                         StageResult(
@@ -264,7 +284,7 @@ class PipelineService:
                         )
                     )
                 if len(results) != len(report.execution.results):
-                    report = PipelineRuntimeReport(
+                    report = DocumentPipelineReport(
                         capabilities=report.capabilities,
                         execution=PipelineReport(tuple(results)),
                         provenance=report.provenance,
@@ -282,6 +302,116 @@ class PipelineService:
             if self._cleanup is not None:
                 self._cleanup()
 
+    def _execute_registered(
+        self,
+        pipeline_id: str,
+        *,
+        run_id: str,
+        inputs: tuple[Path, ...],
+        outputs: tuple[Path, ...],
+        excluded_stages: frozenset[str],
+        external_artifacts: frozenset[str],
+    ) -> DocumentPipelineReport:
+        """Apply run policy, execute one registered DAG, and assemble its report."""
+        del inputs  # Input identities are recorded by the provenance stage itself.
+        executor = self._executors[pipeline_id]
+        definition = executor.definition
+        capabilities = self._capabilities.report()
+        missing_required = self._capabilities.missing_required()
+        capability_evaluation = self._capabilities.evaluate(self._policy) if self._policy is not None else None
+        if capability_evaluation is not None and capability_evaluation.blocking:
+            results = [StageResult("capabilities", False, errors=capability_evaluation.errors)]
+            if outputs:
+                stage_names = {stage.name for stage in definition.stages}
+                for stage_name in ("record-provenance", "package-release", "publish-draft"):
+                    if stage_name in stage_names:
+                        results.append(
+                            StageResult(
+                                stage_name,
+                                False,
+                                errors=("required capability unavailable: " + ", ".join(missing_required),),
+                            )
+                        )
+            return DocumentPipelineReport(capabilities, PipelineReport(tuple(results)), None, False)
+
+        policy_excluded_stages = set(excluded_stages)
+        publish_disallowed = (
+            self._policy is not None
+            and not ({"publish", "publish-draft"} & set(excluded_stages))
+            and not self._policy.can_publish()
+        )
+        capability_blocks_publication = bool(missing_required and outputs)
+        if publish_disallowed or capability_blocks_publication:
+            policy_excluded_stages.update({"publish-draft", "package-release"})
+
+        stage_specs = {stage.name: stage for stage in definition.stages}
+
+        def apply_policy(result: StageResult) -> StageResult:
+            if self._policy is None:
+                return result
+            optional_gap = (
+                result.outcome in {"unsupported", "skipped"}
+                and stage_specs.get(result.stage) is not None
+                and stage_specs[result.stage].optional
+            )
+            warnings = tuple(
+                warning
+                for warning in result.warnings
+                if optional_gap or self._policy.severity(_finding_code(warning), "warning") == "warning"
+            )
+            errors = list(result.errors)
+            for warning in result.warnings:
+                if (
+                    self._policy.severity(_finding_code(warning), "warning") == "error"
+                    and not optional_gap
+                    and warning not in errors
+                ):
+                    errors.append(warning)
+            return StageResult(result.stage, not errors, result.artifacts, warnings, tuple(errors), result.outcome)
+
+        execution = executor.run(
+            excluded_stages=policy_excluded_stages,
+            external_artifacts=set(external_artifacts),
+            result_mapper=apply_policy,
+            fail_on_unsupported=bool(outputs),
+            block_publication_on_package_failure=(
+                self._policy is not None and self._policy.mode in {PipelineMode.strict, PipelineMode.release}
+            ),
+        )
+        results = list(execution.results)
+        if self._policy is not None:
+            package_failed = any(
+                result.stage == "package-release" and (not result.ok or result.outcome != "succeeded")
+                for result in results
+            )
+            if package_failed and self._policy.mode in {PipelineMode.strict, PipelineMode.release}:
+                results = [
+                    StageResult(
+                        result.stage,
+                        False,
+                        result.artifacts,
+                        result.warnings,
+                        (*result.errors, "package-release failed; publication blocked"),
+                    )
+                    if result.stage == "publish-draft" and result.ok
+                    else result
+                    for result in results
+                ]
+            if capability_evaluation is not None and capability_evaluation.warnings:
+                results.insert(
+                    0,
+                    StageResult("capabilities", True, warnings=capability_evaluation.warnings),
+                )
+            if publish_disallowed or capability_blocks_publication:
+                errors = ["publish disallowed by pipeline policy"] if publish_disallowed else []
+                if capability_blocks_publication:
+                    errors.extend(f"required capability unavailable: {name}" for name in missing_required)
+                results.append(StageResult("publish-draft", False, errors=tuple(errors)))
+        execution = PipelineReport(tuple(results))
+        succeeded = all(result.ok for result in execution.results)
+        provenance = self._ledger.load_run(run_id) if succeeded else None
+        return DocumentPipelineReport(capabilities, execution, provenance, succeeded)
+
     def _handlers(self) -> dict[str, StageHandler]:
         handlers: dict[str, StageHandler] = {"publish-draft": self._publish}
         for stage_name, operation in self._operations.items():
@@ -290,9 +420,7 @@ class PipelineService:
                 operation,
                 f"{stage_name}-complete",
                 artifact_root=(
-                    self._publication.destinations[0].parent.parent
-                    if self._publication.destinations
-                    else None
+                    self._publication.destinations[0].parent.parent if self._publication.destinations else None
                 ),
                 artifact_writer=self._write_completion_artifact,
                 artifact_store=self._artifact_store,
@@ -332,19 +460,17 @@ class PipelineService:
                         relative_dir=receipt_directory() if receipt_directory is not None else "stages",
                     )
                     result = replace(result, artifacts=(receipt,))
-                elif artifact_root is not None and output_contract in {
-                    "accessibility-review-complete",
-                    "reproducibility-check-complete",
-                } and artifact_writer is not None:
-                    result = replace(
-                        result, artifacts=(artifact_writer(name, output_contract, detail),)
-                    )
-            if (
-                result.ok
-                and result.outcome == "succeeded"
-                and result.artifacts
-                and record_sink is not None
-            ):
+                elif (
+                    artifact_root is not None
+                    and output_contract
+                    in {
+                        "accessibility-review-complete",
+                        "reproducibility-check-complete",
+                    }
+                    and artifact_writer is not None
+                ):
+                    result = replace(result, artifacts=(artifact_writer(name, output_contract, detail),))
+            if result.ok and result.outcome == "succeeded" and result.artifacts and record_sink is not None:
                 record_sink(result.artifacts)
             return result
 
@@ -358,9 +484,7 @@ class PipelineService:
             raise RuntimeError("completion artifact publication root is unavailable")
         artifact_path = self._publication.destinations[0].parent.parent / "stages" / f"{contract}.json"
         if self._completion_artifacts is not None and artifact_path not in self._completion_artifacts:
-            self._completion_artifacts[artifact_path] = (
-                artifact_path.read_bytes() if artifact_path.is_file() else None
-            )
+            self._completion_artifacts[artifact_path] = artifact_path.read_bytes() if artifact_path.is_file() else None
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         content = (detail + "\n").encode("utf-8")
         artifact_path.write_bytes(content)
@@ -410,7 +534,6 @@ class PipelineService:
             errors=() if result.ok else (result.error or "publish failed",),
         )
 
-
     @classmethod
     def _definition(cls, excluded_stages: frozenset[str] = frozenset()) -> PipelineDefinition:
         stage_ids = tuple(stage for stage in FULL_STAGE_IDS if stage not in excluded_stages)
@@ -435,29 +558,27 @@ class PipelineService:
             "accessibility-review": ("structural-audit-complete",),
             "visual-review": ("structural-audit-complete",),
             "reproducibility-check": ("structural-audit-complete",),
-            "record-provenance": tuple(f"{name}-complete" for name in (
-                "editorial-review", "evidence-review", "consistency-review",
-                "accessibility-review", "visual-review", "reproducibility-check",
-            )),
+            "record-provenance": tuple(
+                f"{name}-complete"
+                for name in (
+                    "editorial-review",
+                    "evidence-review",
+                    "consistency-review",
+                    "accessibility-review",
+                    "visual-review",
+                    "reproducibility-check",
+                )
+            ),
             "package-release": ("record-provenance-complete", "editorial-review-complete"),
             "publish-draft": ("record-provenance-complete", "editorial-review-complete"),
         }
         dependencies = {
-            stage_name: tuple(
-                artifact
-                for artifact in required_artifacts
-            )
+            stage_name: tuple(artifact for artifact in required_artifacts)
             for stage_name, required_artifacts in dependencies.items()
             if stage_name in stage_ids
         }
-        dependency_artifacts = {
-            artifact
-            for stage_name in stage_ids
-            for artifact in dependencies.get(stage_name, ())
-        }
-        artifact_names = {
-            f"{stage_name}-complete" for stage_name in stage_ids
-        } | dependency_artifacts
+        dependency_artifacts = {artifact for stage_name in stage_ids for artifact in dependencies.get(stage_name, ())}
+        artifact_names = {f"{stage_name}-complete" for stage_name in stage_ids} | dependency_artifacts
         produced_names = {f"{stage_name}-complete" for stage_name in stage_ids}
         artifacts = tuple(
             ArtifactContract(

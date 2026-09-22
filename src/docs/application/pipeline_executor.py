@@ -78,7 +78,7 @@ class PipelineReport:
         return deterministic_json(self.to_dict())
 
 
-class PipelineExecutor:
+class _PipelineExecutor:
     def __init__(
         self,
         definition: PipelineDefinition,
@@ -99,21 +99,13 @@ class PipelineExecutor:
         block_publication_on_package_failure: bool = False,
     ) -> PipelineReport:
         stages = {stage.name: stage for stage in self.definition.stages}
-        producers = {
-            artifact: stage.name
-            for stage in self.definition.stages
-            for artifact in stage.produces
-        }
-        required_artifacts = {
-            contract.name for contract in self.definition.artifacts if contract.required
-        }
+        producers = {artifact: stage.name for stage in self.definition.stages for artifact in stage.produces}
+        required_artifacts = {contract.name for contract in self.definition.artifacts if contract.required}
         results: list[StageResult] = []
         unavailable_artifacts: set[str] = set()
         unavailable_stages: set[str] = set()
         execution_halted = False
-        missing_external = sorted(
-            self.definition.external_artifacts - set(external_artifacts or ())
-        )
+        missing_external = sorted(self.definition.external_artifacts - set(external_artifacts or ()))
         if missing_external:
             return PipelineReport(
                 (
@@ -121,8 +113,7 @@ class PipelineExecutor:
                         "external-prerequisites",
                         False,
                         errors=tuple(
-                            f"required external artifact unavailable: {artifact}"
-                            for artifact in missing_external
+                            f"required external artifact unavailable: {artifact}" for artifact in missing_external
                         ),
                     ),
                 )
@@ -157,10 +148,13 @@ class PipelineExecutor:
                 unavailable_stages.add(stage_name)
                 unavailable_artifacts.update(stage.produces)
                 continue
-            if block_publication_on_package_failure and stage_name == "publish-draft" and any(
-                result.stage == "package-release"
-                and (not result.ok or result.outcome != "succeeded")
-                for result in results
+            if (
+                block_publication_on_package_failure
+                and stage_name == "publish-draft"
+                and any(
+                    result.stage == "package-release" and (not result.ok or result.outcome != "succeeded")
+                    for result in results
+                )
             ):
                 unavailable_artifacts.update(stage.produces)
                 results.append(
@@ -184,11 +178,7 @@ class PipelineExecutor:
                 if result.duration_ms is not None
                 else max(0, round((perf_counter() - started) * 1000)),
             )
-            if (
-                result.outcome == "unsupported"
-                and fail_on_unsupported
-                and not stage.optional
-            ):
+            if result.outcome == "unsupported" and fail_on_unsupported and not stage.optional:
                 result = replace(
                     result,
                     ok=False,
@@ -196,9 +186,7 @@ class PipelineExecutor:
                     errors=(*result.errors, f"stage unsupported: {stage_name}"),
                 )
             if result.stage != stage_name:
-                raise ValueError(
-                    f"Handler for stage {stage_name!r} returned result for {result.stage!r}"
-                )
+                raise ValueError(f"Handler for stage {stage_name!r} returned result for {result.stage!r}")
             if result_mapper is not None:
                 result = result_mapper(result)
             declared = set(stage.produces)
@@ -216,12 +204,8 @@ class PipelineExecutor:
                 try:
                     contract.validate_record(record)
                 except ValueError as exc:
-                    contract_errors.append(
-                        f"artifact {record.contract} does not satisfy its contract: {exc}"
-                    )
-            if result.ok and result.outcome == "succeeded" and (
-                undeclared or missing_required or contract_errors
-            ):
+                    contract_errors.append(f"artifact {record.contract} does not satisfy its contract: {exc}")
+            if result.ok and result.outcome == "succeeded" and (undeclared or missing_required or contract_errors):
                 result = StageResult(
                     stage_name,
                     False,
@@ -229,10 +213,7 @@ class PipelineExecutor:
                     result.warnings,
                     tuple(result.errors)
                     + tuple(f"undeclared artifact produced: {artifact}" for artifact in undeclared)
-                    + tuple(
-                        f"required declared artifact missing: {artifact}"
-                        for artifact in missing_required
-                    )
+                    + tuple(f"required declared artifact missing: {artifact}" for artifact in missing_required)
                     + tuple(contract_errors),
                     duration_ms=result.duration_ms,
                 )

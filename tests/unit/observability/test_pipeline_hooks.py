@@ -4,7 +4,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Literal
 
-from docs.application.pipeline_executor import PipelineExecutor
+from docs.application.pipeline_executor import _PipelineExecutor
 from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
 from docs.observability import Observability
 
@@ -17,7 +17,7 @@ def test_pipeline_executor_emits_low_cardinality_stage_hooks():
     )
     definition = PipelineDefinition(stages=(StageSpec("build-docx"),))
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {"build-docx": lambda: StageResult("build-docx", True)},
         observability=telemetry,
@@ -37,7 +37,7 @@ def test_unsupported_conversion_preserves_result_metadata_and_telemetry_failure_
     )
     definition = PipelineDefinition(stages=(StageSpec("build-docx"),))
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {"build-docx": lambda: result},
         observability=telemetry,
@@ -63,7 +63,7 @@ def test_handler_failure_closes_span_with_exception_and_returns_stage_result():
 
     definition = PipelineDefinition(stages=(StageSpec("build-docx"),))
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {"build-docx": lambda: (_ for _ in ()).throw(RuntimeError("handler down"))},
         observability=Observability(span_hook=lambda _name, _attrs: Span()),
@@ -89,7 +89,7 @@ def test_stage_success_telemetry_uses_status_after_contract_validation():
     )
     invalid_record = ArtifactRecord("output", "wrong", "abc")
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {"build-docx": lambda: StageResult("build-docx", True, artifacts=(invalid_record,))},
         observability=telemetry,
@@ -106,7 +106,7 @@ def test_contract_validation_preserves_duration_and_all_result_metadata():
     )
     invalid_record = ArtifactRecord("output", "wrong", "abc")
     original = StageResult("build-docx", True, (invalid_record,), ("warning",), (), duration_ms=42)
-    report = PipelineExecutor(definition, {"build-docx": lambda: original}).run()
+    report = _PipelineExecutor(definition, {"build-docx": lambda: original}).run()
     result = report.results[0]
     assert result.duration_ms == 42
     assert result.warnings == ("warning",)

@@ -1,17 +1,46 @@
+import hashlib
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
 
-from docs.application.pipeline_runtime import PipelineRuntime, _finding_code
+from docs.application.atomic_transform import AtomicTransform
+from docs.application.pipeline_service import (
+    PipelineRequest,
+    PipelineService,
+    PublicationSpec,
+    _finding_code,
+)
+from docs.application.provenance import ProvenanceLedger
+from docs.domain.pipeline_kernel import (
+    ArtifactContract,
+    PipelineDefinition,
+    StageResult,
+    StageSpec,
+)
+from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+
+
+def _service(definition, handlers, capabilities, ledger, policy=None):
+    return PipelineService(
+        operations=handlers,
+        publication=PublicationSpec((), (), lambda _scratch: None),
+        capabilities=capabilities,
+        ledger=ledger,
+        atomic_transform=AtomicTransform(),
+        policy=policy,
+        definition=definition,
+    )
+
+
+def test_pipeline_runtime_module_is_retired() -> None:
+    assert find_spec("docs.application.pipeline_runtime") is None
 
 
 def test_finding_code_is_recovered_from_review_messages():
     assert _finding_code("[render.layout.unavailable] Browser renderer unavailable") == "render.layout.unavailable"
     assert _finding_code("stage unsupported: optional") == "stage unsupported: optional"
-from docs.application.provenance import ProvenanceLedger
-from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
-from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
-from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 
 
 def test_run_returns_stable_report_and_records_successful_run(tmp_path: Path) -> None:
@@ -25,7 +54,7 @@ def test_run_returns_stable_report_and_records_successful_run(tmp_path: Path) ->
         ledger.record_run("build-001", inputs=(source,), outputs=(output,))
         return StageResult("render", True)
 
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(
             artifacts=(ArtifactContract("report"),),
             stages=(StageSpec("render", produces=("report",)),),
@@ -35,7 +64,7 @@ def test_run_returns_stable_report_and_records_successful_run(tmp_path: Path) ->
         ledger,
     )
 
-    report = runtime.run("build-001", inputs=(source,), outputs=(output,))
+    report = service.execute(PipelineRequest(run_id="build-001", inputs=(source,), outputs=(output,)))
 
     assert report.succeeded is True
     assert report.provenance is not None
@@ -54,14 +83,14 @@ def test_run_returns_stable_report_and_records_successful_run(tmp_path: Path) ->
 
 def test_run_does_not_record_provenance_when_a_stage_fails(tmp_path: Path) -> None:
     ledger = ProvenanceLedger(tmp_path / "provenance-v2.json")
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("render"),)),
         {"render": lambda: StageResult("render", False, errors=("render failed",))},
         ToolCapabilityRegistry(()),
         ledger,
     )
 
-    report = runtime.run("build-001")
+    report = service.execute(PipelineRequest(run_id="build-001"))
 
     assert report.succeeded is False
     assert report.provenance is None
@@ -74,7 +103,7 @@ def test_run_does_not_record_provenance_when_a_stage_fails(tmp_path: Path) -> No
 
 
 def test_draft_policy_blocks_publish(tmp_path: Path) -> None:
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(
             artifacts=(ArtifactContract("report"),),
             stages=(StageSpec("publish", produces=("report",)),),
@@ -85,7 +114,7 @@ def test_draft_policy_blocks_publish(tmp_path: Path) -> None:
         PipelinePolicy(PipelineMode.draft),
     )
 
-    report = runtime.run("release-001")
+    report = service.execute(PipelineRequest(run_id="release-001"))
 
     assert report.succeeded is False
     assert report.provenance is None
@@ -94,15 +123,15 @@ def test_draft_policy_blocks_publish(tmp_path: Path) -> None:
 
 def test_strict_missing_required_capability_stops_before_handlers(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("render"),)),
-        {"render": lambda: (calls.append("render") or StageResult("render", True))},
+        {"render": lambda: calls.append("render") or StageResult("render", True)},
         ToolCapabilityRegistry((ToolCapability("pandoc", "definitely-missing", required=True),)),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.strict),
     )
 
-    report = runtime.run("build-missing-tool")
+    report = service.execute(PipelineRequest(run_id="build-missing-tool"))
 
     assert calls == []
     assert report.succeeded is False
@@ -111,15 +140,15 @@ def test_strict_missing_required_capability_stops_before_handlers(tmp_path: Path
 
 def test_release_missing_required_capability_stops_before_handlers(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("render"),)),
-        {"render": lambda: (calls.append("render") or StageResult("render", True))},
+        {"render": lambda: calls.append("render") or StageResult("render", True)},
         ToolCapabilityRegistry((ToolCapability("pandoc", "definitely-missing", required=True),)),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.release),
     )
 
-    report = runtime.run("release-missing-tool")
+    report = service.execute(PipelineRequest(run_id="release-missing-tool"))
 
     assert calls == []
     assert report.succeeded is False
@@ -127,7 +156,7 @@ def test_release_missing_required_capability_stops_before_handlers(tmp_path: Pat
 
 
 def test_draft_missing_required_capability_is_degraded_to_warning(tmp_path: Path) -> None:
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("render"),)),
         {"render": lambda: StageResult("render", True)},
         ToolCapabilityRegistry((ToolCapability("pandoc", "definitely-missing", required=True),)),
@@ -135,7 +164,9 @@ def test_draft_missing_required_capability_is_degraded_to_warning(tmp_path: Path
         PipelinePolicy(PipelineMode.draft),
     )
 
-    report = runtime.run("draft-missing-tool", excluded_stages={"publish"})
+    report = service.execute(
+        PipelineRequest(run_id="draft-missing-tool", publish=False, excluded_stages=frozenset({"publish"}))
+    )
 
     assert report.succeeded is True
     assert report.execution.results[0].warnings == ("required capability unavailable: pandoc",)
@@ -143,7 +174,7 @@ def test_draft_missing_required_capability_is_degraded_to_warning(tmp_path: Path
 
 def test_draft_missing_required_capability_cannot_publish_outputs(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(
             artifacts=(ArtifactContract("rendered"),),
             stages=(
@@ -152,17 +183,19 @@ def test_draft_missing_required_capability_cannot_publish_outputs(tmp_path: Path
             ),
         ),
         {
-            "render": lambda: (calls.append("render") or StageResult("render", True)),
-            "publish-draft": lambda: (calls.append("publish") or StageResult("publish-draft", True)),
+            "render": lambda: calls.append("render") or StageResult("render", True),
+            "publish-draft": lambda: calls.append("publish") or StageResult("publish-draft", True),
         },
         ToolCapabilityRegistry((ToolCapability("pandoc", "definitely-missing", required=True),)),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.draft),
     )
 
-    report = runtime.run("draft-missing-tool-publish", outputs=(tmp_path / "report.docx",))
+    report = service.execute(PipelineRequest(run_id="draft-missing-tool-publish", outputs=(tmp_path / "report.docx",)))
 
-    assert calls == ["render"]
+    # The application use case preflights publication requirements before
+    # running any stage, so a required tool gap cannot trigger side effects.
+    assert calls == []
     assert report.succeeded is False
     assert any(
         "required capability unavailable: pandoc" in error
@@ -173,21 +206,21 @@ def test_draft_missing_required_capability_cannot_publish_outputs(tmp_path: Path
 
 def test_policy_promoted_warning_stops_before_publish_handler(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(
             artifacts=(ArtifactContract("verified"),),
             stages=(StageSpec("verify", produces=("verified",)), StageSpec("publish", requires=("verified",))),
         ),
         {
-            "verify": lambda: (calls.append("verify") or StageResult("verify", True, warnings=("visual.blank",))),
-            "publish": lambda: (calls.append("publish") or StageResult("publish", True)),
+            "verify": lambda: calls.append("verify") or StageResult("verify", True, warnings=("visual.blank",)),
+            "publish": lambda: calls.append("publish") or StageResult("publish", True),
         },
         ToolCapabilityRegistry(()),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.strict),
     )
 
-    report = runtime.run("build-warning")
+    report = service.execute(PipelineRequest(run_id="build-warning"))
 
     assert calls == ["verify"]
     assert report.succeeded is False
@@ -196,15 +229,15 @@ def test_policy_promoted_warning_stops_before_publish_handler(tmp_path: Path) ->
 
 def test_draft_policy_blocks_publish_draft_stage(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("publish-draft"),)),
-        {"publish-draft": lambda: (calls.append("publish") or StageResult("publish-draft", True))},
+        {"publish-draft": lambda: calls.append("publish") or StageResult("publish-draft", True)},
         ToolCapabilityRegistry(()),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.draft),
     )
 
-    report = runtime.run("draft-publish")
+    report = service.execute(PipelineRequest(run_id="draft-publish"))
 
     assert calls == []
     assert report.succeeded is False
@@ -213,15 +246,21 @@ def test_draft_policy_blocks_publish_draft_stage(tmp_path: Path) -> None:
 
 def test_draft_policy_allows_unsupported_optional_stage_and_continues(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
-        PipelineDefinition(artifacts=(ArtifactContract("optional-output"),), stages=(StageSpec("optional", produces=("optional-output",), optional=True), StageSpec("later", requires=("optional-output",)))),
-        {"later": lambda: (calls.append("later") or StageResult("later", True))},
+    service = _service(
+        PipelineDefinition(
+            artifacts=(ArtifactContract("optional-output"),),
+            stages=(
+                StageSpec("optional", produces=("optional-output",), optional=True),
+                StageSpec("later", requires=("optional-output",)),
+            ),
+        ),
+        {"later": lambda: calls.append("later") or StageResult("later", True)},
         ToolCapabilityRegistry(()),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
         PipelinePolicy(PipelineMode.draft),
     )
 
-    report = runtime.run("draft-optional-failure", excluded_stages={"publish-draft"})
+    report = service.execute(PipelineRequest(run_id="draft-optional-failure", excluded_stages={"publish-draft"}))
 
     assert calls == ["later"]
     assert report.succeeded is True
@@ -229,7 +268,7 @@ def test_draft_policy_allows_unsupported_optional_stage_and_continues(tmp_path: 
 
 
 def test_strict_policy_keeps_optional_stage_failure_blocking(tmp_path: Path) -> None:
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("optional", optional=True),)),
         {"optional": lambda: StageResult("optional", False, errors=("offline",))},
         ToolCapabilityRegistry(()),
@@ -237,7 +276,7 @@ def test_strict_policy_keeps_optional_stage_failure_blocking(tmp_path: Path) -> 
         PipelinePolicy(PipelineMode.strict),
     )
 
-    report = runtime.run("strict-optional-failure")
+    report = service.execute(PipelineRequest(run_id="strict-optional-failure"))
 
     assert report.succeeded is False
     assert report.execution.results[0].errors == ("offline",)
@@ -246,24 +285,28 @@ def test_strict_policy_keeps_optional_stage_failure_blocking(tmp_path: Path) -> 
 def test_strict_and_release_package_failure_blocks_publish_draft(tmp_path: Path) -> None:
     for mode in (PipelineMode.strict, PipelineMode.release):
         calls: list[str] = []
-        runtime = PipelineRuntime(
-                PipelineDefinition(
-                    artifacts=(ArtifactContract("package-release-complete"),),
-                    stages=(
-                        StageSpec("package-release", produces=("package-release-complete",), optional=True),
-                        StageSpec("publish-draft", requires=("package-release-complete",)),
+        service = _service(
+            PipelineDefinition(
+                artifacts=(ArtifactContract("package-release-complete"),),
+                stages=(
+                    StageSpec("package-release", produces=("package-release-complete",), optional=True),
+                    StageSpec("publish-draft", requires=("package-release-complete",)),
                 ),
             ),
             {
-                "package-release": lambda calls=calls: (calls.append("package") or StageResult("package-release", False, errors=("package unavailable",))),
-                "publish-draft": lambda calls=calls: (calls.append("publish") or StageResult("publish-draft", True)),
+                "package-release": lambda calls=calls: (
+                    calls.append("package") or StageResult("package-release", False, errors=("package unavailable",))
+                ),
+                "publish-draft": lambda calls=calls: calls.append("publish") or StageResult("publish-draft", True),
             },
             ToolCapabilityRegistry(()),
             ProvenanceLedger(tmp_path / f"{mode.value}-provenance.json"),
             PipelinePolicy(mode),
         )
 
-        report = runtime.run(f"{mode.value}-package-failure", outputs=(tmp_path / f"{mode.value}.txt",))
+        report = service.execute(
+            PipelineRequest(run_id=f"{mode.value}-package-failure", outputs=(tmp_path / f"{mode.value}.txt",))
+        )
 
         assert calls == ["package"]
         assert report.succeeded is False
@@ -284,7 +327,7 @@ def test_strict_and_release_package_gap_cannot_permit_publication(
         calls.append("package")
         return getattr(StageResult, outcome)("package-release")
 
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(
             artifacts=(ArtifactContract("package-release-complete"),),
             stages=(
@@ -294,26 +337,23 @@ def test_strict_and_release_package_gap_cannot_permit_publication(
         ),
         {
             "package-release": package_release,
-            "publish-draft": lambda: (calls.append("publish") or StageResult("publish-draft", True)),
+            "publish-draft": lambda: calls.append("publish") or StageResult("publish-draft", True),
         },
         ToolCapabilityRegistry(()),
         ProvenanceLedger(tmp_path / f"{mode.value}-{outcome}.json"),
         PipelinePolicy(mode),
     )
 
-    report = runtime.run(f"{mode.value}-{outcome}", outputs=(tmp_path / "published.txt",))
+    report = service.execute(PipelineRequest(run_id=f"{mode.value}-{outcome}", outputs=(tmp_path / "published.txt",)))
 
     assert calls == ["package"]
     assert report.succeeded is False
-    assert any(
-        result.stage == "publish-draft" and result.ok is False
-        for result in report.execution.results
-    )
+    assert any(result.stage == "publish-draft" and result.ok is False for result in report.execution.results)
 
 
 def test_required_unsupported_stage_blocks_publication_before_publish_handler(tmp_path: Path) -> None:
     calls: list[str] = []
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(
             artifacts=(ArtifactContract("required-output"),),
             stages=(
@@ -321,12 +361,12 @@ def test_required_unsupported_stage_blocks_publication_before_publish_handler(tm
                 StageSpec("publish-draft", requires=("required-output",)),
             ),
         ),
-        {"publish-draft": lambda: (calls.append("publish") or StageResult("publish-draft", True))},
+        {"publish-draft": lambda: calls.append("publish") or StageResult("publish-draft", True)},
         ToolCapabilityRegistry(()),
         ProvenanceLedger(tmp_path / "provenance-v2.json"),
     )
 
-    report = runtime.run("required-gap", outputs=(tmp_path / "published.txt",))
+    report = service.execute(PipelineRequest(run_id="required-gap", outputs=(tmp_path / "published.txt",)))
 
     assert calls == []
     assert report.succeeded is False
@@ -337,14 +377,14 @@ def test_runtime_does_not_create_late_provenance_after_success(tmp_path: Path) -
     ledger = ProvenanceLedger(tmp_path / "provenance-v2.json")
     output = tmp_path / "output.txt"
     output.write_text("output", encoding="utf-8")
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("render"),)),
         {"render": lambda: StageResult("render", True)},
         ToolCapabilityRegistry(()),
         ledger,
     )
 
-    report = runtime.run("no-late-write", outputs=(output,))
+    report = service.execute(PipelineRequest(run_id="no-late-write", outputs=(output,)))
 
     assert report.succeeded is True
     assert report.provenance is None
@@ -362,18 +402,18 @@ def test_runtime_preserves_authoritative_provenance_recorded_by_stage(tmp_path: 
         ledger.record_run("authoritative", inputs=(source,), outputs=(output,))
         return StageResult("record", True)
 
-    runtime = PipelineRuntime(
+    service = _service(
         PipelineDefinition(stages=(StageSpec("record"),)),
         {"record": record},
         ToolCapabilityRegistry(()),
         ledger,
     )
 
-    report = runtime.run("authoritative")
+    report = service.execute(PipelineRequest(run_id="authoritative"))
 
     assert report.provenance == ledger.load_run("authoritative")
     assert report.provenance == {
         "run_id": "authoritative",
-        "inputs": {"source.md": "".join(__import__("hashlib").sha256(b"source").hexdigest())},
-        "outputs": {"report.docx": __import__("hashlib").sha256(b"output").hexdigest()},
+        "inputs": {"source.md": hashlib.sha256(b"source").hexdigest()},
+        "outputs": {"report.docx": hashlib.sha256(b"output").hexdigest()},
     }

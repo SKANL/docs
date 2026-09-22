@@ -160,10 +160,7 @@ class _WorkspaceJsonCollectionStore:
 
     def _list_root(self, root: Path) -> list[dict[str, Any]]:
         if self.kind == "baselines":
-            paths = [
-                path for path in sorted((root / "baselines").glob("*.json"))
-                if path.name != "active.json"
-            ]
+            paths = [path for path in sorted((root / "baselines").glob("*.json")) if path.name != "active.json"]
         else:
             paths = sorted((root / "documents").glob("*/sections/_revisions/revision-log.json"))
         items: list[dict[str, Any]] = []
@@ -192,11 +189,15 @@ class _WorkspaceJsonCollectionStore:
         """Persist an explicit active-baseline pointer atomically."""
         return self._promote_in_root(self._active_root(), baseline_id, metadata)
 
-    def promote_for_workspace(self, workspace_id: str, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+    def promote_for_workspace(
+        self, workspace_id: str, baseline_id: str, metadata: Mapping[str, Any] | None = None
+    ) -> dict[str, Any] | None:
         """Promote a baseline without relying on process-global active state."""
         return self._promote_in_root(self._root_for(workspace_id), baseline_id, metadata)
 
-    def _promote_in_root(self, root: Path, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+    def _promote_in_root(
+        self, root: Path, baseline_id: str, metadata: Mapping[str, Any] | None = None
+    ) -> dict[str, Any] | None:
         """Persist an active pointer under one validated workspace root."""
         if self.kind != "baselines":
             return None
@@ -298,7 +299,9 @@ class _WorkspaceJobQueue:
 
     def claim(self, worker_id: str) -> Any:
         roots = [item["root"] for item in self.registry.list()]
-        if self.fallback_root is not None and str(self.fallback_root) not in {str(Path(root).resolve()) for root in roots}:
+        if self.fallback_root is not None and str(self.fallback_root) not in {
+            str(Path(root).resolve()) for root in roots
+        }:
             roots.append(self.fallback_root)
         for root in roots:
             job = self._queue(root).claim(worker_id)
@@ -323,14 +326,23 @@ class _WorkspaceEvidenceStores:
         self.registry = registry
         self.run_store = run_store
         self.fallback_root = fallback_root.resolve()
-        self._stores: dict[str, tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]] = {}
+        self._stores: dict[
+            str, tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]
+        ] = {}
 
-    def _stores_for_root(self, root: str | Path) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]:
+    def _stores_for_root(
+        self, root: str | Path
+    ) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]:
         resolved = Path(root).expanduser().resolve()
         key = str(resolved)
         if key not in self._stores:
             state = resolved / ".docs" / "x20.sqlite3"
-            self._stores[key] = (SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state), SqlitePublicationStore(state))
+            self._stores[key] = (
+                SqlitePassportStore(state),
+                SqliteArtifactStore(state),
+                SqliteFindingStore(state),
+                SqlitePublicationStore(state),
+            )
         return self._stores[key]
 
     def _root_for_run(self, run_id: str) -> Path:
@@ -358,52 +370,82 @@ class _WorkspaceEvidenceStores:
 
 
 class _WorkspacePassportStore:
-    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None:
+        self.parent = parent
+
     @property
-    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
-    def put(self, value: Passport) -> None: self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[0].put(value)
-    def get(self, run_id: str) -> Any: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[0].get(run_id)
+    def path(self) -> Path:
+        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+
+    def put(self, value: Passport) -> None:
+        self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[0].put(value)
+
+    def get(self, run_id: str) -> Any:
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[0].get(run_id)
 
 
 class _WorkspaceArtifactStore:
-    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None:
+        self.parent = parent
+
     @property
-    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
-    def put(self, value: Artifact) -> None: self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[1].put(value)
+    def path(self) -> Path:
+        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+
+    def put(self, value: Artifact) -> None:
+        self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[1].put(value)
+
     def get(self, artifact_id: str) -> Any:
         for root in [self.parent._root_for_run(run.id) for run in self.parent.run_store.list()]:
             value = self.parent._stores_for_root(root)[1].get(artifact_id)
             if value is not None:
                 return value
         return None
+
     def list(self) -> list[Any]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
-    def list_for_run(self, run_id: str) -> list[Any]: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[1].list_for_run(run_id)
+
+    def list_for_run(self, run_id: str) -> list[Any]:
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[1].list_for_run(run_id)
 
 
 class _WorkspaceFindingStore:
-    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None:
+        self.parent = parent
+
     @property
-    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
-    def put(self, value: dict[str, Any]) -> None: self.parent._stores_for_root(self.parent._root_for_run(str(value.get("run_id", ""))))[2].put(value)
+    def path(self) -> Path:
+        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+
+    def put(self, value: dict[str, Any]) -> None:
+        self.parent._stores_for_root(self.parent._root_for_run(str(value.get("run_id", ""))))[2].put(value)
+
     def list(self) -> list[dict[str, Any]]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
-    def list_for_run(self, run_id: str) -> list[dict[str, Any]]: return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
+
+    def list_for_run(self, run_id: str) -> list[dict[str, Any]]:
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
 
 
 class _WorkspacePublicationStore:
-    def __init__(self, parent: _WorkspaceEvidenceStores) -> None: self.parent = parent
+    def __init__(self, parent: _WorkspaceEvidenceStores) -> None:
+        self.parent = parent
+
     @property
-    def path(self) -> Path: return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+    def path(self) -> Path:
+        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+
     def put(self, value: dict[str, Any]) -> None:
         run_id = str(value.get("run_id", ""))
         self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put(value)
+
     def list(self) -> list[dict[str, Any]]:
         return self._list_runs(self.parent.run_store.list())
 
     def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
         runs = [
-            run for run in self.parent.run_store.list()
+            run
+            for run in self.parent.run_store.list()
             if isinstance(run.payload, Mapping) and str(run.payload.get("workspace_id", "")) == workspace_id
         ]
         return self._list_runs(runs)
@@ -423,7 +465,8 @@ class _WorkspaceGraphStore:
         self.fallback_root = fallback_root.resolve()
 
     @property
-    def path(self) -> Path: return self.fallback_root / ".docs" / "x20.sqlite3"
+    def path(self) -> Path:
+        return self.fallback_root / ".docs" / "x20.sqlite3"
 
     def _store(self, workspace_id: str | None = None) -> SqliteGraphStore:
         selected = self.registry.get(workspace_id) if workspace_id else self.registry.active()
@@ -433,8 +476,11 @@ class _WorkspaceGraphStore:
     def for_workspace(self, workspace_id: str) -> _WorkspaceGraphView:
         return _WorkspaceGraphView(self, workspace_id)
 
-    def get(self, workspace_id: str | None = None) -> Any: return self._store(workspace_id).get()
-    def put(self, value: Any) -> None: self._store().put(value)
+    def get(self, workspace_id: str | None = None) -> Any:
+        return self._store(workspace_id).get()
+
+    def put(self, value: Any) -> None:
+        self._store().put(value)
 
 
 class _WorkspaceGraphView:
@@ -536,9 +582,7 @@ class _HealthApplication:
 
     def __call__(self, environ: dict[str, Any], start_response: Callable[..., Any]) -> Any:
         if environ.get("PATH_INFO") == self.health_path and environ.get("REQUEST_METHOD", "GET") == "GET":
-            ready = self.workspace_error is None and (
-                self.worker_thread is None or self.worker_thread.is_alive()
-            )
+            ready = self.workspace_error is None and (self.worker_thread is None or self.worker_thread.is_alive())
             response = Response.json(
                 {"ready": ready, "protocol": self.protocol}
                 if ready
@@ -630,6 +674,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     graph_store = _WorkspaceGraphStore(registry, config.workspace)
     findings_store = evidence_stores.finding()
     publication_store = evidence_stores.publication()
+
     def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
         from .composition import compose_application
         from .domain.workspace import Workspace
@@ -665,13 +710,14 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         pipeline_id = "document" if action == "build" else "document-verify"
         run_id = str(payload.get("run_id") or f"api-{action}-{uuid4().hex}")
         service = deps.create_document_pipeline_service(
-
             output_format=str(payload.get("format", "docx")),
             document=document_id,
             pipeline_id=pipeline_id,
             provenance_run_id=run_id,
         )
-        report = service.run(run_id, publish=action == "build", pipeline_id=pipeline_id)
+        from .application.pipeline_service import PipelineRequest
+
+        report = service.execute(PipelineRequest(run_id=run_id, publish=action == "build", pipeline_id=pipeline_id))
         return report.to_dict()
 
     def document_context(workspace_root: str, document_id: str) -> dict[str, Any]:
@@ -692,14 +738,19 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
                     "missing": item.missing,
                     "fields": [
                         {"key": field.key, "label": field.label, "required": field.required}
-                        for field in next((topic.fields for topic in resolved.template.context_schema.topics if topic.id == item.id), ())
+                        for field in next(
+                            (topic.fields for topic in resolved.template.context_schema.topics if topic.id == item.id),
+                            (),
+                        )
                     ],
                 }
                 for item in statuses
             ],
         }
 
-    def set_document_context(document_id: str, topic: str, field: str, value: str, workspace_root: str | None = None) -> dict[str, Any]:
+    def set_document_context(
+        document_id: str, topic: str, field: str, value: str, workspace_root: str | None = None
+    ) -> dict[str, Any]:
         from .composition import compose_application
         from .domain.workspace import Workspace
 
@@ -739,9 +790,18 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         }
         target_kind = deps.revision.resolve_target(resolved.template, target_id)
         if target_kind == "topic":
-            result = deps.revision.revise_topic(document_id, resolved.template, **common, topic_id=target_id, new_value=value, field=str(payload.get("field", "")))
+            result = deps.revision.revise_topic(
+                document_id,
+                resolved.template,
+                **common,
+                topic_id=target_id,
+                new_value=value,
+                field=str(payload.get("field", "")),
+            )
         else:
-            result = deps.revision.revise(document_id, resolved.template, **common, section_id=target_id, new_body=value)
+            result = deps.revision.revise(
+                document_id, resolved.template, **common, section_id=target_id, new_body=value
+            )
         return result.to_dict()
 
     def document_classification(document_id: str, payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -878,18 +938,24 @@ def _build_worker(
                     selected = None
                 if selected is not None:
                     run_root = Path(str(selected["root"])).resolve()
+
             def progress(stage: str, percent: int) -> None:
                 existing = run_store.get(run_id)
-                run_store.put(Run(
-                    run_id,
-                    status="running",
-                    payload={**payload, "progress": {"stage": stage, "percent": percent}},
-                    created_at=existing.created_at if existing is not None else "",
-                ))
+                run_store.put(
+                    Run(
+                        run_id,
+                        status="running",
+                        payload={**payload, "progress": {"stage": stage, "percent": percent}},
+                        created_at=existing.created_at if existing is not None else "",
+                    )
+                )
+
             progress("prepare", 10)
             deps = compose_application(Workspace(run_root / "documents", run_root / "templates"))
             source_pipeline = deps.create_source_pipeline()
-            prepared = source_pipeline.prepare(document_id, deps.workspace.doc_root(document_id), deps.resolve_context(document_id).config)
+            prepared = source_pipeline.prepare(
+                document_id, deps.workspace.doc_root(document_id), deps.resolve_context(document_id).config
+            )
             if not prepared.get("succeeded", False):
                 raise RuntimeError("document preparation failed; inspect intake evidence")
             resolved = deps.resolve_context(document_id)
@@ -897,35 +963,40 @@ def _build_worker(
                 deps.section.build_section(document_id, resolved.template, section.id, resolved.config)
             progress("pipeline", 35)
             service = deps.create_document_pipeline_service(
-
                 output_format=output_format,
                 document=document_id,
                 pipeline_id=self.pipeline_id,
                 provenance_run_id=run_id,
             )
             policy = str(payload.get("policy", "release"))
-            report = service.run(
-                run_id,
-                inputs=inputs,
-                publish=policy != "draft",
-                pipeline_id=self.pipeline_id,
-                external_artifacts=external_artifacts,
+            from .application.pipeline_service import PipelineRequest
+
+            report = service.execute(
+                PipelineRequest(
+                    run_id=run_id,
+                    inputs=tuple(inputs),
+                    publish=policy != "draft",
+                    pipeline_id=self.pipeline_id,
+                    external_artifacts=(tuple(external_artifacts) if external_artifacts is not None else None),
+                )
             )
             progress("finalize", 90)
             if not getattr(report, "succeeded", False):
                 raise RuntimeError("document pipeline failed; inspect run evidence for stage findings")
             if self.pipeline_id == "document-publish":
-                publication_store.put({
-                    "id": run_id,
-                    "run_id": run_id,
-                    "document_id": document_id,
-                    "workspace_id": workspace_id,
-                    "environment": str(payload.get("environment", "local")),
-                    "artifact": document_id,
-                    "published_at": datetime.now(UTC).isoformat(),
-                    "approver": str(payload.get("approver", "local-worker")),
-                    "status": "passed",
-                })
+                publication_store.put(
+                    {
+                        "id": run_id,
+                        "run_id": run_id,
+                        "document_id": document_id,
+                        "workspace_id": workspace_id,
+                        "environment": str(payload.get("environment", "local")),
+                        "artifact": document_id,
+                        "published_at": datetime.now(UTC).isoformat(),
+                        "approver": str(payload.get("approver", "local-worker")),
+                        "status": "passed",
+                    }
+                )
             return {
                 "pipeline_id": self.pipeline_id,
                 "document_id": document_id,
@@ -994,7 +1065,9 @@ def _persist_worker_evidence(
             # Preserve the complete stage receipt in the immutable passport so
             # Review Studio and downstream consumers can explain what ran.
             receipt = dict(stage)
-            passport_entries.append({"stage": "pipeline_stage", "name": receipt.get("stage", "unknown"), "receipt": receipt})
+            passport_entries.append(
+                {"stage": "pipeline_stage", "name": receipt.get("stage", "unknown"), "receipt": receipt}
+            )
     passport_store.put(Passport(result.run_id, entries=tuple(passport_entries)))
     document_id = value.get("document_id") if isinstance(value, dict) else None
     document_root = None
@@ -1013,7 +1086,11 @@ def _persist_worker_evidence(
                 # may be relative to the workspace. Resolve the document
                 # boundary first, then retain the workspace fallback.
                 document_candidate = document_root / candidate if document_root is not None else None
-                candidate = document_candidate if document_candidate is not None and document_candidate.is_file() else workspace_root / candidate
+                candidate = (
+                    document_candidate
+                    if document_candidate is not None and document_candidate.is_file()
+                    else workspace_root / candidate
+                )
             materialized = candidate is not None and candidate.is_file()
             if materialized:
                 digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
@@ -1021,25 +1098,29 @@ def _persist_worker_evidence(
             else:
                 encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
                 digest = hashlib.sha256(encoded).hexdigest()
-            artifact_store.put(Artifact(
-                id=f"{result.run_id}-{stage.get('stage', 'stage')}-{index}",
-                run_id=result.run_id,
-                kind=str(stage.get("stage", "artifact")),
-                digest=digest,
-                media_type=str(record.get("media_type", "")),
-                metadata={"value": record, "source": "pipeline", "materialized": materialized},
-            ))
-        for severity, messages in (("error", stage.get("errors", ())), ("warning", stage.get("warnings", ()) )):
+            artifact_store.put(
+                Artifact(
+                    id=f"{result.run_id}-{stage.get('stage', 'stage')}-{index}",
+                    run_id=result.run_id,
+                    kind=str(stage.get("stage", "artifact")),
+                    digest=digest,
+                    media_type=str(record.get("media_type", "")),
+                    metadata={"value": record, "source": "pipeline", "materialized": materialized},
+                )
+            )
+        for severity, messages in (("error", stage.get("errors", ())), ("warning", stage.get("warnings", ()))):
             for index, message in enumerate(messages):
-                findings_store.put({
-                    "id": f"{result.run_id}-{stage.get('stage', 'stage')}-{severity}-{index}",
-                    "run_id": result.run_id,
-                    "title": f"{stage.get('stage', 'stage')} {severity}",
-                    "severity": "high" if severity == "error" else "medium",
-                    "status": "failed" if severity == "error" else "warnings",
-                    "location": str(stage.get("stage", "pipeline")),
-                    "summary": str(message),
-                })
+                findings_store.put(
+                    {
+                        "id": f"{result.run_id}-{stage.get('stage', 'stage')}-{severity}-{index}",
+                        "run_id": result.run_id,
+                        "title": f"{stage.get('stage', 'stage')} {severity}",
+                        "severity": "high" if severity == "error" else "medium",
+                        "status": "failed" if severity == "error" else "warnings",
+                        "location": str(stage.get("stage", "pipeline")),
+                        "summary": str(message),
+                    }
+                )
 
 
 def build_server(config: SidecarConfig) -> GracefulHTTPServer:
