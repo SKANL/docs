@@ -98,6 +98,21 @@ def test_application_composition_owns_stage_provider_registration(tmp_path: Path
     assert provider.operation("generate_visuals") is not None
 
 
+def test_compose_application_disables_visual_generation_without_rasterizer(monkeypatch, tmp_path: Path) -> None:
+    from docs.composition import compose_application
+    from docs.infrastructure.visuals.resvg_rasterizer_adapter import ResvgRasterizerAdapter
+
+    def fail_to_construct(self, *args, **kwargs):
+        raise RuntimeError("resvg adapter unavailable")
+
+    monkeypatch.setattr(ResvgRasterizerAdapter, "__init__", fail_to_construct)
+
+    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+
+    assert composition.svg_rasterizer is None
+    assert composition.generate_visuals_service is None
+
+
 def test_application_composition_builds_document_pipeline_with_shared_observability(tmp_path: Path) -> None:
     from docs.application.pipeline_service import PipelineService
     from docs.composition import compose_application
@@ -125,7 +140,7 @@ def test_application_composition_builds_document_pipeline_with_shared_observabil
     assert pipeline._publication.expected_outputs == ()
     assert pipeline._publication.destinations == ()
     assert type(pipeline._atomic_transform).__name__ == "AtomicTransform"
-    assert all(runtime._executor.observability is observability for runtime in pipeline._runtimes.values())
+    assert all(executor.observability is observability for executor in pipeline._executors.values())
 
 
 def test_compose_application_resolves_default_workspace_and_observability(monkeypatch, tmp_path: Path) -> None:

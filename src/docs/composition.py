@@ -41,6 +41,7 @@ from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
+from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
@@ -145,7 +146,7 @@ class ApplicationComposition:
     renderers: dict[str, DocumentRendererPort]
     markdown_normalizer: MdNormalizeAdapter
     atomic_file_writer: AtomicFileAdapter
-    svg_rasterizer: Any | None
+    svg_rasterizer: SvgRasterizerPort | None
     ingest: IngestService
     visual_renderers: dict[str, Any]
     generate_visuals_service: GenerateVisualsService | None
@@ -316,18 +317,20 @@ class ApplicationComposition:
         # second registry) and the EXISTING `PythonDocxImageMetadataAdapter`
         # (no new dims port, mirrors `ingest.py`'s reuse). Guarded like the
         # renderer/rasterizer blocks above for defense-in-depth -- a missing
-        # renderer/rasterizer degrades to per-visual WARN+skip inside the
-        # service itself, never a `Deps()` construction failure.
+        # renderer degrades per visual to WARN+skip. Without a rasterizer,
+        # the stage is unavailable and StageProvider reports it as skipped;
+        # composition construction still succeeds.
         self.generate_visuals_service: Any = None
-        try:
-            self.generate_visuals_service = GenerateVisualsService(
-                visual_renderers=self.visual_renderers,
-                svg_rasterizer=self.svg_rasterizer,
-                image_metadata=PythonDocxImageMetadataAdapter(),
-                writer=FilesystemIngestArtifactWriter(),
-            )
-        except Exception:
-            self.generate_visuals_service = None
+        if self.svg_rasterizer is not None:
+            try:
+                self.generate_visuals_service = GenerateVisualsService(
+                    visual_renderers=self.visual_renderers,
+                    svg_rasterizer=self.svg_rasterizer,
+                    image_metadata=PythonDocxImageMetadataAdapter(),
+                    writer=FilesystemIngestArtifactWriter(),
+                )
+            except Exception:
+                self.generate_visuals_service = None
 
         # `document-translate` adapters. Guarded like every block above: both
         # `pypdfium2` and `pdf-inspector` are declared dependencies, but an
