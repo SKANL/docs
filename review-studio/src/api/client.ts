@@ -186,9 +186,13 @@ export class ReviewApiClient {
   private readonly accessToken?: string;
   private readonly allowedPreviewOrigins: Set<string>;
   private selectedWorkspaceId?: string;
+  private workspaces: Workspace[] = [];
 
   constructor(options: ReviewClientOptions = {}) {
-    this.baseUrl = new URL(options.baseUrl ?? "/v1", globalThis.location?.href ?? "http://localhost/").toString().replace(/\/$/, "");
+    const configuredBase = new URL(options.baseUrl ?? "/v2", globalThis.location?.href ?? "http://localhost/");
+    const path = configuredBase.pathname.replace(/\/+$/, "");
+    configuredBase.pathname = path.endsWith("/v1") ? `${path.slice(0, -3)}/v2` : path.endsWith("/v2") ? path : `${path}/v2`;
+    this.baseUrl = configuredBase.toString().replace(/\/$/, "");
     this.requestFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.accessToken = options.accessToken?.trim() || undefined;
@@ -212,25 +216,42 @@ export class ReviewApiClient {
     }
   }
 
+  private async workspaceId(explicit?: string): Promise<string> {
+    if (explicit) return explicit;
+    if (this.selectedWorkspaceId) return this.selectedWorkspaceId;
+    await this.listWorkspaces();
+    if (!this.selectedWorkspaceId) throw new ApiConfigurationError("No workspace is available. Create a workspace before continuing.");
+    return this.selectedWorkspaceId;
+  }
+
+  private async scopedRequest<T>(path: string, init: RequestInit = {}, explicitWorkspaceId?: string): Promise<T> {
+    const workspaceId = await this.workspaceId(explicitWorkspaceId);
+    const [pathname, rawQuery] = path.split("?", 2);
+    const query = new URLSearchParams(rawQuery ?? "");
+    query.set("workspace_id", workspaceId);
+    return this.request<T>(`${pathname}?${query}`, init);
+  }
+
   private list<T>(path: string, params: ListParams = {}) {
     const query = new URLSearchParams();
     if (params.cursor) query.set("cursor", params.cursor);
     if (params.limit !== undefined) query.set("limit", String(params.limit));
-    const workspaceId = params.workspaceId ?? this.selectedWorkspaceId;
-    if (workspaceId) query.set("workspace_id", workspaceId);
-    return this.request<unknown>(`${path}${query.size ? `?${query}` : ""}`).then(page<T>);
+    return this.workspaceId(params.workspaceId).then(workspaceId => {
+      query.set("workspace_id", workspaceId);
+      return this.request<unknown>(`${path}${query.size ? `?${query}` : ""}`).then(page<T>);
+    });
   }
 
   listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => result.items.map(normalizeRun)); }
-  getRun(id:string) { return this.request<Record<string, unknown>>("runs/" + encodeURIComponent(id)); }
+  getRun(id:string) { return this.scopedRequest<Record<string, unknown>>("runs/" + encodeURIComponent(id)); }
   async health() {
     const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
     if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
     return await response.json() as { ready:boolean; protocol?:string; version?:string };
   }
   listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params).then(result => result.items); }
-  getDocument(id:string) { return this.request<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
-  listDocumentRuns(id:string) { return this.request<{items:Record<string, unknown>[]}>("documents/" + encodeURIComponent(id) + "/runs").then(result => result.items.map(normalizeRun)); }
+  getDocument(id:string) { return this.scopedRequest<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
+  listDocumentRuns(id:string) { return this.scopedRequest<{items:Record<string, unknown>[]}>("documents/" + encodeURIComponent(id) + "/runs").then(result => result.items.map(normalizeRun)); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
   listRunFindings(id:string) { return this.list<Finding>("runs/" + encodeURIComponent(id) + "/findings").then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
   listArtifacts(params?: ListParams) {
@@ -246,31 +267,32 @@ export class ReviewApiClient {
       } satisfies Artifact)));
   }
   listRunArtifacts(id:string) { return this.list<Record<string, unknown>>("runs/" + encodeURIComponent(id) + "/artifacts").then(result => result.items.map(raw => ({id:typeof raw.id==="string"?raw.id:"artifact",name:typeof raw.name==="string"?raw.name:typeof raw.id==="string"?raw.id:"Unnamed artifact",runId:typeof raw.run_id==="string"?raw.run_id:id,kind:normalizeArtifactKind(raw.kind),size:typeof raw.size==="string"?raw.size:typeof raw.size==="number"?`${raw.size} bytes`:"Size unavailable",status:raw.status==="failed"||raw.status==="warnings"||raw.status==="passed"?raw.status:"unverified",pages:typeof raw.pages==="number"?raw.pages:undefined,checksum:typeof raw.checksum==="string"?raw.checksum:typeof raw.digest==="string"?raw.digest:"Hash unavailable"} satisfies Artifact))); }
-  getArtifact(id:string) { return this.request<Record<string, unknown>>("artifacts/" + encodeURIComponent(id)); }
+  getArtifact(id:string) { return this.scopedRequest<Record<string, unknown>>("artifacts/" + encodeURIComponent(id)); }
   listArtifactPreviews(id:string) { return this.list<Record<string, unknown>>("artifacts/" + encodeURIComponent(id) + "/previews").then(result => result.items); }
-  getPassport(runId: string) { return this.request<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
-  getGraph() { const query = this.selectedWorkspaceId ? `?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}` : ""; return this.request<unknown>(`graph${query}`).then(normalizeGraph); }
+  getPassport(runId: string) { return this.scopedRequest<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
+  getGraph() { return this.scopedRequest<unknown>("graph").then(normalizeGraph); }
   getGraphQuery(query: GraphQuery, id?: string) {
     const params = new URLSearchParams({ query });
     if (id) params.set("id", id);
-    if (this.selectedWorkspaceId) params.set("workspace_id", this.selectedWorkspaceId);
-    return this.request<unknown>(`graph?${params}`).then(normalizeGraphQuery);
+    return this.workspaceId().then(workspaceId => {
+      params.set("workspace_id", workspaceId);
+      return this.request<unknown>(`graph?${params}`).then(normalizeGraphQuery);
+    });
   }
   listTemplates(params?: ListParams) { return this.list<Template>("templates", params).then(result => result.items); }
   listPlugins(params?: ListParams) { return this.list<Record<string, unknown>>("plugins", params).then(result => result.items); }
-  getPlugin(id:string) { return this.request<Record<string, unknown>>("plugins/" + encodeURIComponent(id)); }
+  getPlugin(id:string) { return this.scopedRequest<Record<string, unknown>>("plugins/" + encodeURIComponent(id)); }
   listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params).then(result => result.items); }
-  getBaseline(id:string) { return this.request<Record<string, unknown>>("baselines/" + encodeURIComponent(id)); }
-  promoteBaseline(id:string) { return this.request<Record<string, unknown>>("baselines/promotions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({baseline_id:id, ...(this.selectedWorkspaceId ? {workspace_id:this.selectedWorkspaceId} : {})}) }); }
+  getBaseline(id:string) { return this.scopedRequest<Record<string, unknown>>("baselines/" + encodeURIComponent(id)); }
   listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params).then(result => result.items); }
-  getRevision(id:string) { return this.request<Record<string, unknown>>("revisions/" + encodeURIComponent(id)); }
+  getRevision(id:string) { return this.scopedRequest<Record<string, unknown>>("revisions/" + encodeURIComponent(id)); }
   listPublications(params?: ListParams) { return this.list<Publication>("publications", params).then(result => result.items); }
   listWorkspaces() {
     return this.request<unknown>("workspaces").then(raw => {
       const items = page<Workspace>(raw).items;
-      const active = raw && typeof raw === "object" && "active" in raw ? (raw as { active?: Workspace }).active : undefined;
       const persisted = this.selectedWorkspaceId && items.some(item => item.id === this.selectedWorkspaceId) ? this.selectedWorkspaceId : undefined;
-      const selected = persisted ?? active?.id ?? items[0]?.id;
+      const selected = persisted ?? items[0]?.id;
+      this.workspaces = items;
       if (selected) {
         this.selectedWorkspaceId = selected;
         try { globalThis.localStorage?.setItem("docs.review.workspace", selected); } catch { /* offline/browser storage unavailable */ }
@@ -279,7 +301,12 @@ export class ReviewApiClient {
       return selectedItem ? [selectedItem, ...items.filter(item => item.id !== selected)] : items;
     });
   }
-  createWorkspace(input: { name:string; root:string }) { return this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  async createWorkspace(input: { name:string }) {
+    const workspace = await this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) });
+    this.workspaces = [...this.workspaces.filter(item => item.id !== workspace.id), workspace];
+    await this.selectWorkspace(workspace.id);
+    return workspace;
+  }
   renameWorkspace(id:string,name:string) { return this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) }); }
   async deleteWorkspace(id:string) {
     const result = await this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" });
@@ -289,31 +316,32 @@ export class ReviewApiClient {
     }
     return result;
   }
-  getDocumentStatus(documentId:string,workspaceId?:string) { const query=workspaceId?"?workspace_id="+encodeURIComponent(workspaceId):""; return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/status"+query); }
-  getDocumentContext(documentId:string) { return this.request<{document_id:string;topics:DocumentContextTopic[]}>("documents/"+encodeURIComponent(documentId)+"/context"); }
-  getDocumentClassification(documentId:string) { return this.request<{document_id:string;items:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/classification"); }
-  confirmDocumentClassification(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/classification", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  setDocumentContext(documentId:string,input:{topic:string;field?:string;value:string}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/context", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  reviseDocument(documentId:string,input:{target_id:string;new_body?:string;new_value?:string;request?:string;field?:string}) { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/revisions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  listDocumentSections(documentId:string) { return this.request<{items:DocumentSection[]}>("documents/"+encodeURIComponent(documentId)+"/sections").then(result=>result.items); }
-  getDocumentSection(documentId:string,sectionId:string) { return this.request<DocumentSection>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId)); }
-  updateDocumentSection(documentId:string,sectionId:string,body:string,request="Review Studio section edit") { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId), { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({body,request}) }); }
-  createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.request<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }); }
-  createRun(input: { documentId:string; workspaceId?:string; pipelineId?:string; format?:string }) { return this.request<Record<string,unknown>>("runs", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,workspace_id:input.workspaceId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
-  cancelRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
-  retryRun(id:string) { return this.request<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
-  documentAction(documentId:string, action:"prepare"|"build"|"verify"|"publish", workspaceId:string, format="docx") { return this.request<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/"+action, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspaceId, policy: action === "publish" ? "release" : undefined, format}) }); }
-  async selectWorkspace(id:string) {
-    const workspace = await this.request<Workspace>("workspaces/" + encodeURIComponent(id) + "/select", { method:"POST" });
-    this.selectedWorkspaceId = workspace.id;
-    try { globalThis.localStorage?.setItem("docs.review.workspace", workspace.id); } catch { /* offline/browser storage unavailable */ }
+  getDocumentStatus(documentId:string,workspaceId?:string) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/status", {}, workspaceId); }
+  getDocumentContext(documentId:string) { return this.scopedRequest<{document_id:string;topics:DocumentContextTopic[]}>("documents/"+encodeURIComponent(documentId)+"/context"); }
+  getDocumentClassification(documentId:string) { return this.scopedRequest<{document_id:string;items:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/classification"); }
+  confirmDocumentClassification(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/classification", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  setDocumentContext(documentId:string,input:{topic:string;field?:string;value:string}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/context", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  reviseDocument(documentId:string,input:{target_id:string;new_body?:string;new_value?:string;request?:string;field?:string}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/revisions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  listDocumentSections(documentId:string) { return this.scopedRequest<{items:DocumentSection[]}>("documents/"+encodeURIComponent(documentId)+"/sections").then(result=>result.items); }
+  getDocumentSection(documentId:string,sectionId:string) { return this.scopedRequest<DocumentSection>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId)); }
+  updateDocumentSection(documentId:string,sectionId:string,body:string,request="Review Studio section edit") { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId), { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({body,request}) }); }
+  createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.scopedRequest<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }, input.workspaceId); }
+  async createRun(input: { documentId:string; workspaceId:string; pipelineId?:string; format?:string }) { const workspaceId = await this.workspaceId(input.workspaceId); return this.request<Record<string,unknown>>("runs?workspace_id="+encodeURIComponent(workspaceId), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,workspace_id:workspaceId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
+  cancelRun(id:string) { return this.scopedRequest<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
+  retryRun(id:string) { return this.scopedRequest<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
+  documentAction(documentId:string, action:"prepare"|"build"|"verify"|"publish", workspaceId:string, format="docx") { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/"+action, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspaceId, policy: action === "publish" ? "release" : undefined, format}) }, workspaceId); }
+  async selectWorkspace(id:string): Promise<Workspace> {
+    const workspace = this.workspaces.find(item => item.id === id);
+    if (!workspace) throw new ApiConfigurationError("Workspace must be loaded before it can be selected.");
+    this.selectedWorkspaceId = id;
+    try { globalThis.localStorage?.setItem("docs.review.workspace", id); } catch { /* offline/browser storage unavailable */ }
     return workspace;
   }
   async importDocument(file: File, workspace: Workspace, options: {documentId?:string;template?:string;title?:string} = {}): Promise<ImportResult> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const query = new URLSearchParams({workspace_id:workspace.id, template:options.template??"documento-generico", title:options.title??file.name});
     if (options.documentId) query.set("document_id", options.documentId);
-    return this.request<ImportResult>("documents/import/raw?" + query.toString(), { method:"POST", headers:{"Content-Type":file.type||"application/octet-stream", "X-Docs-Filename":file.name}, body:bytes });
+    return this.scopedRequest<ImportResult>("documents/import/raw?" + query.toString(), { method:"POST", headers:{"Content-Type":file.type||"application/octet-stream", "X-Docs-Filename":file.name}, body:bytes }, workspace.id);
   }
 
   previewUrl(value: string): string {
@@ -330,7 +358,8 @@ export class ReviewApiClient {
       if (signal?.aborted) return;
       const request = withSignal(signal, this.timeoutMs);
       try {
-        const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress`), { signal: request.signal, headers: { Accept: "text/event-stream" } });
+        const workspaceId = await this.workspaceId();
+        const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress?workspace_id=${encodeURIComponent(workspaceId)}`), { signal: request.signal, headers: { Accept: "text/event-stream" } });
         if (!response.ok) throw await errorFromResponse(response);
         if (!response.body) throw new ApiError("Progress stream has no body", 502, "empty_stream");
         await yieldSse(response.body, event => {
@@ -344,7 +373,8 @@ export class ReviewApiClient {
   }
 
   artifactPreviewUrl(runId: string, artifactId: string): string {
-    return this.previewUrl(`runs/${encodeURIComponent(runId)}/previews/${encodeURIComponent(artifactId)}`);
+    if (!this.selectedWorkspaceId) throw new ApiConfigurationError("Select a workspace before requesting an artifact preview.");
+    return this.previewUrl(`runs/${encodeURIComponent(runId)}/previews/${encodeURIComponent(artifactId)}?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}`);
   }
 }
 

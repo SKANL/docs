@@ -843,6 +843,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         revision_store=_WorkspaceJsonCollectionStore(config.workspace, "revisions", registry),
         document_store=_FilesystemDocumentStore(config.workspace, registry),
         workspace_registry=registry,
+        managed_workspace_root=config.workspace / ".docs" / "workspaces",
         document_creator=create_document,
         document_action=document_action,
         document_context_reader=lambda document_id, workspace_root=None: document_context(

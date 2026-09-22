@@ -48,8 +48,8 @@ def test_api_document_creation_composes_the_requested_workspace(
     try:
         response = application.application.dispatch(Request(
             "POST",
-            "/v1/documents",
-            body=json.dumps({"workspace_id": second["id"], "document_id": "target", "title": "Target"}).encode(),
+            "/v2/documents",
+            body=json.dumps({"workspace_id": second["id"], "document_id": "target", "template": "documento-generico", "title": "Target"}).encode(),
             headers={"Content-Type": "application/json"},
         ))
         assert response.status == 201
@@ -101,7 +101,7 @@ def test_api_context_reads_compose_each_requested_workspace_without_leakage(
             )
             response = application.application.dispatch(Request(
                 "GET",
-                f"/v1/documents/doc/context?workspace_id={workspace['id']}",
+                f"/v2/documents/doc/context?workspace_id={workspace['id']}",
             ))
             assert response.status == 200
             assert json.loads(response.body)["document_id"] == "doc"
@@ -200,7 +200,7 @@ def test_sidecar_allows_review_studio_origin(tmp_path: Path) -> None:
     thread.start()
     try:
         request = urllib.request.Request(
-            f"http://127.0.0.1:{server.server_address[1]}/v1/runs",
+            f"http://127.0.0.1:{server.server_address[1]}/v2/openapi.json",
             headers={"Origin": "http://localhost:1420"},
         )
         with urllib.request.urlopen(request, timeout=2) as response:
@@ -250,13 +250,13 @@ def test_sidecar_reports_workspace_not_configured_without_workspace() -> None:
 
 def test_sidecar_runs_endpoint_reads_workspace_backed_store(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
-    application = build_application(config)
-    application.application.run_store.put(Run("run-1", created_at="2026-01-01T00:00:00+00:00"))
     server = build_server(config)
+    workspace_id = server._docs_application.application.workspace_registry.list()[0]["id"]
+    server._docs_application.application.run_store.put(Run("run-1", payload={"workspace_id": workspace_id}, created_at="2026-01-01T00:00:00+00:00"))
     thread = threading.Thread(target=run, args=(server,), daemon=True)
     thread.start()
     try:
-        url = f"http://127.0.0.1:{server.server_address[1]}/v1/runs"
+        url = f"http://127.0.0.1:{server.server_address[1]}/v2/runs?workspace_id={workspace_id}"
         with urllib.request.urlopen(url, timeout=2) as response:
             assert response.status == 200
             assert json.load(response)["items"][0]["id"] == "run-1"
@@ -269,7 +269,8 @@ def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) ->
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     health_app = build_application(config)
     try:
-        response = health_app.application.dispatch(Request("GET", "/v1/templates"))
+        workspace_id = health_app.application.workspace_registry.list()[0]["id"]
+        response = health_app.application.dispatch(Request("GET", f"/v2/templates?workspace_id={workspace_id}"))
         payload = json.loads(response.body)
         ids = {item["id"] for item in payload["items"]}
         assert response.status == 200
@@ -278,19 +279,19 @@ def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) ->
         health_app.shutdown()
 
 
-def test_sidecar_promotes_a_real_workspace_baseline(tmp_path: Path) -> None:
+def test_sidecar_lists_a_real_workspace_baseline(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     health_app = build_application(config)
     try:
-        baseline = tmp_path / "baselines" / "desktop.json"
+        baseline_dir = tmp_path / "baselines"
+        baseline_dir.mkdir(exist_ok=True)
+        baseline = baseline_dir / "desktop.json"
         baseline.write_text(json.dumps({"id": "desktop", "scope": "html"}), encoding="utf-8")
-        workspaces = json.loads(health_app.application.dispatch(Request("GET", "/v1/workspaces")).body)
-        workspace_id = workspaces["active"]["id"]
-        response = health_app.application.dispatch(
-            Request("POST", "/v1/baselines/promotions", body={"baseline_id": "desktop", "workspace_id": workspace_id})
-        )
+        workspaces = json.loads(health_app.application.dispatch(Request("GET", "/v2/workspaces")).body)
+        workspace_id = workspaces["items"][0]["id"]
+        response = health_app.application.dispatch(Request("GET", f"/v2/baselines?workspace_id={workspace_id}"))
         assert response.status == 200
-        assert json.loads((tmp_path / "baselines" / "active.json").read_text(encoding="utf-8"))["promoted"] is True
+        assert any(item["id"] == "desktop" for item in json.loads(response.body)["items"])
     finally:
         health_app.shutdown()
 
@@ -306,12 +307,15 @@ def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None
 
 
 def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
+    from docs.application.workspaces import WorkspaceRegistry
+
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     server = build_server(config)
     thread = threading.Thread(target=run, args=(server,), daemon=True)
     thread.start()
     try:
-        url = f"http://127.0.0.1:{server.server_address[1]}/v1/graph"
+        workspace_id = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json").list()[0]["id"]
+        url = f"http://127.0.0.1:{server.server_address[1]}/v2/graph?workspace_id={workspace_id}"
         with urllib.request.urlopen(url, timeout=2) as response:
             assert json.load(response) == {"nodes": [], "edges": []}
     finally:

@@ -53,16 +53,15 @@ async function startProxy() {
 }
 
 await waitForHealth();
-const workspaces = await request("/v1/workspaces");
+const workspaces = await request("/v2/workspaces");
 const workspaceId = workspaces.items?.[0]?.id;
 if (!workspaceId) throw new Error("real sidecar did not create a workspace");
-await request(`/v1/workspaces/${encodeURIComponent(workspaceId)}/select`, { method: "POST", body: JSON.stringify({}) });
-await request("/v1/documents/import", { method: "POST", body: JSON.stringify({ workspace_id: workspaceId, filename: "browser-e2e.md", content_base64: Buffer.from(`# REAL BROWSER RUN\n\nThis document is imported through the real API.`).toString("base64"), document_id: "browser-e2e", template: "documento-generico", title: "Real browser run" }) });
-await request("/v1/documents/browser-e2e/prepare", { method: "POST", body: JSON.stringify({ workspace_id: workspaceId }) });
-const run = await request("/v1/runs", { method: "POST", body: JSON.stringify({ workspace_id: workspaceId, document_id: "browser-e2e", pipeline_id: "document", format: "html", policy: "draft" }) });
+await request(`/v2/documents/import/raw?workspace_id=${encodeURIComponent(workspaceId)}&document_id=browser-e2e&template=documento-generico&title=Real%20browser%20run`, { method: "POST", headers: { "content-type": "text/markdown", "x-docs-filename": "browser-e2e.md" }, body: `# REAL BROWSER RUN\n\nThis document is imported through the real API.` });
+await request(`/v2/documents/browser-e2e/prepare?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId }) });
+const run = await request(`/v2/runs?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId, document_id: "browser-e2e", pipeline_id: "document", format: "html", policy: "draft" }) });
 let terminal = false;
 for (let attempt = 0; attempt < 240; attempt += 1) {
-  const current = await request(`/v1/runs/${encodeURIComponent(run.id)}`);
+  const current = await request(`/v2/runs/${encodeURIComponent(run.id)}?workspace_id=${encodeURIComponent(workspaceId)}`);
   if (["succeeded", "failed", "cancelled", "expired"].includes(current.status)) { if (current.status !== "succeeded") throw new Error(`real browser run ended as ${current.status}`); terminal = true; break; }
   await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
 }

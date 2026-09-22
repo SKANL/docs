@@ -1,13 +1,53 @@
-import { describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, ReviewApiClient, yieldSse } from "../api/client";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" }, ...init });
 
 describe("ReviewApiClient", () => {
+  beforeEach(() => { localStorage.setItem("docs.review.workspace", "workspace-1"); });
+  it("normalizes configured API origins to the canonical v2 surface", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    await client.listRuns();
+    expect(fetcher.mock.calls[0]?.[0].toString()).toBe("https://review.test/v2/runs?workspace_id=workspace-1");
+  });
+
+  it("bootstraps an explicit local workspace before scoped content requests", async () => {
+    localStorage.clear();
+    const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = new URL(input.toString());
+      return Promise.resolve(url.pathname.endsWith("/workspaces")
+        ? jsonResponse({ items: [{ id: "workspace-a", name: "A", root: "/a" }] })
+        : jsonResponse({ items: [] }));
+    });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+
+    await client.listRuns();
+
+    expect(fetcher.mock.calls.map(call => call[0].toString())).toEqual([
+      "https://review.test/v2/workspaces",
+      "https://review.test/v2/runs?workspace_id=workspace-a",
+    ]);
+    expect(localStorage.getItem("docs.review.workspace")).toBe("workspace-a");
+  });
+
+  it("keeps workspace selection local and creates a workspace by name only", async () => {
+    localStorage.clear();
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ id: "workspace-b", name: "B", root: "/managed/b" }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+
+    await client.createWorkspace({ name: "B" });
+    await client.selectWorkspace("workspace-b");
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ name: "B" });
+    expect(fetcher.mock.calls.some(call => new URL(call[0].toString()).pathname.endsWith("/select"))).toBe(false);
+    expect(localStorage.getItem("docs.review.workspace")).toBe("workspace-b");
+  });
   it("retries transient startup connection failures before surfacing an error", async () => {
     let attempts = 0;
     const client = new ReviewApiClient({
-      baseUrl: "http://review.test/v1",
+      baseUrl: "http://review.test/v2",
       fetch: async () => {
         attempts += 1;
         if (attempts < 3) throw new TypeError("Failed to fetch");
@@ -18,20 +58,20 @@ describe("ReviewApiClient", () => {
     await expect(client.listRuns()).resolves.toEqual([{ id: "run-after-startup" }]);
     expect(attempts).toBe(3);
   });
-  it("builds typed paginated /v1 requests", async () => {
+  it("builds typed paginated /v2 requests", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{ id: "run-1" }], next_cursor: "next", total: 4 }));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
     await expect(client.listRuns({ cursor: "a b", limit: 2 })).resolves.toEqual([{ id: "run-1" }]);
-    expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v1/runs?cursor=a+b&limit=2");
+    expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v2/runs?cursor=a+b&limit=2&workspace_id=workspace-1");
   });
 
   it("serializes semantic graph domain queries with an optional id", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
     await client.getGraphQuery("findings_affected_by_revision", "rev 1");
 
-    expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v1/graph?query=findings_affected_by_revision&id=rev+1");
+    expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v2/graph?query=findings_affected_by_revision&id=rev+1&workspace_id=workspace-1");
   });
 
   it("maps the production X20 run envelope to the review model", async () => {
@@ -51,7 +91,7 @@ describe("ReviewApiClient", () => {
         report: { execution: { results: [{ artifacts: ["a", "b"], warnings: ["w"], errors: [] }] } },
       },
     }]}));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
     await expect(client.listRuns()).resolves.toMatchObject([{
       id: "run-real",
@@ -68,7 +108,7 @@ describe("ReviewApiClient", () => {
 
   it("attaches a configured bearer token without replacing request headers", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", accessToken: "token-123", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", accessToken: "token-123", fetch: fetcher });
 
     await client.listRuns();
 
@@ -77,28 +117,29 @@ describe("ReviewApiClient", () => {
 
   it("passes the selected output format to document actions", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ id: "run-pdf" }));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
     await client.documentAction("doc-1", "build", "workspace-1", "pdf");
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ workspace_id: "workspace-1", format: "pdf" });
   });
 
   it("scopes graph domain queries to the selected workspace", async () => {
     const fetcher = vi.fn().mockImplementation((input: RequestInfo | URL) => {
-      const path = new URL(input.toString()).pathname;
-      return Promise.resolve(path.endsWith("/select")
-        ? jsonResponse({ id: "workspace-2", name: "Workspace 2", root: "C:/workspace-2" })
+      const url = new URL(input.toString());
+      return Promise.resolve(url.pathname.endsWith("/workspaces")
+        ? jsonResponse({ items: [{ id: "workspace-2", name: "Workspace 2", root: "C:/workspace-2" }] })
         : jsonResponse({ items: [] }));
     });
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+    await client.listWorkspaces();
     await client.selectWorkspace("workspace-2");
     await client.getGraphQuery("unused_references");
     const lastCall = fetcher.mock.calls[fetcher.mock.calls.length - 1];
-    expect(lastCall?.[0].toString()).toBe("https://review.test/v1/graph?query=unused_references&workspace_id=workspace-2");
+    expect(lastCall?.[0].toString()).toBe("https://review.test/v2/graph?query=unused_references&workspace_id=workspace-2");
   });
 
   it("normalizes backend graph nodes and edges without changing the UI shape", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ nodes: [{ id: "claim-1", kind: "claim", label: "Claim", confidence: { score: 0.75 } }], edges: [{ source: "source-1", target: "claim-1", relation: "supports" }] }));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
     await expect(client.getGraph()).resolves.toMatchObject({ nodes: [{ id: "claim-1", type: "claim", confidence: 0.75 }], edges: [{ from: "source-1", to: "claim-1" }] });
   });
 
@@ -125,11 +166,11 @@ describe("ReviewApiClient", () => {
   });
 
   it("allows same-origin previews only unless explicitly configured", () => {
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1" });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2" });
     expect(client.previewUrl("/preview/page-1.png")).toBe("https://review.test/preview/page-1.png");
     expect(() => client.previewUrl("https://evil.test/page.png")).toThrow(TypeError);
     expect(() => client.previewUrl("data:text/html,boom")).toThrow(TypeError);
-    expect(new ReviewApiClient({ baseUrl: "https://review.test/v1", allowedPreviewOrigins: ["https://cdn.test"] }).previewUrl("https://cdn.test/page.png")).toBe("https://cdn.test/page.png");
+    expect(new ReviewApiClient({ baseUrl: "https://review.test/v2", allowedPreviewOrigins: ["https://cdn.test"] }).previewUrl("https://cdn.test/page.png")).toBe("https://cdn.test/page.png");
   });
 });
 

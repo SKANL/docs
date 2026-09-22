@@ -27,7 +27,6 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     listTemplates: () => client.listTemplates(),
     listBaselines: () => client.listBaselines(),
     getBaseline: id => client.getBaseline(id),
-    promoteBaseline: id => client.promoteBaseline(id),
     listRevisions: () => client.listRevisions(),
     getRevision: id => client.getRevision(id),
     listPublications: () => client.listPublications(),

@@ -20,7 +20,7 @@ from docs.api.server import (
 )
 
 
-def invoke(app, path="/v1/example", *, method="GET", body=b"", headers=None):
+def invoke(app, path="/v2/example", *, method="GET", body=b"", headers=None):
     captured = {}
     request_headers = {"CONTENT_LENGTH": str(len(body))}
     for key, value in (headers or {}).items():
@@ -170,10 +170,10 @@ def test_transport_preserves_request_id_and_adds_one_when_missing():
 def test_transport_dispatches_to_existing_wsgi_application_and_normalizes_errors():
     transport = X20Transport(echo_app, TransportConfig())
 
-    captured, body = invoke(transport, "/v1/example", method="POST", body=b"payload")
+    captured, body = invoke(transport, "/v2/example", method="POST", body=b"payload")
 
     assert captured["status"].startswith("200")
-    assert json_body(body)["path"] == "/v1/example"
+    assert json_body(body)["path"] == "/v2/example"
     assert captured["headers"]["Content-Length"] == str(len(body))
 
     def broken(environ, start_response):
@@ -195,7 +195,7 @@ def test_sse_response_has_event_content_type_and_keep_alive_length():
         start_response("200 OK", [("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache")])
         return [event]
 
-    captured, body = invoke(X20Transport(sse, TransportConfig()), "/v1/progress")
+    captured, body = invoke(X20Transport(sse, TransportConfig()), "/v2/progress")
 
     assert captured["headers"]["Content-Type"] == "text/event-stream"
     assert captured["headers"]["Cache-Control"] == "no-cache"
@@ -237,12 +237,12 @@ def test_once_server_handles_a_real_http_request_and_closes():
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
     thread.start()
 
-    with urlopen(f"http://127.0.0.1:{server.server_address[1]}/v1/example") as response:
+    with urlopen(f"http://127.0.0.1:{server.server_address[1]}/v2/example") as response:
         assert response.status == 200
         assert response.headers["X-Request-ID"]
         body = json_body(response.read())
         assert body["method"] == "GET"
-        assert body["path"] == "/v1/example"
+        assert body["path"] == "/v2/example"
         assert body["body"] == ""
 
     thread.join(timeout=2)
@@ -288,7 +288,7 @@ def test_wsgi_generators_are_not_eagerly_consumed():
     result = X20Transport(streaming_app, TransportConfig())(
         {
             "REQUEST_METHOD": "GET",
-            "PATH_INFO": "/v1/events",
+            "PATH_INFO": "/v2/events",
             "CONTENT_LENGTH": "0",
             "wsgi.input": io.BytesIO(),
         },
@@ -318,7 +318,7 @@ def test_malformed_content_length_is_rejected_without_reading_input():
     result = transport(
         {
             "REQUEST_METHOD": "POST",
-            "PATH_INFO": "/v1/example",
+            "PATH_INFO": "/v2/example",
             "CONTENT_LENGTH": "not-a-number",
             "wsgi.input": UnexpectedRead(),
         },
@@ -344,7 +344,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
     result = X20Transport(echo_app, TransportConfig(max_request_body=3))(
         {
             "REQUEST_METHOD": "POST",
-            "PATH_INFO": "/v1/example",
+            "PATH_INFO": "/v2/example",
             "CONTENT_LENGTH": "3",
             "wsgi.input": complete,
         },
@@ -359,7 +359,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
     result = X20Transport(echo_app, TransportConfig())(
         {
             "REQUEST_METHOD": "POST",
-            "PATH_INFO": "/v1/example",
+            "PATH_INFO": "/v2/example",
             "CONTENT_LENGTH": "3",
             "wsgi.input": short,
         },
@@ -375,7 +375,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
     result = transport(
         {
             "REQUEST_METHOD": "GET",
-            "PATH_INFO": "/v1/example",
+            "PATH_INFO": "/v2/example",
             "wsgi.input": UnexpectedRead(),
         },
         lambda status, headers, exc_info=None: captured.update(status=status, headers=dict(headers)),
@@ -391,7 +391,7 @@ def test_chunked_request_is_rejected_without_reading_the_body():
     result = transport(
         {
             "REQUEST_METHOD": "POST",
-            "PATH_INFO": "/v1/example",
+            "PATH_INFO": "/v2/example",
             "HTTP_TRANSFER_ENCODING": "chunked",
             "wsgi.input": UnexpectedRead(),
         },
@@ -440,7 +440,7 @@ def test_http_handler_supplies_standard_wsgi_environ_keys():
     )
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
     thread.start()
-    with urlopen(f"http://127.0.0.1:{server.server_address[1]}/v1/example") as response:
+    with urlopen(f"http://127.0.0.1:{server.server_address[1]}/v2/example") as response:
         assert response.status == 200
     thread.join(timeout=1)
 
@@ -476,7 +476,7 @@ def test_sse_streams_over_a_real_socket_without_buffering():
     thread = threading.Thread(target=serve, args=(server,), daemon=True)
     thread.start()
     with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=1) as client:
-        client.sendall(b"GET /v1/events HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        client.sendall(b"GET /v2/events HTTP/1.1\r\nHost: localhost\r\n\r\n")
         received = b""
         while b"\r\n\r\n" not in received:
             received += client.recv(4096)
@@ -511,7 +511,7 @@ def test_closing_stream_result_closes_application_iterator():
 
     captured = {}
     result = X20Transport(streaming_app, TransportConfig())(
-        {"REQUEST_METHOD": "GET", "PATH_INFO": "/v1/events", "wsgi.input": io.BytesIO()},
+        {"REQUEST_METHOD": "GET", "PATH_INFO": "/v2/events", "wsgi.input": io.BytesIO()},
         lambda status, headers, exc_info=None: captured.update(status=status, headers=dict(headers)),
     )
     assert next(iter(result)) == b"data: first\n\n"

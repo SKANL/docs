@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-import threading
 import ast
-import logging
 import json
+import logging
 import mimetypes
-from importlib.resources import files
+import threading
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
 
 from docs.application.graph_queries import GraphQueryService
-from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
-from docs.application.status_reader import StatusReader
 from docs.application.imports import ImportError, SourceImportService
+from docs.application.status_reader import StatusReader
+from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.domain.contracts import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
@@ -77,6 +77,7 @@ class X20Application:
         observability: ObservabilityPort | None = None,
         idempotency_persistence: Any = None,
         workspace_registry: WorkspaceRegistry | None = None,
+        managed_workspace_root: str | Path | None = None,
         import_service: SourceImportService | None = None,
         document_creator: Any = None,
         document_action: Any = None,
@@ -108,6 +109,11 @@ class X20Application:
         self._auth = auth
         self.observability = observability or create_observability_from_env()
         self.workspace_registry = workspace_registry
+        self.managed_workspace_root = (
+            Path(managed_workspace_root).expanduser().resolve()
+            if managed_workspace_root is not None
+            else workspace_registry.path.parent / "workspaces" if workspace_registry is not None else None
+        )
         self.import_service = import_service or SourceImportService()
         self.document_creator = document_creator
         self.document_action = document_action
@@ -118,52 +124,50 @@ class X20Application:
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
-            ("GET", "/v1/graph"),
-            ("GET", "/v1/documents"),
-            ("GET", "/v1/findings"),
-            ("GET", "/v1/openapi.json"),
-            ("GET", "/v1/baselines"),
-            ("GET", "/v1/plugins"),
-            ("GET", "/v1/runs"),
-            ("GET", "/v1/artifacts"),
-            ("GET", "/v1/templates"),
-            ("GET", "/v1/revisions"),
-            ("GET", "/v1/publications"),
-            ("GET", "/v1/workspaces"),
-            ("POST", "/v1/workspaces"),
-            ("POST", "/v1/documents/import"),
-            ("POST", "/v1/documents/import/raw"),
-            ("POST", "/v1/documents"),
-            ("POST", "/v1/baselines/promotions"),
-            ("POST", "/v1/runs"),
+            ("GET", "/v2/graph"),
+            ("GET", "/v2/documents"),
+            ("GET", "/v2/findings"),
+            ("GET", "/v2/openapi.json"),
+            ("GET", "/v2/baselines"),
+            ("GET", "/v2/plugins"),
+            ("GET", "/v2/runs"),
+            ("GET", "/v2/artifacts"),
+            ("GET", "/v2/templates"),
+            ("GET", "/v2/revisions"),
+            ("GET", "/v2/publications"),
+            ("GET", "/v2/workspaces"),
+            ("POST", "/v2/workspaces"),
+            ("POST", "/v2/documents/import"),
+            ("POST", "/v2/documents/import/raw"),
+            ("POST", "/v2/documents"),
+            ("POST", "/v2/runs"),
         }
         self._validate_initial_route_collisions()
-        self._register_owned_route("GET", "/v1/graph", self._graph)
-        self._register_owned_route("GET", "/v1/documents", self._documents)
-        self._register_owned_route("GET", "/v1/findings", self._findings)
-        self._register_owned_route("GET", "/v1/openapi.json", lambda _: self._openapi())
-        self._register_owned_route("GET", "/v1/baselines", self._baselines)
-        self._register_owned_route("GET", "/v1/plugins", self._plugins)
-        self._register_owned_route("GET", "/v1/runs", self._runs)
-        self._register_owned_route("GET", "/v1/artifacts", self._artifacts_collection)
-        self._register_owned_route("GET", "/v1/templates", self._templates)
-        self._register_owned_route("GET", "/v1/revisions", self._revisions)
-        self._register_owned_route("GET", "/v1/publications", self._publications)
-        self._register_owned_route("GET", "/v1/workspaces", self._workspaces)
-        self._register_owned_route("POST", "/v1/workspaces", self._create_workspace)
-        self._register_owned_route("POST", "/v1/documents/import", self._import_document)
-        self._register_owned_route("POST", "/v1/documents/import/raw", self._import_raw_document)
-        self._register_owned_route("POST", "/v1/documents", self._create_document)
-        self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
-        self._register_owned_route("POST", "/v1/runs", self._create_run)
+        self._register_owned_route("GET", "/v2/graph", self._graph)
+        self._register_owned_route("GET", "/v2/documents", self._documents)
+        self._register_owned_route("GET", "/v2/findings", self._findings)
+        self._register_owned_route("GET", "/v2/openapi.json", lambda _: self._openapi())
+        self._register_owned_route("GET", "/v2/baselines", self._baselines)
+        self._register_owned_route("GET", "/v2/plugins", self._plugins)
+        self._register_owned_route("GET", "/v2/runs", self._runs)
+        self._register_owned_route("GET", "/v2/artifacts", self._artifacts_collection)
+        self._register_owned_route("GET", "/v2/templates", self._templates)
+        self._register_owned_route("GET", "/v2/revisions", self._revisions)
+        self._register_owned_route("GET", "/v2/publications", self._publications)
+        self._register_owned_route("GET", "/v2/workspaces", self._workspaces)
+        self._register_owned_route("POST", "/v2/workspaces", self._create_workspace)
+        self._register_owned_route("POST", "/v2/documents/import", self._import_document)
+        self._register_owned_route("POST", "/v2/documents/import/raw", self._import_raw_document)
+        self._register_owned_route("POST", "/v2/documents", self._create_document)
+        self._register_owned_route("POST", "/v2/runs", self._create_run)
 
     def dispatch(self, request: Request) -> Response:
         with self.observability.span("docs.api.request", {"method": request.method.upper()}):
             parts = request.route_path.strip("/").split("/")
             if (
                 len(parts) >= 3
-                and parts[:2] in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"], ["v1", "artifacts"], ["v1", "revisions"], ["v1", "baselines"])
-                and request.route_path not in {"/v1/documents/import", "/v1/documents/import/raw"}
+                and parts[:2] in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
+                and request.route_path not in {"/v2/documents/import", "/v2/documents/import/raw"}
             ):
                 handler = self._dynamic_handler(request.method, request.route_path)
                 if handler is not None:
@@ -248,39 +252,36 @@ class X20Application:
         method = method.upper()
         path = urlsplit(path).path
         static_scopes = {
-            ("GET", "/v1/workspaces"): "workspaces:read",
-            ("POST", "/v1/workspaces"): "workspaces:write",
-            ("GET", "/v1/graph"): "graph:read",
-            ("GET", "/v1/documents"): "documents:read",
-            ("POST", "/v1/documents"): "documents:write",
-            ("POST", "/v1/documents/import"): "documents:write",
-            ("POST", "/v1/documents/import/raw"): "documents:write",
-            ("GET", "/v1/findings"): "findings:read",
-            ("GET", "/v1/baselines"): "baselines:read",
-            ("POST", "/v1/baselines/promotions"): "baselines:write",
-            ("GET", "/v1/plugins"): "plugins:read",
-            ("GET", "/v1/runs"): "runs:read",
-            ("GET", "/v1/artifacts"): "artifacts:read",
-            ("GET", "/v1/templates"): "documents:read",
-            ("GET", "/v1/revisions"): "documents:read",
-            ("GET", "/v1/publications"): "documents:read",
-            ("POST", "/v1/runs"): "runs:write",
+            ("GET", "/v2/workspaces"): "workspaces:read",
+            ("POST", "/v2/workspaces"): "workspaces:write",
+            ("GET", "/v2/graph"): "graph:read",
+            ("GET", "/v2/documents"): "documents:read",
+            ("POST", "/v2/documents"): "documents:write",
+            ("POST", "/v2/documents/import"): "documents:write",
+            ("POST", "/v2/documents/import/raw"): "documents:write",
+            ("GET", "/v2/findings"): "findings:read",
+            ("GET", "/v2/baselines"): "baselines:read",
+            ("GET", "/v2/plugins"): "plugins:read",
+            ("GET", "/v2/runs"): "runs:read",
+            ("GET", "/v2/artifacts"): "artifacts:read",
+            ("GET", "/v2/templates"): "documents:read",
+            ("GET", "/v2/revisions"): "documents:read",
+            ("GET", "/v2/publications"): "documents:read",
+            ("POST", "/v2/runs"): "runs:write",
         }
         if (method, path) in static_scopes:
             return static_scopes[(method, path)]
         parts = path.strip("/").split("/")
         if any(not part for part in parts):
             return None
-        if parts[:2] == ["v1", "workspaces"]:
+        if parts[:2] == ["v2", "workspaces"]:
             if len(parts) == 3 and method == "GET":
                 return "workspaces:read"
             if len(parts) == 3 and method == "PATCH":
                 return "workspaces:write"
             if len(parts) == 3 and method == "DELETE":
                 return "workspaces:write"
-            if len(parts) == 4 and parts[3] == "select" and method == "POST":
-                return "workspaces:write"
-        if parts[:2] == ["v1", "documents"] and len(parts) in {3, 4, 5}:
+        if parts[:2] == ["v2", "documents"] and len(parts) in {3, 4, 5}:
             if len(parts) == 3 and method == "GET":
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
@@ -305,18 +306,18 @@ class X20Application:
                 return "documents:read"
             if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
                 return "documents:write"
-        if parts[:2] == ["v1", "plugins"] and len(parts) == 3 and method == "GET":
+        if parts[:2] == ["v2", "plugins"] and len(parts) == 3 and method == "GET":
             return "plugins:read"
-        if parts[:2] == ["v1", "artifacts"]:
+        if parts[:2] == ["v2", "artifacts"]:
             if len(parts) == 3 and method == "GET":
                 return "artifacts:read"
             if len(parts) == 4 and parts[3] == "previews" and method == "GET":
                 return "artifacts:read"
-        if parts[:2] == ["v1", "revisions"] and len(parts) == 3 and method == "GET":
+        if parts[:2] == ["v2", "revisions"] and len(parts) == 3 and method == "GET":
             return "documents:read"
-        if parts[:2] == ["v1", "baselines"] and len(parts) == 3 and method == "GET":
+        if parts[:2] == ["v2", "baselines"] and len(parts) == 3 and method == "GET":
             return "baselines:read"
-        if parts[:2] == ["v1", "runs"]:
+        if parts[:2] == ["v2", "runs"]:
             if len(parts) == 3 and method == "GET":
                 return "runs:read"
             if len(parts) == 4:
@@ -352,10 +353,10 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"], ["v1", "artifacts"], ["v1", "revisions"], ["v1", "baselines"])
+            or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
         ):
             return False
-        if parts[:2] == ["v1", "documents"]:
+        if parts[:2] == ["v2", "documents"]:
             return (
                 (len(parts) == 3 and method == "GET")
                 or (len(parts) == 4 and parts[3] == "runs" and method == "GET")
@@ -368,13 +369,13 @@ class X20Application:
                 or (len(parts) == 5 and parts[3] == "sections" and method == "GET")
                 or (len(parts) == 5 and parts[3] == "sections" and method == "PUT")
             )
-        if parts[:2] == ["v1", "plugins"]:
+        if parts[:2] == ["v2", "plugins"]:
             return len(parts) == 3 and method == "GET"
-        if parts[:2] == ["v1", "artifacts"]:
+        if parts[:2] == ["v2", "artifacts"]:
             return (len(parts) == 3 and method == "GET") or (len(parts) == 4 and parts[3] == "previews" and method == "GET")
-        if parts[:2] == ["v1", "revisions"]:
+        if parts[:2] == ["v2", "revisions"]:
             return len(parts) == 3 and method == "GET"
-        if parts[:2] == ["v1", "baselines"]:
+        if parts[:2] == ["v2", "baselines"]:
             return len(parts) == 3 and method == "GET"
         if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
@@ -389,11 +390,11 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"], ["v1", "workspaces"], ["v1", "plugins"], ["v1", "artifacts"], ["v1", "revisions"], ["v1", "baselines"])
+            or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
         ):
             return None
         resource_id = parts[2]
-        if parts[:2] == ["v1", "documents"]:
+        if parts[:2] == ["v2", "documents"]:
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._document(resource_id, request)
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
@@ -415,30 +416,28 @@ class X20Application:
             if len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"}:
                 return lambda request: self._document_classification(resource_id, request)
             return None
-        if parts[:2] == ["v1", "workspaces"]:
+        if parts[:2] == ["v2", "workspaces"]:
             workspace_id = resource_id
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._workspace(workspace_id, request)
             if len(parts) == 3 and method == "PATCH":
                 return lambda request: self._rename_workspace(workspace_id, request)
-            if len(parts) == 4 and parts[3] == "select" and method == "POST":
-                return lambda request: self._select_workspace(workspace_id, request)
             if len(parts) == 3 and method == "DELETE":
                 return lambda request: self._delete_workspace(workspace_id, request)
             return None
-        if parts[:2] == ["v1", "plugins"]:
+        if parts[:2] == ["v2", "plugins"]:
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._plugin(resource_id, request)
             return None
-        if parts[:2] == ["v1", "artifacts"]:
+        if parts[:2] == ["v2", "artifacts"]:
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._artifact(resource_id, request)
             if len(parts) == 4 and parts[3] == "previews" and method == "GET":
                 return lambda request: self._artifact_previews(resource_id, request)
             return None
-        if parts[:2] == ["v1", "revisions"] and len(parts) == 3 and method == "GET":
+        if parts[:2] == ["v2", "revisions"] and len(parts) == 3 and method == "GET":
             return lambda request: self._revision_detail(resource_id, request)
-        if parts[:2] == ["v1", "baselines"] and len(parts) == 3 and method == "GET":
+        if parts[:2] == ["v2", "baselines"] and len(parts) == 3 and method == "GET":
             return lambda request: self._baseline(resource_id, request)
         run_id = resource_id
         if len(parts) == 3 and parts[2] != "runs" and method == "GET":
@@ -523,14 +522,19 @@ class X20Application:
         del request
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
-        return Response.json({"items": self.workspace_registry.list(), "active": _dict(self.workspace_registry.active())})
+        return Response.json({"items": self.workspace_registry.list()})
 
     def _create_workspace(self, request: Request) -> Response:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         data = request.json(object_only=True)
+        if set(data) != {"name"}:
+            raise APIError("invalid_request", "Workspace creation accepts only name; root is server-managed", 400)
+        if self.managed_workspace_root is None:
+            raise APIError("workspace_root_not_configured", "Managed workspace root is not configured", 503)
+        root = self.managed_workspace_root / uuid4().hex
         try:
-            item = self.workspace_registry.create(str(data.get("name", "")), str(data.get("root", "")))
+            item = self.workspace_registry.create(str(data.get("name", "")), root)
         except WorkspaceRegistryError as exc:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             raise APIError(str(exc), str(exc), status) from exc
@@ -662,12 +666,12 @@ class X20Application:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
         try:
-            workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
+            workspace = self.workspace_registry.get(str(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
-        if workspace is None:
-            raise APIError("workspace_not_configured", "Select a workspace before reading document status", 503)
         document_root = Path(str(workspace["root"])) / "documents" / document_id
         if not (document_root / "document.json").is_file():
             raise APIError("document_not_found", "Document not found in workspace", 404)
@@ -730,12 +734,12 @@ class X20Application:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
         try:
-            workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
+            workspace = self.workspace_registry.get(str(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
-        if workspace is None:
-            raise APIError("workspace_not_configured", "Select a workspace before reading document sections", 503)
         return workspace
 
     def _workspace(self, workspace_id: str, request: Request) -> Response:
@@ -744,15 +748,6 @@ class X20Application:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
             return Response.json(self.workspace_registry.get(workspace_id))
-        except WorkspaceRegistryError as exc:
-            raise APIError(str(exc), "Workspace not found", 404) from exc
-
-    def _select_workspace(self, workspace_id: str, request: Request) -> Response:
-        del request
-        if self.workspace_registry is None:
-            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
-        try:
-            return Response.json(self.workspace_registry.select(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
 
@@ -788,15 +783,18 @@ class X20Application:
         if workspace_id:
             items = [
                 item for item in items
-                if _dict(item).get("payload", {}).get("workspace_id") in {workspace_id, None}
+                if _dict(item).get("payload", {}).get("workspace_id") == workspace_id
             ]
         if request.principal is not None:
             items = [item for item in items if self._is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "runs")
 
     def _owned_run(self, run_id: str, request: Request) -> Run:
+        workspace_id = self._workspace_filter(request)
         run = self.run_store.get(run_id)
         if run is None:
+            raise APIError("not_found", "Run not found", 404)
+        if workspace_id and _dict(run).get("payload", {}).get("workspace_id") != workspace_id:
             raise APIError("not_found", "Run not found", 404)
         self._require_owned(run, request, "Run")
         return run
@@ -811,12 +809,13 @@ class X20Application:
     def _is_owned(self, resource: Any, principal: Any) -> bool:
         data = _dict(resource)
         ownership = data.get("payload", data) if isinstance(data, Mapping) else {}
-        if self.workspace_scoped_auth and isinstance(ownership, Mapping):
+        if self.workspace_scoped_auth and isinstance(ownership, Mapping) and (
+            "tenant_id" not in ownership and "organization_id" not in ownership
+        ):
             # Self-hosted deployments have one configured workspace boundary;
             # legacy manifests created before tenant metadata existed remain
             # owned by that authenticated workspace, not anonymous globally.
-            if "tenant_id" not in ownership and "organization_id" not in ownership:
-                return principal.tenant_id is not None and principal.organization_id is not None
+            return principal.tenant_id is not None and principal.organization_id is not None
         return not (
             not isinstance(ownership, Mapping)
             or principal.tenant_id is None
@@ -888,12 +887,12 @@ class X20Application:
         # closed rather than exposing a global graph to a principal.
         if request.principal is not None and self.workspace_registry is None:
             raise APIError("not_found", "Graph not found", 404)
-        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        workspace_id = self._workspace_filter(request)
         graph_store = self.graph_store
         if workspace_id and hasattr(self.graph_store, "for_workspace"):
-            if self.workspace_registry is not None:
-                self.workspace_registry.get(workspace_id)
             graph_store = self.graph_store.for_workspace(workspace_id)
+        elif workspace_id:
+            raise APIError("workspace_graph_unavailable", "Workspace-scoped graph is not configured", 503)
         if not request.query or (set(request.query) == {"workspace_id"}):
             graph = graph_store.get()
             data = _dict(graph)
@@ -988,12 +987,28 @@ class X20Application:
 
     def _documents(self, request: Request) -> Response:
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
-        if workspace_id and self.workspace_registry is not None and hasattr(self.document_store, "list_for_workspace"):
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        if workspace_id and hasattr(self.document_store, "list_for_workspace"):
             try:
                 workspace = self.workspace_registry.get(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             items = self.document_store.list_for_workspace(workspace["root"])
+        elif workspace_id:
+            try:
+                workspace = self.workspace_registry.get(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            documents = Path(str(workspace["root"])) / "documents"
+            items = []
+            for manifest in sorted(documents.glob("*/document.json")):
+                try:
+                    items.append(json.loads(manifest.read_text(encoding="utf-8")))
+                except (OSError, json.JSONDecodeError):
+                    continue
         else:
             items = self.document_store.list() if self.document_store is not None else list(self.documents)
         if request.principal is not None:
@@ -1025,12 +1040,15 @@ class X20Application:
         return self._page(self._filter(items, request.query), request, "artifacts")
 
     def _artifact(self, artifact_id: str, request: Request) -> Response:
+        workspace_id = self._workspace_filter(request)
         artifact = self._store_get(self.artifact_store, artifact_id, "id")
         if artifact is None:
             raise APIError("not_found", "Artifact not found", 404)
         run_id = _dict(artifact).get("run_id")
         if run_id:
             self._owned_run(str(run_id), request)
+        elif workspace_id and _dict(artifact).get("workspace_id") != workspace_id:
+            raise APIError("not_found", "Artifact not found", 404)
         return Response.json(_dict(artifact))
 
     def _artifact_previews(self, artifact_id: str, request: Request) -> Response:
@@ -1043,18 +1061,17 @@ class X20Application:
         return self._page(items, request, "previews")
 
     def _workspace_filter(self, request: Request) -> str | None:
-        """Scope collection endpoints to the selected workspace by default."""
+        """Return explicit workspace scope for collection endpoints."""
         requested = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if self.workspace_registry is not None and not requested:
+            raise APIError("workspace_required", "workspace_id is required", 400)
         if requested and self.workspace_registry is not None:
             try:
                 self.workspace_registry.get(requested)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             return requested
-        if requested or self.workspace_registry is None:
-            return requested
-        active = self.workspace_registry.active()
-        return str(active["id"]) if active is not None else None
+        return requested
 
     def _templates(self, request: Request) -> Response:
         return self._page(self._filter(self._workspace_items(self.template_store, request), request.query), request, "templates")
@@ -1110,6 +1127,8 @@ class X20Application:
     def _document(self, document_id: str, request: Request) -> Response:
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
         document = None
+        if self.workspace_registry is not None and not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
         if workspace_id and self.workspace_registry is not None and hasattr(self.document_store, "list_for_workspace"):
             try:
                 workspace = self.workspace_registry.get(workspace_id)
@@ -1120,6 +1139,19 @@ class X20Application:
                  if str(_dict(item).get("id")) == document_id),
                 None,
             )
+        elif self.workspace_registry is not None:
+            try:
+                workspace = self.workspace_registry.get(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
+            if manifest.is_file():
+                try:
+                    document = json.loads(manifest.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise APIError("document_invalid", "Document manifest is invalid", 422) from exc
+            else:
+                raise APIError("not_found", "Document not found", 404)
         elif self.document_store is not None and hasattr(self.document_store, "get"):
             document = self.document_store.get(document_id)
         if document is None:
@@ -1294,12 +1326,12 @@ class X20Application:
         if self.workspace_registry is None:
             return self.plugin_registry
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
         try:
-            workspace = self.workspace_registry.get(str(workspace_id)) if workspace_id else self.workspace_registry.active()
+            workspace = self.workspace_registry.get(str(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
-        if workspace is None:
-            raise APIError("workspace_not_configured", "Select a workspace before reading plugins", 503)
         try:
             registry = type(self.plugin_registry)()
             registry.discover([Path(str(workspace["root"])) / "plugins"])
@@ -1336,12 +1368,17 @@ class X20Application:
 
     def _workspace_items(self, store: Any, request: Request) -> list[Any]:
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
-        if workspace_id and callable(getattr(store, "list_for_workspace", None)):
+        if self.workspace_registry is not None and not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        if workspace_id and self.workspace_registry is not None:
             try:
-                self.workspace_registry.get(workspace_id) if self.workspace_registry is not None else None
-                return self._store_items(store, "list_for_workspace", workspace_id)
+                self.workspace_registry.get(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
+            list_for_workspace = getattr(store, "list_for_workspace", None)
+            if callable(list_for_workspace):
+                return self._store_items(store, "list_for_workspace", workspace_id)
+            return [item for item in self._store_items(store, "list") if _dict(item).get("workspace_id") == workspace_id]
         return self._store_items(store, "list")
 
     @staticmethod
@@ -1359,7 +1396,7 @@ class X20Application:
 
     @staticmethod
     def _filter(items: Iterable[Any], query: Mapping[str, str]) -> list[Any]:
-        filters = {k: v for k, v in query.items() if k not in {"limit", "cursor"}}
+        filters = {k: v for k, v in query.items() if k not in {"limit", "cursor", "workspace_id"}}
         return [item for item in items if all(str(_dict(item).get(key)) == value for key, value in filters.items())]
 
     @staticmethod

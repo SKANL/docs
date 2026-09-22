@@ -1,6 +1,7 @@
 import io
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -88,9 +89,9 @@ def app(router=None):
 
 def test_application_rejects_preexisting_dynamic_route_collision_at_construction():
     router = Router()
-    router.route("GET", "/v1/runs/r1")(lambda _: Response.json({"owner": "other"}))
+    router.route("GET", "/v2/runs/r1")(lambda _: Response.json({"owner": "other"}))
 
-    with pytest.raises(ValueError, match="GET /v1/runs/r1"):
+    with pytest.raises(ValueError, match="GET /v2/runs/r1"):
         X20Application(
             run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
             graph_store=Graphs(), router=router,
@@ -100,37 +101,95 @@ def test_application_rejects_preexisting_dynamic_route_collision_at_construction
 def test_openapi_endpoint_returns_deterministic_json_without_workspace():
     application = app()
 
-    first = application.dispatch(Request("GET", "/v1/openapi.json"))
-    second = application.dispatch(Request("GET", "/v1/openapi.json"))
+    first = application.dispatch(Request("GET", "/v2/openapi.json"))
+    second = application.dispatch(Request("GET", "/v2/openapi.json"))
 
     assert first.status == second.status == 200
     assert first.headers["content-type"] == "application/json"
     assert first.body == second.body == canonical_json(build_openapi_document()).encode()
+    assert application.dispatch(Request("GET", "/v1/openapi.json")).status == 404
+
+
+def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_path):
+    root = tmp_path / "workspace"
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Workspace", root)
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+    )
+
+    listed = body(application.dispatch(Request("GET", "/v2/workspaces")))
+    assert "active" not in listed
+    assert application.dispatch(Request("POST", f"/v2/workspaces/{workspace['id']}/select")).status == 404
+    assert application.dispatch(Request("GET", "/v1/workspaces")).status == 404
+    assert application.dispatch(Request("GET", "/v2/documents/d1/status")).status == 400
+    assert application.dispatch(Request("GET", f"/v2/documents/d1/status?workspace_id={workspace['id']}")).status == 404
+
+
+def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root(tmp_path):
+    registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
+    managed_root = tmp_path / "managed-workspaces"
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry, managed_workspace_root=managed_root,
+    )
+
+    created = application.dispatch(Request("POST", "/v2/workspaces", body={"name": "Managed"}))
+    outside_root = tmp_path / "attacker-controlled"
+    rejected = application.dispatch(Request("POST", "/v2/workspaces", body={"name": "External", "root": str(outside_root)}))
+
+    assert created.status == 201
+    assert Path(body(created)["root"]).parent == managed_root
+    assert rejected.status == 400
+    assert not outside_root.exists()
+
+
+@pytest.mark.parametrize("method,path", [
+    ("GET", "/v2/documents"), ("GET", "/v2/findings"), ("GET", "/v2/artifacts"),
+    ("GET", "/v2/runs"), ("GET", "/v2/runs/r1"), ("GET", "/v2/baselines"),
+    ("GET", "/v2/baselines/b1"), ("GET", "/v2/revisions"),
+    ("GET", "/v2/revisions/rev1"), ("GET", "/v2/publications"),
+    ("GET", "/v2/templates"), ("GET", "/v2/graph"),
+])
+def test_workspace_content_routes_fail_closed_without_explicit_workspace(tmp_path, method, path):
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry.create("Workspace", tmp_path / "workspace")
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+    )
+
+    response = application.dispatch(Request(method, path))
+
+    assert response.status == 400
+    assert body(response)["error"]["code"] == "workspace_required"
 
 
 def test_contract_census_distinguishes_live_routes_from_openapi_only_operations():
     application = app()
     paths = build_openapi_document()["paths"]
 
-    # These two routes are live runtime capabilities omitted from today's schema.
-    assert application._dynamic_handler("GET", "/v1/runs/r1/findings") is not None
-    assert application._dynamic_handler("GET", "/v1/runs/r1/previews/a1") is not None
-    assert "/v1/runs/{run_id}/findings" not in paths
-    assert "/v1/runs/{run_id}/previews/{name}" not in paths
+    # Runtime-only run capabilities are part of the canonical schema.
+    assert application._dynamic_handler("GET", "/v2/runs/r1/findings") is not None
+    assert application._dynamic_handler("GET", "/v2/runs/r1/previews/a1") is not None
+    assert "/v2/runs/{run_id}/findings" in paths
+    assert "/v2/runs/{run_id}/previews/{name}" in paths
 
-    # These operations are described by OpenAPI but have no matching runtime handler.
-    assert "post" in paths["/v1/baselines"]
-    assert "post" in paths["/v1/baselines/{baseline_id}/promote"]
-    assert application._dynamic_handler("POST", "/v1/baselines") is None
-    assert application._dynamic_handler("POST", "/v1/baselines/b1/promote") is None
+    # Unsupported mutation operations are not part of the public contract.
+    assert "post" not in paths["/v2/baselines"]
+    assert "/v2/baselines/{baseline_id}/promote" not in paths
+    assert "/v2/workspaces/{workspace_id}/select" not in paths
+    assert application._dynamic_handler("POST", "/v2/baselines") is None
+    assert application._dynamic_handler("POST", "/v2/baselines/b1/promote") is None
 
 
 def test_openapi_documents_owned_document_scope_operations():
     paths = build_openapi_document()["paths"]
 
-    assert paths["/v1/documents/{document_id}"]["get"]["x-rbac-scopes"] == ["documents:read"]
-    assert paths["/v1/documents/{document_id}/runs"]["get"]["x-rbac-scopes"] == ["documents:read"]
-    assert paths["/v1/documents/{document_id}/revisions"]["post"]["x-rbac-scopes"] == ["documents:write"]
+    assert paths["/v2/documents/{document_id}"]["get"]["x-rbac-scopes"] == ["documents:read"]
+    assert paths["/v2/documents/{document_id}/runs"]["get"]["x-rbac-scopes"] == ["documents:read"]
+    assert paths["/v2/documents/{document_id}/revisions"]["post"]["x-rbac-scopes"] == ["documents:write"]
 
 
 def section_app(tmp_path, revision_service=None):
@@ -152,10 +211,11 @@ def section_app(tmp_path, revision_service=None):
 def test_document_section_routes_list_get_and_reject_traversal(tmp_path):
     application = section_app(tmp_path)
 
-    listed = application.dispatch(Request("GET", "/v1/documents/d1/sections"))
-    fetched = application.dispatch(Request("GET", "/v1/documents/d1/sections/intro"))
+    workspace_id = application.workspace_registry.list()[0]["id"]
+    listed = application.dispatch(Request("GET", f"/v2/documents/d1/sections?workspace_id={workspace_id}"))
+    fetched = application.dispatch(Request("GET", f"/v2/documents/d1/sections/intro?workspace_id={workspace_id}"))
     with pytest.raises(APIError, match="Invalid section identifier"):
-        application._document_section("d1", "../document", Request("GET", "/v1/documents/d1/sections/../document"))
+        application._document_section("d1", "../document", Request("GET", f"/v2/documents/d1/sections/../document?workspace_id={workspace_id}"))
 
     assert body(listed)["items"] == [{"id": "intro", "filename": "intro.md", "body": "Original"}]
     assert body(fetched)["body"] == "Original"
@@ -169,16 +229,25 @@ def test_put_document_section_uses_configured_revision_service(tmp_path):
             calls.append((document_id, revision))
             return {"diff_path": "sections/_revisions/intro.1.diff"}
 
-    response = section_app(tmp_path, RevisionService()).dispatch(
-        Request("PUT", "/v1/documents/d1/sections/intro", body={"body": "Revised", "request": "Clarify"})
+    application = section_app(tmp_path, RevisionService())
+    workspace_id = application.workspace_registry.list()[0]["id"]
+    response = application.dispatch(
+        Request("PUT", f"/v2/documents/d1/sections/intro?workspace_id={workspace_id}", body={"body": "Revised", "request": "Clarify"})
     )
 
     assert response.status == 200
     assert calls == [("d1", {"target_id": "intro", "new_body": "Revised", "request": "Clarify"})]
 
 
+@pytest.mark.parametrize(("path", "status", "code"), [("/v2/documents", 400, "workspace_required"), ("/v2/documents?workspace_id=w1", 503, "workspace_not_configured"), ("/v2/documents?owner=ada&limit=1", 400, "workspace_required"), ("/v2/documents?limit=nope", 400, "workspace_required")])
+def test_document_collection_fails_closed_without_workspace_registry(path, status, code):
+    with pytest.raises(APIError) as error:
+        app()._documents(Request("GET", path))
+    assert (error.value.status, error.value.code) == (status, code)
+
+
 def test_list_runs_returns_empty_page_from_injected_store():
-    response = app().dispatch(Request("GET", "/v1/runs"))
+    response = app().dispatch(Request("GET", "/v2/runs"))
 
     assert response.status == 200
     assert body(response) == {"items": [], "next_cursor": None}
@@ -188,13 +257,13 @@ def test_list_runs_returns_records_from_injected_store():
     application = app()
     application.run_store.put(Run("run-1", payload={"document_id": "d1"}, created_at="2026-01-01T00:00:00+00:00"))
 
-    response = application.dispatch(Request("GET", "/v1/runs"))
+    response = application.dispatch(Request("GET", "/v2/runs"))
 
     assert response.status == 200
     assert body(response)["items"] == [application.run_store.get("run-1").to_dict()]
 
 
-@pytest.mark.parametrize("path", ["/v1/artifacts", "/v1/templates", "/v1/revisions", "/v1/publications"])
+@pytest.mark.parametrize("path", ["/v2/artifacts", "/v2/templates", "/v2/revisions", "/v2/publications"])
 def test_review_studio_collection_routes_return_empty_pages(path):
     response = app().dispatch(Request("GET", path))
 
@@ -208,20 +277,20 @@ def test_auth_refresh_preserves_unrelated_router_routes():
     def unrelated(_):
         return Response.json({"owner": "other"})
 
-    router.route("GET", "/v1/other")(unrelated)
+    router.route("GET", "/v2/other")(unrelated)
     application = X20Application(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), router=router,
     )
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
-    application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
+    application.dispatch(Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"}))
 
-    assert body(router.dispatch(Request("GET", "/v1/other"))) == {"owner": "other"}
+    assert body(router.dispatch(Request("GET", "/v2/other"))) == {"owner": "other"}
 
 
 def test_post_run_is_idempotent_and_enqueues_once():
     application = app()
-    request = Request("POST", "/v1/runs", body={"id": "r1", "document_id": "d1"}, headers={"Idempotency-Key": "same"})
+    request = Request("POST", "/v2/runs", body={"id": "r1", "document_id": "d1"}, headers={"Idempotency-Key": "same"})
     first = application.dispatch(request)
     second = application.dispatch(request)
     assert first.status == second.status == 201
@@ -242,7 +311,7 @@ def test_post_run_binds_ownership_from_authenticated_principal():
     response = application.dispatch(
         Request(
             "POST",
-            "/v1/runs",
+            "/v2/runs",
             headers={"Authorization": "Bearer ok"},
             body={
                 "id": "r1",
@@ -267,7 +336,7 @@ def test_post_run_rejects_authenticated_principal_without_tenant_identity():
     response = application.dispatch(
         Request(
             "POST",
-            "/v1/runs",
+            "/v2/runs",
             headers={"Authorization": "Bearer ok"},
             body={"id": "r1"},
         )
@@ -293,7 +362,7 @@ def test_post_run_rejects_foreign_document_reference():
     response = application.dispatch(
         Request(
             "POST",
-            "/v1/runs",
+            "/v2/runs",
             headers={"Authorization": "Bearer ok"},
             body={"id": "r1", "document_id": "d1"},
         )
@@ -322,7 +391,7 @@ def test_post_run_does_not_overwrite_foreign_tenant_run_id():
     response = application.dispatch(
         Request(
             "POST",
-            "/v1/runs",
+            "/v2/runs",
             headers={"Authorization": "Bearer ok"},
             body={"id": "shared"},
         )
@@ -337,41 +406,13 @@ def test_post_run_does_not_overwrite_foreign_tenant_run_id():
 def test_endpoints_return_resources_and_cancel():
     application = app()
     application.run_store.put(Run("r1", payload={"document_id": "d1"}))
-    assert body(application.dispatch(Request("GET", "/v1/runs/r1")))["id"] == "r1"
-    assert body(application.dispatch(Request("GET", "/v1/runs/r1/passport")))["entries"] == [{"ok": True}]
-    assert body(application.dispatch(Request("GET", "/v1/runs/r1/artifacts")))["items"][0]["id"] == "a1"
-    assert body(application.dispatch(Request("GET", "/v1/findings?run_id=r1")))["items"][0]["run_id"] == "r1"
-    assert body(application.dispatch(Request("GET", "/v1/graph")))["nodes"] == ["r1", "a1"]
-    assert application.dispatch(Request("POST", "/v1/runs/r1/cancel")).status == 200
+    assert body(application.dispatch(Request("GET", "/v2/runs/r1")))["id"] == "r1"
+    assert body(application.dispatch(Request("GET", "/v2/runs/r1/passport")))["entries"] == [{"ok": True}]
+    assert body(application.dispatch(Request("GET", "/v2/runs/r1/artifacts")))["items"][0]["id"] == "a1"
+    assert body(application.dispatch(Request("GET", "/v2/findings?run_id=r1")))["items"][0]["run_id"] == "r1"
+    assert body(application.dispatch(Request("GET", "/v2/graph")))["nodes"] == ["r1", "a1"]
+    assert application.dispatch(Request("POST", "/v2/runs/r1/cancel")).status == 200
     assert application.run_store.get("r1").status == "cancelled"
-
-
-def test_documents_are_filtered_and_paginated():
-    application = app()
-    response = application.dispatch(Request("GET", "/v1/documents?owner=ada&limit=1"))
-    assert body(response) == {"items": [{"id": "d1", "owner": "ada"}], "next_cursor": None}
-
-
-def test_authenticated_document_list_only_returns_principal_tenant_and_organization():
-    application = app()
-    application.documents = (
-        {"id": "owned", "tenant_id": "tenant-a", "organization_id": "org-a"},
-        {"id": "foreign", "tenant_id": "tenant-b", "organization_id": "org-b"},
-        {"id": "legacy"},
-    )
-    principal = Principal(
-        "user-1",
-        frozenset({"documents:read"}),
-        tenant_id="tenant-a",
-        organization_id="org-a",
-    )
-    application.auth = lambda token: principal if token == "ok" else None
-
-    response = application.dispatch(
-        Request("GET", "/v1/documents", headers={"Authorization": "Bearer ok"})
-    )
-
-    assert [item["id"] for item in body(response)["items"]] == ["owned"]
 
 
 def test_authenticated_global_findings_only_return_owned_run_findings():
@@ -396,7 +437,7 @@ def test_authenticated_global_findings_only_return_owned_run_findings():
     application.auth = lambda token: principal if token == "ok" else None
 
     response = application.dispatch(
-        Request("GET", "/v1/findings", headers={"Authorization": "Bearer ok"})
+        Request("GET", "/v2/findings", headers={"Authorization": "Bearer ok"})
     )
 
     assert response.status == 200
@@ -422,7 +463,7 @@ def test_authenticated_global_findings_only_return_owned_document_findings():
     application.auth = lambda token: principal if token == "ok" else None
 
     response = application.dispatch(
-        Request("GET", "/v1/findings", headers={"Authorization": "Bearer ok"})
+        Request("GET", "/v2/findings", headers={"Authorization": "Bearer ok"})
     )
 
     assert response.status == 200
@@ -440,7 +481,7 @@ def test_authenticated_global_graph_fails_closed_when_graph_is_not_tenant_scoped
     application.auth = lambda token: principal if token == "ok" else None
 
     response = application.dispatch(
-        Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"})
+        Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"})
     )
 
     assert response.status == 404
@@ -452,7 +493,7 @@ def test_wsgi_reaches_dynamic_endpoint():
     application.run_store.put(Run("r1", payload={}))
     environ = {
         "REQUEST_METHOD": "GET",
-        "PATH_INFO": "/v1/runs/r1",
+        "PATH_INFO": "/v2/runs/r1",
         "wsgi.input": io.BytesIO(b""),
         "CONTENT_LENGTH": "0",
     }
@@ -465,9 +506,9 @@ def test_wsgi_reaches_dynamic_endpoint():
 def test_dynamic_requests_use_auth_and_unknown_ids_are_not_found():
     application = app()
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
-    denied = application.dispatch(Request("GET", "/v1/runs/missing"))
+    denied = application.dispatch(Request("GET", "/v2/runs/missing"))
     assert denied.status == 401
-    found = application.dispatch(Request("GET", "/v1/runs/missing", headers={"Authorization": "Bearer ok"}))
+    found = application.dispatch(Request("GET", "/v2/runs/missing", headers={"Authorization": "Bearer ok"}))
     assert found.status == 404
 
 
@@ -492,7 +533,7 @@ def test_authenticated_run_access_hides_foreign_tenant_resource():
     application.auth = lambda token: principal if token == "ok" else None
 
     response = application.dispatch(
-        Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})
+        Request("GET", "/v2/runs/r1", headers={"Authorization": "Bearer ok"})
     )
 
     assert response.status == 404
@@ -501,13 +542,13 @@ def test_authenticated_run_access_hides_foreign_tenant_resource():
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("POST", "/v1/runs/r1/cancel"),
-        ("GET", "/v1/runs/r1/passport"),
-        ("GET", "/v1/runs/r1/artifacts"),
-        ("GET", "/v1/runs/r1/progress"),
-        ("GET", "/v1/runs/r1/findings"),
-        ("GET", "/v1/runs/r1/graph"),
-        ("GET", "/v1/runs/r1/previews/a1"),
+        ("POST", "/v2/runs/r1/cancel"),
+        ("GET", "/v2/runs/r1/passport"),
+        ("GET", "/v2/runs/r1/artifacts"),
+        ("GET", "/v2/runs/r1/progress"),
+        ("GET", "/v2/runs/r1/findings"),
+        ("GET", "/v2/runs/r1/graph"),
+        ("GET", "/v2/runs/r1/previews/a1"),
     ],
 )
 def test_authenticated_run_subresources_hide_foreign_tenant_run(method, path):
@@ -544,9 +585,9 @@ def test_authenticated_run_subresources_hide_foreign_tenant_run(method, path):
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("GET", "/v1/documents/d1"),
-        ("GET", "/v1/documents/d1/runs"),
-        ("POST", "/v1/documents/d1/revisions"),
+        ("GET", "/v2/documents/d1"),
+        ("GET", "/v2/documents/d1/runs"),
+        ("POST", "/v2/documents/d1/revisions"),
     ],
 )
 def test_authenticated_document_resources_hide_foreign_tenant_document(method, path):
@@ -600,7 +641,7 @@ def test_authenticated_document_runs_only_return_owned_runs():
     application.auth = lambda token: principal if token == "ok" else None
 
     response = application.dispatch(
-        Request("GET", "/v1/documents/d1/runs", headers={"Authorization": "Bearer ok"})
+        Request("GET", "/v2/documents/d1/runs", headers={"Authorization": "Bearer ok"})
     )
 
     assert [item["id"] for item in body(response)["items"]] == ["owned"]
@@ -609,9 +650,9 @@ def test_authenticated_document_runs_only_return_owned_runs():
 def test_dynamic_auth_validator_is_resolved_at_request_time():
     application = app()
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
-    assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})).status == 404
+    assert application.dispatch(Request("GET", "/v2/runs/r1", headers={"Authorization": "Bearer ok"})).status == 404
     application.auth = lambda token: Principal("grace", ALL_SCOPES) if token == "new" else None
-    assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer new"})).status == 404
+    assert application.dispatch(Request("GET", "/v2/runs/r1", headers={"Authorization": "Bearer new"})).status == 404
 
 
 def test_dynamic_registration_and_auth_refresh_are_thread_safe():
@@ -630,7 +671,7 @@ def test_dynamic_registration_and_auth_refresh_are_thread_safe():
     def register_dynamic_route():
         try:
             barrier.wait()
-            response = application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"}))
+            response = application.dispatch(Request("GET", "/v2/runs/r1", headers={"Authorization": "Bearer ok"}))
             statuses.append(response.status)
         except Exception as exc:  # pragma: no cover - failures are asserted below
             failures.append(exc)
@@ -638,7 +679,7 @@ def test_dynamic_registration_and_auth_refresh_are_thread_safe():
     def refresh_authentication():
         try:
             barrier.wait()
-            response = application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
+            response = application.dispatch(Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"}))
             statuses.append(response.status)
         except Exception as exc:  # pragma: no cover - failures are asserted below
             failures.append(exc)
@@ -659,39 +700,33 @@ def test_static_endpoints_require_configured_authentication():
     application = app()
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
 
-    for method, path in (("GET", "/v1/graph"), ("GET", "/v1/documents"), ("GET", "/v1/findings"), ("POST", "/v1/runs")):
+    for method, path in (("GET", "/v2/graph"), ("GET", "/v2/documents"), ("GET", "/v2/findings"), ("POST", "/v2/runs")):
         assert application.dispatch(Request(method, path)).status == 401
 
-    assert application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"})).status == 404
+    assert application.dispatch(Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"})).status == 404
 
 
 def test_enabling_auth_after_dynamic_route_creation_requires_authentication():
     application = app()
     application.run_store.put(Run("r1", payload={}))
-    assert application.dispatch(Request("GET", "/v1/runs/r1")).status == 200
+    assert application.dispatch(Request("GET", "/v2/runs/r1")).status == 200
 
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
-    assert application.dispatch(Request("GET", "/v1/runs/r1")).status == 401
-    assert application.dispatch(Request("GET", "/v1/runs/r1", headers={"Authorization": "Bearer ok"})).status == 404
+    assert application.dispatch(Request("GET", "/v2/runs/r1")).status == 401
+    assert application.dispatch(Request("GET", "/v2/runs/r1", headers={"Authorization": "Bearer ok"})).status == 404
 
 
 def test_passport_and_artifacts_return_404_for_unknown_run():
     application = app()
-    assert application.dispatch(Request("GET", "/v1/runs/missing/passport")).status == 404
-    assert application.dispatch(Request("GET", "/v1/runs/missing/artifacts")).status == 404
-
-
-def test_invalid_limit_is_api_error():
-    response = app().dispatch(Request("GET", "/v1/documents?limit=nope"))
-    assert response.status == 400
-    assert body(response)["error"]["code"] == "invalid_pagination"
+    assert application.dispatch(Request("GET", "/v2/runs/missing/passport")).status == 404
+    assert application.dispatch(Request("GET", "/v2/runs/missing/artifacts")).status == 404
 
 
 def test_cancel_is_terminal_idempotent_and_queue_aware():
     application = app()
     application.run_store.put(Run("r1", payload={}))
-    first = application.dispatch(Request("POST", "/v1/runs/r1/cancel"))
-    second = application.dispatch(Request("POST", "/v1/runs/r1/cancel"))
+    first = application.dispatch(Request("POST", "/v2/runs/r1/cancel"))
+    second = application.dispatch(Request("POST", "/v2/runs/r1/cancel"))
     assert first.status == second.status == 200
     assert application.queue.cancel_calls == ["r1"]
 
@@ -700,7 +735,7 @@ def test_cancel_does_not_mutate_a_succeeded_run():
     application = app()
     application.run_store.put(Run("r1", status="succeeded", payload={}))
 
-    response = application.dispatch(Request("POST", "/v1/runs/r1/cancel"))
+    response = application.dispatch(Request("POST", "/v2/runs/r1/cancel"))
 
     assert response.status == 200
     assert application.run_store.get("r1").status == "succeeded"
@@ -711,7 +746,7 @@ def test_retry_assigns_the_new_run_id_to_the_worker_payload():
     application = app()
     application.run_store.put(Run("r1", status="failed", payload={"document_id": "d1"}))
 
-    response = application.dispatch(Request("POST", "/v1/runs/r1/retry"))
+    response = application.dispatch(Request("POST", "/v2/runs/r1/retry"))
 
     assert response.status == 201
     retry_id = body(response)["id"]
@@ -726,7 +761,7 @@ def test_router_owns_idempotency_and_concurrent_replay():
 
     def create():
         responses.append(
-            application.dispatch(Request("POST", "/v1/runs", body={"id": "r1"}, headers={"Idempotency-Key": "k"}))
+            application.dispatch(Request("POST", "/v2/runs", body={"id": "r1"}, headers={"Idempotency-Key": "k"}))
         )
 
     threads = [threading.Thread(target=create) for _ in range(2)]
@@ -736,7 +771,7 @@ def test_router_owns_idempotency_and_concurrent_replay():
         thread.join()
     assert [response.status for response in responses] == [201, 201]
     assert len(application.queue.calls) == 1
-    distinct_request = application.dispatch(Request("POST", "/v1/runs", body={"id": "r2"}, headers={"Idempotency-Key": "k"}))
+    distinct_request = application.dispatch(Request("POST", "/v2/runs", body={"id": "r2"}, headers={"Idempotency-Key": "k"}))
     assert distinct_request.status == 201
 
 
@@ -744,7 +779,7 @@ def test_concurrent_cancellation_is_atomic_and_cancels_once():
     application = app()
     application.run_store.put(Run("r1", payload={}))
     responses = []
-    threads = [threading.Thread(target=lambda: responses.append(application.dispatch(Request("POST", "/v1/runs/r1/cancel")))) for _ in range(2)]
+    threads = [threading.Thread(target=lambda: responses.append(application.dispatch(Request("POST", "/v2/runs/r1/cancel")))) for _ in range(2)]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -793,7 +828,7 @@ def test_application_propagates_authenticated_principal_to_handlers():
         lambda request: (seen.update(principal=request.principal) or Response.json({"ok": True}))
     )
 
-    response = guarded(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
+    response = guarded(Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"}))
 
     assert response.status == 200
     assert seen["principal"] == principal
@@ -803,7 +838,7 @@ def test_application_denies_missing_scope_with_bearer_challenge():
     application = app()
     application.auth = lambda token: Principal("ada", frozenset({"documents:read"})) if token == "ok" else None
 
-    response = application.dispatch(Request("GET", "/v1/graph", headers={"Authorization": "Bearer ok"}))
+    response = application.dispatch(Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"}))
 
     assert response.status == 403
     assert body(response)["error"]["code"] == "insufficient_scope"
@@ -814,7 +849,7 @@ def test_application_bearer_challenge_is_returned_for_missing_credentials():
     application = app()
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
 
-    response = application.dispatch(Request("GET", "/v1/graph"))
+    response = application.dispatch(Request("GET", "/v2/graph"))
 
     assert response.status == 401
     assert response.headers["WWW-Authenticate"] == 'Bearer realm="api"'
@@ -823,25 +858,24 @@ def test_application_bearer_challenge_is_returned_for_missing_credentials():
 @pytest.mark.parametrize(
     ("method", "path", "scope"),
     [
-        ("GET", "/v1/graph", "graph:read"),
-        ("GET", "/v1/documents", "documents:read"),
-        ("GET", "/v1/documents/d1", "documents:read"),
-        ("GET", "/v1/documents/d1/runs", "documents:read"),
-        ("PATCH", "/v1/workspaces/w1", "workspaces:write"),
-        ("POST", "/v1/documents/d1/revisions", "documents:write"),
-        ("GET", "/v1/findings", "findings:read"),
-        ("GET", "/v1/runs/r1", "runs:read"),
-        ("POST", "/v1/runs", "runs:write"),
-        ("POST", "/v1/runs/r1/cancel", "runs:write"),
-        ("GET", "/v1/runs/r1/progress", "runs:read"),
-        ("GET", "/v1/runs/r1/findings", "findings:read"),
-        ("GET", "/v1/runs/r1/graph", "graph:read"),
-        ("GET", "/v1/runs/r1/passport", "passport:read"),
-        ("GET", "/v1/runs/r1/artifacts", "artifacts:read"),
-        ("GET", "/v1/runs/r1/previews/a1", "artifacts:read"),
-        ("GET", "/v1/baselines", "baselines:read"),
-        ("POST", "/v1/baselines/promotions", "baselines:write"),
-        ("GET", "/v1/plugins", "plugins:read"),
+        ("GET", "/v2/graph", "graph:read"),
+        ("GET", "/v2/documents", "documents:read"),
+        ("GET", "/v2/documents/d1", "documents:read"),
+        ("GET", "/v2/documents/d1/runs", "documents:read"),
+        ("PATCH", "/v2/workspaces/w1", "workspaces:write"),
+        ("POST", "/v2/documents/d1/revisions", "documents:write"),
+        ("GET", "/v2/findings", "findings:read"),
+        ("GET", "/v2/runs/r1", "runs:read"),
+        ("POST", "/v2/runs", "runs:write"),
+        ("POST", "/v2/runs/r1/cancel", "runs:write"),
+        ("GET", "/v2/runs/r1/progress", "runs:read"),
+        ("GET", "/v2/runs/r1/findings", "findings:read"),
+        ("GET", "/v2/runs/r1/graph", "graph:read"),
+        ("GET", "/v2/runs/r1/passport", "passport:read"),
+        ("GET", "/v2/runs/r1/artifacts", "artifacts:read"),
+        ("GET", "/v2/runs/r1/previews/a1", "artifacts:read"),
+        ("GET", "/v2/baselines", "baselines:read"),
+        ("GET", "/v2/plugins", "plugins:read"),
     ],
 )
 def test_application_scope_policy_covers_owned_routes(method, path, scope):
@@ -849,10 +883,10 @@ def test_application_scope_policy_covers_owned_routes(method, path, scope):
 
 
 def test_application_scope_policy_does_not_overmatch_dynamic_routes():
-    assert X20Application._required_scope("GET", "/v1/runs/r1/unknown") is None
-    assert X20Application._required_scope("GET", "/v1/documents/d1/revisions") is None
-    assert X20Application._required_scope("GET", "/v1/openapi.json") is None
-    assert app().dispatch(Request("GET", "/v1/runs//passport")).status == 404
+    assert X20Application._required_scope("GET", "/v2/runs/r1/unknown") is None
+    assert X20Application._required_scope("GET", "/v2/documents/d1/revisions") is None
+    assert X20Application._required_scope("GET", "/v2/openapi.json") is None
+    assert app().dispatch(Request("GET", "/v2/runs//passport")).status == 404
 
 
 def test_run_progress_is_exposed_as_sse():
@@ -869,7 +903,7 @@ def test_run_progress_is_exposed_as_sse():
         )
     )
 
-    response = application.dispatch(Request("GET", "/v1/runs/r1/progress"))
+    response = application.dispatch(Request("GET", "/v2/runs/r1/progress"))
 
     assert response.status == 200
     assert response.headers["content-type"] == "text/event-stream"
@@ -883,20 +917,19 @@ def test_run_progress_is_exposed_as_sse():
 @pytest.mark.parametrize(
     ("method", "path"),
     [
-        ("GET", "/v1/documents/d1"),
-        ("GET", "/v1/documents/d1/runs"),
-        ("GET", "/v1/runs/r1/findings"),
-        ("GET", "/v1/runs/r1/graph"),
-        ("GET", "/v1/runs/r1/previews/a1"),
-        ("POST", "/v1/documents/d1/revisions"),
-        ("GET", "/v1/baselines"),
-        ("POST", "/v1/baselines/promotions"),
-        ("GET", "/v1/plugins"),
+        ("GET", "/v2/documents/d1"),
+        ("GET", "/v2/documents/d1/runs"),
+        ("GET", "/v2/runs/r1/findings"),
+        ("GET", "/v2/runs/r1/graph"),
+        ("GET", "/v2/runs/r1/previews/a1"),
+        ("POST", "/v2/documents/d1/revisions"),
+        ("GET", "/v2/baselines"),
+        ("GET", "/v2/plugins"),
     ],
 )
 def test_x20_resource_routes_exist(method, path):
     application = app()
-    if path.startswith("/v1/runs/"):
+    if path.startswith("/v2/runs/"):
         application.run_store.put(Run("r1", payload={"document_id": "d1"}))
     application.dispatch(Request(method, path, body={} if method == "POST" else None))
     assert (method, path) in application._dynamic_routes or (method, path) in application._registered_route_keys()
@@ -905,14 +938,14 @@ def test_x20_resource_routes_exist(method, path):
 def test_x20_resource_routes_are_safe_for_missing_resources():
     application = app()
 
-    assert application.dispatch(Request("GET", "/v1/documents/missing")).status == 404
-    assert application.dispatch(Request("GET", "/v1/documents/missing/runs")).status == 404
-    assert application.dispatch(Request("GET", "/v1/runs/missing/findings")).status == 404
-    assert application.dispatch(Request("GET", "/v1/runs/missing/previews/missing.png")).status == 404
-    assert application.dispatch(Request("POST", "/v1/documents/missing/revisions", body={})).status == 404
-    assert body(application.dispatch(Request("GET", "/v1/baselines"))) == {"items": [], "next_cursor": None}
-    assert application.dispatch(Request("POST", "/v1/baselines/promotions", body={})).status == 400
-    assert body(application.dispatch(Request("GET", "/v1/plugins"))) == {"items": [], "next_cursor": None}
+    assert application.dispatch(Request("GET", "/v2/documents/missing")).status == 404
+    assert application.dispatch(Request("GET", "/v2/documents/missing/runs")).status == 404
+    assert application.dispatch(Request("GET", "/v2/runs/missing/findings")).status == 404
+    assert application.dispatch(Request("GET", "/v2/runs/missing/previews/missing.png")).status == 404
+    assert application.dispatch(Request("POST", "/v2/documents/missing/revisions", body={})).status == 404
+    assert body(application.dispatch(Request("GET", "/v2/baselines"))) == {"items": [], "next_cursor": None}
+    assert application.dispatch(Request("POST", "/v2/baselines/promotions", body={})).status == 404
+    assert body(application.dispatch(Request("GET", "/v2/plugins"))) == {"items": [], "next_cursor": None}
 
 
 class Baselines:
@@ -932,7 +965,7 @@ class Plugins:
         return [{"id": "plugin-b", "version": "2"}, {"id": "plugin-a", "version": "1"}]
 
 
-def test_baselines_plugins_and_promotions_use_existing_store_contracts():
+def test_baselines_and_plugins_use_existing_read_store_contracts():
     baselines = Baselines()
     application = X20Application(
         run_store=Runs(),
@@ -944,20 +977,16 @@ def test_baselines_plugins_and_promotions_use_existing_store_contracts():
         plugin_store=Plugins(),
     )
 
-    baseline_page = application.dispatch(Request("GET", "/v1/baselines?limit=1"))
-    plugin_page = application.dispatch(Request("GET", "/v1/plugins?limit=1"))
-    plugin_detail = application.dispatch(Request("GET", "/v1/plugins/plugin-a"))
-    promoted = application.dispatch(
-        Request("POST", "/v1/baselines/promotions", body={"baseline_id": "base-1", "target": "release"})
-    )
+    baseline_page = application.dispatch(Request("GET", "/v2/baselines?limit=1"))
+    plugin_page = application.dispatch(Request("GET", "/v2/plugins?limit=1"))
+    plugin_detail = application.dispatch(Request("GET", "/v2/plugins/plugin-a"))
 
     assert body(baseline_page)["items"] == [{"id": "base-1", "status": "passed"}]
     assert body(baseline_page)["next_cursor"]
     assert body(plugin_page)["items"] == [{"id": "plugin-b", "version": "2"}]
     assert body(plugin_page)["next_cursor"]
     assert body(plugin_detail) == {"id": "plugin-a", "version": "1"}
-    assert body(promoted) == {"id": "base-1", "promoted": True, "status": "passed"}
-    assert baselines.promotions == [("base-1", {"baseline_id": "base-1", "target": "release"})]
+    assert application.dispatch(Request("POST", "/v2/baselines/promotions", body={})).status == 404
 
 
 class SemanticGraphs:
@@ -1008,14 +1037,14 @@ def semantic_app():
     ],
 )
 def test_graph_query_modes_expose_domain_read_models(query, expected_ids):
-    response = semantic_app().dispatch(Request("GET", f"/v1/graph?{query}"))
+    response = semantic_app().dispatch(Request("GET", f"/v2/graph?{query}"))
 
     assert response.status == 200
     assert [item["id"] for item in body(response)["items"]] == expected_ids
 
 
 def test_graph_query_mode_requires_its_identifier():
-    response = semantic_app().dispatch(Request("GET", "/v1/graph?mode=findings_affected_by_revision"))
+    response = semantic_app().dispatch(Request("GET", "/v2/graph?mode=findings_affected_by_revision"))
 
     assert response.status == 400
     assert body(response)["error"]["code"] == "invalid_graph_query"
@@ -1032,7 +1061,7 @@ def test_graph_query_mode_requires_its_identifier():
     ],
 )
 def test_graph_query_aliases_expose_review_studio_contract(query, expected_ids):
-    response = semantic_app().dispatch(Request("GET", f"/v1/graph?query={query}"))
+    response = semantic_app().dispatch(Request("GET", f"/v2/graph?query={query}"))
 
     assert response.status == 200
     assert [item["id"] for item in body(response)["items"]] == expected_ids
@@ -1043,7 +1072,7 @@ def test_run_graph_preserves_graph_query_aliases():
     application.run_store.put(Run("r1", payload={}))
 
     response = application.dispatch(
-        Request("GET", "/v1/runs/r1/graph?query=findings_affected_by_revision&id=revision-1")
+        Request("GET", "/v2/runs/r1/graph?query=findings_affected_by_revision&id=revision-1")
     )
 
     assert response.status == 200
@@ -1051,7 +1080,7 @@ def test_run_graph_preserves_graph_query_aliases():
 
 
 def test_run_graph_requires_an_existing_run():
-    response = semantic_app().dispatch(Request("GET", "/v1/runs/missing/graph"))
+    response = semantic_app().dispatch(Request("GET", "/v2/runs/missing/graph"))
 
     assert response.status == 404
     assert body(response)["error"]["code"] == "not_found"
@@ -1059,7 +1088,7 @@ def test_run_graph_requires_an_existing_run():
 
 @pytest.mark.parametrize("query", ["findings_affected_by_revision", "artifacts_derived_from_input"])
 def test_graph_query_alias_requires_id(query):
-    response = semantic_app().dispatch(Request("GET", f"/v1/graph?query={query}"))
+    response = semantic_app().dispatch(Request("GET", f"/v2/graph?query={query}"))
 
     assert response.status == 400
     assert body(response)["error"]["code"] == "invalid_graph_query"
@@ -1067,7 +1096,7 @@ def test_graph_query_alias_requires_id(query):
 
 def test_graph_query_rejects_conflicting_query_and_mode():
     response = semantic_app().dispatch(
-        Request("GET", "/v1/graph?query=unused_references&mode=unused_references")
+        Request("GET", "/v2/graph?query=unused_references&mode=unused_references")
     )
 
     assert response.status == 400

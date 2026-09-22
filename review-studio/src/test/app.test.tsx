@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { ReviewApiClient } from "../api/client";
 import type { ReviewApi } from "../api/models";
 
 const apiFrom = (fetch: typeof globalThis.fetch): ReviewApi => {
-  const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch });
+  const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch });
   return {
     listRuns: () => client.listRuns(),
     listFindings: () => client.listFindings(),
@@ -16,6 +16,8 @@ const apiFrom = (fetch: typeof globalThis.fetch): ReviewApi => {
     listRevisions: () => client.listRevisions(), listPublications: () => client.listPublications(),
   };
 };
+
+beforeEach(() => { localStorage.setItem("docs.review.workspace", "workspace-1"); });
 
 afterEach(() => {
   cleanup();
@@ -54,13 +56,13 @@ describe("overview", () => {
     const api = apiFrom(async input => {
       const path = new URL(input.toString()).pathname;
       const payloads: Record<string, unknown> = {
-        "/v1/runs": { items: [
+        "/v2/runs": { items: [
           { id: "run-old", document: "Old case", template: "srs", startedAt: "2026-09-18T10:00:00Z", duration: "1m", status: "passed", findings: 1, artifactCount: 2 },
           { id: "run-new", document: "Current case", template: "srs", startedAt: "2026-09-19T10:00:00Z", duration: "2m", status: "warnings", findings: 2, artifactCount: 3 },
         ] },
-        "/v1/findings": { items: [{ id: "finding-1", title: "Missing locator", severity: "high", status: "warnings", location: "overview", summary: "Needs evidence", owner: "reviewer", updated: "today" }] },
-        "/v1/artifacts": { items: [{ id: "artifact-1", name: "current.docx", kind: "DOCX", size: "10 KB", status: "passed", checksum: "sha256:test" }] },
-        "/v1/runs/run-new/passport": { id: "passport-new", runId: "run-new", verifiedAt: "today", coverage: 84, attestations: 4, sources: 3, claims: 5, unresolved: 1 },
+        "/v2/findings": { items: [{ id: "finding-1", title: "Missing locator", severity: "high", status: "warnings", location: "overview", summary: "Needs evidence", owner: "reviewer", updated: "today" }] },
+        "/v2/artifacts": { items: [{ id: "artifact-1", name: "current.docx", kind: "DOCX", size: "10 KB", status: "passed", checksum: "sha256:test" }] },
+        "/v2/runs/run-new/passport": { id: "passport-new", runId: "run-new", verifiedAt: "today", coverage: 84, attestations: 4, sources: 3, claims: 5, unresolved: 1 },
       };
       return new Response(JSON.stringify(payloads[path]), { headers: { "content-type": "application/json" } });
     });
@@ -78,7 +80,7 @@ describe("overview", () => {
     window.location.hash = "#overview";
     const api = apiFrom(async input => {
       const path = new URL(input.toString()).pathname;
-      if (path === "/v1/runs") return new Response(JSON.stringify({ code: "server_error", message: "Runs unavailable" }), { status: 503 });
+      if (path === "/v2/runs") return new Response(JSON.stringify({ code: "server_error", message: "Runs unavailable" }), { status: 503 });
       return new Response(JSON.stringify({ items: [] }), { headers: { "content-type": "application/json" } });
     });
 
