@@ -4,11 +4,11 @@ Canonical X20 is the contract-driven public surface for preparing sources, build
 
 ## Public surface
 
-Run from the harness checkout or use the installed `docs` entry point. The `document` group is canonical; `source ingest` is the source-specific public boundary; the document group is the only public document command surface.
+Run from the harness checkout or use the installed `docs` entry point. `doc init` creates a workspace and `doc new` is the single document-creation command. The `document` group is the canonical pipeline surface; `source ingest` is the source-specific public boundary.
 
 | Command | Purpose | Writes |
 |---|---|---|
-| `document create <id> [--template T] [--title X] [--json]` | Create and activate a workspace document through the existing document service. | Document source structure. |
+| `doc new <id> [--template T] [--title X]` | Create and activate a workspace document. | Document source structure. |
 | `document release [--format F]... [--policy release] [--json]` | Run the complete verified build/package/publication pipeline for the active document. | Verified X20 artifacts, manifests, provenance, and release package. |
 | `document ingest [--json]` | Convert the active document's inbox sources through the native X20 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
 | `document prepare [--json]` | Run ingest, normalization, and structure compilation in order. | Prepared sources, `sections/v2-structure.json`, and `runs/v2-prepare.json`. |

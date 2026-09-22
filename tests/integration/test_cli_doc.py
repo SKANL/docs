@@ -30,18 +30,11 @@ def test_doc_new_is_the_canonical_creation_path_and_activates(ws):
     assert runner.invoke(app, ["doc", "current"]).output.strip() == "alpha"
 
 
-@pytest.mark.parametrize(
-    ("command", "document_id"),
-    [
-        (["doc", "new", "canonical"], "canonical"),
-        (["document", "create", "legacy"], "legacy"),
-    ],
-)
-def test_document_creation_paths_currently_create_and_activate(ws, command, document_id):
-    result = runner.invoke(app, command)
+def test_document_create_is_not_a_supported_command(ws):
+    result = runner.invoke(app, ["document", "create", "legacy"])
 
-    assert result.exit_code == 0, result.output
-    assert runner.invoke(app, ["doc", "current"]).output.strip() == document_id
+    assert result.exit_code != 0
+    assert "No such command 'create'" in result.output
 
 
 def test_doc_list_marks_active(ws):

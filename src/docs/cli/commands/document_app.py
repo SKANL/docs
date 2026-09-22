@@ -415,36 +415,6 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     shutil.rmtree(backup)
 
 
-def _document_create_payload(deps: Any, doc_id: str, template: str, title: str) -> dict[str, str]:
-    template_name = template or (deps.document_repository.list_templates()[:1] or [""])[0]
-    if not template_name:
-        raise RuntimeError("No templates are available. Create one in templates/.")
-    deps.documents.create(doc_id, template_name, title=title)
-    return {
-        "document_id": doc_id,
-        "path": str((deps.workspace.doc_root(doc_id) / "document.json").resolve()),
-        "template": template_name,
-        "title": title or doc_id,
-    }
-
-
-@document_app.command("create")
-def create(
-    ctx: typer.Context,
-    doc_id: str = typer.Argument(..., metavar="id"),
-    template: str = typer.Option("", "--template"),
-    title: str = typer.Option("", "--title"),
-    json_output: bool = typer.Option(False, "--json"),
-) -> None:
-    """Create a document through the existing workspace document service."""
-    payload = _document_create_payload(ctx.obj["deps"], doc_id, template, title)
-    if json_output:
-        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    else:
-        typer.echo(payload["path"])
-        typer.echo(f"Document `{payload['document_id']}` created from `{payload['template']}` and marked active.")
-
-
 @document_app.command("release")
 def release(
     ctx: typer.Context,

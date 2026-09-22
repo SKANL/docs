@@ -17,9 +17,8 @@ import typer
 
 from docs.cli.main import app
 
-# Frozen snapshot of the command surface before the split (captured via
-# `python -m docs.cli.main --help` and click introspection on main branch
-# tip caccb92, after PR2 merged).
+# Expected command surface after retiring the duplicate creation alias.
+# Document creation is owned by the `doc new` command.
 _EXPECTED_FLAT_COMMANDS = {
     "doctor", "stamp",
     # `guide` added PR10 of agent-agnostic-real-world-usability (item B,
@@ -41,7 +40,7 @@ _EXPECTED_FLAT_COMMANDS = {
 }
 _EXPECTED_GROUPS = {
     "source": {"ingest"},
-    "document": {"create", "release", "status", "build", "verify", "plan", "inspect", "diff", "package", "publish", "ingest", "classify", "prepare", "baseline", "import", "run", "passport", "evidence"},
+    "document": {"release", "status", "build", "verify", "plan", "inspect", "diff", "package", "publish", "ingest", "classify", "prepare", "baseline", "import", "run", "passport", "evidence"},
     # `init`/`validate` added Front G (tasks 11.4-11.5, design.md Decision
     # 1b/1c); `use` added PR3 of agent-agnostic-real-world-usability (item C,
     # built-in template provisioning) -- deliberate surface growth, not drift.
@@ -62,7 +61,7 @@ _EXPECTED_GROUPS = {
 }
 
 
-def test_root_app_command_surface_unchanged_after_split():
+def test_root_app_command_surface_exposes_only_the_canonical_creation_command():
     click_app = typer.main.get_command(app)
     names = set(click_app.commands.keys())
     assert names == _EXPECTED_FLAT_COMMANDS | set(_EXPECTED_GROUPS)

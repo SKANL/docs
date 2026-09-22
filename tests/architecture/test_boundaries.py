@@ -164,9 +164,9 @@ def test_source_pipeline_uses_ports_instead_of_dynamic_infrastructure_imports() 
     assert "MarkdownNormalizerPort" in source
 
 
-def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
-    """The v2 workspace bridge must not regress these stages to implicit gaps."""
-    path = SRC_ROOT / "cli" / "commands" / "document_app.py"
+def test_document_pipeline_owns_native_review_and_release_handlers() -> None:
+    """The application pipeline, not the CLI adapter, owns these stage fallbacks."""
+    path = SRC_ROOT / "application" / "document_pipeline.py"
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     functions = {
@@ -201,8 +201,8 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     assert '"visual_review": _native_visual_review' in source
 
 
-def test_workspace_bridge_keeps_audit_and_verify_fallbacks_callable() -> None:
-    source = (SRC_ROOT / "cli" / "commands" / "document_app.py").read_text(encoding="utf-8")
+def test_document_pipeline_keeps_audit_and_verify_fallbacks_callable() -> None:
+    source = (SRC_ROOT / "application" / "document_pipeline.py").read_text(encoding="utf-8")
     assert 'return lambda: _review_stage(stage)' in source
     assert '"structural-audit": _review_stage_operation("structural-audit", audit)' in source
     assert '"editorial-review": _review_stage_operation("editorial-review", verify)' in source
@@ -212,3 +212,15 @@ def test_v2_composition_does_not_reach_through_current_pipeline_aggregate():
     source = (SRC_ROOT / "cli" / "commands" / "document_app.py").read_text(encoding="utf-8")
     assert "deps.pipeline" not in source
     assert 'v2_native' not in source
+
+
+def test_cli_api_and_worker_share_the_application_composition_boundary() -> None:
+    """Process bootstraps must use the package composition, not local service assembly."""
+    cli_source = (SRC_ROOT / "cli" / "main.py").read_text(encoding="utf-8")
+    api_source = (SRC_ROOT / "sidecar.py").read_text(encoding="utf-8")
+    worker_source = (SRC_ROOT / "workers" / "composition.py").read_text(encoding="utf-8")
+
+    assert "from docs.composition import compose_application" in cli_source
+    assert "from .composition import compose_application" in api_source
+    assert "from docs.composition import ApplicationComposition" in worker_source
+    assert "application: ApplicationComposition" in worker_source

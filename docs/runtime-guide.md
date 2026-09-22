@@ -9,7 +9,7 @@ the migration checklist for every workspace and consumer is green.
 
 | Existing workflow | V2 replacement | Migration note |
 |---|---|---|
-| `docs doc new <id>` | `docs document create <id>` | Same workspace document service; choose template/title explicitly when needed. |
+| `docs doc new <id>` | — | Canonical workspace document creation command; choose template/title explicitly when needed. |
 | `docs document ingest` | `docs document ingest` | Native v2 source report; does not author sections. |
 | `docs document prepare` | `docs document prepare` | Adds normalization and `docs.structure/v2`; source preparation is repeatable. |
 | `docs document build` | `docs document build --format ...` | Writes verified requested formats under `output/current/`, not unverified output. |

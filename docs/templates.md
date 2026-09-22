@@ -11,7 +11,7 @@ uv run docs template init informe-tecnico
 uv run docs template validate informe-tecnico
 ```
 
-A template declares structure, section contracts, context schema, citation policy, page geometry, strict-mode policy, and optional output/template-contract details. `document create` copies the template structure into the document; later template edits do not silently change an existing document's frozen structure. Use the document's `document.json` or create a new document when structure must change.
+A template declares structure, section contracts, context schema, citation policy, page geometry, strict-mode policy, and optional output/template-contract details. `doc new` copies the template structure into the document; later template edits do not silently change an existing document's frozen structure. Use the document's `document.json` or create a new document when structure must change.
 
 Sections remain the only prose authoring slot. The harness may ingest and normalize source material, but it never copies source text into authored section bodies. Use symbolic figure/table markers and let the build number them.
 

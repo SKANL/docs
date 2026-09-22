@@ -5,7 +5,7 @@
     "status": "closest-real-journey",
     "test": "tests/integration/test_v2_end_to_end.py::test_v2_public_journey_creates_prepares_builds_verifies_packages_and_publishes",
     "covered": [
-      "document create",
+      "doc new",
       "source ingest",
       "source prepare",
       "verified v2 build",

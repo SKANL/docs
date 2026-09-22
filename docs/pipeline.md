@@ -5,7 +5,7 @@ Use this page as the operational path. The source stages are explicit commands; 
 ## Quick path
 
 ```bash
-uv run docs document create report --template technical-report-srs
+uv run docs doc new report --template technical-report-srs
 uv run docs document status --json
 uv run docs document ingest --json
 uv run docs document prepare --json
