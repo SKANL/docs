@@ -17,6 +17,7 @@ if not sys.stdout.isatty():
     typer.core.HAS_RICH = False
     typer.main.HAS_RICH = False
 
+from docs.cli._shared import LazyDependencies
 from docs.cli.commands.asset_app import asset_app
 from docs.cli.commands.collection_app import collection_app
 from docs.cli.commands.context_app import context_app
@@ -40,8 +41,9 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Ar
 
 @app.callback()
 def _root(ctx: typer.Context, doc: str = typer.Option("", "--doc", help="ID del documento (por defecto, el activo).")) -> None:
-    # One Deps per invocation; commands read ctx.obj.
-    ctx.obj = {"deps": Deps(), "doc": doc}
+    # One lazy composition per invocation. Bootstrap commands such as
+    # ``doc init`` intentionally run before ordinary workspace validation.
+    ctx.obj = {"deps": LazyDependencies(Deps), "doc": doc}
 
 
 # Flat concern modules: mounted without a `name` so their commands stay

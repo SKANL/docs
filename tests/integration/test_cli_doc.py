@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from docs.cli.main import app
+from docs.domain.workspace_format import write_workspace_marker
 
 runner = CliRunner()
 
@@ -16,6 +17,7 @@ _TEMPLATE = {"type": "tesina", "title": "Tesina", "sections": [], "section_contr
 
 @pytest.fixture
 def ws(tmp_path, monkeypatch):
+    write_workspace_marker(tmp_path)
     (tmp_path / "documents").mkdir()
     templates = tmp_path / "templates"
     templates.mkdir()
@@ -194,6 +196,30 @@ def test_doc_init_rejects_existing_unversioned_workspace_without_mutation(
     assert not (fresh_cwd / "workspace.json").exists()
 
 
+def test_ordinary_command_rejects_unversioned_workspace_without_mutation(
+    fresh_cwd: Path,
+) -> None:
+    (fresh_cwd / "documents").mkdir()
+    (fresh_cwd / "templates").mkdir()
+    sentinel = fresh_cwd / "documents" / "keep.txt"
+    sentinel.write_text("unchanged", encoding="utf-8")
+    before = {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(app, ["doc", "list"])
+
+    assert result.exit_code != 0
+    assert "workspace_marker_missing" in (result.output + str(result.exception or ""))
+    assert {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    } == before
+
+
 def test_doc_init_rejects_content_roots_outside_the_workspace_before_writing(
     fresh_cwd: Path,
 ) -> None:
@@ -223,6 +249,7 @@ _STATUS_TEMPLATE = {
 
 @pytest.fixture
 def status_ws(tmp_path, monkeypatch):
+    write_workspace_marker(tmp_path)
     (tmp_path / "documents").mkdir()
     templates = tmp_path / "templates"
     templates.mkdir()
@@ -323,6 +350,7 @@ _REVISE_TEMPLATE = {
 
 @pytest.fixture
 def revise_ws(tmp_path, monkeypatch):
+    write_workspace_marker(tmp_path)
     (tmp_path / "documents").mkdir()
     templates = tmp_path / "templates"
     templates.mkdir()

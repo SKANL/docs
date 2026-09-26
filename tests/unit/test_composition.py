@@ -1,7 +1,15 @@
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 
+import pytest
+
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
+
+
+def _workspace(root: Path) -> Workspace:
+    write_workspace_marker(root)
+    return Workspace(root=root, documents_dir=root / "documents", templates_dir=root / "templates")
 
 DEPENDENCY_FIELDS = {
     "workspace",
@@ -53,10 +61,40 @@ def test_application_composition_is_a_typed_dataclass_with_the_complete_dependen
     assert all(field.type is not None for field in fields(ApplicationComposition))
 
 
+def test_compose_application_rejects_missing_workspace_marker_before_adapter_construction(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from docs import composition as composition_module
+
+    workspace = Workspace(root=tmp_path, documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+    adapter_constructed = False
+
+    def adapter_init(self, *args, **kwargs):
+        nonlocal adapter_constructed
+        adapter_constructed = True
+
+    monkeypatch.setattr(composition_module.JsonDocumentRepository, "__init__", adapter_init)
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        composition_module.compose_application(workspace)
+
+    assert adapter_constructed is False
+
+
+def test_compose_application_rejects_malformed_workspace_marker(tmp_path: Path) -> None:
+    from docs.composition import compose_application
+
+    (tmp_path / "workspace.json").write_text("not-json", encoding="utf-8")
+    workspace = Workspace(root=tmp_path, documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_malformed"):
+        compose_application(workspace)
+
+
 def test_compose_application_preserves_the_cli_dependency_surface(tmp_path: Path) -> None:
     from docs.composition import compose_application
 
-    workspace = Workspace(tmp_path / "documents", tmp_path / "templates")
+    workspace = _workspace(tmp_path)
     observability = object()
 
     composition = compose_application(workspace=workspace, observability=observability)
@@ -71,7 +109,7 @@ def test_compose_application_builds_the_source_pipeline_from_its_shared_dependen
     from docs.application.source_pipeline import SourcePipeline
     from docs.composition import compose_application
 
-    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+    composition = compose_application(_workspace(tmp_path))
 
     source_pipeline = composition.create_source_pipeline()
 
@@ -83,7 +121,7 @@ def test_application_composition_owns_stage_provider_registration(tmp_path: Path
     from docs.application.stage_provider import StageProvider
     from docs.composition import compose_application
 
-    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+    composition = compose_application(_workspace(tmp_path))
     visual_service = object()
     composition.generate_visuals_service = visual_service
 
@@ -107,7 +145,7 @@ def test_compose_application_disables_visual_generation_without_rasterizer(monke
 
     monkeypatch.setattr(ResvgRasterizerAdapter, "__init__", fail_to_construct)
 
-    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+    composition = compose_application(_workspace(tmp_path))
 
     assert composition.svg_rasterizer is None
     assert composition.generate_visuals_service is None
@@ -121,7 +159,7 @@ def test_application_composition_builds_document_pipeline_with_shared_observabil
 
     observability = object()
     composition = compose_application(
-        Workspace(tmp_path / "documents", tmp_path / "templates"), observability=observability
+        _workspace(tmp_path), observability=observability
     )
     def publish() -> None:
         return None
@@ -146,7 +184,7 @@ def test_application_composition_builds_document_pipeline_with_shared_observabil
 def test_compose_application_resolves_default_workspace_and_observability(monkeypatch, tmp_path: Path) -> None:
     from docs import composition as composition_module
 
-    workspace = Workspace(tmp_path / "documents", tmp_path / "templates")
+    workspace = _workspace(tmp_path)
     observability = object()
     monkeypatch.setattr(composition_module, "build_workspace", lambda: workspace)
     monkeypatch.setattr(composition_module, "create_observability_from_env", lambda: observability)
@@ -160,6 +198,6 @@ def test_compose_application_resolves_default_workspace_and_observability(monkey
 def test_application_composition_owns_document_pipeline_use_case(tmp_path: Path) -> None:
     from docs.composition import compose_application
 
-    composition = compose_application(Workspace(tmp_path / "documents", tmp_path / "templates"))
+    composition = compose_application(_workspace(tmp_path))
 
     assert callable(composition.create_document_pipeline_service)

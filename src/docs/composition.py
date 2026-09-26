@@ -44,6 +44,7 @@ from docs.domain.ports.source_ingest_port import SourceIngestPort
 from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
+from docs.domain.workspace_format import validate_workspace_layout, validate_workspace_marker
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
@@ -114,11 +115,19 @@ def build_workspace() -> Workspace:
         active = registry.active()
         if active is not None:
             root = Path(str(active["root"])).resolve()
-            return Workspace(documents_dir=root / "documents", templates_dir=root / "templates")
+            return Workspace(root=root, documents_dir=root / "documents", templates_dir=root / "templates")
     documents_dir, templates_dir = resolve_workspace_roots(
         config, os.environ, (Path("documents"), Path("templates"))
     )
-    return Workspace(documents_dir=documents_dir, templates_dir=templates_dir)
+    root = Path.cwd()
+    resolved_documents = documents_dir.expanduser().resolve()
+    resolved_templates = templates_dir.expanduser().resolve()
+    if config is None and resolved_documents.parent == resolved_templates.parent:
+        # Explicit environment roots can select a canonical sibling workspace
+        # without changing cwd.  This is exact-parent identity, never a broad
+        # common-ancestor inference for legacy split roots.
+        root = resolved_documents.parent
+    return Workspace(root=root, documents_dir=documents_dir, templates_dir=templates_dir)
 
 
 logger = logging.getLogger(__name__)
@@ -183,6 +192,12 @@ class ApplicationComposition:
         observability: ObservabilityPort | None = None,
     ) -> None:
         self.workspace = workspace or build_workspace()
+        validate_workspace_layout(
+            self.workspace.root,
+            self.workspace.documents_dir,
+            self.workspace.templates_dir,
+        )
+        validate_workspace_marker(self.workspace.root)
         self.observability: ObservabilityPort = observability or create_observability_from_env()
         document_repo = JsonDocumentRepository(self.workspace)
         evidence_repo = JsonEvidenceRepository()
