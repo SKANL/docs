@@ -1,16 +1,16 @@
 # Persisted workspace formats: census and schema decision gate
 
-**Status: fixture-backed characterization of the current unversioned writer output; schema and migration scope unapproved.** This record distinguishes user-authored workspace content from configuration/registry and runtime state. It does not select a canonical format version or authorize format changes.
+**Status: approved decision contract, backed by a characterization fixture for the current unversioned writer output.** This record selects the canonical root, marker, migration boundary, exclusions, artifact policy, and recovery semantics. Runtime implementation remains pending.
 
-## Decision requested
+## Decision
 
-Approve a supported-source inventory and scope boundary before selecting the canonical workspace schema. Recommendation: author-editable content is versioned and migrated explicitly; workspace registry/root configuration remains outside that schema; transactional X20 history is not migrated by default. Exact historical versions are included only when source, tests, fixtures, or a supplied workspace establish them.
+Use one registered workspace root. Its `documents/` and `templates/` directories must be descendants of that root. The canonical discriminator is the exact root file `workspace.json` containing only `{"schema":"docs.workspace/v1"}`; unknown fields and unsupported values are rejected. The only initial legacy input is the current unversioned layout proved by the checked-in fixture. Migration publishes to a new destination and never rewrites or selects the source implicitly.
 
 ## Persisted representations found
 
 | Representation | Classification and current shape | Reader / writer evidence | Existing test evidence | Version evidence / migration note |
 |---|---|---|---|---|
-| `docs.config.json` in invocation cwd | Root-level CLI config mapping `documents_dir`, `templates_dir`; not a workspace document. Env vars and cwd defaults also resolve roots. | `src/docs/domain/workspace_config.py`; CLI config-resolution path. | `tests/unit/domain/test_workspace_config.py`. | No workspace-format marker established. Keep out of document-content migration; define its own handling only if scope explicitly includes it. |
+| `docs.config.json` in invocation cwd | Root-level CLI config mapping `documents_dir`, `templates_dir`; not a workspace document. Env vars and cwd defaults also resolve roots. | `src/docs/domain/workspace_config.py`; CLI config-resolution path. | `tests/unit/domain/test_workspace_config.py`. | No workspace-format marker established. Excluded from workspace-content migration and unchanged by it. |
 | `~/.docs/workspaces.json` (or `DOCS_WORKSPACE_REGISTRY`) | Registry object with `active` and `workspaces[]` records (`id`, `name`, absolute `root`); stores locations and active selection, not authored document body. | `src/docs/application/workspaces.py`: `_read`, `_write`, list/create/select/rename/delete; temp file + replace. | `tests/unit/application/test_workspaces.py`. | No explicit format version check observed in registry reader. Separate registry migration from workspace-root migration. |
 | Workspace directory layout | `documents/`, `templates/`, `assets/`, `runs/`, `artifacts/`, `baselines/`, `passports/`, `.docs/`; builtin templates may seed `templates/*.json`. | `WorkspaceRegistry._ensure_layout`, `_seed_builtin_templates`; `src/docs/domain/workspace.py` defines documents/templates paths and document/assets helpers. | `tests/unit/domain/test_workspace.py`, `tests/unit/application/test_workspaces.py`. | Layout existence is not itself proof of a versioned format. Test and inspect real samples before classifying historical variants. |
 | `documents/<id>/document.json` | Document configuration and metadata consumed by CLI/API/pipeline; structure may be snapshotted from a template at document creation. | `src/docs/infrastructure/persistence/json_repository.py` and document CLI/application paths. | `tests/integration/test_json_repository.py`, document command tests. | No required canonical workspace version marker confirmed in this census. Do not conflate per-document schema with workspace version. |
@@ -19,13 +19,13 @@ Approve a supported-source inventory and scope boundary before selecting the can
 | Section `.md` files | Markdown prose below managed JSON front matter; metadata includes body hash, author/model and scaffold/review metadata. | `src/docs/domain/sections.py`; section repository and stamp/review/build-section paths. | `tests/unit/infrastructure/test_json_section_repository.py`, section/build/review tests. | Front matter is embedded content metadata, not demonstrated to be a workspace-wide version marker. Migration must preserve body bytes and managed evidence or explicitly report conversion. |
 | Assets and imported sources | Binary assets plus inbox/source files; imported content creates staged Markdown and assets. Source identity/digests and bindings may be stored separately. | `filesystem_asset_repository.py`, `application/imports.py`, ingest adapters and artifact writers. | `tests/unit/infrastructure/test_filesystem_asset_repository.py`, `tests/unit/application/test_imports.py`, `test_docx_import.py`. | Do not migrate generated imports as if they replace original sources. Need exact reference/digest census before conversion. |
 | Generated manifests, provenance, build/review artifacts | JSON/Markdown manifests, append-only provenance, generated document outputs and QA. Some are rebuildable; some are audit evidence. | `src/docs/application/provenance.py`, build-manifest/pipeline services, evidence repository and command-specific readers/writers. | Provenance/pipeline/manifest tests; exact set remains incomplete. | Classify each artifact as generated, reproducible, or evidence-bearing before excluding it. Never discard provenance merely because output is regenerable. |
-| X20/sidecar operational state | Runs, queue, passport, artifacts/blob metadata, idempotency, and other runtime records; can use filesystem JSON and/or SQLite depending composition. | `src/docs/sidecar.py`; `src/docs/infrastructure/persistence/x20.py`, `sqlite_x20.py`, `idempotency.py`; production composition. | `tests/unit/infrastructure/test_x20_storage.py`, sidecar and API/worker tests. | Operational transactional state is separate from authored workspace content. Recommended exclusion from default content migration; specify backup/retention separately. |
+| X20/sidecar operational state | Runs, queue, passport, artifacts/blob metadata, idempotency, and other runtime records; can use filesystem JSON and/or SQLite depending composition. | `src/docs/sidecar.py`; `src/docs/infrastructure/persistence/x20.py`, `sqlite_x20.py`, `idempotency.py`; production composition. | `tests/unit/infrastructure/test_x20_storage.py`, sidecar and API/worker tests. | Operational transactional state is separate from authored workspace content and excluded from this migration. |
 
-## Initial schema recommendation (not a decision)
+## Canonical schema summary
 
-Adopt exactly one required workspace-format marker in a clearly named workspace manifest at the workspace root, with one canonical version value. Validate it before ordinary read/write operations; runtime should reject missing, malformed, or unsupported values with an actionable typed error. Keep per-document/template/content schemas independently validated where necessary. Put legacy interpretation only in an explicit offline migration command. Do not choose the marker filename/field or version number until maintainer approves scope and inventory completeness.
+Require exactly one workspace-format marker at `<workspace-root>/workspace.json`, with the exact JSON object `{"schema":"docs.workspace/v1"}`. Reject a non-object, a missing or non-string `schema`, an unsupported value, duplicate keys, and every unknown field before any ordinary workspace read or write. Keep per-document/template/content schemas independently validated; their local `schema` values are not workspace versions. Legacy interpretation exists only in the offline migration command.
 
-Migration should preserve author-edited prose, template definitions, original sources/assets, references, hashes, authorship, and provenance; stage into a separate destination, validate before publication, refuse ambiguous/unsupported data, and retain recoverable source. Idempotent recognition of the already-canonical version is recommended. These are plan constraints, not verified implemented guarantees.
+Migration preserves author-edited prose, template definitions, original sources/assets, behavior-affecting authoring state, references, hashes, authorship, revision history, and provenance. It stages beside a separately selected destination, validates before atomic publication, refuses ambiguous/unsupported data, and leaves the source untouched. Already-canonical input is recognized idempotently. These are implementation requirements, not claims about current runtime behavior.
 
 ## Concrete persistence trace (examined symbols)
 
@@ -47,7 +47,7 @@ The following narrows broad categories to concrete records and paths found in so
 | `documents/<doc-id>/inbox/<sha12>-<safe-filename>` source imports | `SourceImportService.import_bytes` and ingest pipeline; import metadata consumed on prepare | atomic temp + replace bytes, with content SHA-256, MIME, size, dedup flag; API also writes sibling `.import.json` with template/title | `tests/unit/application/test_imports.py`, `tests/unit/application/test_docx_import.py`, current-unversioned fixture | Original source bytes are user input; deterministic name uses hash prefix. The fixture pins a binary-safe original, sidecar, source manifest, path, digest, and import ID. |
 | `inbox/intake-report.md`, `_classification-queue.json`, `sections/ingested/*.md`, `figure-bindings.json`, `visual-specs.json` | Sidecar/API/pipeline and corresponding ingest/visual stages | Ingest/classification and generated visual-binding stages; visual spec is user authored | Import/ingest/classification/visual tests exist but full mapping not audited | Mixed authored source specs and generated/advisory derivatives. Queue role confirmation, source hashes, and bindings can influence behavior; do not discard without exact dependency trace. |
 | Build manifest JSON, provenance ledger, evidence manifests, revision log/diffs | `BuildManifestService`, `ProvenanceLedger`, `JsonEvidenceRepository.read_manifest`, revision/review/status consumers | `write_manifest`, `record_attestation`, evidence writer; revision service appends logs and snapshots diffs | `tests/unit/application/test_build_manifest_service.py`, `tests/unit/application/test_provenance.py`, `tests/unit/domain/test_build_manifest.py`, `tests/unit/domain/test_provenance.py` | Provenance/evidence-bearing state even when associated output can be rebuilt. More concrete filenames/retention links need further search. |
-| Workspace runtime roots `runs/`, `artifacts/`, `passports/`, `.docs/`; SQLite X20 and idempotency stores | Sidecar filesystem stores in `src/docs/sidecar.py`; SQLite adapters `src/docs/infrastructure/persistence/x20.py`, `sqlite_x20.py`, `idempotency.py` | Sidecar JSON writers, SQLite store/queue writes | `tests/unit/infrastructure/test_x20_storage.py`, sidecar tests and API/worker tests | Operational/transient transactional state. Recommended outside author-content migration; explicit backup/retention/export boundary needed. |
+| Workspace runtime roots `runs/`, `artifacts/`, `passports/`, `.docs/`; SQLite X20 and idempotency stores | Sidecar filesystem stores in `src/docs/sidecar.py`; SQLite adapters `src/docs/infrastructure/persistence/x20.py`, `sqlite_x20.py`, `idempotency.py` | Sidecar JSON writers, SQLite store/queue writes | `tests/unit/infrastructure/test_x20_storage.py`, sidecar tests and API/worker tests | Operational/transient transactional state. Excluded and unchanged; any export needs a separate contract. |
 
 ### Format and fixture evidence limit
 
@@ -92,54 +92,58 @@ This is a bounded audit of current checked-in tests, examined reader code, and o
 
 #### Migration safety consequence
 
-Because `JsonDocumentRepository.load_registry` currently swallows `ValueError` and returns a fresh empty `Registry`, a migration tool must snapshot/backup the source registry bytes before parsing or normalization. On invalid JSON, it should fail closed and report the original file path/hash; it must not classify the fallback empty registry as valid source data or publish a converted empty registry. This is a recommendation for the pending migration design, not current behavior.
+Because `JsonDocumentRepository.load_registry` currently swallows `ValueError` and returns a fresh empty `Registry`, migration must inventory and hash the raw source registry bytes before parsing or normalization. On invalid JSON, it fails closed and reports the original file path/hash; it must not classify the fallback empty registry as valid source data or publish a converted empty registry. The source itself remains the recovery copy because migration never mutates it.
 
-## Scope boundary recommendation
+## Approved scope boundary
 
-| Include by default | Exclude or separately decide |
+| Include in canonical content migration | Exclude from this migration |
 |---|---|
-| Workspace root manifest and author-editable document/template/context/section records; references to assets and source identity. | `docs.config.json` and global registry, which resolve/select workspace roots rather than define content. |
-| User assets and source files only to the extent required to preserve reachable content and identity. | Operational queue/run/SQLite history by default; opt-in backup/export policy needed if users require it. |
-| Provenance/evidence required to substantiate authorship or reproducibility. | Rebuildable generated outputs only after dependency/reference audit proves safe to regenerate. |
+| The new root manifest; author-editable document, template, context, and section records; references, bindings, confirmed classifications, and source identity. | Invocation-cwd `docs.config.json` and the global workspace registry (`~/.docs/workspaces.json` or `DOCS_WORKSPACE_REGISTRY`), because they locate/select roots rather than define workspace content. |
+| Original inbox sources and user assets, including exact bytes, filenames, and content hashes. | X20/sidecar operational state: `runs/`, `artifacts/`, `passports/`, `.docs/`, queues, leases, idempotency data, and filesystem or SQLite transactional history. |
+| Evidence-bearing provenance, revision logs/diffs, authorship metadata, and manifests needed to verify lineage or reproducibility. | Rebuildable delivery artifacts: rendered outputs, packages, QA previews, caches, and temporary/scratch files. They are regenerated after cutover. |
+| Behavior-affecting authoring support files, including `_requests.md`, `visual-specs.json`, figure bindings/catalogs, classification decisions, and ingested Markdown. Preserve them rather than guessing whether a user edited generated-looking content. | Any unknown top-level record. Migration fails closed and reports its path; it never silently copies an unclassified record into canonical v1. |
 
-## Proposed canonical workspace v1 and cutover
+## Canonical workspace v1 and cutover
 
-> **UNAPPROVED PROPOSAL — maintainer decision and scope approval required.** No older historical workspace format is repo-proven. The current unversioned source class now has a checked-in characterization fixture. This proposal names one target format and that one evidenced source class; it does not claim current runtime support or authorize implementation.
+> **Approved contract; implementation pending.** No older historical workspace format is repo-proven. The current unversioned source class has a checked-in characterization fixture and is the only initial migration input.
 
-### Proposed v1 contract
+### v1 contract
 
-| Decision | Recommendation | Basis / limit |
+| Decision | Contract | Basis / limit |
 |---|---|---|
-| Root marker | Require `<workspace-root>/workspace.json` with a required constant field: `{"schema":"docs.workspace/v1"}`. Treat it as the sole workspace-content format discriminator; future schema changes require a new supported version and explicit migration. | `WorkspaceRegistry._ensure_layout` currently creates workspace directories but no workspace manifest; therefore today's initialized layout is unversioned. Exact marker filename/value are recommendations, not existing conventions. |
-| Distinct configuration boundaries | Do not put workspace format into cwd `docs.config.json` or `~/.docs/workspaces.json` / `DOCS_WORKSPACE_REGISTRY`. Those identify `documents_dir`/`templates_dir` or map active workspace IDs to roots; neither should be the content-version authority. | `src/docs/domain/workspace_config.py`, `src/docs/application/workspaces.py`, `src/docs/domain/workspace.py`. |
-| Validation | On every workspace resolution/use, parse `workspace.json` strictly, require an object with exact supported `schema`, reject missing/malformed/unknown versions with an actionable `UnsupportedWorkspaceFormat`-style error before any workspace read or write. Validate individual document/template records with their own schemas; do not reinterpret local `schema:1`/`schema:3` values as workspace versions. | Current content readers accept unversioned roots; `Registry` defaults schema 1; section frontmatter schema 3 and X20 schema are distinct record contracts. |
-| Source cutover | Support explicit offline migration only for the **currently emitted unversioned layout** evidenced by `WorkspaceRegistry._ensure_layout`, the present document/template/context/section/import/asset/provenance writers, and `tests/fixtures/workspaces/legacy/current-unversioned/`. Migration adds the root marker and validates without inventing historic versions. Do not claim schema-1/schema-2 sections, older document records, or X20 `docs.x20/v2` as migratable sources; their appearance is not evidenced. | The checked-in fixture proves one current source class only; `docs.x20/v2` appears solely in a rejection test. Additional historical source claims still require supplied evidence and fixtures. |
-| Failure and recovery | Before parsing/normalizing, copy an immutable byte-preserving snapshot of the source tree and record a manifest of paths, file types, modes where supported, and hashes. Parse/validate into a sibling temporary destination, fail closed on malformed registry/content, ambiguous paths, symlinks/traversal, or unsupported records, and publish only after full validation by atomic rename/swap to a **separate destination**. Never delete source, overwrite an existing destination implicitly, or leave a partially published target. | `JsonDocumentRepository.load_registry` currently catches `ValueError` and returns an empty `Registry`; this silent fallback can turn a malformed registry into a later persisted empty one. Migration must inspect/backup raw bytes before calling that reader and report failure, not accept its fallback. |
+| Root model | A registered workspace has one canonical root. `documents/` and `templates/` must resolve as descendants of that root. Independently configured or split roots are recognized only when the migration command receives an explicit `--legacy-config <docs.config.json>` source selector; they are retired from ordinary runtime after cutover. The config locates legacy inputs but is not copied or modified. | A single canonical containment boundary makes validation, traversal protection, atomic destination publication, and recovery deterministic while preserving an explicit exit from the evidenced split-root mode. |
+| Root marker | Require `<workspace-root>/workspace.json` containing exactly `{"schema":"docs.workspace/v1"}`. It is the sole workspace-content discriminator. Future formats require a new exact value and explicit migration. | Today's initialized layout has no root manifest, so it is the evidenced unversioned source. |
+| Strict validation | Decode UTF-8 JSON with duplicate-key detection. Require one object with exactly one key, `schema`, whose value is exactly `docs.workspace/v1`. Reject extra fields, missing/malformed markers, and unknown/future versions with a typed actionable error before any ordinary read or write. | Closed validation prevents silently accepting semantics that this runtime does not understand. Local record schema numbers remain independent contracts. |
+| Configuration boundary | Do not read a workspace version from or write migration state to `docs.config.json` or the global workspace registry. Migration never edits either file and never changes the active workspace. | These records locate/select roots; they are not workspace content or cutover authority. |
+| Supported legacy source | Accept only the currently emitted unversioned layout evidenced by current writers and `tests/fixtures/workspaces/legacy/current-unversioned/`. Do not claim older section/document variants or X20 schemas as supported migration inputs without new evidence and fixtures. | The checked-in fixture proves one source class only. |
+| Publication and cutover | Migration accepts exactly one source selector: `--source <root>` for a rooted legacy/canonical workspace or `--legacy-config <docs.config.json>` for explicitly located split roots. It also requires `--destination <destination>` and supports `[--dry-run|--apply] [--json]`, defaulting to dry-run. Apply writes only to a sibling scratch path of the destination, validates the complete canonical tree, then atomically renames it to a destination that must not already exist. Every selected source path remains byte-for-byte untouched. Selecting the destination in the registry or changing external configuration is a separate, explicit cutover action. | Separate-destination publication removes the unsafe contradiction between preserving the source and replacing it in place. |
+| Failure and recovery | Inventory and hash the source before conversion. Fail closed on malformed registry/content, unknown records, ambiguous paths, symlinks/traversal, changed source evidence, or unsupported filesystem publication. Before atomic publication, remove scratch on failure when safe; if cleanup fails, report the exact scratch path and never treat it as a workspace. After publication but before cutover, recovery is deletion of the unselected destination or a corrected rerun to another empty destination. After cutover, rollback explicitly reselects the unchanged source; migration never performs rollback or deletion implicitly. | The unchanged source is the recoverable original, so an additional in-place backup/swap is unnecessary. Raw registry bytes are inspected directly; the current reset-to-empty fallback is never used for classification. |
 
-### Proposed migration scope
+### Migration preservation rules
 
-| Preserve/copy into canonical v1 | Exclude from default content migration or decide separately |
+| Preserve/copy into canonical v1 | Exclude or reject |
 |---|---|
-| User-authored `document.json` fields/structure, template JSON, context topic text and request notes, section Markdown bytes/front matter, original inbox sources, assets and references/bindings, and provenance/revision evidence needed to retain authorship or lineage. | Rebuildable outputs and previews only when an explicit dependency/reference audit proves they are derivable and not the sole evidence; otherwise preserve and report them. Never silently delete unknown files. |
-| Invalid/unclosed front matter is opaque source content: preserve byte-for-byte in the snapshot and target if the canonical validator can carry it safely; otherwise fail and report exact path/hash. Malformed JSON registries similarly cause a fail-closed report, not reset-to-empty. | `docs.config.json` and global workspace registry are separate root-location/selection configuration, not workspace content. Define independent backup/migration only if approved. |
-| Reachable user assets and originals remain present with filenames/content hashes; migration validates references and reports unresolved ones without guessing. | X20 queue/run/SQLite operational state (runs, artifacts, passports, transactional/idempotency data) remains excluded by default. Specify separate backup/export if required; never mix mutable operational DBs into content migration implicitly. |
+| User-authored `document.json` fields and frozen structure; template JSON; context topic text and request notes; section Markdown/front matter; original inbox sources; assets; references/bindings; confirmed classifications; visual specs; ingested authoring material; revision and provenance evidence. | Rebuildable rendered output, packages, QA previews, caches, and scratch files are omitted and reported in the migration plan. Their absence must not break a preserved reference. |
+| Preserve bytes and content hashes whenever no canonical normalization is required. Every intentional transformation is named in dry-run output and verified after staging. | `docs.config.json`, the global workspace registry, and all X20/sidecar operational state are out of scope and unchanged. Separate tools/plans may export them; this migration never does. |
+| Invalid/unclosed front matter may be copied opaquely only when canonical validation can retain it without interpreting it; otherwise fail with exact path/hash. Malformed JSON registries always fail closed. | Unknown records and unresolved references are rejected with path/hash evidence. There is no copy-unknown or force/replace escape hatch in v1 migration. |
 
-### Unresolved maintainer decisions
+### Decisions closed by this contract
 
-- Approve or replace `workspace.json` and exact `schema: "docs.workspace/v1"` marker; decide unknown-field policy and whether registry IDs are represented in workspace content.
-- Confirm that the only initial migration input is the current unversioned layout and approve `tests/fixtures/workspaces/legacy/current-unversioned/` as its representative source. Provide any additional real compatibility cases before claiming older formats.
-- Decide whether global config/registry migration or operational X20 backup/export is in scope, and establish retention/encryption policy if so.
-- Approve source snapshot location/retention, destination naming and existing-destination refusal/replacement policy; define recovery when atomic directory swap is unsupported on the host filesystem.
-- Decide which generated artifacts/provenance records must be copied versus recomputed, with specific reference and lineage evidence.
+- Canonical roots are single registered containment boundaries; split-root ordinary operation is retired.
+- The marker is exactly `workspace.json` with only `schema: "docs.workspace/v1"`; unknown fields are invalid.
+- The current unversioned fixture is the only initial supported source.
+- Config/registry and X20 state are excluded and unchanged.
+- Migration publishes only to a new separate destination and never performs cutover.
+- Evidence-bearing and behavior-affecting state is preserved; rebuildable delivery output is omitted; unknown records fail closed.
+- Source-preserving recovery replaces in-place backup/swap semantics.
 
-### Minimal fixture and verification plan (proposal only)
+### Fixture and verification plan
 
 1. **Completed characterization slice:** `tests/fixtures/workspaces/legacy/current-unversioned/` captures current document registry, `document.json`, template, structured/prose context, valid `schema:3`, no-frontmatter and malformed section variants, original source plus sidecar/manifest, referenced asset/binding/catalog, and provenance hashes. Personal content and host paths are sanitized. This characterizes one current unversioned source layout, not a fabricated older version.
-2. Add failing tests for valid canonical `workspace.json`; missing/malformed/unknown markers rejected before writes; current unversioned fixture dry-run recognition; snapshot byte/path/hash preservation; malformed `documents/registry.json` fail-closed; unsupported files and bad references reported; injected mid-conversion failure leaves source and destination unchanged; success publishes separate complete target atomically; existing target refusal; repeated migration of canonical workspace is idempotent.
-3. Use focused persistence, import, workspace, and migration tests plus one end-to-end CLI dry-run/apply journey when implementation is approved. Tests must assert content/path/hash invariants, not merely success status. No tests were run for this proposal.
+2. Add failing tests for the exact valid marker; unknown/duplicate/missing/malformed/unsupported marker cases; single-root descendant enforcement; split-root runtime rejection; current unversioned dry-run recognition; source byte/path/hash preservation; malformed document registry fail-closed behavior; excluded generated/X20/config records; unknown files and bad references; injected failure with scratch cleanup/reporting; atomic publication to an absent destination; existing-destination refusal; explicit cutover independence; and canonical idempotence.
+3. Use focused persistence, import, workspace, and migration tests plus one end-to-end CLI dry-run/apply/cutover journey. Assert source and destination content/path/hash invariants, not merely success status.
 
-**Implementation remains gated:** do not add the validator, change ordinary runtime acceptance, or create a migration command until maintainers approve canonical scope, exact marker, evidenced source fixture set, backup semantics, and X20/generated-artifact boundaries above.
-
+**Implementation is unblocked by this decision record.** Task 2 may add the strict canonical validator and tests. Migration/runtime changes must continue to follow the task order in the implementation plan.
 ## Evidence reviewed
 
 - `docs/superpowers/plans/2026-09-21-workspace-migration.md`, Task 1: exact census deliverable, requirement to separate registry/root config, author-editable content, generated artifacts and operational state; no canonical schema before approval.
@@ -150,20 +154,20 @@ Because `JsonDocumentRepository.load_registry` currently swallows `ValueError` a
 - Existing tests: `tests/unit/application/test_workspaces.py`, `tests/unit/domain/test_workspace.py`, `tests/unit/domain/test_workspace_config.py`, `tests/integration/test_json_repository.py`, `tests/integration/test_json_context_repository.py`, `tests/unit/infrastructure/test_json_section_repository.py`, `tests/unit/infrastructure/test_filesystem_asset_repository.py`, `tests/unit/application/test_imports.py`, `tests/unit/application/test_docx_import.py`, `tests/unit/infrastructure/test_x20_storage.py`.
 - The plan's focused persistence/import/workspace characterization suite was run for this fixture slice; see the implementing work-unit report for the exact result. No supplied user-workspace scan was performed, so this is not proof all extant formats were enumerated.
 
-## Unknowns / required follow-up
+## Evidence limits and required follow-up
 
 - Whether user-provided workspaces contain additional fields/layouts/version patterns beyond the sanitized current-writer fixture; no broad user data scan was performed.
 - Exact schemas, all test filenames, and all readers/writers for manifests, provenance, review evidence, source import metadata, generated outputs, and sidecar records.
 - Whether any content currently relies on unversioned implicit defaults; unsupported/legacy formats cannot be truthfully named until each format is evidenced.
-- Whether registry/config migration belongs in scope and how to recover operational SQLite/run state.
-- Exact canonical manifest path/field/version; intentionally undecided pending approval.
+- Additional user-provided layouts remain unsupported until separately evidenced and approved; their existence does not widen v1 migration implicitly.
+- Operational registry/config or X20 export, if later required, needs its own contract and must not be folded into workspace content migration.
 
-## Approval gate
+## Decision gate result
 
-- [ ] Maintainer approves which persisted categories the canonical workspace version governs.
-- [ ] Maintainer approves registry/config and X20 operational-state exclusion or names separate migration requirements.
-- [ ] Full reader/writer/test/fixture census is verified for the selected scope; every claimed legacy source format has concrete evidence.
-- [ ] Maintainer approves the canonical marker location, field, and initial version before validator/runtime implementation.
-- [ ] Migration recovery/backup and generated-vs-evidence artifact retention policy are accepted.
+- [x] Canonical scope covers one registered root and the named authored/evidence-bearing content categories.
+- [x] `docs.config.json`, the global registry, and X20 operational state are excluded and unchanged.
+- [x] The current unversioned fixture is the only supported initial legacy source; unproven formats are rejected.
+- [x] The marker is exactly `<workspace-root>/workspace.json` with only `{"schema":"docs.workspace/v1"}`.
+- [x] Migration publishes to a separate absent destination, preserves the source through explicit cutover, and follows the recovery/artifact rules above.
 
-Until these decisions are recorded, this document does not authorize schema or runtime changes.
+These decisions unblock the ordered implementation plan; they do not claim that the validator, migration command, or runtime boundary already exists.
