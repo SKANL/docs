@@ -12,6 +12,7 @@ from docs.application.workspace_migration import (
     CURRENT_UNVERSIONED_FORMAT,
     UNKNOWN_FORMAT,
     WorkspaceMigrationInspector,
+    WorkspaceMigrationPublisher,
 )
 from docs.cli.main import app
 
@@ -138,6 +139,7 @@ def test_cli_dry_run_emits_deterministic_json_without_mutating_any_state(
         "omitted": [],
         "preserved": payload["preserved"],
         "publication_policy": "separate-absent-destination",
+        "published": False,
         "ready": True,
         "recovery_guidance": "source-remains-unchanged-until-explicit-cutover",
         "scratch_policy": "not-created-in-dry-run",
@@ -206,9 +208,120 @@ def test_cli_requires_explicit_source_and_absent_destination(tmp_path: Path) -> 
             str(destination),
         ],
     )
+    conflicting_modes = runner.invoke(
+        app,
+        [
+            "workspace",
+            "migrate",
+            "--source",
+            str(source),
+            "--destination",
+            str(tmp_path / "another-destination"),
+            "--dry-run",
+            "--apply",
+        ],
+    )
 
     assert missing_source.exit_code == 2
     assert missing_destination.exit_code == 2
     assert existing_destination.exit_code == 2
     assert "destination_must_be_absent" in existing_destination.output
+    assert conflicting_modes.exit_code == 2
+    assert "dry_run_and_apply_are_mutually_exclusive" in conflicting_modes.output
     assert list(destination.iterdir()) == []
+
+
+def test_publication_copies_preserved_bytes_and_leaves_source_unchanged(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(CURRENT_UNVERSIONED, source)
+    generated = source / "documents" / "sanitized-report" / "output" / "draft.docx"
+    generated.parent.mkdir(parents=True, exist_ok=True)
+    generated.write_bytes(b"rebuildable")
+    destination = tmp_path / "destination"
+    before_source = _snapshot(source)
+    inspection = WorkspaceMigrationInspector().inspect(source, destination=destination)
+
+    publication = WorkspaceMigrationPublisher().publish(source, destination)
+
+    assert publication.inspection == inspection
+    assert publication.destination == destination.resolve()
+    assert publication.published
+    assert _snapshot(source) == before_source
+    assert not (destination / generated.relative_to(source)).exists()
+    assert (destination / "workspace.json").read_bytes() == b'{"schema":"docs.workspace/v1"}\n'
+    for record in inspection.preserved:
+        source_bytes = (source / record.path).read_bytes()
+        destination_bytes = (destination / record.path).read_bytes()
+        assert destination_bytes == source_bytes
+        assert hashlib.sha256(destination_bytes).hexdigest() == record.sha256
+
+
+def test_publication_failure_cleans_scratch_and_preserves_source(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(CURRENT_UNVERSIONED, source)
+    destination = tmp_path / "destination"
+    before_source = _snapshot(source)
+    original = WorkspaceMigrationPublisher._copy_record
+    calls = 0
+
+    def fail_after_one_copy(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected-copy-failure")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(WorkspaceMigrationPublisher, "_copy_record", fail_after_one_copy)
+
+    try:
+        WorkspaceMigrationPublisher().publish(source, destination)
+    except OSError as exc:
+        assert str(exc) == "injected-copy-failure"
+    else:
+        raise AssertionError("expected injected publication failure")
+
+    assert _snapshot(source) == before_source
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".destination.migration-*"))
+
+
+def test_cli_apply_is_explicit_and_publishes_without_touching_external_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(CURRENT_UNVERSIONED, source)
+    destination = tmp_path / "destination"
+    config = tmp_path / "docs.config.json"
+    config.write_bytes(b'{"documents_dir":"source/documents"}\n')
+    registry = tmp_path / "workspaces.json"
+    registry.write_bytes(b'{"active":null,"workspaces":[]}\n')
+    monkeypatch.setenv("DOCS_WORKSPACE_REGISTRY", str(registry))
+    before_source = _snapshot(source)
+    before_config = config.read_bytes()
+    before_registry = registry.read_bytes()
+
+    result = runner.invoke(
+        app,
+        [
+            "workspace",
+            "migrate",
+            "--source",
+            str(source),
+            "--destination",
+            str(destination),
+            "--apply",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["mode"] == "apply"
+    assert payload["published"] is True
+    assert payload["scratch_policy"] == "removed-after-atomic-publication"
+    assert destination.is_dir()
+    assert _snapshot(source) == before_source
+    assert config.read_bytes() == before_config
+    assert registry.read_bytes() == before_registry

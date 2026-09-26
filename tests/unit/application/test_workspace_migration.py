@@ -10,7 +10,9 @@ from docs.application.workspace_migration import (
     CANONICAL_FORMAT,
     CURRENT_UNVERSIONED_FORMAT,
     UNKNOWN_FORMAT,
+    WorkspaceMigrationError,
     WorkspaceMigrationInspector,
+    WorkspaceMigrationPublisher,
 )
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 
@@ -139,3 +141,16 @@ def test_paths_are_classified_without_silently_copying_unknown_records(tmp_path:
     assert report.record("mystery.bin").disposition == "unknown"
     assert [error.code for error in report.errors] == ["unknown_workspace_record"]
     assert not report.ready
+
+
+def test_publisher_requires_an_absent_separate_destination(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    _write_current_workspace(source)
+    destination.mkdir()
+
+    with pytest.raises(WorkspaceMigrationError, match="destination_must_be_absent"):
+        WorkspaceMigrationPublisher().publish(source, destination)
+
+    with pytest.raises(WorkspaceMigrationError, match="destination_must_be_separate"):
+        WorkspaceMigrationPublisher().publish(source, source)

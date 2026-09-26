@@ -11,6 +11,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -88,6 +90,26 @@ class WorkspaceMigrationInspection:
 
     def _records_with(self, disposition: Disposition) -> tuple[MigrationRecord, ...]:
         return tuple(record for record in self.records if record.disposition == disposition)
+
+
+class WorkspaceMigrationError(RuntimeError):
+    """A publication failure that never authorizes source or destination mutation."""
+
+    def __init__(self, code: str, *, scratch_path: Path | None = None) -> None:
+        self.code = code
+        self.scratch_path = scratch_path
+        detail = f"{code}: {scratch_path}" if scratch_path is not None else code
+        super().__init__(detail)
+
+
+@dataclass(frozen=True)
+class WorkspaceMigrationPublication:
+    """A successfully published canonical copy and its frozen source inspection."""
+
+    inspection: WorkspaceMigrationInspection
+    destination: Path
+    published: bool = True
+    scratch_policy: str = "removed-after-atomic-publication"
 
 
 class _DuplicateKeyError(ValueError):
@@ -329,3 +351,95 @@ class WorkspaceMigrationInspector:
             if template_path not in contents:
                 errors.append(MigrationInspectionError("document_template_missing", template_path))
         return tuple(errors)
+
+
+class WorkspaceMigrationPublisher:
+    """Copy an inspected workspace through a sibling scratch tree and publish atomically."""
+
+    _MARKER_BYTES = b'{"schema":"docs.workspace/v1"}\n'
+
+    def __init__(self, inspector: WorkspaceMigrationInspector | None = None) -> None:
+        self._inspector = inspector or WorkspaceMigrationInspector()
+
+    def publish(
+        self,
+        source: str | Path,
+        destination: str | Path,
+    ) -> WorkspaceMigrationPublication:
+        source_root = Path(source).expanduser().resolve()
+        destination_root = Path(destination).expanduser().resolve()
+        self._validate_paths(source_root, destination_root)
+
+        inspection = self._inspector.inspect(source_root, destination=destination_root)
+        if not inspection.ready:
+            raise WorkspaceMigrationError("migration_source_not_ready")
+
+        scratch = Path(
+            tempfile.mkdtemp(
+                prefix=f".{destination_root.name}.migration-",
+                dir=destination_root.parent,
+            )
+        ).resolve()
+        try:
+            for record in inspection.preserved:
+                self._copy_record(source_root, scratch, record)
+            if inspection.detected_format == CURRENT_UNVERSIONED_FORMAT:
+                (scratch / "workspace.json").write_bytes(self._MARKER_BYTES)
+
+            self._verify_source_unchanged(inspection)
+            self._verify_staged_copy(inspection, scratch)
+            if destination_root.exists():
+                raise WorkspaceMigrationError("destination_must_be_absent")
+            scratch.rename(destination_root)
+        except BaseException:
+            if scratch.exists():
+                try:
+                    shutil.rmtree(scratch)
+                except OSError as cleanup_exc:
+                    raise WorkspaceMigrationError(
+                        "migration_scratch_cleanup_failed", scratch_path=scratch
+                    ) from cleanup_exc
+            raise
+
+        return WorkspaceMigrationPublication(inspection=inspection, destination=destination_root)
+
+    @staticmethod
+    def _validate_paths(source: Path, destination: Path) -> None:
+        if source == destination or destination.is_relative_to(source) or source.is_relative_to(destination):
+            raise WorkspaceMigrationError("destination_must_be_separate")
+        if destination.exists():
+            raise WorkspaceMigrationError("destination_must_be_absent")
+        if not destination.parent.is_dir():
+            raise WorkspaceMigrationError("destination_parent_must_exist")
+
+    def _copy_record(self, source_root: Path, scratch: Path, record: MigrationRecord) -> None:
+        source_path = source_root / record.path
+        payload = source_path.read_bytes()
+        if len(payload) != record.size or hashlib.sha256(payload).hexdigest() != record.sha256:
+            raise WorkspaceMigrationError("migration_source_changed")
+        destination_path = scratch / record.path
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        destination_path.write_bytes(payload)
+        copied = destination_path.read_bytes()
+        if copied != payload:
+            raise WorkspaceMigrationError("migration_copy_verification_failed")
+
+    def _verify_source_unchanged(self, original: WorkspaceMigrationInspection) -> None:
+        current = self._inspector.inspect(original.source_root, destination=original.destination)
+        if (
+            current.detected_format != original.detected_format
+            or current.records != original.records
+            or current.errors != original.errors
+        ):
+            raise WorkspaceMigrationError("migration_source_changed")
+
+    def _verify_staged_copy(self, source: WorkspaceMigrationInspection, scratch: Path) -> None:
+        staged = self._inspector.inspect(scratch)
+        if staged.detected_format != CANONICAL_FORMAT or not staged.ready:
+            raise WorkspaceMigrationError("migration_staged_validation_failed")
+        expected = {record.path: record.sha256 for record in source.preserved}
+        if source.detected_format == CURRENT_UNVERSIONED_FORMAT:
+            expected["workspace.json"] = hashlib.sha256(self._MARKER_BYTES).hexdigest()
+        actual = {record.path: record.sha256 for record in staged.records}
+        if actual != expected:
+            raise WorkspaceMigrationError("migration_staged_verification_failed")
