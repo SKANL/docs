@@ -13,6 +13,6 @@ Tasks:
 Authorized scope: tests/fixtures/workspaces/legacy/current-unversioned, tests/** characterization tests, docs/superpowers/specs/2026-09-21-workspace-format-inventory.md, docs/superpowers/plans/2026-09-21-workspace-migration.md, and this task document.
 Checks: focused pytest command from characterization worker report; Markdown structural sanity check; git diff --check.
 Route: delegated direct; mapping/writer triggers fired because implementation spans multiple files and requires reading existing repositories/tests.
-Progress: W1-W4 complete. Characterization evidence: focused pytest 97 passed; Ruff passed; fixture privacy scan passed. Decision reconciliation is documentation-only.
+Progress: W1-W4 complete. Characterization evidence: focused pytest 97 passed; Ruff passed; fixture privacy scan passed. Decision reconciliation is documentation-only; commit `6970b05a` records the approved contract, and Markdown sanity plus `git show --check` passed.
 Next step: implement Task 2 from the approved contract with failing validator tests first.
 
