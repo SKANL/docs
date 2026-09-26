@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import pytest
@@ -102,3 +103,60 @@ def test_workspace_registry_rejects_malformed_json_without_mutating_source(tmp_p
         WorkspaceRegistry(registry_path).list()
 
     assert registry_path.read_bytes() == original
+
+
+def test_registry_create_writes_the_canonical_workspace_marker(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+
+    WorkspaceRegistry(tmp_path / "registry.json").create("Primary", root)
+
+    assert (root / "workspace.json").read_text(encoding="utf-8") == (
+        '{"schema":"docs.workspace/v1"}\n'
+    )
+
+
+def test_registry_rejects_unversioned_workspace_without_mutating_it(tmp_path: Path) -> None:
+    root = tmp_path / "legacy"
+    shutil.copytree(CURRENT_UNVERSIONED, root)
+    before = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+    with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
+        WorkspaceRegistry(tmp_path / "registry.json").create("Legacy", root)
+
+    after = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+    assert not (root / "workspace.json").exists()
+
+
+def test_registry_select_rejects_invalid_marker_before_mutating_registry_or_root(
+    tmp_path: Path,
+) -> None:
+    registry_path = tmp_path / "registry.json"
+    registry = WorkspaceRegistry(registry_path)
+    item = registry.create("Primary", tmp_path / "workspace")
+    registry_before = registry_path.read_bytes()
+    marker = Path(item["root"]) / "workspace.json"
+    marker.write_text('{"schema":"docs.workspace/v2"}', encoding="utf-8")
+    root_before = {
+        path.relative_to(Path(item["root"])): path.read_bytes()
+        for path in Path(item["root"]).rglob("*")
+        if path.is_file()
+    }
+
+    with pytest.raises(WorkspaceRegistryError, match="workspace_schema_unsupported"):
+        registry.select(item["id"])
+
+    assert registry_path.read_bytes() == registry_before
+    assert {
+        path.relative_to(Path(item["root"])): path.read_bytes()
+        for path in Path(item["root"]).rglob("*")
+        if path.is_file()
+    } == root_before

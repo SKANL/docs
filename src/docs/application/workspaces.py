@@ -11,6 +11,13 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
+from docs.domain.workspace_format import (
+    WorkspaceFormatError,
+    validate_workspace_layout,
+    validate_workspace_marker,
+    write_workspace_marker,
+)
+
 
 class WorkspaceRegistryError(ValueError):
     pass
@@ -31,14 +38,25 @@ class WorkspaceRegistry:
     def create(self, name: str, root: str | Path) -> dict[str, Any]:
         normalized = self._name(name)
         resolved = Path(root).expanduser().resolve()
-        try:
-            self._ensure_layout(resolved)
-        except OSError as exc:
-            raise WorkspaceRegistryError("invalid_workspace_root") from exc
         with self._lock:
             data = self._read()
             if any(item["name"] == normalized for item in data["workspaces"]):
                 raise WorkspaceRegistryError("workspace_name_conflict")
+            try:
+                validate_workspace_layout(
+                    resolved,
+                    resolved / "documents",
+                    resolved / "templates",
+                )
+                if resolved.exists():
+                    validate_workspace_marker(resolved)
+                else:
+                    write_workspace_marker(resolved)
+                self._ensure_layout(resolved)
+            except WorkspaceFormatError as exc:
+                raise WorkspaceRegistryError(str(exc)) from exc
+            except OSError as exc:
+                raise WorkspaceRegistryError("invalid_workspace_root") from exc
             item = {"id": uuid4().hex, "name": normalized, "root": str(resolved)}
             data["workspaces"].append(item)
             self._write(data)
@@ -65,6 +83,7 @@ class WorkspaceRegistry:
         with self._lock:
             for item in self._read()["workspaces"]:
                 if str(Path(str(item["root"])).expanduser().resolve()) == resolved:
+                    self._validate_root(Path(resolved))
                     self._ensure_layout(Path(resolved))
                     self._seed_builtin_templates(Path(resolved))
                     return dict(item)
@@ -95,6 +114,7 @@ class WorkspaceRegistry:
     def select(self, workspace_id: str) -> dict[str, Any]:
         item = self.get(workspace_id)
         root = Path(str(item["root"])).expanduser().resolve()
+        self._validate_root(root)
         self._ensure_layout(root)
         self._seed_builtin_templates(root)
         with self._lock:
@@ -133,8 +153,17 @@ class WorkspaceRegistry:
         if not active:
             return None
         item = self.get(active)
-        self._ensure_layout(Path(str(item["root"])).expanduser().resolve())
+        root = Path(str(item["root"])).expanduser().resolve()
+        self._ensure_layout(root)
         return item
+
+    @staticmethod
+    def _validate_root(root: Path) -> None:
+        try:
+            validate_workspace_layout(root, root / "documents", root / "templates")
+            validate_workspace_marker(root)
+        except WorkspaceFormatError as exc:
+            raise WorkspaceRegistryError(str(exc)) from exc
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():

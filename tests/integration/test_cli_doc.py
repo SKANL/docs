@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -113,6 +115,9 @@ def test_doc_init_bootstraps_fresh_workspace(fresh_cwd):
     assert (fresh_cwd / "templates" / "reporte-estadia-tic.json").exists()
     registry = json.loads((fresh_cwd / ".docs" / "workspaces.json").read_text(encoding="utf-8"))
     assert registry["active"] == registry["workspaces"][0]["id"]
+    assert json.loads((fresh_cwd / "workspace.json").read_text(encoding="utf-8")) == {
+        "schema": "docs.workspace/v1"
+    }
 
 
 def test_doc_init_rerun_reports_already_initialized(fresh_cwd):
@@ -157,6 +162,52 @@ def test_doc_init_does_not_reseed_existing_templates(fresh_cwd):
     assert result.exit_code == 0
     assert not (templates / "documento-generico.json").exists()
     assert (templates / "custom.json").read_text(encoding="utf-8") == '{"type": "custom", "title": "Mine"}'
+
+
+def test_doc_init_rejects_existing_unversioned_workspace_without_mutation(
+    fresh_cwd: Path,
+) -> None:
+    fixture = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "workspaces"
+        / "legacy"
+        / "current-unversioned"
+    )
+    shutil.copytree(fixture / "documents", fresh_cwd / "documents")
+    shutil.copytree(fixture / "templates", fresh_cwd / "templates")
+    before = {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(app, ["doc", "init"])
+
+    assert result.exit_code != 0
+    assert "workspace_marker_missing" in (result.output + str(result.exception or ""))
+    assert {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    } == before
+    assert not (fresh_cwd / "workspace.json").exists()
+
+
+def test_doc_init_rejects_content_roots_outside_the_workspace_before_writing(
+    fresh_cwd: Path,
+) -> None:
+    outside = fresh_cwd.parent / f"{fresh_cwd.name}-outside-documents"
+
+    result = runner.invoke(
+        app,
+        ["doc", "init", "--documents-dir", str(outside)],
+    )
+
+    assert result.exit_code != 0
+    assert "workspace_path_outside_root" in (result.output + str(result.exception or ""))
+    assert not outside.exists()
+    assert list(fresh_cwd.iterdir()) == []
 
 
 # ── PR9: `doc status` resumable summary (design.md item I) ─────────────────

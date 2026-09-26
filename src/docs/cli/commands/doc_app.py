@@ -19,6 +19,11 @@ from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.workspace_config import resolve_workspace_roots
+from docs.domain.workspace_format import (
+    validate_workspace_layout,
+    validate_workspace_marker,
+    write_workspace_marker,
+)
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
 
@@ -47,7 +52,7 @@ def doc_init(
     docs.config.json con las rutas resueltas y siembra las plantillas
     integradas si templates_dir está vacío (spec: workspace-config `doc init`
     Bootstrap Command; design.md item A, reutiliza `template use` de C)."""
-    _deps, _ = _ctx(ctx)
+    del ctx
     # `doc init` bootstraps the current directory; it must not inherit a
     # previously selected workspace from the global registry. Otherwise a
     # fresh workspace silently writes its config pointing at another project.
@@ -58,6 +63,11 @@ def doc_init(
     resolved_templates = templates_dir or str(default_templates)
     new_config = {"documents_dir": resolved_documents, "templates_dir": resolved_templates}
 
+    root = Path.cwd().resolve()
+    documents_path = Path(resolved_documents).expanduser().resolve()
+    templates_path = Path(resolved_templates).expanduser().resolve()
+    validate_workspace_layout(root, documents_path, templates_path)
+
     config_path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
     if config_path.exists() and not force:
         try:
@@ -65,18 +75,23 @@ def doc_init(
         except (OSError, ValueError):
             existing = None
         if existing == new_config:
+            validate_workspace_marker(root)
             _activate_initialized_workspace()
             print(f"El workspace ya está inicializado ({config_path}).")
             return
         print(f"Ya existe `{config_path}` con otra configuración. Usa --force para sobrescribir.")
         raise typer.Exit(code=1)
 
+    marker_path = root / "workspace.json"
+    if marker_path.exists() or (documents_path / "registry.json").exists():
+        validate_workspace_marker(root)
+    else:
+        write_workspace_marker(root)
+
     config_path.write_text(
         json.dumps(new_config, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
     )
 
-    documents_path = Path(resolved_documents)
-    templates_path = Path(resolved_templates)
     documents_path.mkdir(parents=True, exist_ok=True)
     templates_path.mkdir(parents=True, exist_ok=True)
 
