@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from docs.application.imports import ImportError, SourceImportService
+from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 
 CURRENT_UNVERSIONED = (
     Path(__file__).resolve().parents[2]
@@ -18,9 +19,14 @@ CURRENT_UNVERSIONED = (
 )
 
 
+def _canonical_root(root: Path) -> Path:
+    write_workspace_marker(root)
+    return root
+
+
 def test_import_writes_hashed_source_atomically(tmp_path: Path) -> None:
     result = SourceImportService().import_base64(
-        tmp_path, "source.pdf", base64.b64encode(b"pdf-content").decode()
+        _canonical_root(tmp_path), "source.pdf", base64.b64encode(b"pdf-content").decode()
     )
     destination = Path(result["path"])
     assert destination.is_file()
@@ -31,6 +37,7 @@ def test_import_writes_hashed_source_atomically(tmp_path: Path) -> None:
 
 def test_import_is_idempotent_for_same_content(tmp_path: Path) -> None:
     service = SourceImportService()
+    _canonical_root(tmp_path)
     encoded = base64.b64encode(b"same-source").decode()
 
     first = service.import_base64(tmp_path, "source.pdf", encoded)
@@ -43,7 +50,7 @@ def test_import_is_idempotent_for_same_content(tmp_path: Path) -> None:
 
 def test_import_normalizes_underscores_to_workspace_safe_document_id(tmp_path: Path) -> None:
     result = SourceImportService().import_base64(
-        tmp_path,
+        _canonical_root(tmp_path),
         "source.pdf",
         base64.b64encode(b"source").decode(),
         document_id="Compilado_Anexo22_2025 (1)",
@@ -63,7 +70,7 @@ def test_import_records_detected_mime_from_content(
     tmp_path: Path, filename: str, payload: bytes, expected: str
 ) -> None:
     result = SourceImportService().import_base64(
-        tmp_path, filename, base64.b64encode(payload).decode()
+        _canonical_root(tmp_path), filename, base64.b64encode(payload).decode()
     )
     assert result["mime_type"] == expected
 
@@ -73,7 +80,7 @@ def test_import_detects_ooxml_document_from_zip_manifest(tmp_path: Path) -> None
     with zipfile.ZipFile(stream, "w") as archive:
         archive.writestr("word/document.xml", "<w:document/>")
     result = SourceImportService().import_base64(
-        tmp_path, "renamed.bin", base64.b64encode(stream.getvalue()).decode()
+        _canonical_root(tmp_path), "renamed.bin", base64.b64encode(stream.getvalue()).decode()
     )
     assert result["mime_type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -89,6 +96,7 @@ def test_import_detects_ooxml_document_from_zip_manifest(tmp_path: Path) -> None
 def test_import_rejects_unsafe_or_invalid_input(
     tmp_path: Path, filename: str, payload: bytes | None, error: str
 ) -> None:
+    _canonical_root(tmp_path)
     encoded = "not-base64" if payload is None else base64.b64encode(payload).decode()
     with pytest.raises(ImportError, match=error):
         SourceImportService().import_base64(tmp_path, filename, encoded)
@@ -110,7 +118,7 @@ def test_current_unversioned_fixture_preserves_source_path_bytes_hash_and_identi
     assert manifest_entry["sha256"] == expected_hash
 
     imported = SourceImportService().import_bytes(
-        tmp_path,
+        _canonical_root(tmp_path),
         "source.bin",
         payload,
         document_id="sanitized-report",
@@ -120,3 +128,12 @@ def test_current_unversioned_fixture_preserves_source_path_bytes_hash_and_identi
     assert imported["sha256"] == expected_hash
     assert imported_path.name == source.name
     assert imported_path.read_bytes() == payload
+
+
+def test_import_rejects_unversioned_workspace_before_creating_directories(tmp_path: Path) -> None:
+    root = tmp_path / "legacy"
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        SourceImportService().import_bytes(root, "source.bin", b"source")
+
+    assert not root.exists()

@@ -160,3 +160,20 @@ def test_registry_select_rejects_invalid_marker_before_mutating_registry_or_root
         for path in Path(item["root"]).rglob("*")
         if path.is_file()
     } == root_before
+
+
+def test_registry_active_rejects_missing_marker_before_creating_workspace_layout(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "legacy"
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(
+        '{"active":"legacy-id","workspaces":['
+        f'{{"id":"legacy-id","name":"Legacy","root":"{root.as_posix()}"}}]}}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
+        WorkspaceRegistry(registry_path).active()
+
+    assert not root.exists()

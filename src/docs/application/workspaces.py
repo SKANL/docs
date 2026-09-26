@@ -154,6 +154,7 @@ class WorkspaceRegistry:
             return None
         item = self.get(active)
         root = Path(str(item["root"])).expanduser().resolve()
+        self._validate_root(root)
         self._ensure_layout(root)
         return item
 

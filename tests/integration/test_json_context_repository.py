@@ -6,6 +6,7 @@ import pytest
 from docs.domain.context import TopicStatus
 from docs.domain.models.template import ContextSchema, Field, Topic
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 
 CURRENT_UNVERSIONED = (
@@ -19,6 +20,7 @@ CURRENT_UNVERSIONED = (
 
 @pytest.fixture
 def repo(tmp_path: Path) -> JsonContextRepository:
+    write_workspace_marker(tmp_path)
     ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     (ws.doc_root("alpha")).mkdir(parents=True)
     return JsonContextRepository(ws)
@@ -128,26 +130,23 @@ def test_index_md_contains_human_table(repo):
     assert "| Introducción | intro.md | sí | introduccion, resumen |" in text
 
 
-def test_current_unversioned_fixture_preserves_prose_structured_values_and_projection() -> None:
-    fixture_repo = JsonContextRepository(
-        Workspace(
-            documents_dir=CURRENT_UNVERSIONED / "documents",
-            templates_dir=CURRENT_UNVERSIONED / "templates",
-        )
-    )
-    purpose = Topic(id="purpose", title="Purpose", multiline=True)
-    owner = Topic(id="owner", title="Owner", fields=[Field(key="name", label="Name")])
+def test_context_repository_rejects_unversioned_workspace_without_mutation() -> None:
+    before = {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    }
 
-    assert fixture_repo.read_topic("sanitized-report", purpose) == (
-        "Characterize the current unversioned workspace without personal data."
-    )
-    assert fixture_repo.read_topic("sanitized-report", owner) == {"name": "Example Author"}
-    index_path = (
-        CURRENT_UNVERSIONED
-        / "documents"
-        / "sanitized-report"
-        / "context"
-        / "index.json"
-    )
-    assert json.loads(index_path.read_text(encoding="utf-8"))["schema"] == 1
-    assert fixture_repo.read_requests("sanitized-report") == "_No pending requests._\n"
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        JsonContextRepository(
+            Workspace(
+                documents_dir=CURRENT_UNVERSIONED / "documents",
+                templates_dir=CURRENT_UNVERSIONED / "templates",
+            )
+        )
+
+    assert {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    } == before

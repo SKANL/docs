@@ -13,6 +13,7 @@ from docs.domain.ports.document_repository import (
 from docs.domain.ports.registry_repository import Registry, RegistryRepository
 from docs.domain.ports.template_repository import TemplateRepository
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import validate_workspace_marker
 
 
 class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRepository):
@@ -20,6 +21,7 @@ class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRep
     should depend on the narrow port they actually use, not on this class."""
 
     def __init__(self, workspace: Workspace) -> None:
+        validate_workspace_marker(workspace.root)
         self.workspace = workspace
 
     # registry -----------------------------------------------------------------

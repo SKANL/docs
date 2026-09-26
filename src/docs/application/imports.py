@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import mimetypes
 import re
-import io
 import zipfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from docs.domain.workspace_format import validate_workspace_marker
 
 
 class ImportError(ValueError):
@@ -50,6 +52,7 @@ class SourceImportService:
         if len(content) > self.max_bytes:
             raise ImportError("source_too_large")
         root = Path(workspace_root).expanduser().resolve()
+        validate_workspace_marker(root)
         doc = self._document_id(document_id or Path(safe_name).stem)
         inbox = root / "documents" / doc / "inbox"
         inbox.mkdir(parents=True, exist_ok=True)

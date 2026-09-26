@@ -1,10 +1,10 @@
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
 CURRENT_UNVERSIONED = (
@@ -18,6 +18,7 @@ CURRENT_UNVERSIONED = (
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Workspace:
+    write_workspace_marker(tmp_path)
     return Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
 
 
@@ -191,30 +192,26 @@ def test_write_raw_text_creates_parent_directories_and_writes_content(repo: Json
     assert path.read_text(encoding="utf-8") == "hello"
 
 
-def test_current_unversioned_fixture_preserves_section_variants_and_body_identity() -> None:
-    fixture_repo = JsonSectionRepository(
-        Workspace(
-            documents_dir=CURRENT_UNVERSIONED / "documents",
-            templates_dir=CURRENT_UNVERSIONED / "templates",
+def test_section_repository_rejects_unversioned_workspace_without_mutation() -> None:
+    before = {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    }
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        JsonSectionRepository(
+            Workspace(
+                documents_dir=CURRENT_UNVERSIONED / "documents",
+                templates_dir=CURRENT_UNVERSIONED / "templates",
+            )
         )
-    )
 
-    metadata, body = fixture_repo.read_section("sanitized-report", 1, "overview")
-    assert metadata["schema"] == 3
-    assert metadata["section_id"] == "overview"
-    assert metadata["body_hash"] == hashlib.sha256(body.encode("utf-8")).hexdigest()
-    assert "[[figure:architecture]]" in body
-
-    plain_metadata, plain_body = fixture_repo.read_section("sanitized-report", 3, "plain-notes")
-    assert plain_metadata == {}
-    assert plain_body.startswith("# PLAIN NOTES")
-
-    opaque_path = fixture_repo.section_path("sanitized-report", 4, "opaque-source")
-    opaque_raw = fixture_repo.read_raw_text(opaque_path)
-    opaque_metadata, opaque_body = fixture_repo.read_section("sanitized-report", 4, "opaque-source")
-    assert opaque_metadata == {}
-    assert opaque_body == opaque_raw
-    assert opaque_raw.startswith("---\n{not valid json")
+    assert {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    } == before
 
 
 def test_current_unversioned_fixture_keeps_reference_and_provenance_identities() -> None:
