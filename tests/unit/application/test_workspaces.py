@@ -4,6 +4,14 @@ import pytest
 
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
+
 
 def test_registry_persists_create_and_active_selection(tmp_path: Path) -> None:
     registry_path = tmp_path / "registry.json"
@@ -76,3 +84,21 @@ def test_registry_repairs_templates_when_selecting_existing_empty_workspace(tmp_
     registry.select(item["id"])
 
     assert (Path(item["root"]) / "templates" / "documento-generico.json").is_file()
+
+
+def test_current_unversioned_fixture_has_no_workspace_format_marker() -> None:
+    assert CURRENT_UNVERSIONED.is_dir()
+    assert (CURRENT_UNVERSIONED / "documents" / "registry.json").is_file()
+    assert (CURRENT_UNVERSIONED / "templates" / "documento-generico.json").is_file()
+    assert not (CURRENT_UNVERSIONED / "workspace.json").exists()
+
+
+def test_workspace_registry_rejects_malformed_json_without_mutating_source(tmp_path: Path) -> None:
+    registry_path = tmp_path / "workspaces.json"
+    original = b'{"active": "broken"'
+    registry_path.write_bytes(original)
+
+    with pytest.raises(WorkspaceRegistryError, match="workspace_registry_unreadable"):
+        WorkspaceRegistry(registry_path).list()
+
+    assert registry_path.read_bytes() == original

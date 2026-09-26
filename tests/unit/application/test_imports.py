@@ -1,11 +1,21 @@
 import base64
+import hashlib
 import io
+import json
 import zipfile
 from pathlib import Path
 
 import pytest
 
 from docs.application.imports import ImportError, SourceImportService
+
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
 
 
 def test_import_writes_hashed_source_atomically(tmp_path: Path) -> None:
@@ -82,3 +92,31 @@ def test_import_rejects_unsafe_or_invalid_input(
     encoded = "not-base64" if payload is None else base64.b64encode(payload).decode()
     with pytest.raises(ImportError, match=error):
         SourceImportService().import_base64(tmp_path, filename, encoded)
+
+
+def test_current_unversioned_fixture_preserves_source_path_bytes_hash_and_identity(
+    tmp_path: Path,
+) -> None:
+    inbox = CURRENT_UNVERSIONED / "documents" / "sanitized-report" / "inbox"
+    source = inbox / "da544f726ca4-source.bin"
+    payload = source.read_bytes()
+    expected_hash = "da544f726ca44fe8403759872375b74ffd25c300eaa9345193d67fb665b775f2"
+
+    assert payload == b"\x00Sanitized source bytes.\r\nSecond line.\r\n"
+    assert hashlib.sha256(payload).hexdigest() == expected_hash
+    source_manifest = json.loads((inbox / "_source-manifest.json").read_text(encoding="utf-8"))
+    manifest_entry = source_manifest["sources"][0]
+    assert manifest_entry["relative_path"] == source.name
+    assert manifest_entry["sha256"] == expected_hash
+
+    imported = SourceImportService().import_bytes(
+        tmp_path,
+        "source.bin",
+        payload,
+        document_id="sanitized-report",
+    )
+    imported_path = Path(imported["path"])
+    assert imported["id"] == f"import-{expected_hash[:16]}"
+    assert imported["sha256"] == expected_hash
+    assert imported_path.name == source.name
+    assert imported_path.read_bytes() == payload

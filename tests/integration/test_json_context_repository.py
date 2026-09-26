@@ -8,6 +8,14 @@ from docs.domain.models.template import ContextSchema, Field, Topic
 from docs.domain.workspace import Workspace
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
+
 
 @pytest.fixture
 def repo(tmp_path: Path) -> JsonContextRepository:
@@ -118,3 +126,28 @@ def test_index_md_contains_human_table(repo):
     assert "| Tema | Archivo | Completo | Consumido por |" in text
     assert "| Alumno | alumno.md | no | introduccion |" in text
     assert "| Introducción | intro.md | sí | introduccion, resumen |" in text
+
+
+def test_current_unversioned_fixture_preserves_prose_structured_values_and_projection() -> None:
+    fixture_repo = JsonContextRepository(
+        Workspace(
+            documents_dir=CURRENT_UNVERSIONED / "documents",
+            templates_dir=CURRENT_UNVERSIONED / "templates",
+        )
+    )
+    purpose = Topic(id="purpose", title="Purpose", multiline=True)
+    owner = Topic(id="owner", title="Owner", fields=[Field(key="name", label="Name")])
+
+    assert fixture_repo.read_topic("sanitized-report", purpose) == (
+        "Characterize the current unversioned workspace without personal data."
+    )
+    assert fixture_repo.read_topic("sanitized-report", owner) == {"name": "Example Author"}
+    index_path = (
+        CURRENT_UNVERSIONED
+        / "documents"
+        / "sanitized-report"
+        / "context"
+        / "index.json"
+    )
+    assert json.loads(index_path.read_text(encoding="utf-8"))["schema"] == 1
+    assert fixture_repo.read_requests("sanitized-report") == "_No pending requests._\n"

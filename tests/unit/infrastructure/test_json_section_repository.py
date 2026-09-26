@@ -1,9 +1,19 @@
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
 
 from docs.domain.workspace import Workspace
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
 
 
 @pytest.fixture
@@ -179,3 +189,52 @@ def test_write_raw_text_creates_parent_directories_and_writes_content(repo: Json
     path = tmp_path / "nested" / "dir" / "file.md"
     repo.write_raw_text(path, "hello")
     assert path.read_text(encoding="utf-8") == "hello"
+
+
+def test_current_unversioned_fixture_preserves_section_variants_and_body_identity() -> None:
+    fixture_repo = JsonSectionRepository(
+        Workspace(
+            documents_dir=CURRENT_UNVERSIONED / "documents",
+            templates_dir=CURRENT_UNVERSIONED / "templates",
+        )
+    )
+
+    metadata, body = fixture_repo.read_section("sanitized-report", 1, "overview")
+    assert metadata["schema"] == 3
+    assert metadata["section_id"] == "overview"
+    assert metadata["body_hash"] == hashlib.sha256(body.encode("utf-8")).hexdigest()
+    assert "[[figure:architecture]]" in body
+
+    plain_metadata, plain_body = fixture_repo.read_section("sanitized-report", 3, "plain-notes")
+    assert plain_metadata == {}
+    assert plain_body.startswith("# PLAIN NOTES")
+
+    opaque_path = fixture_repo.section_path("sanitized-report", 4, "opaque-source")
+    opaque_raw = fixture_repo.read_raw_text(opaque_path)
+    opaque_metadata, opaque_body = fixture_repo.read_section("sanitized-report", 4, "opaque-source")
+    assert opaque_metadata == {}
+    assert opaque_body == opaque_raw
+    assert opaque_raw.startswith("---\n{not valid json")
+
+
+def test_current_unversioned_fixture_keeps_reference_and_provenance_identities() -> None:
+    document_root = CURRENT_UNVERSIONED / "documents" / "sanitized-report"
+    bindings = json.loads(
+        (document_root / "sections" / "figure-bindings.json").read_text(encoding="utf-8")
+    )
+    catalog = json.loads(
+        (document_root / "sections" / "figure-catalog.json").read_text(encoding="utf-8")
+    )
+    provenance = json.loads(
+        (document_root / "runs" / "provenance.json").read_text(encoding="utf-8")
+    )
+
+    figure_id = bindings["bindings"]["architecture"]
+    figure = catalog["figures"][0]
+    assert bindings["schema"] == 1
+    assert figure_id == figure["id"] == "fig-431ced69"
+    assert figure["sha256"] == "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460"
+    run = provenance["runs"]["fixture-capture"]
+    assert run["run_id"] == "fixture-capture"
+    assert all(path.startswith("<WORKSPACE_ROOT>/") for path in (*run["inputs"], *run["outputs"]))
+    assert not any("angua" in path.lower() for path in (*run["inputs"], *run["outputs"]))

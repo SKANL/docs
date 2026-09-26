@@ -1,0 +1,29 @@
+{
+  "by_section": {
+    "overview": [
+      "purpose",
+      "owner"
+    ]
+  },
+  "schema": 1,
+  "topics": [
+    {
+      "complete": true,
+      "consumed_by": [
+        "overview"
+      ],
+      "file": "purpose.md",
+      "id": "purpose",
+      "title": "Purpose"
+    },
+    {
+      "complete": true,
+      "consumed_by": [
+        "overview"
+      ],
+      "file": "owner.md",
+      "id": "owner",
+      "title": "Owner"
+    }
+  ]
+}
