@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import io
 import mimetypes
@@ -34,7 +35,7 @@ class SourceImportService:
         safe_name = self._filename(filename)
         try:
             content = base64.b64decode(content_base64, validate=True)
-        except (ValueError, base64.binascii.Error) as exc:
+        except (ValueError, binascii.Error) as exc:
             raise ImportError("invalid_base64") from exc
         if not content:
             raise ImportError("empty_source")

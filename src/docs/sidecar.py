@@ -11,6 +11,7 @@ import os
 import signal
 import sys
 import threading
+from builtins import list as builtin_list
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -109,11 +110,11 @@ class _FilesystemTemplateStore:
     def list(self) -> list[dict[str, Any]]:
         return self._list_root(self._root())
 
-    def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+    def list_for_workspace(self, workspace_id: str) -> builtin_list[dict[str, Any]]:
         return self._list_root(self._root_for(workspace_id))
 
     @staticmethod
-    def _list_root(root: Path) -> list[dict[str, Any]]:
+    def _list_root(root: Path) -> builtin_list[dict[str, Any]]:
         if not root.is_dir():
             return []
         items: list[dict[str, Any]] = []
@@ -155,10 +156,10 @@ class _WorkspaceJsonCollectionStore:
     def list(self) -> list[dict[str, Any]]:
         return self._list_root(self._active_root())
 
-    def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+    def list_for_workspace(self, workspace_id: str) -> builtin_list[dict[str, Any]]:
         return self._list_root(self._root_for(workspace_id))
 
-    def _list_root(self, root: Path) -> list[dict[str, Any]]:
+    def _list_root(self, root: Path) -> builtin_list[dict[str, Any]]:
         if self.kind == "baselines":
             paths = [path for path in sorted((root / "baselines").glob("*.json")) if path.name != "active.json"]
         else:
@@ -170,13 +171,12 @@ class _WorkspaceJsonCollectionStore:
             except (OSError, ValueError):
                 continue
             if isinstance(value, list):
-                values = value
+                values: builtin_list[Any] = value
             elif isinstance(value, dict):
-                values = value.get("items", [value])
+                raw_values = value.get("items", [value])
+                values = raw_values if isinstance(raw_values, list) else []
             else:
                 values = []
-            if not isinstance(values, list):
-                continue
             for item in values:
                 if isinstance(item, dict):
                     record = dict(item)
@@ -405,7 +405,7 @@ class _WorkspaceArtifactStore:
     def list(self) -> list[Any]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
 
-    def list_for_run(self, run_id: str) -> list[Any]:
+    def list_for_run(self, run_id: str) -> builtin_list[Any]:
         return self.parent._stores_for_root(self.parent._root_for_run(run_id))[1].list_for_run(run_id)
 
 
@@ -423,7 +423,7 @@ class _WorkspaceFindingStore:
     def list(self) -> list[dict[str, Any]]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
 
-    def list_for_run(self, run_id: str) -> list[dict[str, Any]]:
+    def list_for_run(self, run_id: str) -> builtin_list[dict[str, Any]]:
         return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
 
 
@@ -442,7 +442,7 @@ class _WorkspacePublicationStore:
     def list(self) -> list[dict[str, Any]]:
         return self._list_runs(self.parent.run_store.list())
 
-    def list_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+    def list_for_workspace(self, workspace_id: str) -> builtin_list[dict[str, Any]]:
         runs = [
             run
             for run in self.parent.run_store.list()
@@ -450,7 +450,7 @@ class _WorkspacePublicationStore:
         ]
         return self._list_runs(runs)
 
-    def _list_runs(self, runs: list[Any]) -> list[dict[str, Any]]:
+    def _list_runs(self, runs: builtin_list[Any]) -> builtin_list[dict[str, Any]]:
         return [
             value
             for run in runs
@@ -551,7 +551,7 @@ class _HealthApplication:
         *,
         workspace_error: str | None = None,
         worker_runner: WorkerRunner | None = None,
-        worker_thread: threading.Thread | None = None,
+        worker_thread: threading.Thread | multiprocessing.Process | None = None,
     ) -> None:
         self.application = application
         self.health_path = health_path
@@ -755,9 +755,12 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         from .domain.workspace import Workspace
 
         active = registry.active()
-        if active is None and not workspace_root:
-            raise RuntimeError("workspace_not_configured")
-        root = Path(workspace_root) if workspace_root else Path(str(active["root"]))
+        if workspace_root:
+            root = Path(workspace_root)
+        else:
+            if active is None:
+                raise RuntimeError("workspace_not_configured")
+            root = Path(str(active["root"]))
         deps = compose_application(Workspace(root / "documents", root / "templates"))
         resolved = deps.resolve_context(document_id)
         path = deps.context.set(document_id, resolved.template, topic, value, field)
@@ -779,28 +782,39 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         value = payload.get("new_body", payload.get("new_value", payload.get("value")))
         if not target_id or not isinstance(value, str):
             raise ValueError("target_id and string new_body/new_value are required")
-        common = {
-            "config": resolved.config,
-            "request": request,
-            "strict": bool(payload.get("strict", False)),
-            "manifest_exists": False,
-            "manifest_size": 0,
-            "normative": resolve_normative_settings(resolved.config),
-            "now": datetime.now(UTC).isoformat(),
-        }
+        config_values = resolved.config
+        strict = bool(payload.get("strict", False))
+        normative = resolve_normative_settings(config_values)
+        now = datetime.now(UTC).isoformat()
         target_kind = deps.revision.resolve_target(resolved.template, target_id)
         if target_kind == "topic":
             result = deps.revision.revise_topic(
                 document_id,
                 resolved.template,
-                **common,
+                config_values,
                 topic_id=target_id,
+                request=request,
+                strict=strict,
+                manifest_exists=False,
+                manifest_size=0,
+                normative=normative,
+                now=now,
                 new_value=value,
                 field=str(payload.get("field", "")),
             )
         else:
             result = deps.revision.revise(
-                document_id, resolved.template, **common, section_id=target_id, new_body=value
+                document_id,
+                resolved.template,
+                config_values,
+                section_id=target_id,
+                new_body=value,
+                request=request,
+                strict=strict,
+                manifest_exists=False,
+                manifest_size=0,
+                normative=normative,
+                now=now,
             )
         return result.to_dict()
 
@@ -826,6 +840,16 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return {"document_id": document_id, "items": entries}
 
+    def read_document_context(document_id: str, workspace_root: str | None = None) -> dict[str, Any]:
+        if workspace_root is not None:
+            root = workspace_root
+        else:
+            active = registry.active()
+            if active is None:
+                raise RuntimeError("workspace_not_configured")
+            root = str(active["root"])
+        return document_context(root, document_id)
+
     application = X20Application(
         run_store=run_store,
         queue=queue,
@@ -846,9 +870,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         managed_workspace_root=config.workspace / ".docs" / "workspaces",
         document_creator=create_document,
         document_action=document_action,
-        document_context_reader=lambda document_id, workspace_root=None: document_context(
-            str(workspace_root or registry.get(registry.active()["id"])["root"]), document_id
-        ),
+        document_context_reader=read_document_context,
         document_context_writer=set_document_context,
         revision_service=revise_document,
         classification_service=document_classification,
@@ -898,12 +920,12 @@ def _worker_process_main(workspace: Path) -> None:
 
 def _build_worker(
     workspace: Path,
-    queue: SqliteJobQueue,
+    queue: Any,
     state_path: Path,
-    run_store: SqliteRunStore,
-    passport_store: SqlitePassportStore,
-    artifact_store: SqliteArtifactStore,
-    findings_store: SqliteFindingStore,
+    run_store: Any,
+    passport_store: Any,
+    artifact_store: Any,
+    findings_store: Any,
     publication_store: Any,
 ) -> WorkerRunner:
     """Compose the real local worker; no synthetic completion path is allowed."""
@@ -1092,11 +1114,12 @@ def _persist_worker_evidence(
                     if document_candidate is not None and document_candidate.is_file()
                     else workspace_root / candidate
                 )
-            materialized = candidate is not None and candidate.is_file()
-            if materialized:
+            if candidate is not None and candidate.is_file():
+                materialized = True
                 digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
                 record["size_bytes"] = candidate.stat().st_size
             else:
+                materialized = False
                 encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
                 digest = hashlib.sha256(encoded).hexdigest()
             artifact_store.put(

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import re
 
-# CURATED_INDEX_FILENAME is re-exported here for docs.application.pipeline
-# (which imports it from this module alongside build_context_files/index).
+# CURATED_INDEX_FILENAME is re-exported here for the context-curation
+# compatibility surface alongside build_context_files/index.
 from docs.domain.context_index_files import CURATED_INDEX_FILENAME, is_context_content_filename  # noqa: F401
 from docs.domain.markdown_text import dedupe_strings, extract_markdown_headings, keyword_set
 
@@ -25,8 +25,7 @@ from docs.domain.markdown_text import dedupe_strings, extract_markdown_headings,
 # purpose (curated ingest-source summary, not per-document Q&A status) --
 # consolidating the two was explicitly ruled out of scope in 7.6's own
 # additive note. Namespaced under a distinct filename so neither writer can
-# ever clobber the other's most recent write; see `application/pipeline.py`'s
-# `stage_build_context_index`, which is the only writer of this filename.
+# ever clobber the other's most recent write.
 #
 # `CURATED_INDEX_FILENAME` itself now lives in `domain/context_index_files.py`
 # (fresh-context review CRITICAL, PR8 remediation) alongside the shared skip

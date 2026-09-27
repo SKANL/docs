@@ -155,13 +155,16 @@ def migrate_workspace(
 @workspace_app.command("list")
 def list_workspaces(as_json: bool = typer.Option(False, "--json")) -> None:
     """List registered workspaces and mark the active one."""
-    payload = {"items": _registry().list(), "active": _registry().active()}
+    registry = _registry()
+    items = registry.list()
+    active = registry.active()
+    payload = {"items": items, "active": active}
     if as_json:
         import json
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        for item in payload["items"]:
-            marker = "*" if payload["active"] and payload["active"]["id"] == item["id"] else " "
+        for item in items:
+            marker = "*" if active is not None and active["id"] == item["id"] else " "
             print(f"{marker} {item['id']}  {item['name']}  {item['root']}")
 
 
