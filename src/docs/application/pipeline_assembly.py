@@ -12,8 +12,6 @@ from docs.application.provenance import ProvenanceLedger
 from docs.application.stage_artifact_store import StageArtifactStore
 from docs.application.stage_provider import StageProvider
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
-from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
-from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
 
 @dataclass(frozen=True)
@@ -37,6 +35,7 @@ def assemble_pipeline_resources(
     package_writer: Any = None,
     candidate_sink: Any = None,
     verify_current_build: bool = False,
+    capability_detector: Any = None,
 ) -> PipelineResources:
     """Compose durable pipeline state and release publication collaborators."""
     capabilities = list(_renderer_capabilities(renderer))
@@ -70,24 +69,9 @@ def assemble_pipeline_resources(
             )
         )
     capabilities.extend(_visual_capabilities(document_root))
-    tool_resolver = SystemToolResolverAdapter()
-    resolvers = {
-        "pandoc": tool_resolver.resolve_pandoc,
-        "soffice": tool_resolver.resolve_libreoffice,
-        "libreoffice": tool_resolver.resolve_libreoffice,
-        "java": tool_resolver.resolve_java,
-        "mmdc": tool_resolver.resolve_mmdc,
-        "resvg": tool_resolver.resolve_resvg,
-    }
     registry = ToolCapabilityRegistry(
         capabilities,
-        NativeToolCapabilityDetector(
-            tool_resolver.tool_version,
-            executable_resolver=lambda executable, configured: (
-                resolvers[executable](configured) if executable in resolvers else None
-            ),
-            paths=paths,
-        ),
+        capability_detector,
     )
     ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
     store = StageArtifactStore(document_root / "runs" / "v2-stage-artifacts", atomic_file_writer)

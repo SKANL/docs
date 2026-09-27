@@ -68,6 +68,7 @@ from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenc
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
+from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 from docs.observability import ObservabilityPort, create_observability_from_env
 from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, source_template
@@ -223,6 +224,9 @@ class ApplicationComposition:
         collection_service = CollectionService(source_repo, evidence_repo)
         context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
         tool_resolver = SystemToolResolverAdapter()
+        self.tool_resolver = tool_resolver
+        self.directory_guard = directory_handle_guard
+        self.release_lock = owned_directory_lock
         docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
         html_renderer_service = HtmlRendererAdapter(tool_resolver, SubprocessPandocRunner())
         # Stateless (no instance state) -- one instance shared by QaService's
@@ -476,6 +480,52 @@ class ApplicationComposition:
             output_format=output_format,
             ensure_assets=ensure_assets,
             extra_services=extra_services,
+        )
+
+    def create_tool_capability_detector(self, paths: dict[str, object]) -> Any:
+        """Bind native tool probing at the composition root."""
+        resolvers = {
+            "pandoc": self.tool_resolver.resolve_pandoc,
+            "soffice": self.tool_resolver.resolve_libreoffice,
+            "libreoffice": self.tool_resolver.resolve_libreoffice,
+            "java": self.tool_resolver.resolve_java,
+            "mmdc": self.tool_resolver.resolve_mmdc,
+            "resvg": self.tool_resolver.resolve_resvg,
+        }
+        return NativeToolCapabilityDetector(
+            self.tool_resolver.tool_version,
+            executable_resolver=lambda executable, configured: (
+                resolvers[executable](configured) if executable in resolvers else None
+            ),
+            paths=paths,
+        )
+
+    def create_pipeline_resources(self, **kwargs: Any) -> Any:
+        """Wire concrete pipeline adapters into the application assembler."""
+        from docs.application.pipeline_assembly import assemble_pipeline_resources
+
+        paths = kwargs.get("paths", {})
+        return assemble_pipeline_resources(
+            **kwargs,
+            capability_detector=self.create_tool_capability_detector(paths),
+        )
+
+    def create_capability_registry(
+        self,
+        renderer: Any,
+        output_format: str,
+        document_root: Path,
+        paths: dict[str, object],
+    ) -> Any:
+        """Build capability diagnostics without exposing adapters to the CLI."""
+        from docs.application.document_pipeline import _capabilities_for
+
+        return _capabilities_for(
+            renderer,
+            output_format,
+            document_root,
+            paths,
+            capability_detector=self.create_tool_capability_detector(paths),
         )
 
     def create_document_pipeline_service(

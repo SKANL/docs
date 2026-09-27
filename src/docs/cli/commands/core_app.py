@@ -7,7 +7,6 @@ from pathlib import Path
 
 import typer
 
-from docs.application.document_pipeline import _capabilities_for
 from docs.cli._shared import _ctx, emit_result
 from docs.domain.issue_codes import ISSUE_CODES, explain_code
 from docs.domain.review import ReviewDimension, ReviewResult
@@ -56,7 +55,7 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
         renderer = deps.resolve_renderer(resolved.config)
     except (AttributeError, TypeError, ValueError):
         renderer = None
-    registry = _capabilities_for(
+    registry = deps.create_capability_registry(
         renderer,
         str(output_format),
         deps.workspace.doc_root(resolved.doc_id),

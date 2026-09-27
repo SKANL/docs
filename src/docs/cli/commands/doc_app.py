@@ -13,7 +13,6 @@ from pathlib import Path
 
 import typer
 
-from docs.application.document_pipeline import _capabilities_for
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
@@ -209,7 +208,7 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
             "requirement": "a registered output renderer",
             "degradation": "diagnostics only; rendering remains unavailable",
         }
-    registry = _capabilities_for(
+    registry = deps.create_capability_registry(
         renderer,
         str(output_format),
         deps.workspace.doc_root(resolved.doc_id),

@@ -20,7 +20,6 @@ from typing import Any
 import typer
 
 from docs.application.document_pipeline import (
-    _capabilities_for,
     _current_input_identities,
     _resolve_publish_inputs,
 )
@@ -537,7 +536,7 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     output = resolved.config.get("output", {})
     output_format = output.get("format", "docx") if isinstance(output, Mapping) else "docx"
     renderer = deps.resolve_renderer(resolved.config)
-    capability_registry = _capabilities_for(
+    capability_registry = deps.create_capability_registry(
         renderer,
         output_format,
         deps.workspace.doc_root(resolved.doc_id),

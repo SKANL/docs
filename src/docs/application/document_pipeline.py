@@ -11,7 +11,7 @@ import tempfile
 import uuid
 import zipfile
 from collections.abc import Mapping
-from contextlib import closing, contextmanager
+from contextlib import closing
 from copy import deepcopy
 from html.parser import HTMLParser
 from pathlib import Path
@@ -20,7 +20,7 @@ from typing import Any
 from docs.application.artifact_render_service import ArtifactRenderService
 from docs.application.build_manifest_service import BuildManifestService
 from docs.application.document_input_stages import DocumentInputStageService
-from docs.application.pipeline_assembly import assemble_explicit_stage_operations, assemble_pipeline_resources
+from docs.application.pipeline_assembly import assemble_explicit_stage_operations
 from docs.application.pipeline_publication import PipelinePublication
 from docs.application.pipeline_service import PipelineService
 from docs.application.review_stages import ReviewStageService
@@ -31,10 +31,6 @@ from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension, ReviewResult
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
-from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
-from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
-from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
-from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 
 
 def _write_manifest_text(path: Path, content: str) -> None:
@@ -409,6 +405,7 @@ def _capabilities_for(
     output_format: str,
     document_root: Path,
     paths: dict[str, object] | None = None,
+    capability_detector: Any = None,
 ) -> ToolCapabilityRegistry:
     capabilities = list(_renderer_capabilities(renderer))
     capabilities.extend(
@@ -420,28 +417,7 @@ def _capabilities_for(
     if output_format == "pdf":
         capabilities.append(ToolCapability("soffice", "soffice", required=True, requirement="required to derive PDF from DOCX", degradation="skip PDF derivation in draft mode"))
     capabilities.extend(_visual_capabilities(document_root))
-    tool_resolver = SystemToolResolverAdapter()
-    canonical_resolvers = {
-        "pandoc": tool_resolver.resolve_pandoc,
-        "soffice": tool_resolver.resolve_libreoffice,
-        "libreoffice": tool_resolver.resolve_libreoffice,
-        "java": tool_resolver.resolve_java,
-        "mmdc": tool_resolver.resolve_mmdc,
-        "resvg": tool_resolver.resolve_resvg,
-    }
-
-    def resolve_executable(executable: str, paths: dict[str, object]) -> str | None:
-        resolver = canonical_resolvers.get(executable)
-        return resolver(paths) if resolver else None
-
-    return ToolCapabilityRegistry(
-        capabilities,
-        NativeToolCapabilityDetector(
-            tool_resolver.tool_version,
-            executable_resolver=resolve_executable,
-            paths=paths,
-        ),
-    )
+    return ToolCapabilityRegistry(capabilities, capability_detector)
 
 
 def create_document_pipeline_service(
@@ -506,13 +482,13 @@ def create_document_pipeline_service(
         candidate = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
         if candidate.is_file():
             state["package_candidate"] = candidate
-    resources = assemble_pipeline_resources(
+    resources = deps.create_pipeline_resources(
         renderer=state["renderer"],
         output_format=output_format,
         document_root=initial_root,
         document_id=initial.doc_id,
         paths=state["config"].get("paths", {}) or {},
-        atomic_file_writer=getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
+        atomic_file_writer=deps.atomic_file_writer,
         artifact=lambda: state.get("artifact"),
         manifest=lambda: state.get("manifest"),
         package_writer=lambda candidate, staging: deps.package_publications.package(
@@ -732,7 +708,7 @@ def create_document_pipeline_service(
         # complete snapshot of the already-published formats plus this run's
         # attested artifact, so repeatable --format builds accumulate one
         # release archive instead of replacing it format by format.
-        with _package_lock(destination):
+        with deps.release_lock(destination):
             staging = Path(tempfile.mkdtemp(prefix=".x20-package-", dir=source_dir.parent))
             try:
                 for existing in sorted(source_dir.iterdir(), key=lambda path: path.name):
@@ -819,7 +795,7 @@ def create_document_pipeline_service(
             runs_dir=runs_dir,
             retained_dir=retained_dir,
             build_token=build_token,
-            directory_guard=directory_handle_guard,
+            directory_guard=deps.directory_guard,
             directory_identity=_directory_identity,
             assert_directory_identity=_assert_directory_identity,
         )
@@ -992,10 +968,3 @@ def _directory_identity(path: Path) -> tuple[int, int]:
 def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operation: str) -> None:
     if _directory_identity(path) != expected or path.is_symlink() or not path.is_dir():
         raise RuntimeError(f"package output parent changed during {operation}: {path}")
-
-
-@contextmanager
-def _package_lock(output: Path):
-    """Serialize existing release-package merge and publication transactions."""
-    with owned_directory_lock(output.with_name(output.name + ".lock")):
-        yield

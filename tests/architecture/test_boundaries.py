@@ -164,6 +164,16 @@ def test_source_pipeline_uses_ports_instead_of_dynamic_infrastructure_imports() 
     assert "MarkdownNormalizerPort" in source
 
 
+def test_pipeline_wiring_receives_infrastructure_collaborators_from_composition() -> None:
+    """Pipeline application services may use ports, never import adapters."""
+    for name in ("pipeline_assembly.py", "document_pipeline.py"):
+        source = (SRC_ROOT / "application" / name).read_text(encoding="utf-8")
+        assert "docs.infrastructure" not in source, (
+            f"application/{name} must receive infrastructure collaborators "
+            "from the composition root"
+        )
+
+
 def test_document_pipeline_owns_native_review_and_release_handlers() -> None:
     """The application pipeline, not the CLI adapter, owns these stage fallbacks."""
     path = SRC_ROOT / "application" / "document_pipeline.py"
