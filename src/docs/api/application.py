@@ -806,7 +806,10 @@ class X20Application:
             ]
         if request.principal is not None:
             items = [item for item in items if self._is_owned(item, request.principal)]
-        return self._page(self._filter(items, request.query), request, "runs")
+        # workspace_id is resolved from the nested run payload above; do not
+        # reinterpret it as a top-level record field in the generic filter.
+        item_filters = {key: value for key, value in request.query.items() if key != "workspace_id"}
+        return self._page(self._filter(items, item_filters), request, "runs")
 
     def _owned_run(self, run_id: str, request: Request) -> Run:
         workspace_id = self._workspace_filter(request)
