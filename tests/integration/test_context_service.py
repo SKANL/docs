@@ -12,6 +12,11 @@ from docs.infrastructure.persistence.json_context_repository import JsonContextR
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 def _template() -> Template:
     return Template(
         type="documento-generico",

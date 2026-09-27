@@ -13,6 +13,11 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Workspace:
     return Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")

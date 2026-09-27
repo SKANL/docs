@@ -12,6 +12,11 @@ from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenc
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 def _service(tmp_path):
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     return CorrectionsService(JsonSectionRepository(workspace), JsonEvidenceRepository()), workspace

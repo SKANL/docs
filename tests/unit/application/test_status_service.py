@@ -37,6 +37,11 @@ _NORMATIVE = NormativeSettings(
 )
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 class _StatusReaderStub:
     def __init__(self, status: StatusSnapshot) -> None:
         self.status = status

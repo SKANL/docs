@@ -34,6 +34,11 @@ _NORMATIVE = NormativeSettings(
 )
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 class _SpyReviewService:
     """Wraps a real ReviewService and records which sections/document calls
     were made, to prove scoped re-validation touches ONLY the affected

@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from docs.application.asset import AssetService
 from docs.application.doctor import DoctorService
 from docs.application.evidence import EvidenceService
@@ -26,6 +28,11 @@ from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenc
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 
 _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "templates" / "technical-report-srs.json"
+
+
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
 
 
 def _resolved_config(tmp_path: Path) -> dict:

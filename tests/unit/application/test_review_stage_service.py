@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import pytest
 from docx import Document
 
 from docs.application.format_audit import FormatAuditService
@@ -16,6 +17,11 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+
+
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
 
 
 def _service(tmp_path: Path) -> ReviewStageService:
