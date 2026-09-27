@@ -25,7 +25,7 @@ from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .composition import compose_application
-from .domain.contracts import Artifact, Passport, Run
+from .domain.runtime_records import Artifact, Passport, Run
 from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,

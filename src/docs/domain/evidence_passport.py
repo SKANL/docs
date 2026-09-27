@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, ClassVar
 
-from docs.domain.contracts import Passport
+from docs.domain.runtime_records import Passport
 
 EVIDENCE_PASSPORT_SCHEMA = "docs.evidence-passport/v1"
 REDACTED = "[REDACTED]"

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.domain.contracts import Run
+from docs.domain.runtime_records import Run
 from docs.infrastructure.persistence.sqlite_runtime import SqliteRunStore
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "desktop" / "scripts"

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from docs.domain.contracts import Blob
+from docs.domain.runtime_records import Blob
 from docs.infrastructure.persistence.s3_blob_store import S3BlobStore
 
 

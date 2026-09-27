@@ -6,7 +6,7 @@ from types import MappingProxyType
 
 import pytest
 
-from docs.domain.contracts import Artifact, Blob, Graph, Lease, Passport, Run
+from docs.domain.runtime_records import Artifact, Blob, Graph, Lease, Passport, Run
 from docs.domain.ports.x20 import (
     ArtifactStore,
     BlobStore,
@@ -149,7 +149,7 @@ def test_job_queue_and_lease_store_support_claim_lifecycle():
 
 
 def test_job_and_lease_contracts_are_versioned():
-    from docs.domain.contracts import Job, Lease
+    from docs.domain.runtime_records import Job, Lease
 
     for value in (Job("job-1", {"run_id": "run-1"}), Lease("run-1", "worker-1", 30)):
         payload = value.to_dict()

@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from docs.domain.contracts import SCHEMA, Job
+from docs.domain.runtime_records import SCHEMA, Job
 
 
 class RedisJobQueue:

@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from docs.domain.contracts import Job, Run
 from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
+from docs.domain.runtime_records import Job, Run
 from docs.observability import NoOpObservability, ObservabilityPort
 
 

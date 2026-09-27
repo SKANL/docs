@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from docs.domain.contracts import Blob
+from docs.domain.runtime_records import Blob
 
 _JSON = dict[str, Any]
 

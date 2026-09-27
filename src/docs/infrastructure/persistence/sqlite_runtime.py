@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from docs.domain.contracts import SCHEMA, Artifact, Graph, Job, Passport, Run
+from docs.domain.runtime_records import SCHEMA, Artifact, Graph, Job, Passport, Run
 
 _JSON = dict[str, Any]
 

@@ -4,10 +4,10 @@ import builtins as _builtins
 from pathlib import Path
 from typing import Any, Protocol
 
-from docs.domain.contracts import SCHEMA, Artifact, Blob, Graph, Job, Passport, Run
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 from docs.domain.ports.document_repository import DocumentRepository
 from docs.domain.ports.render_verification_port import RenderVerificationPort
+from docs.domain.runtime_records import SCHEMA, Artifact, Blob, Graph, Job, Passport, Run
 
 X20_PORT_CONTRACT = SCHEMA
 

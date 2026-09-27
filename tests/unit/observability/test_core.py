@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from docs.domain.contracts import Passport
+from docs.domain.runtime_records import Passport
 from docs.observability import (
     NoOpObservability,
     Observability,

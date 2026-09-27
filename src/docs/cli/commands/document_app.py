@@ -30,11 +30,11 @@ from docs.application.visual_baseline import VisualBaselineError, VisualBaseline
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli.commands.source_app import run_source_command
 from docs.domain.artifacts import BuildManifest
-from docs.domain.contracts import Run
 from docs.domain.identity import sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
+from docs.domain.runtime_records import Run
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,

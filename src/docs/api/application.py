@@ -20,7 +20,7 @@ from docs.application.graph_queries import GraphQueryService
 from docs.application.imports import ImportError, SourceImportService
 from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
-from docs.domain.contracts import Run
+from docs.domain.runtime_records import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth

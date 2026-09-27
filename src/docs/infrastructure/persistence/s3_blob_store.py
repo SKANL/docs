@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
-from docs.domain.contracts import Blob
+from docs.domain.runtime_records import Blob
 
 _MANIFEST_METADATA_KEY = "x20-blob"
 

@@ -11,7 +11,7 @@ import pytest
 
 import docs.sidecar as sidecar
 from docs.api.http import Request
-from docs.domain.contracts import Run
+from docs.domain.runtime_records import Run
 from docs.domain.workspace import Workspace
 from docs.sidecar import SidecarConfig, _persist_worker_evidence, build_application, build_server, run
 

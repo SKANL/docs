@@ -13,7 +13,7 @@ import typer
 
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli._shared import _ctx
-from docs.domain.contracts import Run
+from docs.domain.runtime_records import Run
 from docs.infrastructure.persistence.sqlite_runtime import SqliteJobQueue, SqliteRunStore
 
 run_app = typer.Typer(add_completion=False, help="Inspect and control durable runs.")

@@ -6,7 +6,7 @@ from collections import Counter
 from collections.abc import Mapping
 from typing import Any
 
-from docs.domain.contracts import Passport
+from docs.domain.runtime_records import Passport
 
 _KNOWN_STATUSES = frozenset({"accepted", "failed", "pending", "rejected", "skipped"})
 

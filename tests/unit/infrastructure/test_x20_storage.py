@@ -9,7 +9,7 @@ from typing import cast
 
 import pytest
 
-from docs.domain.contracts import Artifact, Blob, Graph, Job, Passport, Run
+from docs.domain.runtime_records import Artifact, Blob, Graph, Job, Passport, Run
 from docs.infrastructure.persistence.x20 import (
     FilesystemBlobStore,
     RedisJobQueue,

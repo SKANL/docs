@@ -13,7 +13,7 @@ from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.provenance import ProvenanceLedger
 from docs.application.semantic_graph import SemanticGraphProjector
-from docs.domain.contracts import Artifact
+from docs.domain.runtime_records import Artifact
 from docs.domain.semantic_graph import NormalizedSourceRecord
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
     PythonDocxImageMetadataAdapter,

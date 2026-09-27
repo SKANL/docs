@@ -12,7 +12,7 @@ from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
 from docs.application.workspaces import WorkspaceRegistry
-from docs.domain.contracts import Artifact, Graph, Passport, Run
+from docs.domain.runtime_records import Artifact, Graph, Passport, Run
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 
 

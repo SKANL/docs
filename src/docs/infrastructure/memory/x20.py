@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 from time import monotonic
 
-from docs.domain.contracts import Artifact, Blob, Graph, Job, Passport, Run
+from docs.domain.runtime_records import Artifact, Blob, Graph, Job, Passport, Run
 
 
 class InMemoryRunStore:
