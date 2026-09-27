@@ -17,7 +17,7 @@ from typing import Any, Protocol
 from docs.composition import ApplicationComposition
 from docs.domain.contracts import Job
 from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
-from docs.infrastructure.persistence.x20 import (
+from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -38,15 +38,13 @@ class PipelineRuntimePort(Protocol):
         outputs: Sequence[Path] = (),
         excluded_stages: set[str] | frozenset[str] = frozenset(),
         external_artifacts: Sequence[str] | None = None,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class PipelineRuntimeFactory(Protocol):
     """Create a runtime for a named pipeline without coupling to its setup."""
 
-    def __call__(self, pipeline_id: str) -> PipelineRuntimePort:
-        ...
+    def __call__(self, pipeline_id: str) -> PipelineRuntimePort: ...
 
 
 @dataclass(frozen=True)

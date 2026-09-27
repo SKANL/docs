@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from .domain.workspace_format import validate_workspace_layout, validate_workspace_marker
-from .infrastructure.persistence.x20 import (
+from .infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteFindingStore,
     SqliteJobQueue,

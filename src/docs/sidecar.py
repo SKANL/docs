@@ -27,7 +27,7 @@ from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .composition import compose_application
 from .domain.contracts import Artifact, Passport, Run
 from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
-from .infrastructure.persistence.x20 import (
+from .infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteFindingStore,
     SqliteGraphStore,

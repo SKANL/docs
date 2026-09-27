@@ -36,7 +36,7 @@ from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
-from docs.infrastructure.persistence.x20 import (
+from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteFindingStore,
     SqliteJobQueue,
@@ -706,7 +706,7 @@ def run_document(
     # Import lazily to avoid making the CLI composition root depend on the
     # sidecar at import time; the worker composition remains the single
     # implementation of execution and evidence finalization.
-    from docs.infrastructure.persistence.x20 import (
+    from docs.infrastructure.persistence.sqlite_runtime import (
         SqliteFindingStore,
         SqlitePublicationStore,
     )

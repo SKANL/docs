@@ -1,4 +1,4 @@
-from docs.infrastructure.persistence.x20 import (
+from docs.infrastructure.persistence.sqlite_runtime import (
     SQLiteArtifactStore,
     SqliteArtifactStore,
     SQLiteGraphStore,
