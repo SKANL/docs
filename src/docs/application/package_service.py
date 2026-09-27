@@ -118,7 +118,7 @@ def _directory_identity(path: Path) -> tuple[int, int]:
     return identity.st_dev, identity.st_ino
 
 
-def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operation: str) -> None:
+def assert_directory_identity(path: Path, expected: tuple[int, int], *, operation: str) -> None:
     if _directory_identity(path) != expected or path.is_symlink() or not path.is_dir():
         raise PackagePublicationError(f"package output parent changed during {operation}: {path}")
 

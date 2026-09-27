@@ -3,7 +3,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from docs.cli.commands.document_app import _fallback_structural_audit
+from docs.application.document_pipeline import _fallback_structural_audit
 
 
 def test_structural_fallback_reopens_docx_without_auditor_service(tmp_path: Path) -> None:

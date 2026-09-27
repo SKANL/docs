@@ -1,0 +1,9 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+
+class LeaseStore(Protocol):
+    def acquire(self, resource: str, owner: str, ttl_seconds: int) -> bool: ...
+    def renew(self, resource: str, owner: str, ttl_seconds: int) -> bool: ...
+    def release(self, resource: str, owner: str) -> bool: ...

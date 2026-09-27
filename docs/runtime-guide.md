@@ -9,7 +9,7 @@ the migration checklist for every workspace and consumer is green.
 
 | Existing workflow | V2 replacement | Migration note |
 |---|---|---|
-| `docs doc new <id>` | `docs document create <id>` | Same workspace document service; choose template/title explicitly when needed. |
+| `docs doc new <id>` | — | Canonical workspace document creation command; choose template/title explicitly when needed. |
 | `docs document ingest` | `docs document ingest` | Native v2 source report; does not author sections. |
 | `docs document prepare` | `docs document prepare` | Adds normalization and `docs.structure/v2`; source preparation is repeatable. |
 | `docs document build` | `docs document build --format ...` | Writes verified requested formats under `output/current/`, not unverified output. |
@@ -17,10 +17,7 @@ the migration checklist for every workspace and consumer is green.
 | Manual artifact copying | `docs document publish ... --policy strict|release` | Requires a matching manifest and verifiable attestation. |
 | Ad hoc ZIP creation | `docs document package ...` | Atomic, deterministic package operation over the supplied directory. |
 
-Current pipeline commands are removed
-V2 does not silently invoke them or eagerly construct their aggregate, and
-every new integration must use the v2 commands. The bridge can be retired
-once the document/workspace inventory has no remaining current consumers.
+The old duplicate document-creation command (`document create`) is removed; use `docs doc new`. `PipelineService` is the sole application pipeline owner. The private executor is an implementation detail, not a public integration point.
 
 ## Safe sequence
 
@@ -37,4 +34,4 @@ once the document/workspace inventory has no remaining current consumers.
 
 V2 uses the existing workspace and template data model but has a separate output and provenance boundary. The `document` command is the only public pipeline surface. There is no automatic promotion from `output/current/` to `output/published/`; choose publication explicitly. Public stage-backed boundaries can also be executed independently with `--pipeline`, for example `docs document build --pipeline document-package` and `docs document build --pipeline document-publish` after a verified build.
 
-The normal CLI composition root now provides native handlers for the complete stage inventory. `unsupported` is reserved for deliberately incomplete custom composition or an unavailable optional input; it is not an acceptable result for a release build. Use `document status --json` and fail CI when the selected release pipeline contains an unsupported stage.
+The shared factory in `src/docs/composition.py` constructs the typed application dependencies and `PipelineService`; CLI, API, and worker entry points reuse it. API transport configuration and worker polling/queue/lease options remain process-specific. `unsupported` is reserved for deliberately incomplete injected composition or an unavailable optional capability; it is not an acceptable result for a release build. Use `document status --json` and fail CI when the selected release pipeline contains an unsupported stage.

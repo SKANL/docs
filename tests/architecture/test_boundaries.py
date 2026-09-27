@@ -164,9 +164,19 @@ def test_source_pipeline_uses_ports_instead_of_dynamic_infrastructure_imports() 
     assert "MarkdownNormalizerPort" in source
 
 
-def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
-    """The v2 workspace bridge must not regress these stages to implicit gaps."""
-    path = SRC_ROOT / "cli" / "commands" / "document_app.py"
+def test_pipeline_wiring_receives_infrastructure_collaborators_from_composition() -> None:
+    """Pipeline application services may use ports, never import adapters."""
+    for name in ("pipeline_assembly.py", "document_pipeline.py"):
+        source = (SRC_ROOT / "application" / name).read_text(encoding="utf-8")
+        assert "docs.infrastructure" not in source, (
+            f"application/{name} must receive infrastructure collaborators "
+            "from the composition root"
+        )
+
+
+def test_document_pipeline_owns_native_review_and_release_handlers() -> None:
+    """The application pipeline, not the CLI adapter, owns these stage fallbacks."""
+    path = SRC_ROOT / "application" / "document_pipeline.py"
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
     functions = {
@@ -177,8 +187,9 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
     assert {
         "_native_document_review",
         "_native_package_release",
-        "_write_package_archive",
     } <= functions
+    assert "_write_package_archive" not in functions
+    assert "deps.package_publications.package" in source
     assert '"package-release": stage_provider.operation("package_release") or _native_package_release' in source
     assert '"evidence-review": _review_stage_operation(' in source
     assert '"consistency-review": _review_stage_operation(' in source
@@ -196,45 +207,12 @@ def test_workspace_bridge_declares_native_review_and_release_handlers() -> None:
         for node in ast.walk(review_stage)
     )
 
-    explicit_stages = next(
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AnnAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == "explicit_stages"
-        and isinstance(node.value, ast.Dict)
-    )
-    visual_stage = next(
-        value
-        for key, value in zip(explicit_stages.keys, explicit_stages.values, strict=True)
-        if isinstance(key, ast.Constant) and key.value == "visual_review"
-    )
-    assert isinstance(visual_stage, ast.IfExp)
-    # DOCX must use the injected rendered QA too. Runtime routing is covered by
-    # test_v2_docx_visual_review_routes_real_qa_despite_native_callback.
-    assert isinstance(visual_stage.body, ast.Lambda)
-    assert isinstance(visual_stage.body.body, ast.Call)
-    assert isinstance(visual_stage.body.body.func, ast.Name)
-    assert visual_stage.body.body.func.id == "_review_stage"
-    assert isinstance(visual_stage.body.body.args[0], ast.Constant)
-    assert visual_stage.body.body.args[0].value == "visual-review"
-    assert any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "_callable_stage"
-        and len(node.args) == 1
-        and isinstance(node.args[0], ast.Constant)
-        and node.args[0].value == "visual_review"
-        for node in ast.walk(visual_stage.orelse)
-    )
-    assert any(
-        isinstance(node, ast.Name) and node.id == "_native_visual_review"
-        for node in ast.walk(visual_stage.orelse)
-    )
+    assert "explicit_stages = assemble_explicit_stage_operations(" in source
+    assert '"visual_review": _native_visual_review' in source
 
 
-def test_workspace_bridge_keeps_audit_and_verify_fallbacks_callable() -> None:
-    source = (SRC_ROOT / "cli" / "commands" / "document_app.py").read_text(encoding="utf-8")
+def test_document_pipeline_keeps_audit_and_verify_fallbacks_callable() -> None:
+    source = (SRC_ROOT / "application" / "document_pipeline.py").read_text(encoding="utf-8")
     assert 'return lambda: _review_stage(stage)' in source
     assert '"structural-audit": _review_stage_operation("structural-audit", audit)' in source
     assert '"editorial-review": _review_stage_operation("editorial-review", verify)' in source
@@ -244,3 +222,15 @@ def test_v2_composition_does_not_reach_through_current_pipeline_aggregate():
     source = (SRC_ROOT / "cli" / "commands" / "document_app.py").read_text(encoding="utf-8")
     assert "deps.pipeline" not in source
     assert 'v2_native' not in source
+
+
+def test_cli_api_and_worker_share_the_application_composition_boundary() -> None:
+    """Process bootstraps must use the package composition, not local service assembly."""
+    cli_source = (SRC_ROOT / "cli" / "main.py").read_text(encoding="utf-8")
+    api_source = (SRC_ROOT / "sidecar.py").read_text(encoding="utf-8")
+    worker_source = (SRC_ROOT / "workers" / "composition.py").read_text(encoding="utf-8")
+
+    assert "from docs.composition import compose_application" in cli_source
+    assert "from .composition import compose_application" in api_source
+    assert "from docs.composition import ApplicationComposition" in worker_source
+    assert "application: ApplicationComposition" in worker_source

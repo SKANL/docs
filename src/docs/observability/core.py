@@ -11,7 +11,7 @@ from importlib import import_module
 from typing import Any, Literal, Protocol
 from urllib.parse import unquote
 
-from docs.domain.contracts import Passport
+from docs.domain.runtime_records import Passport
 
 from .passport import passport_metrics
 from .redaction import redact_attributes, redact_signal_name, redact_text

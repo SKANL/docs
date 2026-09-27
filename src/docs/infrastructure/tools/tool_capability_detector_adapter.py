@@ -11,10 +11,17 @@ from docs.domain.tool_capability import CapabilityDetection, ToolCapability
 
 
 class NativeToolCapabilityDetector:
-    """Probe PATH and Python metadata only when a registry asks for it."""
+    """Probe configured/canonical executables and Python metadata lazily."""
 
-    def __init__(self, executable_version: Callable[[str], str | None] | None = None) -> None:
+    def __init__(
+        self,
+        executable_version: Callable[[str], str | None] | None = None,
+        executable_resolver: Callable[[str, dict[str, object]], str | None] | None = None,
+        paths: dict[str, object] | None = None,
+    ) -> None:
         self._executable_version = executable_version
+        self._executable_resolver = executable_resolver
+        self._paths = paths or {}
 
     def detect(self, capability: ToolCapability) -> CapabilityDetection:
         if capability.module:
@@ -32,7 +39,9 @@ class NativeToolCapabilityDetector:
         return CapabilityDetection.available_at(f"python:{module}", version=_module_version(module))
 
     def _detect_executable(self, executable: str) -> CapabilityDetection:
-        path = shutil.which(executable)
+        path = self._executable_resolver(executable, self._paths) if self._executable_resolver else None
+        if path is None:
+            path = shutil.which(executable)
         if path is None:
             return CapabilityDetection.unavailable(f"Executable not found: {executable}")
         version = self._executable_version(path) if self._executable_version else None

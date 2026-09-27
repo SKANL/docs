@@ -100,7 +100,7 @@ class QaService:
 
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)
-        # Keep the legacy/manual path for callers that intentionally omit the
+        # Keep the compatibility/manual path for callers that intentionally omit the
         # shared verifier.  When it is composed, baseline comparison belongs to
         # RenderVerificationAdapter so every format follows the same contract.
         if baseline_dir is not None and render_verification is None:

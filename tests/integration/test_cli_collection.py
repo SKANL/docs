@@ -13,10 +13,9 @@ from docs.cli.main import app
 runner = CliRunner()
 
 @pytest.fixture
-def ws(tmp_path, monkeypatch):
-    (tmp_path / "documents").mkdir()
+def ws(canonical_cli_workspace):
+    tmp_path = canonical_cli_workspace
     templates = tmp_path / "templates"
-    templates.mkdir()
     # DEVIATION from the plan's literal `_TEMPLATE` (a module-level constant
     # with no "paths" key): EvidenceService.build_rules reads
     # config["paths"]["manual_dir"]/["extracted_dir"] as *required* keys
@@ -37,8 +36,6 @@ def ws(tmp_path, monkeypatch):
         },
     }
     (templates / "tesina.json").write_text(json.dumps(template), encoding="utf-8")
-    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(tmp_path / "documents"))
-    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
     # DEVIATION from the plan's literal fixture (which invokes `docs doc new`):
     # the `doc` command group is Task 6's scope and does not exist yet. Same
     # deviation established in Task 1's test_cli_core.py.

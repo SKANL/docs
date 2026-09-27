@@ -35,7 +35,11 @@ _REASON = {
     500: "Internal Server Error",
     503: "Service Unavailable",
 }
-_REQUEST_BODY_TIMEOUT = 5.0
+# Local Desktop imports can legitimately carry large base64-encoded sources.
+# Five seconds is too aggressive on Windows when antivirus or filesystem
+# inspection throttles the request stream; the API must not classify a valid
+# upload as incomplete while the client is still transmitting it.
+_REQUEST_BODY_TIMEOUT = 120.0
 
 
 @dataclass(frozen=True)
@@ -168,6 +172,16 @@ class X20Transport:
                 response = Response(204, b"", {})
             elif path == "/healthz":
                 response = Response.json({"status": "ok"})
+            # The local sidecar owns `/health` and must be able to report
+            # workspace configuration errors. The remote X20 application has
+            # no health_path attribute, so it receives the transport-level
+            # compatibility response below.
+            elif path == "/health" and getattr(self.application, "health_path", None) != "/health":
+                ready = bool(self.ready_check())
+                response = Response.json(
+                    {"ready": ready, "protocol": "docs-api/v1"},
+                    200 if ready else 503,
+                )
             elif path == "/readyz":
                 ready = bool(self.ready_check())
                 response = Response.json({"status": "ready" if ready else "not_ready"}, 200 if ready else 503)
@@ -347,14 +361,15 @@ class X20Transport:
 
     def _external_path(self, environ: Mapping[str, Any]) -> str:
         path = urlsplit(str(environ.get("PATH_INFO", "/"))).path or "/"
+        query = str(environ.get("QUERY_STRING", ""))
         base = self.config.base_path
         if base != "/":
             if path == base:
                 return "/"
             if not path.startswith(f"{base}/"):
-                return path
+                return f"{path}?{query}" if query else path
             path = path[len(base) :]
-        return path or "/"
+        return f"{path or '/'}?{query}" if query else (path or "/")
 
     @staticmethod
     def _header(environ: Mapping[str, Any], name: str) -> str | None:
@@ -664,6 +679,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         serve(server, once=args.once)
     finally:
+        shutdown = getattr(application, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
         for name, handler in previous.items():
             signal.signal(getattr(signal, name), handler)
     return 0

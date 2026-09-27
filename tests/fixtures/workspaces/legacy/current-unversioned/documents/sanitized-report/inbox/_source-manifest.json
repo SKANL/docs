@@ -1,0 +1,24 @@
+{
+  "conflicts": [],
+  "duplicates": [],
+  "placements": [],
+  "schema": 1,
+  "sources": [
+    {
+      "confidence": "high",
+      "confirmed_role": "evidence",
+      "file": "da544f726ca4-source.bin",
+      "kind": "unknown",
+      "output": "sections/ingested/source-binary-da544f72.md",
+      "proposed_role": "evidence",
+      "relative_path": "da544f726ca4-source.bin",
+      "role_status": "confirmed",
+      "sha256": "da544f726ca44fe8403759872375b74ffd25c300eaa9345193d67fb665b775f2",
+      "signals": [
+        "fixture"
+      ],
+      "source_dir": ".",
+      "status": "ingested"
+    }
+  ]
+}

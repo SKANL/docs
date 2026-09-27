@@ -6,11 +6,21 @@ import pytest
 from docs.domain.context import TopicStatus
 from docs.domain.models.template import ContextSchema, Field, Topic
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
+
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
 
 
 @pytest.fixture
 def repo(tmp_path: Path) -> JsonContextRepository:
+    write_workspace_marker(tmp_path)
     ws = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
     (ws.doc_root("alpha")).mkdir(parents=True)
     return JsonContextRepository(ws)
@@ -118,3 +128,25 @@ def test_index_md_contains_human_table(repo):
     assert "| Tema | Archivo | Completo | Consumido por |" in text
     assert "| Alumno | alumno.md | no | introduccion |" in text
     assert "| Introducción | intro.md | sí | introduccion, resumen |" in text
+
+
+def test_context_repository_rejects_unversioned_workspace_without_mutation() -> None:
+    before = {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    }
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        JsonContextRepository(
+            Workspace(
+                documents_dir=CURRENT_UNVERSIONED / "documents",
+                templates_dir=CURRENT_UNVERSIONED / "templates",
+            )
+        )
+
+    assert {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    } == before

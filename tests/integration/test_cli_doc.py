@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from docs.cli.main import app
+from docs.domain.workspace_format import write_workspace_marker
 
 runner = CliRunner()
 
@@ -14,6 +17,7 @@ _TEMPLATE = {"type": "tesina", "title": "Tesina", "sections": [], "section_contr
 
 @pytest.fixture
 def ws(tmp_path, monkeypatch):
+    write_workspace_marker(tmp_path)
     (tmp_path / "documents").mkdir()
     templates = tmp_path / "templates"
     templates.mkdir()
@@ -23,11 +27,18 @@ def ws(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_doc_new_creates_and_activates(ws):
+def test_doc_new_is_the_canonical_creation_path_and_activates(ws):
     result = runner.invoke(app, ["doc", "new", "alpha"])
     assert result.exit_code == 0
     assert "creado desde `tesina`" in result.output
     assert runner.invoke(app, ["doc", "current"]).output.strip() == "alpha"
+
+
+def test_document_create_is_not_a_supported_command(ws):
+    result = runner.invoke(app, ["document", "create", "legacy"])
+
+    assert result.exit_code != 0
+    assert "No such command 'create'" in result.output
 
 
 def test_doc_list_marks_active(ws):
@@ -67,6 +78,21 @@ def test_doc_list_empty_message(ws):
     assert "No hay documentos" in result.output
 
 
+def test_document_inspect_and_diff_use_the_composed_artifact_report_service(ws):
+    left = ws / "before.txt"
+    right = ws / "after.txt"
+    left.write_text("before\n", encoding="utf-8")
+    right.write_text("after\n", encoding="utf-8")
+
+    inspection = runner.invoke(app, ["document", "inspect", str(left), "--json"])
+    comparison = runner.invoke(app, ["document", "diff", str(left), str(right), "--json"])
+
+    assert inspection.exit_code == 0, inspection.output
+    assert json.loads(inspection.output)["path"] == str(left.resolve())
+    assert comparison.exit_code == 0, comparison.output
+    assert json.loads(comparison.output)["text_diff"]
+
+
 # ── PR2: workspace config + `doc init` bootstrap (design.md item A) ────────
 
 
@@ -89,6 +115,11 @@ def test_doc_init_bootstraps_fresh_workspace(fresh_cwd):
     # templates_dir was empty -> seeded with the built-in templates.
     assert (fresh_cwd / "templates" / "documento-generico.json").exists()
     assert (fresh_cwd / "templates" / "reporte-estadia-tic.json").exists()
+    registry = json.loads((fresh_cwd / ".docs" / "workspaces.json").read_text(encoding="utf-8"))
+    assert registry["active"] == registry["workspaces"][0]["id"]
+    assert json.loads((fresh_cwd / "workspace.json").read_text(encoding="utf-8")) == {
+        "schema": "docs.workspace/v1"
+    }
 
 
 def test_doc_init_rerun_reports_already_initialized(fresh_cwd):
@@ -135,6 +166,76 @@ def test_doc_init_does_not_reseed_existing_templates(fresh_cwd):
     assert (templates / "custom.json").read_text(encoding="utf-8") == '{"type": "custom", "title": "Mine"}'
 
 
+def test_doc_init_rejects_existing_unversioned_workspace_without_mutation(
+    fresh_cwd: Path,
+) -> None:
+    fixture = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "workspaces"
+        / "legacy"
+        / "current-unversioned"
+    )
+    shutil.copytree(fixture / "documents", fresh_cwd / "documents")
+    shutil.copytree(fixture / "templates", fresh_cwd / "templates")
+    before = {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(app, ["doc", "init"])
+
+    assert result.exit_code != 0
+    assert "workspace_marker_missing" in (result.output + str(result.exception or ""))
+    assert {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    } == before
+    assert not (fresh_cwd / "workspace.json").exists()
+
+
+def test_ordinary_command_rejects_unversioned_workspace_without_mutation(
+    fresh_cwd: Path,
+) -> None:
+    (fresh_cwd / "documents").mkdir()
+    (fresh_cwd / "templates").mkdir()
+    sentinel = fresh_cwd / "documents" / "keep.txt"
+    sentinel.write_text("unchanged", encoding="utf-8")
+    before = {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    }
+
+    result = runner.invoke(app, ["doc", "list"])
+
+    assert result.exit_code != 0
+    assert "workspace_marker_missing" in (result.output + str(result.exception or ""))
+    assert {
+        path.relative_to(fresh_cwd): path.read_bytes()
+        for path in fresh_cwd.rglob("*")
+        if path.is_file()
+    } == before
+
+
+def test_doc_init_rejects_content_roots_outside_the_workspace_before_writing(
+    fresh_cwd: Path,
+) -> None:
+    outside = fresh_cwd.parent / f"{fresh_cwd.name}-outside-documents"
+
+    result = runner.invoke(
+        app,
+        ["doc", "init", "--documents-dir", str(outside)],
+    )
+
+    assert result.exit_code != 0
+    assert "workspace_path_outside_root" in (result.output + str(result.exception or ""))
+    assert not outside.exists()
+    assert list(fresh_cwd.iterdir()) == []
+
+
 # ── PR9: `doc status` resumable summary (design.md item I) ─────────────────
 
 _STATUS_TEMPLATE = {
@@ -148,6 +249,7 @@ _STATUS_TEMPLATE = {
 
 @pytest.fixture
 def status_ws(tmp_path, monkeypatch):
+    write_workspace_marker(tmp_path)
     (tmp_path / "documents").mkdir()
     templates = tmp_path / "templates"
     templates.mkdir()
@@ -248,6 +350,7 @@ _REVISE_TEMPLATE = {
 
 @pytest.fixture
 def revise_ws(tmp_path, monkeypatch):
+    write_workspace_marker(tmp_path)
     (tmp_path / "documents").mkdir()
     templates = tmp_path / "templates"
     templates.mkdir()

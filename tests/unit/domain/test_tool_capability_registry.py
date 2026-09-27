@@ -35,6 +35,26 @@ def test_native_detector_contains_missing_dotted_module_failure() -> None:
     )
 
 
+def test_native_detector_uses_injected_canonical_resolver_with_configured_paths(monkeypatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    resolved = "C:/Program Files/LibreOffice/program/soffice.exe"
+    calls = []
+
+    def resolver(executable: str, paths: dict[str, object]) -> str | None:
+        calls.append((executable, paths))
+        return resolved
+
+    detector = NativeToolCapabilityDetector(
+        executable_resolver=resolver,
+        paths={"libreoffice_bin": resolved},
+    )
+
+    detection = detector.detect(ToolCapability("soffice", "soffice"))
+
+    assert detection == CapabilityDetection.available_at(resolved)
+    assert calls == [("soffice", {"libreoffice_bin": resolved})]
+
+
 def test_missing_dotted_module_remains_policy_aware() -> None:
     registry = ToolCapabilityRegistry(
         (

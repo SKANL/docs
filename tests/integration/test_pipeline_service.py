@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
 from docs.application.atomic_transform import AtomicTransform
-from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
+from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import (
     FULL_STAGE_IDS,
+    PipelineRequest,
     PipelineService,
     PublicationSpec,
 )
 from docs.application.provenance import ProvenanceLedger
+from docs.application.stage_artifact_store import StageArtifactStore
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
@@ -72,17 +75,13 @@ def test_architecture_documents_registry_plan_and_published_stage_sequence(tmp_p
     section = architecture.read_text(encoding="utf-8").split(
         "The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's",
     )[1]
-    documented_inventory, documented_plan = re.findall(
-        r"```text\n(?P<stages>.*?)\n```", section, re.DOTALL
-    )
+    documented_inventory, documented_plan = re.findall(r"```text\n(?P<stages>.*?)\n```", section, re.DOTALL)
     documented = tuple(line.strip() for line in documented_inventory.splitlines() if line.strip())
-    documented_runtime_plan = tuple(
-        line.strip() for line in documented_plan.splitlines() if line.strip()
-    )
+    documented_runtime_plan = tuple(line.strip() for line in documented_plan.splitlines() if line.strip())
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    report = service.run("architecture-order")
+    report = service.execute(PipelineRequest(run_id="architecture-order"))
 
     assert documented == FULL_STAGE_IDS
     definition = service.registry.resolve("document").definition
@@ -99,6 +98,26 @@ def test_architecture_documents_registry_plan_and_published_stage_sequence(tmp_p
         "compose-cover",
         "package-release",
     )
+
+
+def test_execute_accepts_a_pipeline_request_and_preserves_report_semantics(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = _service(tmp_path, _dependencies(tmp_path, calls))
+
+    report = service.execute(PipelineRequest(run_id="request-boundary", publish=False))
+
+    assert report.succeeded
+    assert tuple(result.stage for result in report.execution.results) == tuple(
+        stage for stage in service.definition.plan() if stage not in {"package-release", "publish-draft"}
+    )
+    assert set(report.to_dict()) == {"capabilities", "execution", "provenance", "succeeded"}
+
+
+def test_pipeline_service_exposes_execute_not_legacy_run(tmp_path: Path) -> None:
+    service = _service(tmp_path, _dependencies(tmp_path, []))
+
+    assert callable(service.execute)
+    assert not hasattr(service, "run")
 
 
 def _dependencies(tmp_path: Path, calls: list[str], *, verification_ok: bool = True) -> SimpleNamespace:
@@ -141,7 +160,8 @@ def _service(
     dependencies: SimpleNamespace,
     policy: PipelinePolicy | None = None,
     capabilities: ToolCapabilityRegistry | None = None,
-    artifact_store: ArtifactStore | None = None,
+    artifact_store: StageArtifactStore | None = None,
+    ledger: ProvenanceLedger | None = None,
 ) -> PipelineService:
     stage_names = {
         "resolve_config": "resolve-config",
@@ -177,7 +197,7 @@ def _service(
         operations=operations,
         publication=dependencies.publication,
         capabilities=capabilities if capabilities is not None else ToolCapabilityRegistry(()),
-        ledger=ProvenanceLedger(tmp_path / "provenance.json"),
+        ledger=ledger or ProvenanceLedger(tmp_path / "provenance.json"),
         atomic_transform=AtomicTransform(),
         policy=policy,
         artifact_store=artifact_store,
@@ -190,9 +210,23 @@ def _replace_dependencies(dependencies: SimpleNamespace, **changes: object) -> S
 
 def test_runs_current_adapters_in_order_and_publishes_atomically_after_verification(tmp_path: Path) -> None:
     calls: list[str] = []
-    service = _service(tmp_path, _dependencies(tmp_path, calls))
+    source = tmp_path / "source.md"
+    source.write_text("source body", encoding="utf-8")
+    rendered = tmp_path / "rendered" / "document.txt"
+    rendered.parent.mkdir()
+    rendered.write_bytes(b"rendered document")
+    ledger = ProvenanceLedger(tmp_path / "provenance.json")
+    dependencies = _dependencies(tmp_path, calls)
 
-    report = service.run("publish-success")
+    def record_provenance() -> tuple[bool, str]:
+        calls.append("provenance")
+        ledger.record_run("publish-success", inputs=(source,), outputs=(rendered,))
+        return True, "provenance"
+
+    dependencies.provenance = record_provenance
+    service = _service(tmp_path, dependencies, ledger=ledger)
+
+    report = service.execute(PipelineRequest(run_id="publish-success"))
 
     assert report.succeeded
     assert calls == [
@@ -219,13 +253,26 @@ def test_runs_current_adapters_in_order_and_publishes_atomically_after_verificat
     ]
     assert (tmp_path / "published" / "document.txt").read_text(encoding="utf-8") == "published document"
     assert service.definition.plan() == EXPECTED_DAG_PLAN
+    verification = next(result for result in report.execution.results if result.stage == "editorial-review")
+    published = next(result for result in report.execution.results if result.stage == "publish-draft")
+    assert verification.ok is True
+    assert report.provenance == {
+        "run_id": "publish-success",
+        "inputs": {"source.md": hashlib.sha256(b"source body").hexdigest()},
+        "outputs": {"rendered/document.txt": hashlib.sha256(b"rendered document").hexdigest()},
+    }
+    assert ledger.verify_run("publish-success") is True
+    assert published.artifacts[0].sha256 == hashlib.sha256(b"published document").hexdigest()
 
 
 def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls, verification_ok=False))
+    destination = tmp_path / "published" / "document.txt"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"previous verified output\n")
 
-    report = service.run("publish-blocked")
+    report = service.execute(PipelineRequest(run_id="publish-blocked"))
 
     assert not report.succeeded
     assert calls == [
@@ -243,11 +290,12 @@ def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
         "audit",
         "verify",
     ]
-    assert not (tmp_path / "published" / "document.txt").exists()
+    assert destination.read_bytes() == b"previous verified output\n"
 
 
 def test_exports_reusable_full_stage_ids() -> None:
     assert FULL_STAGE_IDS == STAGE_IDS
+
 
 def test_registers_public_pipeline_boundaries():
     service = _service(Path("."), _dependencies(Path("."), []))
@@ -273,22 +321,27 @@ def test_public_catalog_marks_stage_backed_boundaries_and_read_only_artifact_ope
     assert all(service.registry.resolve(name).definition.stages for name in stage_backed)
 
 
-
 def test_runs_a_registered_public_subdag_without_running_unrelated_stages(tmp_path: Path) -> None:
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    report = service.run(
-        "public-build",
-        pipeline_id="document-build",
-        publish=False,
-        external_artifacts={"compile-structure-complete"},
+    report = service.execute(
+        PipelineRequest(
+            run_id="public-build",
+            pipeline_id="document-build",
+            publish=False,
+            external_artifacts={"compile-structure-complete"},
+        )
     )
 
     assert report.succeeded
     assert calls == ["render", "build-html", "build-pdf"]
     assert [result.stage for result in report.execution.results] == [
-        "generate-visuals", "compose-cover", "build-docx", "build-html", "build-pdf"
+        "generate-visuals",
+        "compose-cover",
+        "build-docx",
+        "build-html",
+        "build-pdf",
     ]
 
 
@@ -296,44 +349,43 @@ def test_omitted_external_artifacts_fail_closed_for_public_subdag(tmp_path: Path
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    report = service.run(
-        "public-build-with-omitted-prerequisites",
-        pipeline_id="document-build",
-        publish=False,
+    report = service.execute(
+        PipelineRequest(run_id="public-build-with-omitted-prerequisites", pipeline_id="document-build", publish=False)
     )
 
     assert report.succeeded is False
     assert calls == []
-    assert report.execution.results[0].errors == (
-        "required external artifact unavailable: compile-structure-complete",
-    )
+    assert report.execution.results[0].errors == ("required external artifact unavailable: compile-structure-complete",)
 
 
 def test_explicit_empty_external_artifacts_fail_public_subdag_preflight(tmp_path: Path) -> None:
     service = _service(tmp_path, _dependencies(tmp_path, []))
 
-    report = service.run(
-        "public-build-without-prerequisites",
-        pipeline_id="document-build",
-        publish=False,
-        external_artifacts=set(),
+    report = service.execute(
+        PipelineRequest(
+            run_id="public-build-without-prerequisites",
+            pipeline_id="document-build",
+            publish=False,
+            external_artifacts=set(),
+        )
     )
 
     assert report.succeeded is False
-    assert report.execution.results[0].errors == (
-        "required external artifact unavailable: compile-structure-complete",
-    )
+    assert report.execution.results[0].errors == ("required external artifact unavailable: compile-structure-complete",)
 
 
 def test_rejects_public_pipeline_publication_request(tmp_path: Path) -> None:
     service = _service(tmp_path, _dependencies(tmp_path, []))
 
     try:
-        service.run("invalid-public-publication", pipeline_id="document-build", publish=True)
+        service.execute(
+            PipelineRequest(run_id="invalid-public-publication", pipeline_id="document-build", publish=True)
+        )
     except ValueError as exc:
         assert "only the full document pipeline" in str(exc)
     else:
         raise AssertionError("expected public pipeline publication to be rejected")
+
 
 def test_exposes_the_full_declarative_stage_plan_without_artificial_serial_dependencies(tmp_path: Path) -> None:
     service = _service(tmp_path, _dependencies(tmp_path, []))
@@ -366,7 +418,7 @@ def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: 
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls, verification_ok=False))
 
-    report = service.run("required-stage-blocked")
+    report = service.execute(PipelineRequest(run_id="required-stage-blocked"))
 
     assert not report.succeeded
     assert report.execution.results[-1].stage == "publish-draft"
@@ -389,11 +441,13 @@ def test_failed_required_stage_blocks_all_dependents_in_the_full_plan(tmp_path: 
     assert "publish" not in calls
 
 
-def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_changing_current_execution(tmp_path: Path) -> None:
+def test_unimplemented_full_plan_stages_report_unsupported_in_draft_without_changing_current_execution(
+    tmp_path: Path,
+) -> None:
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    report = service.run("draft-with-migration-gaps")
+    report = service.execute(PipelineRequest(run_id="draft-with-migration-gaps"))
 
     unsupported = [result for result in report.execution.results if result.outcome == "unsupported"]
     assert [result.stage for result in unsupported] == ["generate-visuals", "compose-cover", "package-release"]
@@ -410,12 +464,10 @@ def test_optional_unavailable_capability_keeps_unsupported_package_release_non_f
         capabilities=ToolCapabilityRegistry((ToolCapability("release-tool", "definitely-missing"),)),
     )
 
-    report = service.run("optional-unsupported-package-release")
+    report = service.execute(PipelineRequest(run_id="optional-unsupported-package-release"))
 
     payload = report.to_dict()
-    package_release = next(
-        result for result in report.execution.results if result.stage == "package-release"
-    )
+    package_release = next(result for result in report.execution.results if result.stage == "package-release")
     assert set(payload) == {"capabilities", "execution", "provenance", "succeeded"}
     assert payload["capabilities"] == {"release-tool": {"available": False, "path": None}}
     assert package_release.ok is True
@@ -430,11 +482,11 @@ def test_unimplemented_full_plan_stage_blocks_strict_and_release_publication(tmp
         calls: list[str] = []
         service = _service(
             tmp_path / mode.value,
-                _replace_dependencies(_dependencies(tmp_path / mode.value, calls), ingest_sources=None),
+            _replace_dependencies(_dependencies(tmp_path / mode.value, calls), ingest_sources=None),
             PipelinePolicy(mode),
         )
 
-        report = service.run(f"{mode.value}-migration-gap")
+        report = service.execute(PipelineRequest(run_id=f"{mode.value}-migration-gap"))
 
         assert report.succeeded is False
         first_failure = next(result for result in report.execution.results if not result.ok)
@@ -453,8 +505,8 @@ def test_strict_and_release_package_failure_never_runs_publish_side_effect(tmp_p
             package_release=_stage("package-release", calls, ok=False),
         )
 
-        report = _service(tmp_path / mode.value, dependencies, PipelinePolicy(mode)).run(
-            f"{mode.value}-package-failure"
+        report = _service(tmp_path / mode.value, dependencies, PipelinePolicy(mode)).execute(
+            PipelineRequest(run_id=f"{mode.value}-package-failure")
         )
 
         assert not report.succeeded
@@ -477,7 +529,7 @@ def test_explicit_current_handlers_cover_safe_migration_stages(tmp_path: Path) -
         build_pdf=_stage("build-pdf", calls),
     )
 
-    report = _service(tmp_path, dependencies).run("wired-stages", publish=False)
+    report = _service(tmp_path, dependencies).execute(PipelineRequest(run_id="wired-stages", publish=False))
 
     assert report.succeeded
     assert calls == [
@@ -517,7 +569,7 @@ def test_failed_visual_generation_blocks_dependent_cover_and_document_build(tmp_
         tmp_path,
         dependencies,
         policy=PipelinePolicy(PipelineMode.draft),
-    ).run("optional-stage-failure", publish=False)
+    ).execute(PipelineRequest(run_id="optional-stage-failure", publish=False))
 
     assert not report.succeeded
     assert "compose-cover" not in calls
@@ -541,12 +593,11 @@ def test_failed_run_rolls_back_current_completion_artifacts_without_losing_previ
     artifact.parent.mkdir(parents=True)
     artifact.write_text("previous evidence\n", encoding="utf-8")
 
-    report = _service(tmp_path, dependencies).run("completion-artifact-rollback")
+    report = _service(tmp_path, dependencies).execute(PipelineRequest(run_id="completion-artifact-rollback"))
 
     assert report.succeeded is False
     assert artifact.read_text(encoding="utf-8") == "previous evidence\n"
     assert not (tmp_path / "stages" / "reproducibility-check-complete.json").exists()
-
 
 
 def test_adapt_does_not_fabricate_completion_artifacts_for_current_stage_results():
@@ -566,11 +617,13 @@ def test_external_artifact_generator_is_materialized_once(tmp_path: Path) -> Non
     calls: list[str] = []
     service = _service(tmp_path, _dependencies(tmp_path, calls))
 
-    report = service.run(
-        "generator-prerequisite",
-        pipeline_id="document-build",
-        publish=False,
-        external_artifacts=(item for item in ("compile-structure-complete",)),
+    report = service.execute(
+        PipelineRequest(
+            run_id="generator-prerequisite",
+            pipeline_id="document-build",
+            publish=False,
+            external_artifacts=(item for item in ("compile-structure-complete",)),
+        )
     )
 
     assert report.succeeded
@@ -589,7 +642,7 @@ def test_policy_less_publication_capability_failure_preflights_before_side_effec
         run_id_sink=run_ids.append,
     )
 
-    report = service.run("missing-default-capability")
+    report = service.execute(PipelineRequest(run_id="missing-default-capability"))
 
     assert report.succeeded is False
     assert report.execution.results[0].errors == ("required capability unavailable: soffice",)
@@ -604,17 +657,14 @@ def test_external_prerequisite_preflight_cleans_up_without_recording_run_id(tmp_
     service._run_id_sink = run_ids.append
     service._cleanup = lambda: calls.append("cleanup")
 
-    report = service.run(
-        "missing-external",
-        pipeline_id="document-build",
-        publish=False,
-        external_artifacts=set(),
+    report = service.execute(
+        PipelineRequest(
+            run_id="missing-external", pipeline_id="document-build", publish=False, external_artifacts=set()
+        )
     )
 
     assert report.succeeded is False
-    assert report.execution.results[0].errors == (
-        "required external artifact unavailable: compile-structure-complete",
-    )
+    assert report.execution.results[0].errors == ("required external artifact unavailable: compile-structure-complete",)
     assert calls == ["cleanup"]
     assert run_ids == []
 
@@ -634,9 +684,8 @@ def test_required_pdf_capability_preflight_prevents_provenance_and_run_id_mutati
         cleanup=lambda: calls.append("cleanup"),
     )
 
-    report = service.run(
-        "missing-pdf-capability",
-        external_artifacts=service.definition.external_artifacts,
+    report = service.execute(
+        PipelineRequest(run_id="missing-pdf-capability", external_artifacts=service.definition.external_artifacts)
     )
 
     assert report.succeeded is False
@@ -650,16 +699,12 @@ def test_materializes_durable_records_for_successful_non_skipped_stages(tmp_path
     service = _service(
         tmp_path,
         _dependencies(tmp_path, calls),
-        artifact_store=ArtifactStore(tmp_path / "stage-records", AtomicFileAdapter()),
+        artifact_store=StageArtifactStore(tmp_path / "stage-records", AtomicFileAdapter()),
     )
 
-    report = service.run("durable-stage-records")
+    report = service.execute(PipelineRequest(run_id="durable-stage-records"))
 
-    succeeded = [
-        result
-        for result in report.execution.results
-        if result.ok and result.outcome == "succeeded"
-    ]
+    succeeded = [result for result in report.execution.results if result.ok and result.outcome == "succeeded"]
     assert all(result.artifacts for result in succeeded)
     records = [record for result in succeeded for record in result.artifacts]
     assert all(

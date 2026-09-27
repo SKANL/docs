@@ -37,6 +37,11 @@ _NORMATIVE = NormativeSettings(
 )
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 class _StatusReaderStub:
     def __init__(self, status: StatusSnapshot) -> None:
         self.status = status
@@ -310,7 +315,7 @@ def test_status_summary_reads_v2_observability_through_reader(tmp_path, service,
 
 def test_status_reader_reader_loads_manifest_and_matching_provenance_from_document_root(tmp_path: Path) -> None:
     doc_root = tmp_path / "alpha"
-    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact = doc_root / "output" / "current" / "alpha.docx"
     artifact.parent.mkdir(parents=True)
     artifact.write_text("artifact", encoding="utf-8")
     manifest = BuildManifest(
@@ -335,7 +340,7 @@ def test_status_reader_reader_derives_unsupported_stages_and_publication_blocker
     tmp_path: Path,
 ) -> None:
     doc_root = tmp_path / "alpha"
-    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact = doc_root / "output" / "current" / "alpha.docx"
     artifact.parent.mkdir(parents=True)
     artifact.write_text("artifact", encoding="utf-8")
     manifest = BuildManifest(
@@ -366,7 +371,7 @@ def test_status_reader_reader_derives_unsupported_stages_and_publication_blocker
 
 def test_status_reader_reader_fails_open_for_invalid_manifest(tmp_path: Path) -> None:
     doc_root = tmp_path / "alpha"
-    manifest_path = doc_root / "output" / "v2" / "alpha.docx.manifest.json"
+    manifest_path = doc_root / "output" / "current" / "alpha.docx.manifest.json"
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text("not-json", encoding="utf-8")
 
@@ -378,7 +383,7 @@ def test_status_reader_reader_fails_open_for_invalid_manifest(tmp_path: Path) ->
 
 def test_status_reader_reader_blocks_tampered_provenance_artifact(tmp_path: Path) -> None:
     doc_root = tmp_path / "alpha"
-    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact = doc_root / "output" / "current" / "alpha.docx"
     artifact.parent.mkdir(parents=True)
     artifact.write_bytes(b"original")
     manifest = BuildManifest(
@@ -405,7 +410,7 @@ def test_status_reader_reader_blocks_tampered_provenance_artifact(tmp_path: Path
 
 def test_status_reader_reader_accepts_current_absolute_path_attestation(tmp_path: Path) -> None:
     doc_root = tmp_path / "alpha"
-    artifact = doc_root / "output" / "v2" / "alpha.docx"
+    artifact = doc_root / "output" / "current" / "alpha.docx"
     artifact.parent.mkdir(parents=True)
     artifact.write_bytes(b"original")
     manifest = BuildManifest(
@@ -439,7 +444,7 @@ def test_status_reader_reader_accepts_current_absolute_path_attestation(tmp_path
 
 
 def test_status_reader_manifest_selection_ignores_mtime(tmp_path: Path) -> None:
-    output = tmp_path / "output" / "v2"
+    output = tmp_path / "output" / "current"
     output.mkdir(parents=True)
     first = BuildManifest(document_id="first")
     second = BuildManifest(document_id="second")

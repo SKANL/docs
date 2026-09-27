@@ -151,7 +151,7 @@ class StructuralAuditAdapter:
 
     @staticmethod
     def _executable_rules(rules: dict[str, object]) -> dict[str, object]:
-        """Project contract components into the legacy rule vocabulary."""
+        """Project contract components into the normalized rule vocabulary."""
         result = dict(rules)
         contract: dict[str, Any] = StructuralAuditAdapter._mapping(rules.get("template_contract"))
         if not contract and any(key in rules for key in ("page_geometry", "style_contract", "components", "editable_slots", "required_assets", "fidelity_checks", "allowed_degradations")):

@@ -146,7 +146,7 @@ class PluginRunner:
         self.trusted_builtin_ids = frozenset(trusted_builtin_ids)
         self.trusted_builtin_tokens = frozenset(trusted_builtin_tokens)
         self.trusted_credentials = dict(trusted_credentials or {})
-        # The legacy knobs are retained for callers, but are deliberately not
+        # Deprecated constructor knobs are accepted for callers, but deliberately not
         # security inputs. Only a provider-issued platform attestation counts.
         del sandbox_launcher, sandbox_available
         self.sandbox_provider = sandbox_provider
@@ -220,7 +220,7 @@ class PluginRunner:
                 command = self._platform_sandbox_command(manifest.entrypoint)
                 # An untrusted Windows plugin must be contained by a Job
                 # Object from before spawn through cleanup. Trusted
-                # unsandboxed execution intentionally keeps its legacy path.
+                # unsandboxed execution intentionally keeps its compatibility path.
                 job = self._create_windows_job()
                 process: subprocess.Popen[bytes] | None = None
                 writer: threading.Thread | None = None
@@ -262,7 +262,14 @@ class PluginRunner:
             raise PluginRunError("plugin cleanup failed", metadata=metadata) from exc
 
     def _monitor(self, process: subprocess.Popen[bytes], scratch_root: Path, stdout: bytearray, stderr: bytearray, writer: threading.Thread, readers: list[threading.Thread], metadata: dict[str, object], output_overflow: threading.Event) -> None:
-        deadline = time.monotonic() + self.timeout_seconds
+        # Creating and assigning a suspended Windows process to a Job Object
+        # can take materially longer than the plugin's nominal timeout on a
+        # busy host.  Start the enforcement clock after a bounded bootstrap
+        # window so short-lived test/plugins can reach their own child-spawn
+        # boundary; the actual plugin work remains subject to the requested
+        # timeout after that window.
+        bootstrap_grace = 0.2 if os.name == "nt" else 0.0
+        deadline = time.monotonic() + bootstrap_grace + self.timeout_seconds
         while process.poll() is None and time.monotonic() < deadline and not output_overflow.is_set():
             usage = self._scratch_usage(scratch_root)
             metadata["scratch"] = self._scratch_metadata(usage)

@@ -14,6 +14,11 @@ from docs.infrastructure.persistence.json_repository import JsonDocumentReposito
 CURRENT_TEMPLATES = Path(__file__).resolve().parents[1] / "fixtures" / "templates"
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 @pytest.fixture
 def service(tmp_path: Path) -> DocumentService:
     templates = tmp_path / "templates"

@@ -1,4 +1,4 @@
-# Docs Harness v2 CI
+# Docs Harness X20 CI
 
 The repository's GitHub Actions workflow is the source of truth for continuous verification. It runs on pushes to `main`, pull requests, a weekly schedule, and manual dispatch.
 
@@ -23,7 +23,7 @@ uv run pytest tests/architecture -q
 uv run docs doctor
 ```
 
-For v2 behavior, add focused checks:
+For X20 behavior, add focused checks:
 
 ```bash
 uv run pytest tests/integration/test_v2_source_commands.py tests/integration/test_v2_cli.py tests/integration/test_v2_artifact_commands.py -q

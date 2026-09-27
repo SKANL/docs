@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import pytest
+
+from docs.application.pipeline_registry import PUBLIC_PIPELINES, PipelinePlanner, PipelineRegistry
+from docs.domain.pipeline_kernel import ArtifactContract, PipelineDefinition, StageResult, StageSpec
+
+
+def test_registry_resolves_a_validated_definition_with_its_handlers() -> None:
+    definition = PipelineDefinition(stages=(StageSpec("render"),))
+
+    def handler() -> StageResult:
+        return StageResult("render", True)
+
+    registry = PipelineRegistry()
+
+    registry.register("document", definition, {"render": handler})
+
+    registered = registry.resolve("document")
+
+    assert registered.definition is definition
+    assert registered.handlers["render"] is handler
+    with pytest.raises(ValueError, match="already registered"):
+        registry.register("document", definition, {"render": handler})
+
+
+def test_registry_rejects_handlers_for_stages_outside_the_definition() -> None:
+    registry = PipelineRegistry()
+
+    with pytest.raises(ValueError, match="handlers reference unknown stages: publish"):
+        registry.register(
+            "document",
+            PipelineDefinition(stages=(StageSpec("render"),)),
+            {"publish": lambda: StageResult("publish", True)},
+        )
+
+
+def test_registry_names_and_resolve_are_deterministic() -> None:
+    registry = PipelineRegistry()
+    alpha = PipelineDefinition(stages=(StageSpec("alpha"),))
+    beta = PipelineDefinition(stages=(StageSpec("beta"),))
+
+    registry.register("zeta", beta, {})
+    registry.register("alpha", alpha, {})
+
+    assert registry.names() == ("alpha", "zeta")
+    assert registry.resolve("alpha").definition is alpha
+    with pytest.raises(KeyError, match="pipeline is not registered: missing"):
+        registry.resolve("missing")
+
+
+def test_planner_returns_stage_specs_in_dependency_order() -> None:
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered"),),
+        stages=(
+            StageSpec("publish", requires=("rendered",)),
+            StageSpec("render", produces=("rendered",)),
+        ),
+    )
+
+    plan = PipelinePlanner().plan(definition)
+
+    assert tuple(stage.name for stage in plan) == ("render", "publish")
+
+
+def test_planner_uses_stable_topological_order_for_artifact_and_explicit_dependencies() -> None:
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("rendered"),),
+        stages=(
+            StageSpec("publish", requires=("rendered",), after=("validate",)),
+            StageSpec("validate", after=("render",)),
+            StageSpec("render", produces=("rendered",)),
+            StageSpec("collect"),
+        ),
+    )
+
+    plan = PipelinePlanner().plan(definition)
+
+    assert tuple(stage.name for stage in plan) == ("collect", "render", "validate", "publish")
+
+
+def test_public_pipeline_catalog_exposes_reusable_boundaries():
+    ids = tuple(spec.pipeline_id for spec in PUBLIC_PIPELINES)
+    assert ids == (
+        "source-ingest", "document-prepare", "document-build", "document-verify",
+        "document-publish", "document-package", "document-diff", "document-inspect",
+    )
+    assert "build-docx" in next(spec for spec in PUBLIC_PIPELINES if spec.pipeline_id == "document-build").stages
+
+
+def test_registry_catalog_turns_cross_boundary_requirements_into_external_artifacts() -> None:
+    definition = PipelineDefinition(
+        artifacts=(
+            ArtifactContract("context"),
+            ArtifactContract("generate-visuals-complete"),
+            ArtifactContract("build-docx-complete"),
+        ),
+        stages=(
+            StageSpec("resolve-context", produces=("context",)),
+            StageSpec("generate-visuals", requires=("context",), produces=("generate-visuals-complete",)),
+            StageSpec(
+                "build-docx",
+                requires=("generate-visuals-complete",),
+                produces=("build-docx-complete",),
+                after=("generate-visuals",),
+            ),
+        ),
+    )
+    handlers = {
+        name: (lambda name=name: StageResult(name, True))
+        for name in ("resolve-context", "generate-visuals", "build-docx")
+    }
+    registry = PipelineRegistry()
+
+    registry.register_catalog(definition, handlers)
+
+    build = registry.resolve("document-build")
+    assert build.definition.plan() == ("generate-visuals", "build-docx")
+    assert build.definition.external_artifacts == frozenset({"context"})
+    assert tuple(build.handlers) == ("generate-visuals", "build-docx")
+    assert build.handlers["generate-visuals"] is handlers["generate-visuals"]
+    assert build.handlers["build-docx"] is handlers["build-docx"]
+
+
+def test_registry_catalog_preserves_external_artifacts_for_standalone_execution() -> None:
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("context"), ArtifactContract("built")),
+        stages=(
+            StageSpec("resolve-context", produces=("context",)),
+            StageSpec("build-docx", requires=("context",), produces=("built",)),
+        ),
+    )
+    registry = PipelineRegistry()
+    registry.register_catalog(
+        definition,
+        {name: lambda name=name: StageResult(name, True) for name in ("resolve-context", "build-docx")},
+    )
+
+    build = registry.resolve("document-build")
+
+    assert build.definition.external_artifacts == frozenset({"context"})

@@ -9,6 +9,10 @@ reverse proxy (TLS, auth, rate limits)
                  └── shared workspace + durable stores
 ```
 
+## Shared application composition
+
+CLI, API, and worker bootstraps use `compose_application` from `src/docs/composition.py` to construct the shared application dependencies and `PipelineService`. This is dependency composition only: it does not absorb process-specific concerns. Keep API bind address, port, CORS, authentication and transport settings in the API configuration; keep queue backend, worker identity, leases, polling, retry, and shutdown settings in worker configuration. Each process may supply its own workspace and observability instance to the shared factory.
+
 ## API process
 
 `docs-api` wraps an application factory and exposes `/healthz`, `/readyz`, and
@@ -18,6 +22,27 @@ deployment explicitly needs a public bind:
 ```bash
 docs-api --config api.json --host 127.0.0.1 --port 8000
 ```
+
+The repository ships a first-party self-hosted factory. A minimal `api.json`
+for it is:
+
+```json
+{
+  "application_factory": "docs.api.production:build_application",
+  "transport": {
+    "workspace": "C:/srv/doc-harness/workspace",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "mode": "production",
+    "cors_origins": ["https://review.example.com"]
+  }
+}
+```
+
+Set `DOCS_API_TOKENS` outside the configuration file, for example
+`token-value=review-user`. The factory fails closed when no workspace or token
+is configured and uses the same durable SQLite workspace and worker pipeline as
+the local sidecar.
 
 Use `--allow-public-bind` only with a reviewed network policy. TLS termination,
 authentication, rate limiting, and request-size policy belong at the reverse
@@ -52,7 +77,7 @@ cancellation stores must be durable and shared by all worker instances.
 
 Back up the workspace's source inputs, `runs/`, passport storage, and durable
 queue state together. Rendered artifacts are replaceable; provenance and
-passport records are not. Publish only artifacts that have a matching v2
+passport records are not. Publish only artifacts that have a matching X20
 manifest and verifiable attestation (`docs/provenance.md`).
 
 ## Release checks

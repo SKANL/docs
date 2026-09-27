@@ -722,21 +722,43 @@ class PythonDocxAssemblyAdapter:
             compose_generated_cover(cover, generated_cover, config)
         body = Document(str(body_docx))
 
-        self._configure_preliminary_pagination(cover, sections_part, config)
         effective_leading = leading
         if generated_cover and generated_cover.mode in {CoverMode.GENERATED, CoverMode.NONE}:
             # Explicit generated/none modes take precedence over a current
             # cover_from_asset part; otherwise the old cover is appended after
             # the generated one and silently wins the first-page visual QA.
             effective_leading = [part for part in leading if part.get("type") != "cover_from_asset"]
+        effective_leading = [
+            part
+            for part in effective_leading
+            if not (
+                part.get("type") in {"fixed_text_page", "toc"}
+                and not ("[[TOC]]" if part.get("type") == "toc" else resolve_part_text(config, part)).strip()
+            )
+        ]
+        self._configure_preliminary_pagination(
+            cover,
+            sections_part,
+            config,
+            has_leading_page=bool(effective_leading) or bool(sections_part.get("preliminary_pagination")),
+        )
         self._render_leading_parts(cover, config, effective_leading)
         self._transfer_body_content(cover, body, sections_part, config)
 
         return cover
 
-    def _configure_preliminary_pagination(self, cover: Any, sections_part: dict[str, Any], config: dict[str, Any]) -> None:
+    def _configure_preliminary_pagination(
+        self,
+        cover: Any,
+        sections_part: dict[str, Any],
+        config: dict[str, Any],
+        *,
+        has_leading_page: bool = True,
+    ) -> None:
         from docx.enum.section import WD_SECTION_START
 
+        if not has_leading_page:
+            return
         prelim_pag = sections_part.get("preliminary_pagination", {})
         prelim_section = cover.add_section(WD_SECTION_START.NEW_PAGE)
         if prelim_pag:

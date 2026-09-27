@@ -17,7 +17,7 @@ if not sys.stdout.isatty():
     typer.core.HAS_RICH = False
     typer.main.HAS_RICH = False
 
-from docs.cli._shared import Deps
+from docs.cli._shared import LazyDependencies
 from docs.cli.commands.asset_app import asset_app
 from docs.cli.commands.collection_app import collection_app
 from docs.cli.commands.context_app import context_app
@@ -25,18 +25,25 @@ from docs.cli.commands.core_app import core_app
 from docs.cli.commands.doc_app import doc_app
 from docs.cli.commands.document_app import document_app
 from docs.cli.commands.docx_app import docx_app
+from docs.cli.commands.run_app import run_app
 from docs.cli.commands.section_app import section_app
 from docs.cli.commands.source_app import source_app
 from docs.cli.commands.template_app import template_app
 from docs.cli.commands.translate_app import translate_app
+from docs.cli.commands.workspace_app import workspace_app
+from docs.composition import compose_application
+
+# Compatibility injection seam for existing command tests.
+Deps = compose_application
 
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
 
 @app.callback()
 def _root(ctx: typer.Context, doc: str = typer.Option("", "--doc", help="ID del documento (por defecto, el activo).")) -> None:
-    # One Deps per invocation; commands read ctx.obj.
-    ctx.obj = {"deps": Deps(), "doc": doc}
+    # One lazy composition per invocation. Bootstrap commands such as
+    # ``doc init`` intentionally run before ordinary workspace validation.
+    ctx.obj = {"deps": LazyDependencies(Deps), "doc": doc}
 
 
 # Flat concern modules: mounted without a `name` so their commands stay
@@ -47,6 +54,8 @@ app.add_typer(section_app)
 app.add_typer(source_app, name="source")
 app.add_typer(docx_app)
 app.add_typer(translate_app)
+app.add_typer(workspace_app, name="workspace")
+app.add_typer(run_app, name="run")
 
 # Named group modules: mounted with the same group name they already had.
 app.add_typer(template_app, name="template")

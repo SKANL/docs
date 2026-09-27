@@ -20,14 +20,10 @@ _TEMPLATE = {
 
 
 @pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    documents = tmp_path / "documents"
+def workspace(canonical_cli_workspace):
+    tmp_path = canonical_cli_workspace
     templates = tmp_path / "templates"
-    documents.mkdir()
-    templates.mkdir()
     (templates / "tesina.json").write_text(json.dumps(_TEMPLATE), encoding="utf-8")
-    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(documents))
-    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
     return tmp_path
 
 

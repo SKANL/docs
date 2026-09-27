@@ -1,31 +1,71 @@
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const runs = [{ id: "fixture-session-1", document: "Fixture safety case", template: "Fixture template", startedAt: "Sep 19, 2026 · 10:00", duration: "1m 02s", status: "passed", findings: 1, artifactCount: 2 }];
-const findings = [{ id: "FIX-001", title: "Fixture finding", severity: "high", status: "failed", location: "§1 · Fixture · p. 1", summary: "A finding served by the local browser fixture.", owner: "Fixture", updated: "Just now" }];
-const graph = { nodes: [{ id: "fixture-claim", label: "Fixture claim", kind: "claim", confidence: 0.9, x: 50, y: 35 }, { id: "fixture-source", label: "Fixture source", kind: "source", confidence: 1, x: 25, y: 70 }], edges: [{ source: "fixture-source", target: "fixture-claim", relation: "supports" }] };
+const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const workspace = await mkdtemp(join(tmpdir(), "docs-review-e2e-"));
+const apiPort = 8765;
+const proxyPort = 4175;
+const apiBase = `http://127.0.0.1:${apiPort}`;
+const uv = process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WinGet", "Packages", "astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe", "uv.exe") : "uv";
+const child = spawn(uv, ["run", "--project", root, "python", "-m", "docs.sidecar", "--workspace", workspace, "--health-url", `${apiBase}/health`], { cwd: root, stdio: "inherit", windowsHide: true, env: { ...process.env, DOCS_SIDECAR_CORS_ORIGINS: "http://127.0.0.1:5173" } });
+child.on("error", error => { console.error(error); process.exit(1); });
+let proxy;
+const stop = async () => {
+  proxy?.close();
+  if (!child.killed) {
+    if (process.platform === "win32") {
+      spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    } else {
+      child.kill("SIGTERM");
+    }
+  }
+  await rm(workspace, { recursive: true, force: true });
+};
+process.once("SIGINT", async () => { await stop(); process.exit(130); });
+process.once("SIGTERM", async () => { await stop(); process.exit(143); });
 
-function sendJson(response, body) {
-  response.writeHead(200, { "content-type": "application/json", "access-control-allow-origin": "http://127.0.0.1:5173" });
-  response.end(JSON.stringify(body));
+async function waitForHealth() {
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    try { const response = await fetch(`${apiBase}/health`); if (response.ok && (await response.json()).ready === true) return; } catch { /* sidecar is still starting */ }
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
+  }
+  throw new Error("real sidecar did not become healthy");
+}
+async function request(path, init = {}) {
+  const response = await fetch(`${apiBase}${path}`, { ...init, headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
+  const body = await response.json();
+  if (!response.ok) throw new Error(`${path}: ${response.status} ${JSON.stringify(body)}`);
+  return body;
+}
+async function startProxy() {
+  proxy = createServer(async (incoming, outgoing) => {
+    const chunks = [];
+    for await (const chunk of incoming) chunks.push(chunk);
+    const response = await fetch(`${apiBase}${incoming.url}`, { method: incoming.method, headers: incoming.headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+    outgoing.writeHead(response.status, Object.fromEntries(response.headers));
+    outgoing.end(Buffer.from(await response.arrayBuffer()));
+  });
+  await new Promise((resolveListen, reject) => { proxy.once("error", reject); proxy.listen(proxyPort, "127.0.0.1", resolveListen); });
 }
 
-const server = createServer((request, response) => {
-  if (request.method === "OPTIONS") {
-    response.writeHead(204, { "access-control-allow-origin": "http://127.0.0.1:5173", "access-control-allow-methods": "GET, OPTIONS", "access-control-allow-headers": "content-type" });
-    response.end();
-    return;
-  }
-  if (request.url === "/v1/runs") return sendJson(response, { items: runs });
-  if (request.url === "/v1/findings") return sendJson(response, { items: findings });
-  if (request.url === "/v1/graph") return sendJson(response, graph);
-  if (request.url === "/v1/runs/fixture-session-1/progress") {
-    response.writeHead(200, { "content-type": "text/event-stream", "access-control-allow-origin": "http://127.0.0.1:5173" });
-    response.end("data: {\"type\":\"progress\",\"progress\":1,\"message\":\"Fixture complete\"}\n\n");
-    return;
-  }
-  if (request.url?.startsWith("/v1/")) return sendJson(response, { items: [] });
-  response.writeHead(404);
-  response.end();
-});
-
-server.listen(4174, "127.0.0.1");
+await waitForHealth();
+const workspaces = await request("/v2/workspaces");
+const workspaceId = workspaces.items?.[0]?.id;
+if (!workspaceId) throw new Error("real sidecar did not create a workspace");
+await request(`/v2/documents/import/raw?workspace_id=${encodeURIComponent(workspaceId)}&document_id=browser-e2e&template=documento-generico&title=Real%20browser%20run`, { method: "POST", headers: { "content-type": "text/markdown", "x-docs-filename": "browser-e2e.md" }, body: `# REAL BROWSER RUN\n\nThis document is imported through the real API.` });
+await request(`/v2/documents/browser-e2e/prepare?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId }) });
+const run = await request(`/v2/runs?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId, document_id: "browser-e2e", pipeline_id: "document", format: "html", policy: "draft" }) });
+let terminal = false;
+for (let attempt = 0; attempt < 240; attempt += 1) {
+  const current = await request(`/v2/runs/${encodeURIComponent(run.id)}?workspace_id=${encodeURIComponent(workspaceId)}`);
+  if (["succeeded", "failed", "cancelled", "expired"].includes(current.status)) { if (current.status !== "succeeded") throw new Error(`real browser run ended as ${current.status}`); terminal = true; break; }
+  await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
+}
+if (!terminal) throw new Error("real browser run timed out");
+await startProxy();
+process.stdout.write(`real Review Studio fixture ready: ${run.id}`);
+setInterval(() => {}, 1000);

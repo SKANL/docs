@@ -2,25 +2,58 @@
 
 from __future__ import annotations
 
+import ast
+import json
+import logging
+import mimetypes
 import threading
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from docs.application.graph_queries import GraphQueryService
-from docs.domain.contracts import Run
+from docs.application.imports import ImportError, SourceImportService
+from docs.application.status_reader import StatusReader
+from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.domain.runtime_records import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
 from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_openapi_document, canonical_json
+from .workspace_dto import (
+    WorkspaceCreateRequest,
+    WorkspaceDeleteResponse,
+    WorkspacePage,
+    WorkspaceRenameRequest,
+    WorkspaceResponse,
+)
+
+_LOG = logging.getLogger("docs.api.application")
 
 
 def _dict(value: Any) -> Any:
     return value.to_dict() if hasattr(value, "to_dict") else dict(value) if isinstance(value, Mapping) else value
+
+
+_SUPPORTED_OUTPUT_FORMATS = frozenset({"docx", "pdf", "html"})
+
+
+def _output_format(value: object) -> str:
+    format_name = str(value or "docx").strip().lower()
+    if format_name not in _SUPPORTED_OUTPUT_FORMATS:
+        raise APIError(
+            "invalid_output_format",
+            f"format must be one of: {', '.join(sorted(_SUPPORTED_OUTPUT_FORMATS))}",
+            400,
+        )
+    return format_name
 
 
 class X20Application:
@@ -36,6 +69,9 @@ class X20Application:
         graph_store: Any,
         document_store: Any = None,
         findings_store: Any = None,
+        template_store: Any = None,
+        revision_store: Any = None,
+        publication_store: Any = None,
         revision_service: Any = None,
         baseline_store: Any = None,
         plugin_store: Any = None,
@@ -48,6 +84,15 @@ class X20Application:
         auth: Any = None,
         observability: ObservabilityPort | None = None,
         idempotency_persistence: Any = None,
+        workspace_registry: WorkspaceRegistry | None = None,
+        managed_workspace_root: str | Path | None = None,
+        import_service: SourceImportService | None = None,
+        document_creator: Any = None,
+        document_action: Any = None,
+        document_context_reader: Any = None,
+        document_context_writer: Any = None,
+        classification_service: Any = None,
+        workspace_scoped_auth: bool = False,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -56,6 +101,9 @@ class X20Application:
         self.graph_store = graph_store
         self.document_store = document_store
         self.findings_store = findings_store
+        self.template_store = template_store
+        self.revision_store = revision_store
+        self.publication_store = publication_store
         self.revision_service = revision_service
         self.baseline_store = baseline_store
         self.plugin_store = plugin_store
@@ -68,32 +116,67 @@ class X20Application:
         self._route_lock = threading.RLock()
         self._auth = auth
         self.observability = observability or create_observability_from_env()
+        self.workspace_registry = workspace_registry
+        self.managed_workspace_root = (
+            Path(managed_workspace_root).expanduser().resolve()
+            if managed_workspace_root is not None
+            else workspace_registry.path.parent / "workspaces" if workspace_registry is not None else None
+        )
+        self.import_service = import_service or SourceImportService()
+        self.document_creator = document_creator
+        self.document_action = document_action
+        self.document_context_reader = document_context_reader
+        self.document_context_writer = document_context_writer
+        self.classification_service = classification_service
+        self.workspace_scoped_auth = workspace_scoped_auth
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
-            ("GET", "/v1/graph"),
-            ("GET", "/v1/documents"),
-            ("GET", "/v1/findings"),
-            ("GET", "/v1/openapi.json"),
-            ("GET", "/v1/baselines"),
-            ("GET", "/v1/plugins"),
-            ("POST", "/v1/baselines/promotions"),
-            ("POST", "/v1/runs"),
+            ("GET", "/v2/graph"),
+            ("GET", "/v2/documents"),
+            ("GET", "/v2/findings"),
+            ("GET", "/v2/openapi.json"),
+            ("GET", "/v2/baselines"),
+            ("GET", "/v2/plugins"),
+            ("GET", "/v2/runs"),
+            ("GET", "/v2/artifacts"),
+            ("GET", "/v2/templates"),
+            ("GET", "/v2/revisions"),
+            ("GET", "/v2/publications"),
+            ("GET", "/v2/workspaces"),
+            ("POST", "/v2/workspaces"),
+            ("POST", "/v2/documents/import"),
+            ("POST", "/v2/documents/import/raw"),
+            ("POST", "/v2/documents"),
+            ("POST", "/v2/runs"),
         }
         self._validate_initial_route_collisions()
-        self._register_owned_route("GET", "/v1/graph", self._graph)
-        self._register_owned_route("GET", "/v1/documents", self._documents)
-        self._register_owned_route("GET", "/v1/findings", self._findings)
-        self._register_owned_route("GET", "/v1/openapi.json", lambda _: self._openapi())
-        self._register_owned_route("GET", "/v1/baselines", self._baselines)
-        self._register_owned_route("GET", "/v1/plugins", self._plugins)
-        self._register_owned_route("POST", "/v1/baselines/promotions", self._promote_baseline)
-        self._register_owned_route("POST", "/v1/runs", self._create_run)
+        self._register_owned_route("GET", "/v2/graph", self._graph)
+        self._register_owned_route("GET", "/v2/documents", self._documents)
+        self._register_owned_route("GET", "/v2/findings", self._findings)
+        self._register_owned_route("GET", "/v2/openapi.json", lambda _: self._openapi())
+        self._register_owned_route("GET", "/v2/baselines", self._baselines)
+        self._register_owned_route("GET", "/v2/plugins", self._plugins)
+        self._register_owned_route("GET", "/v2/runs", self._runs)
+        self._register_owned_route("GET", "/v2/artifacts", self._artifacts_collection)
+        self._register_owned_route("GET", "/v2/templates", self._templates)
+        self._register_owned_route("GET", "/v2/revisions", self._revisions)
+        self._register_owned_route("GET", "/v2/publications", self._publications)
+        self._register_owned_route("GET", "/v2/workspaces", self._workspaces)
+        self._register_owned_route("POST", "/v2/workspaces", self._create_workspace)
+        self._register_owned_route("POST", "/v2/documents/import", self._import_document)
+        self._register_owned_route("POST", "/v2/documents/import/raw", self._import_raw_document)
+        self._register_owned_route("POST", "/v2/documents", self._create_document)
+        self._register_owned_route("POST", "/v2/runs", self._create_run)
 
     def dispatch(self, request: Request) -> Response:
         with self.observability.span("docs.api.request", {"method": request.method.upper()}):
             parts = request.route_path.strip("/").split("/")
-            if len(parts) >= 3 and parts[:2] in (["v1", "runs"], ["v1", "documents"]):
+            if (
+                len(parts) >= 3
+                and parts[:2] in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
+                and request.route_path not in {"/v2/documents/import", "/v2/documents/import/raw"}
+            ):
                 handler = self._dynamic_handler(request.method, request.route_path)
                 if handler is not None:
                     key = (request.method.upper(), request.route_path)
@@ -177,31 +260,78 @@ class X20Application:
         method = method.upper()
         path = urlsplit(path).path
         static_scopes = {
-            ("GET", "/v1/graph"): "graph:read",
-            ("GET", "/v1/documents"): "documents:read",
-            ("GET", "/v1/findings"): "findings:read",
-            ("GET", "/v1/baselines"): "baselines:read",
-            ("POST", "/v1/baselines/promotions"): "baselines:write",
-            ("GET", "/v1/plugins"): "plugins:read",
-            ("POST", "/v1/runs"): "runs:write",
+            ("GET", "/v2/workspaces"): "workspaces:read",
+            ("POST", "/v2/workspaces"): "workspaces:write",
+            ("GET", "/v2/graph"): "graph:read",
+            ("GET", "/v2/documents"): "documents:read",
+            ("POST", "/v2/documents"): "documents:write",
+            ("POST", "/v2/documents/import"): "documents:write",
+            ("POST", "/v2/documents/import/raw"): "documents:write",
+            ("GET", "/v2/findings"): "findings:read",
+            ("GET", "/v2/baselines"): "baselines:read",
+            ("GET", "/v2/plugins"): "plugins:read",
+            ("GET", "/v2/runs"): "runs:read",
+            ("GET", "/v2/artifacts"): "artifacts:read",
+            ("GET", "/v2/templates"): "documents:read",
+            ("GET", "/v2/revisions"): "documents:read",
+            ("GET", "/v2/publications"): "documents:read",
+            ("POST", "/v2/runs"): "runs:write",
         }
         if (method, path) in static_scopes:
             return static_scopes[(method, path)]
         parts = path.strip("/").split("/")
         if any(not part for part in parts):
             return None
-        if parts[:2] == ["v1", "documents"] and len(parts) in {3, 4}:
+        if parts[:2] == ["v2", "workspaces"]:
+            if len(parts) == 3 and method == "GET":
+                return "workspaces:read"
+            if len(parts) == 3 and method == "PATCH":
+                return "workspaces:write"
+            if len(parts) == 3 and method == "DELETE":
+                return "workspaces:write"
+        if parts[:2] == ["v2", "documents"] and len(parts) in {3, 4, 5}:
             if len(parts) == 3 and method == "GET":
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
                 return "documents:write"
-        if parts[:2] == ["v1", "runs"]:
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return "documents:read"
+            if len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST":
+                return "documents:write"
+            if len(parts) == 4 and parts[3] == "context" and method == "GET":
+                return "documents:read"
+            if len(parts) == 4 and parts[3] == "context" and method == "POST":
+                return "documents:write"
+            if len(parts) == 4 and parts[3] == "classification" and method == "GET":
+                return "documents:read"
+            if len(parts) == 4 and parts[3] == "classification" and method == "POST":
+                return "documents:write"
+            if len(parts) == 4 and parts[3] == "sections" and method == "GET":
+                return "documents:read"
+            if len(parts) == 5 and parts[3] == "sections" and method == "GET":
+                return "documents:read"
+            if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
+                return "documents:write"
+        if parts[:2] == ["v2", "plugins"] and len(parts) == 3 and method == "GET":
+            return "plugins:read"
+        if parts[:2] == ["v2", "artifacts"]:
+            if len(parts) == 3 and method == "GET":
+                return "artifacts:read"
+            if len(parts) == 4 and parts[3] == "previews" and method == "GET":
+                return "artifacts:read"
+        if parts[:2] == ["v2", "revisions"] and len(parts) == 3 and method == "GET":
+            return "documents:read"
+        if parts[:2] == ["v2", "baselines"] and len(parts) == 3 and method == "GET":
+            return "baselines:read"
+        if parts[:2] == ["v2", "runs"]:
             if len(parts) == 3 and method == "GET":
                 return "runs:read"
             if len(parts) == 4:
                 if parts[3] == "cancel" and method == "POST":
+                    return "runs:write"
+                if parts[3] == "retry" and method == "POST":
                     return "runs:write"
                 if parts[3] == "progress" and method == "GET":
                     return "runs:read"
@@ -231,17 +361,35 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"])
+            or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
         ):
             return False
-        if parts[:2] == ["v1", "documents"]:
-            return (len(parts) == 3 and method == "GET") or (
-                len(parts) == 4 and parts[3] == "runs" and method == "GET"
-            ) or (len(parts) == 4 and parts[3] == "revisions" and method == "POST")
-        if len(parts) == 3:
+        if parts[:2] == ["v2", "documents"]:
+            return (
+                (len(parts) == 3 and method == "GET")
+                or (len(parts) == 4 and parts[3] == "runs" and method == "GET")
+                or (len(parts) == 4 and parts[3] == "revisions" and method == "POST")
+                or (len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST")
+                or (len(parts) == 4 and parts[3] == "status" and method == "GET")
+                or (len(parts) == 4 and parts[3] == "sections" and method == "GET")
+                or (len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"})
+                or (len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"})
+                or (len(parts) == 5 and parts[3] == "sections" and method == "GET")
+                or (len(parts) == 5 and parts[3] == "sections" and method == "PUT")
+            )
+        if parts[:2] == ["v2", "plugins"]:
+            return len(parts) == 3 and method == "GET"
+        if parts[:2] == ["v2", "artifacts"]:
+            return (len(parts) == 3 and method == "GET") or (len(parts) == 4 and parts[3] == "previews" and method == "GET")
+        if parts[:2] == ["v2", "revisions"]:
+            return len(parts) == 3 and method == "GET"
+        if parts[:2] == ["v2", "baselines"]:
+            return len(parts) == 3 and method == "GET"
+        if len(parts) == 3 and parts[2] != "runs":
             return method == "GET"
         return (len(parts) == 4 and (
             (parts[3] == "cancel" and method == "POST")
+            or (parts[3] == "retry" and method == "POST")
             or (parts[3] in {"passport", "artifacts", "progress", "findings", "graph"} and method == "GET")
         )) or (len(parts) == 5 and parts[3] == "previews" and method == "GET")
 
@@ -250,23 +398,62 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v1", "runs"], ["v1", "documents"])
+            or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
         ):
             return None
         resource_id = parts[2]
-        if parts[:2] == ["v1", "documents"]:
+        if parts[:2] == ["v2", "documents"]:
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._document(resource_id, request)
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
                 return lambda request: self._document_runs(resource_id, request)
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
                 return lambda request: self._revision(resource_id, request)
+            if len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST":
+                return lambda request: self._document_action(resource_id, parts[3], request)
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return lambda request: self._document_status(resource_id, request)
+            if len(parts) == 4 and parts[3] == "sections" and method == "GET":
+                return lambda request: self._document_sections(resource_id, request)
+            if len(parts) == 5 and parts[3] == "sections" and method == "GET":
+                return lambda request: self._document_section(resource_id, parts[4], request)
+            if len(parts) == 5 and parts[3] == "sections" and method == "PUT":
+                return lambda request: self._update_document_section(resource_id, parts[4], request)
+            if len(parts) == 4 and parts[3] == "context" and method in {"GET", "POST"}:
+                return lambda request: self._document_context(resource_id, request)
+            if len(parts) == 4 and parts[3] == "classification" and method in {"GET", "POST"}:
+                return lambda request: self._document_classification(resource_id, request)
             return None
+        if parts[:2] == ["v2", "workspaces"]:
+            workspace_id = resource_id
+            if len(parts) == 3 and method == "GET":
+                return lambda request: self._workspace(workspace_id, request)
+            if len(parts) == 3 and method == "PATCH":
+                return lambda request: self._rename_workspace(workspace_id, request)
+            if len(parts) == 3 and method == "DELETE":
+                return lambda request: self._delete_workspace(workspace_id, request)
+            return None
+        if parts[:2] == ["v2", "plugins"]:
+            if len(parts) == 3 and method == "GET":
+                return lambda request: self._plugin(resource_id, request)
+            return None
+        if parts[:2] == ["v2", "artifacts"]:
+            if len(parts) == 3 and method == "GET":
+                return lambda request: self._artifact(resource_id, request)
+            if len(parts) == 4 and parts[3] == "previews" and method == "GET":
+                return lambda request: self._artifact_previews(resource_id, request)
+            return None
+        if parts[:2] == ["v2", "revisions"] and len(parts) == 3 and method == "GET":
+            return lambda request: self._revision_detail(resource_id, request)
+        if parts[:2] == ["v2", "baselines"] and len(parts) == 3 and method == "GET":
+            return lambda request: self._baseline(resource_id, request)
         run_id = resource_id
-        if len(parts) == 3 and method == "GET":
+        if len(parts) == 3 and parts[2] != "runs" and method == "GET":
             return lambda request: self._run(run_id, request)
         if len(parts) == 4 and parts[3] == "cancel" and method == "POST":
             return lambda request: self._cancel(run_id, request)
+        if len(parts) == 4 and parts[3] == "retry" and method == "POST":
+            return lambda request: self._retry(run_id, request)
         if len(parts) == 4 and parts[3] == "passport" and method == "GET":
             return lambda request: self._passport(run_id, request)
         if len(parts) == 4 and parts[3] == "artifacts" and method == "GET":
@@ -283,6 +470,24 @@ class X20Application:
 
     def _create_run(self, request: Request) -> Response:
         data = request.json(object_only=True)
+        data["format"] = _output_format(data.get("format", "docx"))
+        if self.workspace_registry is not None:
+            workspace_id = data.get("workspace_id")
+            if not isinstance(workspace_id, str) or not workspace_id:
+                raise APIError(
+                    "workspace_required",
+                    "workspace_id is required to create a run",
+                    400,
+                )
+            try:
+                workspace = self._resolve_workspace(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            document_id = data.get("document_id")
+            if isinstance(document_id, str) and document_id:
+                manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
+                if not manifest.is_file():
+                    raise APIError("document_not_found", "Document not found in workspace", 404)
         if request.principal is not None:
             if request.principal.tenant_id is None or request.principal.organization_id is None:
                 raise AuthError(
@@ -301,6 +506,14 @@ class X20Application:
                 }
             )
         run_id = data.get("id") or str(uuid4())
+        # A direct run request uses the same build pipeline as the document
+        # action endpoint.  The worker contract requires this explicit
+        # identifier; omitting it leaves a queued job that can never execute.
+        data.setdefault("pipeline_id", "document")
+        # Workers receive the queued payload, not the Run wrapper. Carry the
+        # authoritative generated id into that payload so a run created
+        # without a caller-supplied id can execute end-to-end.
+        data["run_id"] = run_id
         existing = self.run_store.get(run_id)
         if (
             existing is not None
@@ -313,29 +526,315 @@ class X20Application:
         self.queue.enqueue(run_id, dict(data))
         return Response.json(run.to_dict(), 201)
 
+    def _workspaces(self, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        page = WorkspacePage(
+            items=[WorkspaceResponse.model_validate(item) for item in self.workspace_registry.list()]
+        )
+        return Response.json(page.model_dump(mode="json"))
+
+    @staticmethod
+    def _workspace_request(
+        model: type[WorkspaceCreateRequest] | type[WorkspaceRenameRequest],
+        request: Request,
+    ) -> WorkspaceCreateRequest | WorkspaceRenameRequest:
+        try:
+            return model.model_validate(request.json(object_only=True))
+        except ValidationError as exc:
+            raise APIError("invalid_request", "Request body does not match workspace contract", 400) from exc
+
+    @staticmethod
+    def _workspace_response(item: Mapping[str, Any]) -> dict[str, str]:
+        return WorkspaceResponse.model_validate(item).model_dump(mode="json")
+
+    def _create_workspace(self, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        data = self._workspace_request(WorkspaceCreateRequest, request)
+        if self.managed_workspace_root is None:
+            raise APIError("workspace_root_not_configured", "Managed workspace root is not configured", 503)
+        root = self.managed_workspace_root / uuid4().hex
+        try:
+            item = self.workspace_registry.create(data.name, root)
+        except WorkspaceRegistryError as exc:
+            status = 409 if str(exc) == "workspace_name_conflict" else 400
+            raise APIError(str(exc), str(exc), status) from exc
+        return Response.json(self._workspace_response(item), 201)
+
+    def _import_document(self, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        data = request.json(object_only=True)
+        _LOG.info("document_import_started")
+        workspace_id = data.get("workspace_id")
+        try:
+            workspace = self._resolve_workspace(str(workspace_id))
+            result = self.import_service.import_base64(
+                workspace["root"],
+                str(data.get("filename", "")),
+                str(data.get("content_base64", "")),
+                document_id=data.get("document_id"),
+            )
+            _LOG.info("document_source_persisted")
+            # Keep upload latency bounded. Document materialization is deferred
+            # to prepare, where the same operation is already part of the
+            # pipeline and can be observed/retried without holding the upload
+            # HTTP request open.
+            metadata = Path(str(result["path"])).with_suffix(".import.json")
+            metadata.write_text(json.dumps({
+                "template": str(data.get("template", "documento-generico")),
+                "title": str(data.get("title", result["document_id"])),
+            }, sort_keys=True), encoding="utf-8")
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        except ImportError as exc:
+            raise APIError(str(exc), str(exc), 400) from exc
+        return Response.json(result, 201)
+
+    def _import_raw_document(self, request: Request) -> Response:
+        """Import binary source bytes without base64/JSON buffering."""
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        workspace_id = str(request.query.get("workspace_id", ""))
+        try:
+            workspace = self._resolve_workspace(workspace_id)
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        if not isinstance(request.body, (bytes, bytearray)) or not request.body:
+            raise APIError("empty_source", "Source body is empty", 400)
+        filename = str(request.headers.get("x-docs-filename", "source.bin"))
+        result = self.import_service.import_bytes(
+            workspace["root"], filename, bytes(request.body), document_id=request.query.get("document_id")
+        )
+        metadata = Path(str(result["path"])).with_suffix(".import.json")
+        metadata.write_text(json.dumps({
+            "template": request.query.get("template", "documento-generico"),
+            "title": request.query.get("title", result["document_id"]),
+        }, sort_keys=True), encoding="utf-8")
+        return Response.json(result, 201)
+
+    def _create_document(self, request: Request) -> Response:
+        if self.document_creator is None:
+            raise APIError("document_creation_unavailable", "Document creation is not configured", 501)
+        data = request.json(object_only=True)
+        workspace_id = str(data.get("workspace_id", ""))
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            workspace = self._resolve_workspace(workspace_id)
+            result = self.document_creator(
+                workspace["root"],
+                str(data.get("document_id", "")),
+                str(data.get("template", "documento-generico")),
+                str(data.get("title", "")),
+            )
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        except (ValueError, OSError, KeyError) as exc:
+            raise APIError("document_creation_failed", str(exc), 400) from exc
+        return Response.json(result, 201)
+
+    def _document_action(self, document_id: str, action: str, request: Request) -> Response:
+        data = request.json(object_only=True) if request.body else {}
+        workspace_id = str(data.get("workspace_id", ""))
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            workspace = self._resolve_workspace(workspace_id)
+            if action in {"build", "verify", "publish"}:
+                manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
+                if not manifest.is_file():
+                    raise APIError("document_not_found", "Document not found in workspace", 404)
+                run_id = str(data.get("run_id") or uuid4())
+                payload = {
+                    **data,
+                    "run_id": run_id,
+                    "workspace_id": workspace_id,
+                    "document_id": document_id,
+                    "pipeline_id": "document" if action == "build" else "document-verify" if action == "verify" else "document-publish",
+                    "policy": "release" if action == "publish" else str(data.get("policy", "release")),
+                    "format": _output_format(data.get("format", "docx")),
+                }
+                run = Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat())
+                self.run_store.put(run)
+                self.queue.enqueue(run_id, payload)
+                return Response.json(run.to_dict(), 202)
+            if self.document_action is None:
+                raise APIError("document_action_unavailable", "Document actions are not configured", 501)
+            result = self.document_action(workspace["root"], document_id, action, data)
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        except (ValueError, OSError, KeyError, RuntimeError) as exc:
+            raise APIError("document_action_failed", str(exc), 400) from exc
+        return Response.json(result)
+
+    def _document_status(self, document_id: str, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        try:
+            workspace = self._resolve_workspace(str(workspace_id))
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        document_root = Path(str(workspace["root"])) / "documents" / document_id
+        if not (document_root / "document.json").is_file():
+            raise APIError("document_not_found", "Document not found in workspace", 404)
+        snapshot = StatusReader().read(document_root)
+        return Response.json({
+            "document_id": document_id,
+            "workspace_id": workspace["id"],
+            "succeeded": snapshot.succeeded,
+            "manifest": _dict(snapshot.manifest),
+            "capabilities": snapshot.capabilities,
+            "execution": snapshot.execution,
+            "provenance": snapshot.provenance,
+            "unsupported_stages": snapshot.unsupported_stages,
+            "publication_blockers": snapshot.publication_blockers,
+        })
+
+    def _document_sections(self, document_id: str, request: Request) -> Response:
+        """Read authored section bodies from the selected workspace.
+
+        This endpoint is deliberately read-only; edits continue through the
+        revision service so hashes and provenance cannot be bypassed.
+        """
+        self._document(document_id, request)
+        workspace = self._request_workspace(request)
+        root = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections"
+        items = []
+        for path in sorted(root.glob("*.md")) if root.is_dir() else []:
+            section_id = path.stem
+            body = path.read_text(encoding="utf-8")
+            items.append({"id": section_id, "filename": path.name, "body": body})
+        return Response.json({"document_id": document_id, "workspace_id": workspace["id"], "items": items})
+
+    def _document_section(self, document_id: str, section_id: str, request: Request) -> Response:
+        self._document_sections(document_id, request)
+        workspace = self._request_workspace(request)
+        safe_id = Path(section_id).name
+        if safe_id != section_id or not section_id or section_id in {".", ".."}:
+            raise APIError("invalid_section", "Invalid section identifier", 400)
+        path = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections" / f"{section_id}.md"
+        if not path.is_file():
+            raise APIError("section_not_found", "Section not found in workspace", 404)
+        return Response.json({"document_id": document_id, "workspace_id": workspace["id"], "id": section_id, "filename": path.name, "body": path.read_text(encoding="utf-8")})
+
+    def _update_document_section(self, document_id: str, section_id: str, request: Request) -> Response:
+        self._document_section(document_id, section_id, request)
+        data = request.json(object_only=True)
+        body = data.get("body")
+        if not isinstance(body, str):
+            raise APIError("invalid_section", "Section body must be a string", 400)
+        if self.revision_service is None:
+            raise APIError("revision_unavailable", "Document revision is not configured", 501)
+        revision = {"target_id": section_id, "new_body": body, "request": str(data.get("request") or "Review Studio section edit")}
+        try:
+            result = self.revision_service(document_id, revision) if callable(self.revision_service) else self.revision_service.revise(document_id, revision)
+        except (ValueError, FileNotFoundError) as exc:
+            raise APIError("invalid_revision", str(exc), 400) from exc
+        return Response.json(_dict(result), 200)
+
+    def _request_workspace(self, request: Request) -> Mapping[str, Any]:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        return self._resolve_workspace(str(workspace_id))
+
+    def _resolve_workspace(self, workspace_id: str) -> Mapping[str, Any]:
+        """Resolve and validate a workspace before any workspace-owned I/O."""
+        if self.workspace_registry is None:
+            raise APIError(
+                "workspace_not_configured",
+                "Workspace registry is not configured",
+                503,
+            )
+        try:
+            return self.workspace_registry.resolve(workspace_id)
+        except WorkspaceRegistryError as exc:
+            if exc.code == "workspace_not_found":
+                raise APIError(exc.code, "Workspace not found", 404) from exc
+            raise APIError(exc.code, "Workspace format is invalid", 409) from exc
+
+    def _workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            return Response.json(self._workspace_response(self.workspace_registry.get(workspace_id)))
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+
+    def _rename_workspace(self, workspace_id: str, request: Request) -> Response:
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        data = self._workspace_request(WorkspaceRenameRequest, request)
+        try:
+            return Response.json(self._workspace_response(self.workspace_registry.rename(workspace_id, data.name)))
+        except WorkspaceRegistryError as exc:
+            status = 409 if str(exc) == "workspace_name_conflict" else 400
+            if str(exc) == "workspace_not_found":
+                status = 404
+            raise APIError(str(exc), str(exc), status) from exc
+
+    def _delete_workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        try:
+            self.workspace_registry.delete(workspace_id)
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        return Response.json(WorkspaceDeleteResponse(deleted=workspace_id).model_dump(mode="json"))
+
     def _run(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)
         return Response.json(run.to_dict())
 
+    def _runs(self, request: Request) -> Response:
+        items = self._store_items(self.run_store, "list")
+        workspace_id = self._workspace_filter(request)
+        if workspace_id:
+            items = [
+                item for item in items
+                if _dict(item).get("payload", {}).get("workspace_id") == workspace_id
+            ]
+        if request.principal is not None:
+            items = [item for item in items if self._is_owned(item, request.principal)]
+        return self._page(self._filter(items, request.query), request, "runs")
+
     def _owned_run(self, run_id: str, request: Request) -> Run:
+        workspace_id = self._workspace_filter(request)
         run = self.run_store.get(run_id)
         if run is None:
+            raise APIError("not_found", "Run not found", 404)
+        if workspace_id and _dict(run).get("payload", {}).get("workspace_id") != workspace_id:
             raise APIError("not_found", "Run not found", 404)
         self._require_owned(run, request, "Run")
         return run
 
-    @staticmethod
-    def _require_owned(resource: Any, request: Request, resource_name: str) -> None:
+    def _require_owned(self, resource: Any, request: Request, resource_name: str) -> None:
         principal = request.principal
-        if principal is None or X20Application._is_owned(resource, principal):
+        if principal is None or self._is_owned(resource, principal):
             return
 
         raise APIError("not_found", f"{resource_name} not found", 404)
 
-    @staticmethod
-    def _is_owned(resource: Any, principal: Any) -> bool:
+    def _is_owned(self, resource: Any, principal: Any) -> bool:
         data = _dict(resource)
         ownership = data.get("payload", data) if isinstance(data, Mapping) else {}
+        if self.workspace_scoped_auth and isinstance(ownership, Mapping) and (
+            "tenant_id" not in ownership and "organization_id" not in ownership
+        ):
+            # Self-hosted deployments have one configured workspace boundary;
+            # legacy manifests created before tenant metadata existed remain
+            # owned by that authenticated workspace, not anonymous globally.
+            return principal.tenant_id is not None and principal.organization_id is not None
         return not (
             not isinstance(ownership, Mapping)
             or principal.tenant_id is None
@@ -347,7 +846,7 @@ class X20Application:
     def _cancel(self, run_id: str, request: Request) -> Response:
         with self._cancel_lock:
             run = self._owned_run(run_id, request)
-            if run.status in {"cancelled", "completed", "failed"}:
+            if run.status in {"cancelled", "completed", "succeeded", "failed", "expired"}:
                 return Response.json(run.to_dict())
             cancel = getattr(self.queue, "cancel", None)
             if callable(cancel):
@@ -355,6 +854,22 @@ class X20Application:
             cancelled = Run(run.id, "cancelled", run.payload, run.created_at)
             self.run_store.put(cancelled)
             return Response.json(cancelled.to_dict())
+
+    def _retry(self, run_id: str, request: Request) -> Response:
+        original = self._owned_run(run_id, request)
+        if original.status not in {"failed", "cancelled", "expired"}:
+            raise APIError("run_not_retryable", "Only failed, cancelled, or expired runs can be retried", 409)
+        payload = dict(original.payload)
+        retry_id = str(uuid4())
+        payload.update({
+            "run_id": retry_id,
+            "retry_of": run_id,
+            "attempt": int(payload.get("attempt", 1)) + 1,
+        })
+        retried = Run(retry_id, payload=payload, created_at=datetime.now(UTC).isoformat())
+        self.run_store.put(retried)
+        self.queue.enqueue(retry_id, payload)
+        return Response.json(retried.to_dict(), 201)
 
     def _passport(self, run_id: str, request: Request) -> Response:
         self._owned_run(run_id, request)
@@ -369,20 +884,42 @@ class X20Application:
 
     def _progress(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)
+        payload = dict(run.payload) if isinstance(run.payload, Mapping) else {}
+        progress = payload.get("progress")
+        checkpoint: Mapping[Any, Any] = progress if isinstance(progress, Mapping) else {}
+        event = {
+            "type": str(checkpoint.get("stage", run.status)),
+            "progress": checkpoint.get("percent"),
+            "message": f"{checkpoint.get('stage', run.status)}: {checkpoint.get('percent', 0)}%",
+            "run": run.to_dict(),
+        }
         return Response(
             200,
-            encode_sse_event("progress", run.to_dict(), event_id=run.id).encode(),
+            encode_sse_event("progress", event, event_id=run.id).encode(),
             {"content-type": "text/event-stream", "cache-control": "no-cache"},
         )
 
     def _graph(self, request: Request) -> Response:
         """Expose deterministic read-only graph queries without mutating the graph."""
-        if request.principal is not None:
+        # Authenticated graph access is safe only when the application has a
+        # workspace registry to scope the read model. Remote/self-hosted
+        # deployments provide that registry; standalone apps still fail
+        # closed rather than exposing a global graph to a principal.
+        if request.principal is not None and self.workspace_registry is None:
             raise APIError("not_found", "Graph not found", 404)
-        if not request.query:
-            graph = self.graph_store.get()
-            return Response.json(_dict(graph))
-        query = GraphQueryService(self.graph_store)
+        workspace_id = self._workspace_filter(request)
+        graph_store = self.graph_store
+        if workspace_id and hasattr(self.graph_store, "for_workspace"):
+            graph_store = self.graph_store.for_workspace(workspace_id)
+        elif workspace_id:
+            raise APIError("workspace_graph_unavailable", "Workspace-scoped graph is not configured", 503)
+        if not request.query or (set(request.query) == {"workspace_id"}):
+            graph = graph_store.get()
+            data = _dict(graph)
+            if not isinstance(data, Mapping):
+                data = {}
+            return Response.json({"nodes": list(data.get("nodes", [])), "edges": list(data.get("edges", []))})
+        query = GraphQueryService(graph_store)
         params = request.query
         mode = params.get("mode")
         query_name = params.get("query")
@@ -451,7 +988,17 @@ class X20Application:
         return Response.json(payload)
 
     def _run_graph(self, run_id: str, request: Request) -> Response:
-        self._owned_run(run_id, request)
+        run = self._owned_run(run_id, request)
+        payload = _dict(run).get("payload", {})
+        run_workspace = payload.get("workspace_id") if isinstance(payload, Mapping) else None
+        requested_workspace = request.query.get("workspace_id")
+        if run_workspace and requested_workspace and requested_workspace != run_workspace:
+            raise APIError("not_found", "Graph not found", 404)
+        if run_workspace and not requested_workspace:
+            query = dict(request.query)
+            query["workspace_id"] = str(run_workspace)
+            path = urlsplit(request.path).path + "?" + urlencode(query)
+            request = Request(request.method, path, request.headers, request.body, request.environ, request.principal)
         return self._graph(request)
 
     @staticmethod
@@ -459,16 +1006,107 @@ class X20Application:
         return Response(200, canonical_json(build_openapi_document()).encode(), {"content-type": "application/json"})
 
     def _documents(self, request: Request) -> Response:
-        items = self.document_store.list() if self.document_store is not None else list(self.documents)
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        if workspace_id and hasattr(self.document_store, "list_for_workspace"):
+            try:
+                workspace = self._resolve_workspace(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            items = self.document_store.list_for_workspace(workspace["root"])
+        elif workspace_id:
+            try:
+                workspace = self._resolve_workspace(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            documents = Path(str(workspace["root"])) / "documents"
+            items = []
+            for manifest in sorted(documents.glob("*/document.json")):
+                try:
+                    items.append(json.loads(manifest.read_text(encoding="utf-8")))
+                except (OSError, json.JSONDecodeError):
+                    continue
+        else:
+            items = self.document_store.list() if self.document_store is not None else list(self.documents)
         if request.principal is not None:
             items = [item for item in items if self._is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "documents")
 
     def _findings(self, request: Request) -> Response:
         items = self.findings_store.list() if self.findings_store is not None else list(self.findings)
+        workspace_id = self._workspace_filter(request)
+        if workspace_id:
+            items = [
+                item for item in items
+                if (run := self.run_store.get(str(_dict(item).get("run_id", "")))) is not None
+                and _dict(run).get("payload", {}).get("workspace_id") == workspace_id
+            ]
         if request.principal is not None:
             items = [item for item in items if self._finding_is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "findings")
+
+    def _artifacts_collection(self, request: Request) -> Response:
+        items = self._store_items(self.artifact_store, "list")
+        workspace_id = self._workspace_filter(request)
+        if workspace_id:
+            items = [
+                item for item in items
+                if (run := self.run_store.get(str(_dict(item).get("run_id", "")))) is not None
+                and _dict(run).get("payload", {}).get("workspace_id") == workspace_id
+            ]
+        return self._page(self._filter(items, request.query), request, "artifacts")
+
+    def _artifact(self, artifact_id: str, request: Request) -> Response:
+        workspace_id = self._workspace_filter(request)
+        artifact = self._store_get(self.artifact_store, artifact_id, "id")
+        if artifact is None:
+            raise APIError("not_found", "Artifact not found", 404)
+        run_id = _dict(artifact).get("run_id")
+        if run_id:
+            self._owned_run(str(run_id), request)
+        elif workspace_id and _dict(artifact).get("workspace_id") != workspace_id:
+            raise APIError("not_found", "Artifact not found", 404)
+        return Response.json(_dict(artifact))
+
+    def _artifact_previews(self, artifact_id: str, request: Request) -> Response:
+        self._artifact(artifact_id, request)
+        items = [
+            item for item in self._store_items(self.artifact_store, "list")
+            if str(_dict(item).get("parent_artifact_id", "")) == artifact_id
+            or str(_dict(item).get("artifact_id", "")) == artifact_id
+        ]
+        return self._page(items, request, "previews")
+
+    def _workspace_filter(self, request: Request) -> str | None:
+        """Return explicit workspace scope for collection endpoints."""
+        requested = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if self.workspace_registry is not None and not requested:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        if requested and self.workspace_registry is not None:
+            try:
+                self._resolve_workspace(requested)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            return requested
+        return requested
+
+    def _templates(self, request: Request) -> Response:
+        return self._page(self._filter(self._workspace_items(self.template_store, request), request.query), request, "templates")
+
+    def _revisions(self, request: Request) -> Response:
+        return self._page(self._filter(self._workspace_items(self.revision_store, request), request.query), request, "revisions")
+
+    def _revision_detail(self, revision_id: str, request: Request) -> Response:
+        revision = next((item for item in self._workspace_items(self.revision_store, request) if any(str(_dict(item).get(key, "")) == revision_id for key in ("id", "revision_id"))), None)
+        if revision is None:
+            raise APIError("not_found", "Revision not found", 404)
+        return Response.json(_dict(revision))
+
+    def _publications(self, request: Request) -> Response:
+        return self._page(self._filter(self._workspace_items(self.publication_store, request), request.query), request, "publications")
 
     def _finding_is_owned(self, finding: Any, principal: Any) -> bool:
         data = _dict(finding)
@@ -507,7 +1145,36 @@ class X20Application:
         return ownership_references > 0
 
     def _document(self, document_id: str, request: Request) -> Response:
-        document = self.document_store.get(document_id) if self.document_store is not None and hasattr(self.document_store, "get") else None
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        document = None
+        if self.workspace_registry is not None and not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        if workspace_id and self.workspace_registry is not None and hasattr(self.document_store, "list_for_workspace"):
+            try:
+                workspace = self._resolve_workspace(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            document = next(
+                (item for item in self.document_store.list_for_workspace(workspace["root"])
+                 if str(_dict(item).get("id")) == document_id),
+                None,
+            )
+        elif self.workspace_registry is not None:
+            assert isinstance(workspace_id, str)
+            try:
+                workspace = self._resolve_workspace(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
+            if manifest.is_file():
+                try:
+                    document = json.loads(manifest.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as exc:
+                    raise APIError("document_invalid", "Document manifest is invalid", 422) from exc
+            else:
+                raise APIError("not_found", "Document not found", 404)
+        elif self.document_store is not None and hasattr(self.document_store, "get"):
+            document = self.document_store.get(document_id)
         if document is None:
             items = self.document_store.list() if self.document_store is not None and hasattr(self.document_store, "list") else self.documents
             document = next((item for item in items if str(_dict(item).get("id")) == document_id), None)
@@ -533,7 +1200,7 @@ class X20Application:
         return self._page(items, request, "findings")
 
     def _preview(self, run_id: str, name: str, request: Request) -> Response:
-        self._owned_run(run_id, request)
+        run = self._owned_run(run_id, request)
         artifact = self.artifact_store.get(name) if hasattr(self.artifact_store, "get") else None
         if artifact is None or _dict(artifact).get("run_id") != run_id:
             raise APIError("not_found", "Preview not found", 404)
@@ -542,24 +1209,99 @@ class X20Application:
         if blob is not None:
             _, content = blob
             return Response(200, content, {"content-type": _dict(artifact).get("media_type") or "application/octet-stream"})
+        # Pipeline evidence may point at a real published artifact path while
+        # the optional BlobStore is not configured. Serve it only after
+        # resolving the run's workspace and enforcing containment; never trust
+        # an arbitrary path from artifact metadata.
+        payload = run.payload if isinstance(run.payload, Mapping) else {}
+        workspace_id = payload.get("workspace_id")
+        if self.workspace_registry is not None and isinstance(workspace_id, str):
+            try:
+                workspace_root = Path(str(self._resolve_workspace(workspace_id)["root"])).resolve()
+                metadata = _dict(artifact).get("metadata", {})
+                raw_value = metadata.get("value") if isinstance(metadata, Mapping) else None
+                record = ast.literal_eval(raw_value) if isinstance(raw_value, str) else raw_value
+                candidate = Path(str(record.get("path"))) if isinstance(record, Mapping) and record.get("path") else None
+                if candidate is not None and candidate.is_file():
+                    resolved = candidate.resolve()
+                    resolved.relative_to(workspace_root)
+                    media_type = _dict(artifact).get("media_type") or mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+                    return Response(200, resolved.read_bytes(), {"content-type": media_type})
+            except (ValueError, OSError, SyntaxError, WorkspaceRegistryError):
+                pass
         return Response.json(_dict(artifact))
 
     def _revision(self, document_id: str, request: Request) -> Response:
         self._document(document_id, request)
         data = request.json(object_only=True)
         if callable(self.revision_service):
-            result = self.revision_service(document_id, data)
+            try:
+                result = self.revision_service(document_id, data)
+            except (ValueError, FileNotFoundError) as exc:
+                raise APIError("invalid_revision", str(exc), 400) from exc
         elif self.revision_service is not None and hasattr(self.revision_service, "revise"):
             result = self.revision_service.revise(document_id, data)
         else:
-            result = {"document_id": document_id, **data}
+            # A revision is a mutating product operation.  Never acknowledge
+            # it with an echoed request when the real application service is
+            # absent: that creates a fake revision which cannot be audited or
+            # recovered from the workspace.
+            raise APIError("revision_unavailable", "Document revision is not configured", 501)
         return Response.json(_dict(result), 201)
 
+    def _document_classification(self, document_id: str, request: Request) -> Response:
+        if self.classification_service is None:
+            raise APIError("classification_unavailable", "Classification is not configured", 501)
+        try:
+            result = self.classification_service(document_id, request.json(object_only=True) if request.body else None)
+        except (ValueError, FileNotFoundError) as exc:
+            raise APIError("invalid_classification", str(exc), 400) from exc
+        return Response.json(result)
+
+    def _document_context(self, document_id: str, request: Request) -> Response:
+        self._document(document_id, request)
+        if request.method.upper() == "GET":
+            if not callable(self.document_context_reader):
+                raise APIError("context_unavailable", "Document context is unavailable", 503)
+            workspace = self._request_workspace(request)
+            try:
+                value = self.document_context_reader(document_id, str(workspace["root"]))
+            except TypeError:
+                # Preserve the public one-argument application callback contract
+                # used by embedders while allowing the sidecar to enforce the
+                # requested workspace rather than its process-wide active one.
+                value = self.document_context_reader(document_id)
+            return Response.json(_dict(value))
+        if not callable(self.document_context_writer):
+            raise APIError("context_unavailable", "Document context is unavailable", 503)
+        data = request.json(object_only=True)
+        topic = data.get("topic")
+        value = data.get("value")
+        field = data.get("field", "")
+        if not isinstance(topic, str) or not topic.strip() or not isinstance(value, str):
+            raise APIError("invalid_request", "topic and string value are required", 400)
+        try:
+            workspace = self._request_workspace(request)
+            try:
+                result = self.document_context_writer(document_id, topic, field, value, str(workspace["root"]))
+            except TypeError:
+                result = self.document_context_writer(document_id, topic, field, value)
+        except (ValueError, FileNotFoundError) as exc:
+            raise APIError("invalid_context", str(exc), 400) from exc
+        return Response.json(_dict(result), 200)
+
     def _baselines(self, request: Request) -> Response:
-        return self._page(self._store_items(self.baseline_store, "list"), request, "baselines")
+        return self._page(self._workspace_items(self.baseline_store, request), request, "baselines")
+
+    def _baseline(self, baseline_id: str, request: Request) -> Response:
+        baseline = next((item for item in self._workspace_items(self.baseline_store, request) if any(str(_dict(item).get(key, "")) == baseline_id for key in ("id", "baseline_id"))), None)
+        if baseline is None:
+            raise APIError("not_found", "Baseline not found", 404)
+        return Response.json(_dict(baseline))
 
     def _plugins(self, request: Request) -> Response:
         if self.plugin_registry is not None:
+            registry = self._plugin_registry_for_request(request)
             items = [
                 {
                     "id": item.manifest.plugin_id,
@@ -570,21 +1312,74 @@ class X20Application:
                     "artifact_digest": item.artifact_digest,
                     "sbom": item.sbom,
                 }
-                for item in self.plugin_registry.list()
+                for item in registry.list()
             ]
         else:
             items = self._store_items(self.plugin_store, "list") or list(self.plugins)
         return self._page(items, request, "plugins")
+
+    def _plugin(self, plugin_id: str, request: Request) -> Response:
+        """Return one registered plugin using the same normalized contract as the collection."""
+        if self.plugin_registry is not None:
+            items = self._plugin_registry_for_request(request).list()
+            for item in items:
+                if item.manifest.plugin_id == plugin_id:
+                    return Response.json(
+                        {
+                            "id": item.manifest.plugin_id,
+                            "version": item.manifest.version,
+                            "capabilities": sorted(item.manifest.capabilities),
+                            "trust": item.trust,
+                            "digest": item.digest,
+                            "artifact_digest": item.artifact_digest,
+                            "sbom": item.sbom,
+                        }
+                    )
+        else:
+            for item in self._store_items(self.plugin_store, "list") or list(self.plugins):
+                value = _dict(item)
+                if str(value.get("id", value.get("plugin_id", ""))) == plugin_id:
+                    return Response.json(value)
+        raise APIError("not_found", "Plugin not found", 404)
+
+    def _plugin_registry_for_request(self, request: Request) -> Any:
+        """Build a workspace-local registry so same-id plugins cannot collide."""
+        if self.workspace_registry is None:
+            return self.plugin_registry
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        try:
+            workspace = self._resolve_workspace(str(workspace_id))
+        except WorkspaceRegistryError as exc:
+            raise APIError(str(exc), "Workspace not found", 404) from exc
+        try:
+            registry = type(self.plugin_registry)()
+            registry.discover([Path(str(workspace["root"])) / "plugins"])
+            return registry
+        except (TypeError, AttributeError):
+            # Embedded callers may provide a custom registry implementation;
+            # retain its contract instead of making plugin listing mandatory.
+            return self.plugin_registry
 
     def _promote_baseline(self, request: Request) -> Response:
         data = request.json(object_only=True)
         baseline_id = data.get("baseline_id") or data.get("id")
         if not baseline_id:
             raise APIError("invalid_request", "baseline_id is required", 400)
-        promote = getattr(self.baseline_store, "promote", None)
-        if not callable(promote):
-            raise APIError("not_found", "Baseline not found", 404)
-        result = promote(baseline_id, data)
+        workspace_id = data.get("workspace_id")
+        if self.workspace_registry is not None and not isinstance(workspace_id, str):
+            raise APIError("workspace_required", "workspace_id is required to promote a baseline", 400)
+        if isinstance(workspace_id, str) and self.workspace_registry is not None:
+            self._resolve_workspace(workspace_id)
+        promote_for_workspace = getattr(self.baseline_store, "promote_for_workspace", None)
+        if isinstance(workspace_id, str) and callable(promote_for_workspace):
+            result = promote_for_workspace(workspace_id, baseline_id, data)
+        else:
+            promote = getattr(self.baseline_store, "promote", None)
+            if not callable(promote):
+                raise APIError("not_found", "Baseline not found", 404)
+            result = promote(baseline_id, data)
         if result is None:
             raise APIError("not_found", "Baseline not found", 404)
         return Response.json(_dict(result))
@@ -597,9 +1392,37 @@ class X20Application:
         result = callback(*args)
         return list(result or [])
 
+    def _workspace_items(self, store: Any, request: Request) -> list[Any]:
+        workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
+        if self.workspace_registry is not None and not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        if workspace_id and self.workspace_registry is not None:
+            try:
+                self._resolve_workspace(workspace_id)
+            except WorkspaceRegistryError as exc:
+                raise APIError(str(exc), "Workspace not found", 404) from exc
+            list_for_workspace = getattr(store, "list_for_workspace", None)
+            if callable(list_for_workspace):
+                return self._store_items(store, "list_for_workspace", workspace_id)
+            return [item for item in self._store_items(store, "list") if _dict(item).get("workspace_id") == workspace_id]
+        return self._store_items(store, "list")
+
+    @staticmethod
+    def _store_get(store: Any, value: str, *keys: str) -> Any:
+        getter = getattr(store, "get", None) if store is not None else None
+        if callable(getter):
+            result = getter(value)
+            if result is not None:
+                return result
+        for item in X20Application._store_items(store, "list"):
+            data = _dict(item)
+            if any(str(data.get(key, "")) == value for key in keys):
+                return item
+        return None
+
     @staticmethod
     def _filter(items: Iterable[Any], query: Mapping[str, str]) -> list[Any]:
-        filters = {k: v for k, v in query.items() if k not in {"limit", "cursor"}}
+        filters = {k: v for k, v in query.items() if k not in {"limit", "cursor", "workspace_id"}}
         return [item for item in items if all(str(_dict(item).get(key)) == value for key, value in filters.items())]
 
     @staticmethod

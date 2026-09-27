@@ -5,7 +5,7 @@
     "status": "closest-real-journey",
     "test": "tests/integration/test_v2_end_to_end.py::test_v2_public_journey_creates_prepares_builds_verifies_packages_and_publishes",
     "covered": [
-      "document create",
+      "doc new",
       "source ingest",
       "source prepare",
       "verified v2 build",
@@ -502,7 +502,7 @@
   },
   "public_pipelines": {
     "status": "registered-and-dispatchable",
-    "catalog": "src/docs/application/pipeline_components.py:PUBLIC_PIPELINES",
+    "catalog": "src/docs/application/pipeline_registry.py:PUBLIC_PIPELINES",
     "registry": "src/docs/application/pipeline_service.py:PipelineService.__init__",
     "stage_backed": [
       {
@@ -576,7 +576,7 @@
       }
     ],
     "gap": "document-diff and document-inspect are read-only artifact operations, not stage-backed pipelines; stage-backed boundaries are registered, inspectable with document plan, and dispatchable.",
-    "dispatch": "src/docs/application/pipeline_service.py::PipelineService.run(pipeline_id=...)",
+    "dispatch": "src/docs/application/pipeline_service.py::PipelineService.execute(PipelineRequest)",
     "cli": "src/docs/cli/commands/document_app.py::plan,build,verify; src/docs/cli/commands/source_app.py::source_ingest"
   },
   "public_commands": {

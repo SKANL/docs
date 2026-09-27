@@ -14,9 +14,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from docs.domain.contracts import Job
-from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
-from docs.infrastructure.persistence.x20 import (
+from docs.composition import ApplicationComposition
+from docs.domain.ports.job_queue import JobQueue
+from docs.domain.ports.lease_store import LeaseStore
+from docs.domain.ports.run_store import PassportStore, RunStore
+from docs.domain.runtime_records import Job
+from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -37,15 +40,13 @@ class PipelineRuntimePort(Protocol):
         outputs: Sequence[Path] = (),
         excluded_stages: set[str] | frozenset[str] = frozenset(),
         external_artifacts: Sequence[str] | None = None,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class PipelineRuntimeFactory(Protocol):
     """Create a runtime for a named pipeline without coupling to its setup."""
 
-    def __call__(self, pipeline_id: str) -> PipelineRuntimePort:
-        ...
+    def __call__(self, pipeline_id: str) -> PipelineRuntimePort: ...
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,40 @@ class WorkerComposition:
         )
 
     build = create_service
+
+
+def compose_worker(
+    application: ApplicationComposition,
+    runtime_factory: PipelineRuntimeFactory,
+    workspace_root: str | Path,
+    queue: JobQueue,
+    leases: LeaseStore,
+    *,
+    run_store: RunStore | None = None,
+    passport_store: PassportStore | None = None,
+    finalizer: Callable[[WorkerResult], Any] | None = None,
+    scratch_parent: str | Path | None = None,
+    worker_id: str | None = None,
+    lease_ttl_seconds: int = 60,
+    heartbeat_interval_seconds: float | None = None,
+    max_retries: int = 0,
+) -> WorkerComposition:
+    """Bind worker lifecycle services to an existing application composition."""
+    return WorkerComposition(
+        runtime_factory,
+        workspace_root,
+        queue,
+        leases,
+        run_store=run_store,
+        passport_store=passport_store,
+        finalizer=finalizer,
+        scratch_parent=scratch_parent,
+        worker_id=worker_id,
+        lease_ttl_seconds=lease_ttl_seconds,
+        heartbeat_interval_seconds=heartbeat_interval_seconds,
+        max_retries=max_retries,
+        observability=application.observability,
+    )
 
 
 def create_production_worker(

@@ -1,6 +1,6 @@
-# Docs Harness v2 Contracts
+# Docs Harness X20 Contracts
 
-V2 contracts make stage completion, artifact identity, and publication evidence machine-checkable. JSON is deterministic: keys are sorted and content-addressed values are stable.
+Canonical X20 contracts make stage completion, artifact identity, and publication evidence machine-checkable. JSON is deterministic: keys are sorted and content-addressed values are stable.
 
 ## Pipeline contracts
 

@@ -7,17 +7,37 @@ Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted with
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 import typer
 
+from docs.application.workspaces import WorkspaceRegistry
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
-from docs.cli.commands.document_app import _capabilities_for
 from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 from docs.domain.normative import resolve_normative_settings
+from docs.domain.workspace_config import resolve_workspace_roots
+from docs.domain.workspace_format import (
+    validate_workspace_layout,
+    validate_workspace_marker,
+    write_workspace_marker,
+)
 
 doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
+
+
+def _activate_initialized_workspace() -> None:
+    """Make ``doc init`` immediately usable by the durable run commands.
+
+    The file-based config is enough for the legacy document commands, but the
+    asynchronous pipeline also needs a selected registry entry for its SQLite
+    state and local worker.  Registering the current directory here keeps a
+    freshly initialized workspace consistent across both command families.
+    """
+    registry = WorkspaceRegistry(Path.cwd() / ".docs" / "workspaces.json")
+    item = registry.ensure("Local workspace", Path.cwd())
+    registry.select(item["id"])
 
 
 @doc_app.command("init")
@@ -31,10 +51,21 @@ def doc_init(
     docs.config.json con las rutas resueltas y siembra las plantillas
     integradas si templates_dir está vacío (spec: workspace-config `doc init`
     Bootstrap Command; design.md item A, reutiliza `template use` de C)."""
-    deps, _ = _ctx(ctx)
-    resolved_documents = documents_dir or str(deps.workspace.documents_dir)
-    resolved_templates = templates_dir or str(deps.workspace.templates_dir)
+    del ctx
+    # `doc init` bootstraps the current directory; it must not inherit a
+    # previously selected workspace from the global registry. Otherwise a
+    # fresh workspace silently writes its config pointing at another project.
+    default_documents, default_templates = resolve_workspace_roots(
+        None, os.environ, (Path("documents"), Path("templates"))
+    )
+    resolved_documents = documents_dir or str(default_documents)
+    resolved_templates = templates_dir or str(default_templates)
     new_config = {"documents_dir": resolved_documents, "templates_dir": resolved_templates}
+
+    root = Path.cwd().resolve()
+    documents_path = Path(resolved_documents).expanduser().resolve()
+    templates_path = Path(resolved_templates).expanduser().resolve()
+    validate_workspace_layout(root, documents_path, templates_path)
 
     config_path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
     if config_path.exists() and not force:
@@ -43,23 +74,31 @@ def doc_init(
         except (OSError, ValueError):
             existing = None
         if existing == new_config:
+            validate_workspace_marker(root)
+            _activate_initialized_workspace()
             print(f"El workspace ya está inicializado ({config_path}).")
             return
         print(f"Ya existe `{config_path}` con otra configuración. Usa --force para sobrescribir.")
         raise typer.Exit(code=1)
 
+    marker_path = root / "workspace.json"
+    if marker_path.exists() or (documents_path / "registry.json").exists():
+        validate_workspace_marker(root)
+    else:
+        write_workspace_marker(root)
+
     config_path.write_text(
         json.dumps(new_config, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
     )
 
-    documents_path = Path(resolved_documents)
-    templates_path = Path(resolved_templates)
     documents_path.mkdir(parents=True, exist_ok=True)
     templates_path.mkdir(parents=True, exist_ok=True)
 
     if not any(templates_path.glob("*.json")):
         for name in _list_builtin_names():
             (templates_path / f"{name}.json").write_text(_read_builtin(name), encoding="utf-8")
+
+    _activate_initialized_workspace()
 
     print(f"Workspace inicializado: {config_path}")
     print(f"documents_dir={documents_path}, templates_dir={templates_path}")
@@ -169,10 +208,11 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
             "requirement": "a registered output renderer",
             "degradation": "diagnostics only; rendering remains unavailable",
         }
-    registry = _capabilities_for(
+    registry = deps.create_capability_registry(
         renderer,
         str(output_format),
         deps.workspace.doc_root(resolved.doc_id),
+        resolved.config.get("paths", {}),
     )
     capabilities = registry.report()
     capability_diagnostics = registry.diagnostics()

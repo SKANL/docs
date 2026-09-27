@@ -46,7 +46,7 @@ class StatusReader:
     def _latest_manifest_path(document_root: Path) -> Path | None:
         candidates: list[tuple[str, str, Path]] = []
         fallback: list[Path] = []
-        for path in (document_root / "output" / "v2").glob("*.manifest.json"):
+        for path in (document_root / "output" / "current").glob("*.manifest.json"):
             fallback.append(path)
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))

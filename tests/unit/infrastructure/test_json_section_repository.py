@@ -1,13 +1,24 @@
+import json
 from pathlib import Path
 
 import pytest
 
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
 
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Workspace:
+    write_workspace_marker(tmp_path)
     return Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
 
 
@@ -179,3 +190,48 @@ def test_write_raw_text_creates_parent_directories_and_writes_content(repo: Json
     path = tmp_path / "nested" / "dir" / "file.md"
     repo.write_raw_text(path, "hello")
     assert path.read_text(encoding="utf-8") == "hello"
+
+
+def test_section_repository_rejects_unversioned_workspace_without_mutation() -> None:
+    before = {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    }
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        JsonSectionRepository(
+            Workspace(
+                documents_dir=CURRENT_UNVERSIONED / "documents",
+                templates_dir=CURRENT_UNVERSIONED / "templates",
+            )
+        )
+
+    assert {
+        path.relative_to(CURRENT_UNVERSIONED): path.read_bytes()
+        for path in CURRENT_UNVERSIONED.rglob("*")
+        if path.is_file()
+    } == before
+
+
+def test_current_unversioned_fixture_keeps_reference_and_provenance_identities() -> None:
+    document_root = CURRENT_UNVERSIONED / "documents" / "sanitized-report"
+    bindings = json.loads(
+        (document_root / "sections" / "figure-bindings.json").read_text(encoding="utf-8")
+    )
+    catalog = json.loads(
+        (document_root / "sections" / "figure-catalog.json").read_text(encoding="utf-8")
+    )
+    provenance = json.loads(
+        (document_root / "runs" / "provenance.json").read_text(encoding="utf-8")
+    )
+
+    figure_id = bindings["bindings"]["architecture"]
+    figure = catalog["figures"][0]
+    assert bindings["schema"] == 1
+    assert figure_id == figure["id"] == "fig-431ced69"
+    assert figure["sha256"] == "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460"
+    run = provenance["runs"]["fixture-capture"]
+    assert run["run_id"] == "fixture-capture"
+    assert all(path.startswith("<WORKSPACE_ROOT>/") for path in (*run["inputs"], *run["outputs"]))
+    assert not any("angua" in path.lower() for path in (*run["inputs"], *run["outputs"]))

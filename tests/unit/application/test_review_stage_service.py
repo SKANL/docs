@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+import pytest
 from docx import Document
 
 from docs.application.format_audit import FormatAuditService
@@ -16,6 +17,11 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+
+
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
 
 
 def _service(tmp_path: Path) -> ReviewStageService:
@@ -323,7 +329,7 @@ def test_docx_visual_stage_does_not_silently_ignore_required_previews(tmp_path):
 
 
 def test_pdf_reproducibility_accepts_metadata_only_changes(tmp_path):
-    from docs.cli.commands.document_app import _verify_pdf_reproducibility
+    from docs.application.document_pipeline import _verify_pdf_reproducibility
 
     artifact = tmp_path / "document.pdf"
     _write_blank_pdf(artifact)
@@ -374,7 +380,7 @@ def test_pdf_reproducibility_rejects_changed_image_with_identical_geometry(tmp_p
     import pypdfium2 as pdfium
     from PIL import Image
 
-    from docs.cli.commands.document_app import _verify_pdf_reproducibility
+    from docs.application.document_pipeline import _verify_pdf_reproducibility
 
     paths = (tmp_path / "first.pdf", tmp_path / "second.pdf")
     for path, color in zip(paths, ("black", "red"), strict=True):

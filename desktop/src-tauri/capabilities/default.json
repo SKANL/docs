@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Minimal local desktop permissions",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "updater:default"]
 }

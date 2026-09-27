@@ -5,7 +5,7 @@ Use this page as the operational path. The source stages are explicit commands; 
 ## Quick path
 
 ```bash
-uv run docs document create report --template technical-report-srs
+uv run docs doc new report --template technical-report-srs
 uv run docs document status --json
 uv run docs document ingest --json
 uv run docs document prepare --json
@@ -56,7 +56,7 @@ A `failed` stage stops its downstream dependency chain. A visible optional `unsu
 runtime stage:
 
 1. **Declaration** — the stage is named by `FULL_STAGE_IDS`.
-2. **Runtime wiring** — `PipelineService` registers a handler for the stage.
+2. **Runtime wiring** — `PipelineService` owns and registers the stage handler.
 3. **Executable evidence** — an integration test exercises and asserts the stage.
 4. **Observed outcome** — that test records whether the stage succeeded,
    remained unsupported, or was not observed.
@@ -105,7 +105,7 @@ resolve-config -> resolve-template -> resolve-context -> resolve-assets
 -> package-release -> publish-draft
 ```
 
-`build` runs the full `document` pipeline by default and writes successful formats to `output/current/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The CLI composition root supplies handlers for every declared stage; a stage is `skipped` only when its document has no applicable input (for example, no visual specs or no cover). Partial programmatic service maps are intentionally fail-closed and are not the normal runtime.
+`build` runs the full `document` pipeline by default and writes successful formats to `output/current/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The shared composition constructs the native `PipelineService` and its stage operations for application entry points. Stages may report `skipped` when no applicable input exists (for example, no visual specs or no cover); injected partial operation sets remain useful for failure tests, not the normal application setup.
 
 ## Format selection
 
@@ -152,3 +152,8 @@ operation declares that keyword. If the adapter does not accept it, the command
 does not silently discard the flag: it keeps the result degradable and emits a
 structured `pipeline.strict_advisory` warning in JSON. A v2 report without any
 stage is always a native failure with `pipeline.empty_v2_report`.
+
+
+## Pipeline ownership
+
+`PipelineService` is the application-facing pipeline capability: it registers the stage graph, executes it, applies outcome policy, and coordinates publication. The private `_PipelineExecutor` is an internal mechanical executor used by the service; it is not a supported integration point. The removed `PipelineRuntime` application class and `PipelineService.run` API are not part of the current contract. Worker jobs retain a worker-specific runtime protocol/factory for job lifecycle integration, but that protocol delegates to the shared application pipeline rather than defining another document pipeline.

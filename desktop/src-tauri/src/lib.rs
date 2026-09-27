@@ -10,6 +10,12 @@ use tauri::Manager;
 use tauri::State;
 use thiserror::Error;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Error)]
 pub enum SupervisorError {
     #[error("sidecar is already running")]
@@ -27,8 +33,82 @@ pub enum SupervisorError {
 }
 
 const DEFAULT_HEALTH_URL: &str = "http://127.0.0.1:8765/health";
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+// Frozen sidecars load large rendering dependencies (PDFium, Pillow,
+// matplotlib) on first launch. Five seconds is enough on a warm checkout but
+// too short for a clean Windows install, so allow a bounded cold-start window.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
 const HEALTH_PROBE_TIMEOUT: Duration = Duration::from_millis(250);
+const DESKTOP_DATA_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DesktopDataSchema {
+    version: u32,
+}
+
+fn initialize_app_data(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("app data directory: {error}"))?;
+    let workspace = root.join("workspace");
+    let directories = [
+        "documents",
+        "templates",
+        "assets",
+        "runs",
+        "artifacts",
+        "baselines",
+        "passports",
+        ".docs",
+    ];
+    for directory in directories {
+        std::fs::create_dir_all(workspace.join(directory))
+            .map_err(|error| format!("create workspace/{directory}: {error}"))?;
+    }
+
+    let schema_path = workspace.join(".docs").join("desktop-data-schema.json");
+    if schema_path.is_file() {
+        let existing = std::fs::read(&schema_path)
+            .map_err(|error| format!("read desktop data schema: {error}"))?;
+        let schema: DesktopDataSchema = serde_json::from_slice(&existing)
+            .map_err(|error| format!("parse desktop data schema: {error}"))?;
+        if schema.version > DESKTOP_DATA_SCHEMA_VERSION {
+            return Err(format!(
+                "desktop data schema {} is newer than this application supports ({DESKTOP_DATA_SCHEMA_VERSION})",
+                schema.version
+            ));
+        }
+        return Ok(workspace);
+    }
+    let schema = DesktopDataSchema {
+        version: DESKTOP_DATA_SCHEMA_VERSION,
+    };
+    let encoded = serde_json::to_vec_pretty(&schema)
+        .map_err(|error| format!("encode desktop data schema: {error}"))?;
+    let temporary = schema_path.with_extension("json.tmp");
+    std::fs::write(&temporary, encoded)
+        .map_err(|error| format!("write desktop data schema: {error}"))?;
+    std::fs::rename(&temporary, &schema_path)
+        .map_err(|error| format!("publish desktop data schema: {error}"))?;
+    Ok(workspace)
+}
+
+fn append_startup_log(app: &tauri::AppHandle, message: &str) {
+    let mut paths = vec![std::env::temp_dir().join("docs-desktop-startup.log")];
+    if let Ok(root) = app.path().app_data_dir() {
+        let _ = std::fs::create_dir_all(&root);
+        paths.push(root.join("desktop-startup.log"));
+    }
+    for path in paths {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = writeln!(file, "{message}");
+        }
+    }
+}
 
 struct SupervisorState {
     child: Option<Child>,
@@ -85,17 +165,43 @@ impl SidecarSupervisor {
         state.health.clone()
     }
 
-    pub fn start(&self, executable: &str) -> Result<Health, SupervisorError> {
+    pub fn start(&self, executable: &str, workspace: &Path) -> Result<Health, SupervisorError> {
         let mut state = self.state.lock().expect("sidecar mutex poisoned");
         if state.child.is_some() {
             return Err(SupervisorError::AlreadyRunning);
         }
         let executable_path = Path::new(executable);
-        let child = Command::new(executable_path)
+        let mut command = Command::new(executable_path);
+        // Keep the child listener aligned with the supervisor probe. This is
+        // required for development/test ports and prevents a configured
+        // DOCS_SIDECAR_HEALTH_URL from probing one endpoint while the child
+        // silently binds the default 8765 endpoint.
+        command
+            .arg("--workspace")
+            .arg(workspace)
+            .arg("--health-url")
+            .arg(&self.health_url);
+        configure_sidecar_command(&mut command);
+        // Keep the console hidden for end users while preserving a durable,
+        // local diagnostic stream for startup/runtime failures. The file
+        // handle belongs to the child after spawn and is closed with it.
+        let log_path = workspace.parent().unwrap_or(workspace).join("sidecar.log");
+        // The supervisor owns this path; record it separately so a failed
+        // packaged startup can be diagnosed even when the UI never loads.
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path);
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)?;
+        let log_stderr = log.try_clone()?;
+        let child = command
             .current_dir(executable_path.parent().unwrap_or_else(|| Path::new(".")))
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::from(log))
+            .stderr(Stdio::from(log_stderr))
             .spawn()?;
         state.child = Some(child);
         state.health = Health::starting();
@@ -113,7 +219,7 @@ impl SidecarSupervisor {
 
         let mut state = self.state.lock().expect("sidecar mutex poisoned");
         if let Some(mut child) = state.child.take() {
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             let _ = child.wait();
         }
         state.health = Health::failed("sidecar health endpoint timed out");
@@ -123,7 +229,7 @@ impl SidecarSupervisor {
     pub fn shutdown(&self) {
         let mut state = self.state.lock().expect("sidecar mutex poisoned");
         if let Some(mut child) = state.child.take() {
-            let _ = child.kill();
+            terminate_process_tree(&mut child);
             let _ = child.wait();
         }
         state.health = Health::failed("sidecar is stopped");
@@ -138,6 +244,26 @@ impl SidecarSupervisor {
             error: Some(error.into()),
         };
     }
+}
+
+fn configure_sidecar_command(command: &mut Command) {
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+fn terminate_process_tree(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        // PyInstaller starts the Python worker as a child of the sidecar. A
+        // plain Child::kill only terminates the HTTP parent on Windows and
+        // leaves SQLite handles open in the orphaned worker. taskkill /T is
+        // the OS-level tree boundary used for clean desktop shutdown.
+        let mut command = Command::new("taskkill");
+        command.args(["/PID", &child.id().to_string(), "/T", "/F"]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        let _ = command.output();
+    }
+    let _ = child.kill();
 }
 
 impl Clone for Health {
@@ -231,20 +357,37 @@ fn sidecar_names() -> [&'static str; 2] {
 }
 
 fn package_local_candidates(resource_dir: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    let parent = resource_dir.parent().unwrap_or(resource_dir);
     sidecar_names().into_iter().flat_map(|name| {
         [
             resource_dir.join("sidecar").join(name),
             resource_dir.join(name),
+            // NSIS places bundled resources under `_up_` during a fresh
+            // per-user install. Treat that directory as a package resource
+            // location, not as a user-controlled workspace path.
+            resource_dir.join("_up_").join("sidecar").join(name),
+            parent.join("sidecar").join(name),
+            parent.join("_up_").join("sidecar").join(name),
         ]
         .into_iter()
     })
+}
+
+fn normalize_executable_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(value) = path.to_str().and_then(|value| value.strip_prefix(r"\\?\")) {
+            return PathBuf::from(value);
+        }
+    }
+    path
 }
 
 fn resolve_sidecar_executable(app: &tauri::AppHandle) -> Result<PathBuf, SupervisorError> {
     if let Ok(configured) = std::env::var("DOCS_SIDECAR_EXECUTABLE") {
         let path = PathBuf::from(configured);
         if path.is_file() {
-            return Ok(path);
+            return Ok(normalize_executable_path(path));
         }
         return Err(SupervisorError::Resolve(
             "DOCS_SIDECAR_EXECUTABLE does not point to a file".to_owned(),
@@ -268,7 +411,7 @@ fn resolve_sidecar_executable(app: &tauri::AppHandle) -> Result<PathBuf, Supervi
                 .find(|path| path.is_file())
         })
         .ok_or(SupervisorError::NotFound);
-    candidate
+    candidate.map(normalize_executable_path)
 }
 
 #[derive(Deserialize)]
@@ -304,29 +447,68 @@ fn sidecar_start(
             supervisor.fail(message.clone());
             message
         })?;
-    supervisor.start(executable).map_err(|error| {
+    let workspace = initialize_app_data(&app)?;
+    append_startup_log(
+        &app,
+        &format!(
+            "starting sidecar executable={} workspace={}",
+            executable,
+            workspace.display()
+        ),
+    );
+    supervisor.start(executable, &workspace).map_err(|error| {
         let message = error.to_string();
         supervisor.fail(message.clone());
         message
     })
 }
 
+#[tauri::command]
+fn sidecar_restart(
+    app: tauri::AppHandle,
+    supervisor: State<'_, SidecarSupervisor>,
+) -> Result<Health, String> {
+    supervisor.shutdown();
+    sidecar_start(app, supervisor)
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey("dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCOTgxRTlGMzdENjkyMzUKUldRMWt0WTNueDZZRzgyY3Bhb3NWWGRMZnF2UmRJOE5sU1pMZnNzdVhJRWsxaVNZVDNRb2hDbkUK")
+                .build(),
+        )
         .manage(SidecarSupervisor::default())
         .invoke_handler(tauri::generate_handler![
             sidecar_handshake,
             sidecar_health,
-            sidecar_start
+            sidecar_start,
+            sidecar_restart
         ])
         .setup(|app| {
+            initialize_app_data(&app.handle())?;
+            append_startup_log(&app.handle(), "desktop setup initialized");
             let handle = app.handle().clone();
-            thread::spawn(move || {
-                let supervisor = handle.state::<SidecarSupervisor>();
-                if let Err(error) = sidecar_start(handle.clone(), supervisor) {
-                    eprintln!("sidecar startup failed: {error}");
-                }
-            });
+            // Do not block Tauri setup on a cold PyInstaller startup. The
+            // supervisor owns the readiness state and the UI can observe it
+            // through `sidecar/health` while the sidecar warms up.
+            let startup_handle = handle.clone();
+            std::thread::Builder::new()
+                .name("docs-sidecar-startup".to_owned())
+                .spawn(move || {
+                    let supervisor = startup_handle.state::<SidecarSupervisor>();
+                    if let Err(error) = sidecar_start(startup_handle.clone(), supervisor) {
+                        append_startup_log(
+                            &startup_handle,
+                            &format!("sidecar startup failed: {error}"),
+                        );
+                        eprintln!("sidecar startup failed: {error}");
+                    } else {
+                        append_startup_log(&startup_handle, "sidecar startup succeeded");
+                    }
+                })
+                .map_err(|error| format!("spawn sidecar startup thread: {error}"))?;
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -371,5 +553,22 @@ mod tests {
 
         assert!(probe_health(&format!("http://{address}/health")));
         server.join().expect("join test health endpoint");
+    }
+
+    #[test]
+    fn desktop_data_schema_is_versioned() {
+        let schema = DesktopDataSchema {
+            version: DESKTOP_DATA_SCHEMA_VERSION,
+        };
+        let encoded = serde_json::to_string(&schema).expect("serialize schema");
+        assert!(encoded.contains("\"version\":1"));
+    }
+
+    #[test]
+    fn package_candidates_include_nsis_resource_directory() {
+        let candidates: Vec<_> = package_local_candidates(Path::new("C:/Review Studio/resources"))
+            .map(|path| path.to_string_lossy().to_string())
+            .collect();
+        assert!(candidates.iter().any(|path| path.contains("_up_")));
     }
 }

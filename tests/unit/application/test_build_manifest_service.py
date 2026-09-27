@@ -22,7 +22,7 @@ class _Ledger:
 
 def test_build_manifest_service_creates_writes_and_records_provenance(tmp_path: Path) -> None:
     artifact = tmp_path / "runs" / "v2-artifacts" / "build.active.docx"
-    destination = tmp_path / "output" / "v2" / "active.docx"
+    destination = tmp_path / "output" / "current" / "active.docx"
     manifest_path = tmp_path / "scratch" / "primary.docx.manifest.json"
     source = tmp_path / "sections" / "overview.md"
     rendered = b"rendered artifact"
@@ -70,7 +70,7 @@ def test_build_manifest_service_creates_writes_and_records_provenance(tmp_path: 
 
 def test_build_manifest_identity_and_attestation_ignore_run_id(tmp_path: Path) -> None:
     artifact = tmp_path / "runs" / "v2-artifacts" / "build.active.docx"
-    destination = tmp_path / "output" / "v2" / "active.docx"
+    destination = tmp_path / "output" / "current" / "active.docx"
     artifact.parent.mkdir(parents=True)
     artifact.write_bytes(b"rendered artifact")
     identities = {

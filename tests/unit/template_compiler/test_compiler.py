@@ -12,8 +12,8 @@ from docs.template_compiler import (
     TemplateIR,
     compile_template,
     compile_template_json,
-    legacy_template,
-    to_legacy_config,
+    source_template,
+    to_source_config,
 )
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "templates"
@@ -23,14 +23,14 @@ def load_template(name: str) -> Template:
     return Template.from_json((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-def test_compile_and_lower_builtin_template_without_changing_legacy_config():
+def test_compile_and_lower_builtin_template_without_changing_source_config():
     template = load_template("documento-generico")
     ir = compile_template(template)
 
     assert ir.ir_version == TEMPLATE_IR_VERSION
     assert ir.template_type == template.type
-    assert to_legacy_config(ir) == template.model_dump(exclude_none=True, mode="python")
-    assert legacy_template(ir).model_dump(exclude_none=True, mode="python") == to_legacy_config(ir)
+    assert to_source_config(ir) == template.model_dump(exclude_none=True, mode="python")
+    assert source_template(ir).model_dump(exclude_none=True, mode="python") == to_source_config(ir)
 
 
 def test_compile_raw_mapping_runs_existing_template_validation():

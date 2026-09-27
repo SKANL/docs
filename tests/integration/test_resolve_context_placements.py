@@ -8,7 +8,7 @@ import pytest
 
 from docs.cli._shared import Deps
 from docs.domain.docx_structure import structure_parts
-from docs.template_compiler import TemplateIR, legacy_template
+from docs.template_compiler import TemplateIR, source_template
 
 _TEMPLATE = {
     "type": "tesina",
@@ -19,14 +19,10 @@ _TEMPLATE = {
 
 
 @pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    documents = tmp_path / "documents"
+def workspace(canonical_cli_workspace):
+    tmp_path = canonical_cli_workspace
     templates = tmp_path / "templates"
-    documents.mkdir()
-    templates.mkdir()
     (templates / "tesina.json").write_text(json.dumps(_TEMPLATE), encoding="utf-8")
-    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(documents))
-    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
     return tmp_path
 
 
@@ -69,12 +65,12 @@ def test_confirmed_cover_placement_is_usable_by_assembly(workspace):
     assert cover_parts == [{"type": "cover_from_asset", "asset": "cover.docx"}]
 
 
-def test_confirmed_cover_replaces_a_template_declared_cover_from_asset(workspace, tmp_path):
+def test_confirmed_cover_replaces_a_template_declared_cover_from_asset(workspace):
     """A template may already declare its own `cover_from_asset` (the real
     reporte-estadia-tic does). A confirmed cover must REPLACE it, not stack a
     second one -- a document has exactly one cover. Found against the real
     template: the resolved structure came back with two cover parts."""
-    templates = tmp_path / "templates"
+    templates = workspace / "templates"
     template = dict(_TEMPLATE)
     template["structure"] = [
         {"type": "cover_from_asset", "asset": "cover"},
@@ -104,18 +100,18 @@ def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
     assert parts[0]["type"] == "cover_from_template"
 
 
-def test_template_resolution_compiles_ir_while_preserving_legacy_template(workspace):
+def test_template_resolution_compiles_ir_while_preserving_source_template(workspace):
     deps = Deps()
     deps.documents.create("doc-ir", "tesina")
 
     resolved = deps.resolve_context("doc-ir")
 
     assert isinstance(resolved.template_ir, TemplateIR)
-    assert resolved.template.model_dump() == legacy_template(resolved.template_ir).model_dump()
+    assert resolved.template.model_dump() == source_template(resolved.template_ir).model_dump()
     assert len(resolved.template_ir.ir_hash) == 64
 
 
-def test_legacy_template_without_section_contracts_still_resolves(workspace):
+def test_source_template_without_section_contracts_still_resolves(workspace):
     legacy = dict(_TEMPLATE)
     legacy["section_contracts"] = {}
     (workspace / "templates" / "tesina.json").write_text(json.dumps(legacy), encoding="utf-8")
@@ -129,12 +125,12 @@ def test_legacy_template_without_section_contracts_still_resolves(workspace):
     assert resolved.template_ir is None
 
 
-def test_doc_root_and_inbox_dir_tokens_expand_in_template_paths(workspace, tmp_path):
+def test_doc_root_and_inbox_dir_tokens_expand_in_template_paths(workspace):
     """A template's source paths point into the document's OWN inbox -- each
     document is an isolated workspace. Found against the real
     reporte-estadia-tic, whose paths carried an unexpanded `{tesina_root}`
     from the pre-inbox layout, so `doctor` failed on a literal token."""
-    templates = tmp_path / "templates"
+    templates = workspace / "templates"
     template = dict(_TEMPLATE)
     template["paths"] = {"manual_dir": "{inbox_dir}/guides/manual", "root": "{doc_root}"}
     (templates / "contokens.json").write_text(json.dumps(template), encoding="utf-8")

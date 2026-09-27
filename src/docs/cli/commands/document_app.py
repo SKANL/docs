@@ -3,1150 +3,59 @@
 from __future__ import annotations
 
 import hashlib
-import inspect as inspect_module
 import json
 import mimetypes
 import os
 import shutil
-import stat
+import subprocess
+import sys
 import tempfile
 import uuid
-import zipfile
 from collections.abc import Mapping
-from contextlib import closing, contextmanager, nullcontext
-from copy import deepcopy
-from difflib import unified_diff
-from html.parser import HTMLParser
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import typer
 
-from docs.application.artifact_build_service import (
-    ArtifactBuildError,
-    ArtifactBuildService,
+from docs.application.document_pipeline import (
+    _current_input_identities,
+    _resolve_publish_inputs,
 )
-from docs.application.atomic_transform import AtomicTransform, TransformSpec
-from docs.application.build_manifest_service import BuildManifestService
-from docs.application.package_release_service import PackageReleaseService
-from docs.application.package_service import (
-    PackageFile,
-    PackagePublicationError,
-    PackageService,
-)
-from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
-from docs.application.pipeline_service import (
-    PipelineService,
-    PublicationSpec,
-)
+from docs.application.pipeline_registry import PUBLIC_PIPELINES
+from docs.application.pipeline_service import PipelineRequest
 from docs.application.provenance import ProvenanceLedger
-from docs.application.review_stages import ReviewStageService
-from docs.application.source_pipeline import SourcePipeline
-from docs.application.stage_provider import StageProvider
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
+from docs.application.workspaces import WorkspaceRegistry
+from docs.cli.commands.source_app import run_source_command
 from docs.domain.artifacts import BuildManifest
-from docs.domain.identity import sha256_content, sha256_file
+from docs.domain.identity import sha256_file
 from docs.domain.normative import resolve_normative_settings
-from docs.domain.pipeline_kernel import ArtifactRecord, StageResult
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
-from docs.domain.review import ReviewDimension, ReviewResult
-from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
-from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
-from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
-from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
-from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
+from docs.domain.review import ReviewDimension
+from docs.domain.runtime_records import Run
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
-from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
+from docs.infrastructure.persistence.sqlite_runtime import (
+    SqliteArtifactStore,
+    SqliteFindingStore,
+    SqliteJobQueue,
+    SqlitePassportStore,
+    SqliteRunStore,
+)
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
-
-def _source_pipeline(deps: Any) -> SourcePipeline | None:
-    """Compose the source pipeline while tolerating older dependency fixtures."""
-    ingest = getattr(deps, "ingest", None)
-    if ingest is None:
-        return None
-    normalizer = getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter()
-    file_writer = getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter()
-    return SourcePipeline(ingest, normalizer, file_writer)
+_BATCH_OUTPUT_PATHS = (Path("output") / "current", Path("output") / "release")
 
 
-def _write_manifest_text(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf-8")
-
-
-class _HtmlDocumentVerifier(HTMLParser):
-    """Record the document-level elements required from rendered HTML."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.html_elements = 0
-        self.body_elements = 0
-        self.visible_text: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        del attrs
-        if tag.casefold() == "html":
-            self.html_elements += 1
-        elif tag.casefold() == "body":
-            self.body_elements += 1
-
-    def handle_data(self, data: str) -> None:
-        self.visible_text.append(data)
-
-
-def _verify_html_artifact(artifact: Path) -> tuple[bool, str]:
-    try:
-        source = artifact.read_text(encoding="utf-8-sig")
-    except UnicodeDecodeError as exc:
-        return False, f"HTML artifact is not valid UTF-8: {exc}"
-
-    parser = _HtmlDocumentVerifier()
-    try:
-        parser.feed(source)
-        parser.close()
-    except Exception as exc:  # pragma: no cover - HTMLParser currently accepts most malformed markup.
-        return False, f"HTML artifact is unreadable: {exc}"
-    if parser.html_elements != 1:
-        return False, "HTML artifact is missing an html root element"
-    if parser.body_elements != 1:
-        return False, "HTML artifact is missing a body element"
-    # Reopen the serialized document through the parser and require rendered
-    # content, not merely a container-shaped byte stream.
-    if not "".join(parser.visible_text).strip():
-        return False, "HTML artifact has no renderable body content"
-    return True, "HTML document reopened and visual content verified"
-
-
-def _verify_pdf_artifact(artifact: Path) -> tuple[bool, str]:
-    if not artifact.read_bytes().startswith(b"%PDF-"):
-        return False, "PDF artifact is missing the %PDF header"
-    try:
-        import pypdfium2 as pdfium
-
-        document = pdfium.PdfDocument(str(artifact))
-        try:
-            if len(document) == 0:
-                return False, "PDF artifact contains no pages"
-            for index in range(len(document)):
-                page = document[index]
-                bitmap = page.render(scale=1.0)
-                if bitmap.width <= 0 or bitmap.height <= 0:
-                    return False, f"PDF page {index + 1} rendered with invalid dimensions"
-        finally:
-            document.close()
-    except (ImportError, OSError, RuntimeError, ValueError) as exc:
-        return False, f"PDF artifact is unreadable: {exc}"
-    return True, "PDF reopened, rendered, and visual dimensions verified"
-
-
-def _verify_pdf_reproducibility(original: Path, rebuilt: Path) -> tuple[bool, str]:
-    """Compare PDF semantics, not bytes, because PDF rendering is engine-dependent."""
-    try:
-        import pypdfium2 as pdfium
-
-        with pdfium.PdfDocument(str(original)) as first, pdfium.PdfDocument(str(rebuilt)) as second:
-            if not len(first) or len(first) != len(second):
-                return False, "PDF reproducibility changed the page count"
-            for index in range(len(first)):
-                left, right = first[index], second[index]
-                try:
-                    if left.get_size() != right.get_size():
-                        return False, f"PDF reproducibility changed page geometry at page {index + 1}"
-                    with closing(left.get_textpage()) as left_text, closing(right.get_textpage()) as right_text:
-                        if left_text.get_text_range() != right_text.get_text_range():
-                            return False, f"PDF reproducibility changed text at page {index + 1}"
-                    with (
-                        closing(left.render(scale=150 / 72)) as left_bitmap,
-                        closing(right.render(scale=150 / 72)) as right_bitmap,
-                        left_bitmap.to_pil() as left_image, right_bitmap.to_pil() as right_image,
-                    ):
-                        if left_image.size != right_image.size or left_image.tobytes() != right_image.tobytes():
-                            return False, f"PDF reproducibility changed rendered content at page {index + 1}"
-                finally:
-                    left.close()
-                    right.close()
-    except (ImportError, OSError, RuntimeError, ValueError) as exc:
-        return False, f"PDF reproducibility comparison failed: {exc}"
-    return True, "PDF reproducibility verified semantically"
-
-
-def _verify_non_docx_artifact(output_format: str, artifact: Path) -> tuple[bool, str]:
-    """Reopen a rendered non-DOCX artifact using its existing verifier."""
-    if output_format == "html":
-        return _verify_html_artifact(artifact)
-    if output_format == "pdf":
-        return _verify_pdf_artifact(artifact)
-    return False, f"no format verifier is registered for {output_format}"
-
-
-def _minimal_structural_audit(artifact: Path, output_format: str) -> tuple[bool, str]:
-    """Perform the minimum structural reopen gate when no full auditor is wired."""
-    if not artifact.exists():
-        return False, f"artifact is missing: {artifact}"
-    if not artifact.is_file():
-            return False, f"artifact is not a file: {artifact}"
-    try:
-        if artifact.stat().st_size <= 0:
-            return False, f"artifact is empty: {artifact}"
-        if output_format == "docx":
-            with zipfile.ZipFile(artifact) as archive:
-                if "word/document.xml" not in archive.namelist():
-                    return False, "structural DOCX missing word/document.xml"
-                archive.read("word/document.xml")
-        else:
-            artifact.read_bytes()
-    except (OSError, zipfile.BadZipFile, KeyError) as exc:
-        return False, f"artifact is unreadable: {exc}"
-    return True, f"minimal fallback: {output_format.upper()} reopened and structural dimensions verified"
-
-
-def _fallback_structural_audit(artifact: Path, output_format: str) -> tuple[bool, str]:
-    """Native name for the native structural stage."""
-    return _minimal_structural_audit(artifact, output_format)
-
-
-def _successful_stage_result(name: str, artifact: Path) -> StageResult:
-    """Create the completion artifact required by a native v2 stage."""
-    record = ArtifactRecord(
-        f"{name}-complete",
-        str(artifact),
-        hashlib.sha256(artifact.read_bytes()).hexdigest(),
-        producer_stage=name,
-    )
-    return StageResult(
-        name,
-        True,
-        artifacts=(
-            record,
-        ),
-    )
-
-
-def _verify_readable_artifact(artifact: Path) -> tuple[bool, str]:
-    """Keep format-specific verification in pipeline stages, after a safe read."""
-    try:
-        with artifact.open("rb") as handle:
-            handle.read(1)
-    except OSError as exc:
-        return False, f"artifact is unreadable: {exc}"
-    return True, "artifact is readable"
-
-
-def _scratch_directory(prefix: str, parent: Path) -> Path:
-    return Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
-
-
-def _available_files(root: Path, directory: str) -> tuple[Path, ...]:
-    candidate = root / directory
-    return (
-        tuple(
-            sorted(
-                (
-                    path
-                    for path in candidate.rglob("*")
-                    if path.is_file() and not path.is_symlink()
-                ),
-                key=lambda path: path.as_posix(),
-            )
-        )
-        if candidate.is_dir()
-        else ()
-    )
-
-
-def _build_inputs(root: Path) -> tuple[Path, ...]:
-    excluded = {"output", "runs", "__pycache__"}
-    return tuple(
-        sorted(
-            (
-                path
-                for path in root.rglob("*")
-                if path.is_file()
-                and not path.is_symlink()
-                and not any(part in excluded for part in path.relative_to(root).parts)
-                and not any(
-                    part.startswith((".v2-", ".atomic-"))
-                    for part in path.relative_to(root).parts
-                )
-            ),
-            key=lambda path: path.relative_to(root).as_posix(),
-        )
-    )
-
-
-def _manifest_for(
-    *,
-    resolved: Any,
-    config: dict[str, Any],
-    renderer: Any,
-    root: Path,
-    artifact: Path,
-    destination: Path,
-    output_format: str,
-    run_id: str,
-    verification: dict[str, Any] | None = None,
-) -> BuildManifest:
-    """Native seam for callers that construct a v2 manifest directly."""
-    service = BuildManifestService(
-        input_identities=_current_input_identities,
-        build_inputs=_build_inputs,
-        artifact_hash=sha256_file,
-        write_text=_write_manifest_text,
-    )
-    return service.create_manifest(
-        resolved=resolved,
-        config=config,
-        renderer=renderer,
-        root=root,
-        artifact=artifact,
-        destination=destination,
-        output_format=output_format,
-        run_id=run_id,
-        verification=verification,
-    )
-
-
-def _current_input_identities(
-    *, resolved: Any, config: dict[str, Any], renderer: Any, root: Path, output_format: str
-) -> dict[str, Any]:
-    """Recompute every identity that makes a build eligible for publication.
-
-    The function deliberately accepts resolved domain values rather than a
-    manifest.  This keeps identity calculation deterministic and reusable by
-    both the build and publish paths, while preventing a manifest from
-    attesting to its own stale values.
-    """
-    inputs = _build_inputs(root)
-    assets = _available_files(root, "assets")
-    template = getattr(resolved, "template", None)
-    context = getattr(resolved, "context", config.get("context", {}))
-    config_identity = deepcopy(config)
-    output_identity = config_identity.get("output")
-    if isinstance(output_identity, dict):
-        output_identity.pop("format", None)
-    return {
-        "source_hash": sha256_content(
-            {path.relative_to(root).as_posix(): sha256_file(path) for path in inputs}
-        ),
-        "template_hash": sha256_content(getattr(template, "__dict__", template)),
-        "template_ir_hash": getattr(getattr(resolved, "template_ir", None), "ir_hash", ""),
-        # The selected output format is a renderer choice, not a source
-        # generation identity; this keeps one build generation packageable
-        # across DOCX/HTML/PDF.
-        "config_hash": sha256_content(config_identity),
-        "context_hash": sha256_content(context),
-        "asset_hashes": {
-            path.relative_to(root).as_posix(): sha256_file(path) for path in assets
-        },
-        "renderer_versions": {
-            "renderer": _renderer_identity(renderer, config, output_format)
-        },
+def _source_mime_type(filename: str) -> str:
+    known = {
+        ".md": "text/markdown",
+        ".markdown": "text/markdown",
+        ".txt": "text/plain",
     }
-
-
-def _renderer_identity(renderer: Any, config: dict[str, Any], output_format: str) -> str:
-    implementation = f"{type(renderer).__module__}.{type(renderer).__qualname__}"
-    payload: dict[str, str] = {"format": output_format, "implementation": implementation}
-    for attribute in ("version", "renderer_version", "__version__"):
-        value = getattr(renderer, attribute, None)
-        if isinstance(value, str) and value:
-            payload["renderer_version"] = value
-            break
-    source = inspect_module.getsourcefile(type(renderer))
-    if source:
-        source_path = Path(source)
-        if source_path.is_file():
-            payload["renderer_source_sha256"] = sha256_file(source_path)
-    resolver_owner = renderer
-    resolver = getattr(resolver_owner, "tool_resolver", None)
-    if resolver is None:
-        resolver_owner = getattr(renderer, "docx_renderer", renderer)
-        resolver = getattr(resolver_owner, "tool_resolver", None)
-    if resolver is not None:
-        resolver_method = "resolve_libreoffice" if output_format == "pdf" else "resolve_pandoc"
-        resolve = getattr(resolver, resolver_method, None)
-        tool_version = getattr(resolver, "tool_version", None)
-        if callable(resolve):
-            executable = resolve(config.get("paths", {}))
-            if executable:
-                payload["tool"] = str(executable)
-                if callable(tool_version):
-                    version = tool_version(executable)
-                    if version:
-                        payload["tool_version"] = str(version).strip()
-    return sha256_content(payload)
-
-
-def _resolve_publish_inputs(
-    ctx: typer.Context, document_root: Path, output_format: str
-) -> tuple[Any, dict[str, Any], Any]:
-    """Resolve fresh publish inputs through the active composition root."""
-    deps = ctx.obj["deps"]
-    resolved = deps.resolve_context(document_root.name)
-    config = deepcopy(resolved.config)
-    config.setdefault("output", {})["format"] = output_format
-    renderer = deps.resolve_renderer(config)
-    return resolved, config, renderer
-
-
-def _renderer_capabilities(renderer: Any) -> tuple[ToolCapability, ...]:
-    """Adapt explicit renderer capability declarations to local checks."""
-    declared: list[ToolCapability] = []
-    for attribute, required in (
-        ("required_capabilities", True),
-        ("optional_capabilities", False),
-    ):
-        values = getattr(renderer, attribute, ())
-        if isinstance(values, str):
-            values = (values,)
-        if not isinstance(values, (list, tuple, set, frozenset)):
-            continue
-        for value in values:
-            if isinstance(value, ToolCapability):
-                declared.append(
-                    ToolCapability(
-                        value.name,
-                        value.executable,
-                        required or value.required,
-                        module=value.module,
-                    )
-                )
-            elif isinstance(value, str) and value:
-                declared.append(ToolCapability(value, value, required))
-    return tuple(declared)
-
-
-def _visual_capabilities(document_root: Path) -> tuple[ToolCapability, ...]:
-    """Report optional visual tools only when the document requests visuals."""
-    specs_path = document_root / "sections" / "visual-specs.json"
-    try:
-        specs = json.loads(specs_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return ()
-    if not isinstance(specs, list):
-        return ()
-    visual_types = {
-        item.get("type")
-        for item in specs
-        if isinstance(item, Mapping) and isinstance(item.get("type"), str)
-    }
-    capabilities: list[ToolCapability] = []
-    if visual_types:
-        capabilities.append(ToolCapability("resvg", "resvg", degradation="skip vector visual generation"))
-    if "mermaid" in visual_types:
-        capabilities.append(ToolCapability("mmdc", "mmdc", degradation="skip Mermaid visual generation"))
-    return tuple(capabilities)
-
-
-def _capabilities_for(renderer: Any, output_format: str, document_root: Path) -> ToolCapabilityRegistry:
-    capabilities = list(_renderer_capabilities(renderer))
-    capabilities.extend(
-        (
-            ToolCapability("pillow", "", module="PIL", requirement="required for image inspection", degradation="skip image-specific checks"),
-            ToolCapability("pypdfium2", "", module="pypdfium2", required=output_format == "pdf", requirement="required for PDF page rendering", degradation="skip PDF rendering"),
-        )
-    )
-    if output_format == "pdf":
-        capabilities.append(ToolCapability("soffice", "soffice", required=True, requirement="required to derive PDF from DOCX", degradation="skip PDF derivation in draft mode"))
-    capabilities.extend(_visual_capabilities(document_root))
-    return ToolCapabilityRegistry(
-        capabilities,
-        NativeToolCapabilityDetector(SystemToolResolverAdapter().tool_version),
-    )
-
-
-def create_document_service(
-    deps: Any,
-    output_format: str = "docx",
-    policy: PipelinePolicy | None = None,
-    document: str = "",
-    pipeline_id: str = "document",
-    provenance_run_id: str | None = None,
-    publication_destination: Path | None = None,
-    artifact_path: Path | None = None,
-    manifest_path: Path | None = None,
-) -> PipelineService:
-    """Adapt the composition-root services to the v2 pipeline contracts."""
-    state: dict[str, Any] = {
-        "resolved": None,
-        "renderer": None,
-        "artifact": None,
-        "manifest_path": None,
-        "attested_artifact_sha256": None,
-    }
-    scratch_dirs: list[Path] = []
-
-    def active_context() -> Any:
-        resolved = deps.resolve_context(document)
-        state["resolved"] = resolved
-        config = deepcopy(resolved.config)
-        config.setdefault("output", {})["format"] = output_format
-        state["config"] = config
-        state["renderer"] = deps.resolve_renderer(config)
-        return resolved
-
-    # Keep publication outside output/published so verification can never promote
-    # an artifact, even when the runtime has no explicit no-publish mode.
-    initial = active_context()
-    initial_root = deps.workspace.doc_root(initial.doc_id)
-    initial_root.mkdir(parents=True, exist_ok=True)
-    capabilities = _capabilities_for(state["renderer"], output_format, initial_root)
-    destination = publication_destination or (
-        initial_root / "output" / "v2" / f"{initial.doc_id}.{output_format}"
-    )
-    if pipeline_id in {"document-verify", "document-package", "document-publish"}:
-        source_artifact = artifact_path or destination
-        source_manifest = manifest_path or source_artifact.with_suffix(
-            source_artifact.suffix + ".manifest.json"
-        )
-        if source_artifact.is_file() and not source_artifact.is_symlink():
-            state["artifact"] = source_artifact
-        if source_manifest.is_file() and not source_manifest.is_symlink():
-            try:
-                state["manifest"] = BuildManifest.from_dict(
-                    json.loads(source_manifest.read_text(encoding="utf-8"))
-                )
-                state["manifest_path"] = source_manifest
-            except (OSError, TypeError, ValueError, json.JSONDecodeError):
-                # The stage that consumes this state emits the actionable
-                # contract error; service construction remains deterministic.
-                state["manifest"] = None
-        candidate = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-        if candidate.is_file():
-            state["package_candidate"] = candidate
-    ledger = ProvenanceLedger(initial_root / "runs" / "provenance.json", trusted_root=initial_root)
-    stage_artifact_root = initial_root / "runs" / "v2-stage-artifacts"
-    artifact_store = ArtifactStore(
-        stage_artifact_root,
-        getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
-    )
-    state["stage_artifacts"] = []
-    manifest_service = BuildManifestService(
-        input_identities=_current_input_identities,
-        build_inputs=_build_inputs,
-        artifact_hash=sha256_file,
-        write_text=_write_manifest_text,
-    )
-    state["run_id"] = provenance_run_id or f"cli-build-{output_format}-{uuid.uuid4().hex}"
-    build_token = uuid.uuid4().hex
-
-    stage_services: dict[str, Any] = {}
-    service_names = {
-        "generate_visuals_service",
-        "structural_audit_service",
-        "rules_manifest_state",
-        "generate_visuals",
-        "compose_cover",
-        "structural_audit",
-        "ingest_sources",
-        "normalize_sources",
-        "compile_structure",
-        "build_html",
-        "build_pdf",
-        "accessibility_review",
-        "visual_review",
-        "reproducibility_check",
-        "evidence_review",
-        "consistency_review",
-        "package_release",
-    }
-    for name in service_names:
-        service = getattr(deps, name, None)
-        if service is not None:
-            stage_services[name] = service
-    def ensure_assets() -> tuple[bool, str]:
-        return resolve_assets()
-
-    stage_provider = StageProvider(
-        stage_services,
-        config=state["config"],
-        output_format=output_format,
-        ensure_assets=ensure_assets,
-    )
-    release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-    stage_services["package_release_service"] = PackageReleaseService(
-        artifact=lambda: state.get("artifact"),
-        manifest=lambda: state.get("manifest"),
-        document_id=initial.doc_id,
-        output_format=output_format,
-        source_dir=initial_root / "output" / "v2",
-        destination=release_destination,
-        ledger=ledger,
-        write_package=lambda candidate, staging: _write_package_archive(
-            candidate, staging, _allow_staging=True, _lock_held=True
-        ),
-        candidate_sink=lambda candidate: state.__setitem__("package_candidate", candidate),
-        # A standalone package boundary receives the persisted
-        # artifact/manifest pair from the current build and must verify that
-        # pair against provenance before it can produce a release candidate.
-        # The full build already attests the in-memory generation in its
-        # provenance stage; rechecking it here would duplicate the ledger
-        # operation without strengthening the boundary.
-        verify_current_build=pipeline_id == "document-package",
-    )
-    stage_provider = StageProvider(
-        stage_services,
-        config=state["config"],
-        output_format=output_format,
-        ensure_assets=ensure_assets,
-    )
-    source_pipeline = _source_pipeline(deps)
-    review_stage_service = None
-    if all(
-        service is not None
-        for service in (
-            getattr(deps, "structural_audit_service", None),
-            getattr(deps, "format_audit", None),
-            getattr(deps, "review", None),
-            getattr(deps, "render_verification", None),
-        )
-    ):
-        review_stage_service = ReviewStageService(
-            structural_audit=deps.structural_audit_service,
-            format_audit=deps.format_audit,
-            document_review=deps.review,
-            rules_manifest_state=getattr(deps, "rules_manifest_state", lambda _config: (False, 0)),
-            render_verification=deps.render_verification,
-            qa=getattr(deps, "qa", None) if hasattr(getattr(deps, "qa", None), "inspect_docx") else None,
-            pdf_reproducibility=_verify_pdf_reproducibility,
-        )
-
-    def _stage_service(name: str) -> Any:
-        return stage_provider.get(name)
-
-    def _callable_stage(name: str) -> Any:
-        operation = _stage_service(name)
-        return operation if callable(operation) else None
-
-    def _build_with_format(format_name: str) -> tuple[bool, str]:
-        resolved = state["resolved"]
-        renderers = getattr(deps, "renderers", {})
-        renderer = renderers.get(format_name) if isinstance(renderers, Mapping) else None
-        if renderer is None:
-            return False, f"renderer does not provide {format_name} output"
-        config = deepcopy(state["config"])
-        config.setdefault("output", {})["format"] = format_name
-        service = ArtifactBuildService(
-            build=lambda doc_id, build_config, output: renderer.build(
-                doc_id, build_config, output=output
-            ),
-            scratch_factory=_scratch_directory,
-            validator=_verify_readable_artifact,
-        )
-        try:
-            result = service.build(
-                document_id=resolved.doc_id,
-                config=config,
-                output_format=format_name,
-                scratch_parent=initial_root,
-            )
-        except ArtifactBuildError as exc:
-            if exc.reason == "missing":
-                return True, f"omitted: {exc}"
-            return False, str(exc)
-        scratch_dirs.append(result.scratch_dir)
-        state.setdefault("artifacts", {})[format_name] = result.artifact
-        return True, str(result.artifact)
-
-    def _structural_audit() -> tuple[bool, str]:
-        service = _stage_service("structural_audit_service")
-        if service is None or not hasattr(service, "audit"):
-            return _fallback_structural_audit(state["artifact"], output_format)
-        template = state["resolved"].template
-        contract = getattr(template, "template_contract", None)
-        # Current templates predate the declarative contract.  They still need
-        # the generic structural checks (readability, tables, relationships),
-        # so an absent contract means "no additional requirements", not "skip
-        # the audit".  This keeps migration finite while preserving the v2
-        # gate for every rendered artifact.
-        contract_data = {} if contract is None else contract.model_dump(exclude_none=True)
-        result = service.audit(state["artifact"], contract_data)
-        return result.passed, result.to_markdown()
-
-    def _native_accessibility_review() -> tuple[bool, str] | StageResult:
-        """Run the existing format audit's accessibility checks as a V2 stage."""
-        if output_format != "docx":
-            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
-            return passed, f"accessibility reopen: {detail}"
-        strict = policy is not None and policy.mode in {PipelineMode.strict, PipelineMode.release}
-        result: ReviewResult = deps.format_audit.audit_format(state["artifact"], state["config"], strict=strict)
-        findings = result.filter_dimensions({ReviewDimension.ACCESSIBILITY}).issues
-        if not findings:
-            return _successful_stage_result("accessibility-review", state["artifact"])
-        return False, "; ".join(issue.message for issue in findings)
-
-    def _native_document_review(
-        name: str, dimension: ReviewDimension
-    ) -> tuple[bool, str]:
-        """Reuse the document review service for one native review dimension."""
-        review_service = getattr(deps, "review", None)
-        manifest_state = _stage_service("rules_manifest_state")
-        if review_service is None or not callable(manifest_state):
-            return False, f"{name} service is not configured"
-        manifest_exists, manifest_size = manifest_state(state["config"])
-        strict = policy is not None and policy.mode in {PipelineMode.strict, PipelineMode.release}
-        result = review_service.review_document(
-            state["resolved"].doc_id,
-            state["resolved"].template,
-            strict=strict,
-            manifest_exists=manifest_exists,
-            manifest_size=manifest_size,
-            normative=resolve_normative_settings(state["config"]),
-        )
-        findings = result.filter_dimensions({dimension}).issues
-        if not findings:
-            return successful(name)
-        return False, "; ".join(issue.message for issue in findings)
-
-    def _native_visual_review() -> tuple[bool, str]:
-        """Reuse the format audit's visual findings for the rendered artifact."""
-        if output_format != "docx":
-            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
-            return passed, f"visual reopen: {detail}"
-        result: ReviewResult = deps.format_audit.audit_format(state["artifact"], state["config"])
-        findings = result.filter_dimensions({ReviewDimension.VISUAL}).issues
-        if not findings:
-            return successful("visual-review")
-        return False, "; ".join(issue.message for issue in findings)
-
-    def _native_reproducibility_check() -> tuple[bool, str] | StageResult:
-        """Rebuild once and compare bytes with the artifact under review."""
-        artifact = state.get("artifact")
-        renderer = state.get("renderer")
-        if not isinstance(artifact, Path) or renderer is None:
-            return False, "reproducibility check has no rendered artifact"
-        scratch_dir = Path(tempfile.mkdtemp(prefix=".v2-repro-", dir=initial_root))
-        scratch_dirs.append(scratch_dir)
-        try:
-            rebuilt = renderer.build(
-                state["resolved"].doc_id,
-                state["config"],
-                output=scratch_dir / artifact.name,
-            )
-            if rebuilt is None:
-                return False, "reproducibility check produced no artifact"
-            rebuilt_path = Path(rebuilt)
-            if output_format == "pdf":
-                passed, detail = _verify_pdf_reproducibility(artifact, rebuilt_path)
-                if not passed:
-                    return False, detail
-            elif sha256_file(artifact) != sha256_file(rebuilt_path):
-                return False, "reproducibility divergence detected"
-        except Exception as exc:
-            return False, f"reproducibility check failed: {exc}"
-        return _successful_stage_result("reproducibility-check", artifact)
-
-    def _review_stage(name: str) -> tuple[bool, str] | StageResult:
-        if review_stage_service is None:
-            return False, f"{name} service is not configured"
-        effective_policy = policy or PipelinePolicy(PipelineMode.draft)
-        review_config = deepcopy(state["config"])
-        visual_settings = review_config.setdefault("visual_qa", {})
-        if isinstance(visual_settings, dict):
-            visual_settings["preview_stem"] = f"{state['resolved'].doc_id}.{output_format}"
-        outcome = review_stage_service.run_stage(
-            name,
-            document_id=state["resolved"].doc_id,
-            artifact_path=state["artifact"],
-            config=review_config,
-            template=state["resolved"].template,
-            policy=effective_policy,
-            rebuild=lambda output: state["renderer"].build(
-                state["resolved"].doc_id, state["config"], output=output
-            ),
-            scratch_dir=initial_root / "runs" / "v2-review" / name,
-        )
-        if outcome.ok and not outcome.warnings:
-            return _successful_stage_result(name, state["artifact"])
-        return StageResult(
-            name,
-            outcome.ok,
-            artifacts=(_successful_stage_result(name, state["artifact"]).artifacts if outcome.ok else ()),
-            warnings=outcome.warnings,
-            errors=outcome.errors,
-        )
-
-    def _native_package_release() -> tuple[bool, str]:
-        """Package the verified, attested v2 artifact before publication."""
-        artifact = state.get("artifact")
-        manifest = state.get("manifest")
-        if not isinstance(artifact, Path) or not isinstance(manifest, BuildManifest):
-            return False, "package-release requires a verified artifact and manifest"
-        destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-        source_dir = initial_root / "output" / "v2"
-        source_dir.mkdir(parents=True, exist_ok=True)
-        candidate = destination.with_name(f".{destination.name}.candidate")
-        # A package stage runs before this format reaches output/current.  Stage a
-        # complete snapshot of the already-published formats plus this run's
-        # attested artifact, so repeatable --format builds accumulate one
-        # release archive instead of replacing it format by format.
-        with _package_lock(destination):
-            staging = Path(tempfile.mkdtemp(prefix=".v2-package-", dir=source_dir.parent))
-            try:
-                for existing in sorted(source_dir.iterdir(), key=lambda path: path.name):
-                    if existing.is_symlink() or not existing.is_file():
-                        raise RuntimeError(
-                            f"package refuses unsafe source entry: {existing.name}"
-                        )
-                    if existing.name.endswith(".manifest.json"):
-                        continue
-                    manifest_path = existing.with_name(existing.name + ".manifest.json")
-                    if not manifest_path.is_file() or manifest_path.is_symlink():
-                        continue
-                    try:
-                        previous_manifest = BuildManifest.from_dict(
-                            json.loads(manifest_path.read_text(encoding="utf-8"))
-                        )
-                        previous_manifest.validate_for_publication()
-                        if previous_manifest.document_id != initial.doc_id or not ledger.verify_attestation(
-                            previous_manifest.provenance_run, previous_manifest.attestation()
-                        ):
-                            continue
-                        if sha256_file(existing) != previous_manifest.artifacts[0].sha256:
-                            continue
-                    except (OSError, TypeError, ValueError, KeyError, IndexError):
-                        # A stale or malformed derived artifact must not poison
-                        # a new package. It is replaced only when its format is
-                        # rebuilt in the current invocation.
-                        continue
-                    shutil.copyfile(existing, staging / existing.name)
-                    shutil.copyfile(manifest_path, staging / manifest_path.name)
-                package_name = f"{initial.doc_id}.{output_format}"
-                shutil.copyfile(artifact, staging / package_name)
-                (staging / f"{package_name}.manifest.json").write_text(
-                    manifest.to_json() + "\n", encoding="utf-8"
-                )
-                # Staging changes only the pathname. Its content hash maps to
-                # the manifest artifact while the attestation remains verified
-                # against the original provenance run.
-                _write_package_archive(candidate, staging, _allow_staging=True, _lock_held=True)
-            finally:
-                shutil.rmtree(staging, ignore_errors=True)
-        state["package_candidate"] = candidate
-        return successful("package-release", str(candidate))
-
-    def successful(name: str, detail: str = "") -> tuple[bool, str]:
-        return True, detail or f"{name} completed"
-
-    def resolve_config() -> tuple[bool, str]:
-        resolved = active_context()
-        return successful("resolve-config", f"document={resolved.doc_id}")
-
-    def resolve_template() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        return successful("resolve-template", f"template={resolved.template.type}")
-
-    def resolve_context() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        return successful("resolve-context", f"document={resolved.doc_id}")
-
-    def resolve_assets() -> tuple[bool, str]:
-        # A migrated workspace may already contain authored figure assets and
-        # bindings but no ingest-generated catalog.  Reconstruct that derived
-        # catalog from the existing assets once, without touching authored
-        # Markdown or replacing a non-empty curated catalog.
-        configured_paths = state["config"].get("paths", {})
-        sections_dir = Path(configured_paths.get("sections_dir", initial_root / "sections"))
-        catalog_path = sections_dir / "figure-catalog.json"
-        bindings_path = sections_dir / "figure-bindings.json"
-        figure_pipeline = getattr(getattr(deps, "ingest", None), "figures", None)
-        if figure_pipeline is not None and bindings_path.is_file():
-            try:
-                catalog = json.loads(catalog_path.read_text(encoding="utf-8")) if catalog_path.is_file() else {}
-                if not catalog.get("figures"):
-                    assets_dir = Path(configured_paths.get("assets_dir", initial_root / "assets")) / "figures"
-                    candidates = tuple(
-                        (path, path.relative_to(initial_root).as_posix())
-                        for path in sorted(assets_dir.iterdir(), key=lambda item: item.name)
-                        if path.is_file() and path.suffix.casefold() in {".png", ".jpg", ".jpeg", ".svg"}
-                    ) if assets_dir.is_dir() else ()
-                    if candidates:
-                        figure_pipeline.build_figure_catalog_for(
-                            Path(configured_paths.get("inbox_dir", initial_root / "inbox")),
-                            sections_dir,
-                            list(candidates),
-                            [],
-                            entries=[],
-                            assets_dir=None,
-                        )
-                        return successful("resolve-assets", f"catalogued {len(candidates)} existing figure assets")
-            except (OSError, TypeError, ValueError, AttributeError) as exc:
-                return False, f"could not resolve existing figure assets: {exc}"
-        return successful("resolve-assets")
-
-    def _source_stage(name: str) -> tuple[bool, str]:
-        if source_pipeline is None:
-            operation = _callable_stage(name.replace("-", "_"))
-            if operation is None:
-                return False, f"{name} service is not configured"
-            return operation()
-        return source_pipeline.run_stage(name, initial.doc_id, initial_root, state["config"])
-
-    def _review_stage_operation(stage: str, fallback: Any) -> Any:
-        if review_stage_service is not None:
-            return lambda: _review_stage(stage)
-        return fallback
-
-    def validate_contracts() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        if getattr(state["renderer"], "output_format", "") != output_format:
-            return False, f"renderer does not provide {output_format} output"
-        return successful("validate-contracts", f"document={resolved.doc_id}")
-
-    def render() -> tuple[bool, str]:
-        resolved = state["resolved"]
-        # The attested render is retained at one deterministic path per
-        # document/format. This avoids unbounded random runs directories
-        # while leaving the source available through package-release and
-        # later provenance verification.
-        runs_dir = initial_root / "runs"
-        retained_dir = runs_dir / "v2-artifacts"
-        if any(path.is_symlink() for path in (initial_root, runs_dir, retained_dir, *runs_dir.parents)):
-            return False, "render retention path must not contain symlinked directories"
-        retained_dir.mkdir(parents=True, exist_ok=True)
-        retained_identity = _directory_identity(retained_dir)
-        service = ArtifactBuildService(
-            build=lambda doc_id, config, output: state["renderer"].build(doc_id, config, output=output),
-            scratch_factory=_scratch_directory,
-            validator=_verify_readable_artifact,
-        )
-        try:
-            result = service.build(
-                document_id=resolved.doc_id,
-                config=state["config"],
-                output_format=output_format,
-                scratch_parent=runs_dir,
-            )
-        except ArtifactBuildError as exc:
-            return False, str(exc)
-        scratch_dirs.append(result.scratch_dir)
-        retained = retained_dir / f"{build_token}.{result.artifact.name}"
-        with directory_handle_guard(retained_dir):
-            os.replace(result.artifact, retained)
-        try:
-            _assert_directory_identity(retained_dir, retained_identity, operation="render retention")
-        except (OSError, RuntimeError) as exc:
-            return False, str(exc)
-        state["artifact"] = retained
-        return successful("render", str(state["artifact"]))
-
-    def audit() -> tuple[bool, str]:
-        if output_format == "docx":
-            strict = policy is not None and policy.mode in {PipelineMode.strict, PipelineMode.release}
-            result: ReviewResult = deps.format_audit.audit_format(
-                state["artifact"], state["config"], strict=strict
-            )
-            state["verification"] = {"passed": result.passed, "format": output_format, "reopened": True}
-            if not result.passed:
-                return False, "; ".join(issue.message for issue in result.issues)
-            return successful("audit")
-        if output_format == "html":
-            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
-            state["verification"] = {"passed": passed, "format": output_format, "reopened": True, "rendered": passed, "detail": detail}
-            return passed, detail
-        if output_format == "pdf":
-            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
-            state["verification"] = {"passed": passed, "format": output_format, "reopened": True, "rendered": passed, "detail": detail}
-            return passed, detail
-        return False, f"no format verifier is registered for {output_format}"
-
-    def verify() -> tuple[bool, str]:
-        if output_format == "docx":
-            strict = policy is not None and policy.mode in {PipelineMode.strict, PipelineMode.release}
-            qa_path = deps.qa.qa_docx(state["config"], state["artifact"], strict=strict)
-            if strict and (qa_path is None or not Path(qa_path).exists()):
-                return False, "strict verification requires durable QA evidence"
-            if strict and Path(qa_path).is_dir() and not (Path(qa_path) / "qa-report.md").is_file():
-                return False, "strict verification requires qa-report.md evidence"
-        else:
-            passed, detail = _verify_non_docx_artifact(output_format, state["artifact"])
-            verification = dict(state.get("verification", {}))
-            verification.update(
-                {
-                    "passed": passed,
-                    "format": output_format,
-                    "reopened": True,
-                    "readable": passed,
-                    "detail": detail,
-                }
-            )
-            state["verification"] = verification
-            return passed, detail
-        return successful("verify")
-
-    explicit_stages: dict[str, Any] = {
-        "generate_visuals": stage_provider.operation("generate_visuals"),
-        "compose_cover": stage_provider.operation("compose_cover"),
-        "structural_audit": _structural_audit if _stage_service("structural_audit_service") is not None else _callable_stage("structural_audit"),
-        "accessibility_review": (
-            (lambda: _review_stage("accessibility-review"))
-            if review_stage_service is not None and output_format != "docx"
-            else _callable_stage("accessibility_review")
-            or ((lambda: _review_stage("accessibility-review")) if review_stage_service is not None else _native_accessibility_review)
-        ),
-        "visual_review": (
-            (lambda: _review_stage("visual-review"))
-            if review_stage_service is not None
-            else _callable_stage("visual_review")
-            or ((lambda: _review_stage("visual-review")) if review_stage_service is not None else _native_visual_review)
-        ),
-        "reproducibility_check": _callable_stage("reproducibility_check") or (
-            (lambda: _review_stage("reproducibility-check"))
-            if review_stage_service is not None
-            else _native_reproducibility_check
-        ),
-    }
-    if output_format != "html":
-        explicit_stages["build_html"] = lambda: _build_with_format("html")
-    else:
-        explicit_stages["build_html"] = render
-    if output_format != "pdf":
-        explicit_stages["build_pdf"] = lambda: _build_with_format("pdf")
-    else:
-        explicit_stages["build_pdf"] = render
-    explicit_stages = {name: operation for name, operation in explicit_stages.items() if operation is not None}
-
-    def provenance() -> tuple[bool, str]:
-        if pipeline_id == "document-publish":
-            artifact = state.get("artifact")
-            manifest = state.get("manifest")
-            if not isinstance(manifest, BuildManifest):
-                return False, "publish requires an attested artifact/manifest pair"
-            try:
-                manifest.validate_for_publication()
-            except ValueError as exc:
-                return False, str(exc)
-            artifact_digest = sha256_file(artifact) if isinstance(artifact, Path) else ""
-            if (
-                not isinstance(artifact, Path)
-                or manifest.document_id != initial.doc_id
-                or not any(item.sha256 == artifact_digest for item in manifest.artifacts)
-                or not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation())
-            ):
-                return False, "publish requires an attested artifact/manifest pair"
-            state["attested_artifact_sha256"] = artifact_digest
-            return successful("provenance", "reused verified artifact and manifest")
-        resolved = state["resolved"]
-        manifest = manifest_service.create_manifest(
-            resolved=resolved,
-            config=state["config"],
-            renderer=state["renderer"],
-            root=initial_root,
-            artifact=state["artifact"],
-            destination=destination,
-            output_format=output_format,
-            run_id=state["run_id"],
-            verification=state.get("verification"),
-            stage_artifacts=tuple(state["stage_artifacts"]),
-        )
-        manifest.validate_for_publication()
-        state["manifest"] = manifest
-        manifest_service.record_provenance(
-            ledger,
-            state["run_id"],
-            initial_root,
-            state["artifact"],
-            manifest,
-        )
-        return successful("provenance")
-
-    def publish(scratch: Path) -> None:
-        staged = scratch / f"primary.{output_format}"
-        staged_manifest = scratch / f"primary.{output_format}.manifest.json"
-        staged_package = scratch / f"{initial.doc_id}.zip"
-        staged.parent.mkdir(parents=True, exist_ok=True)
-        artifact = state.get("artifact")
-        manifest = state.get("manifest")
-        if pipeline_id == "document-publish":
-            persisted_manifest = state.get("manifest_path")
-            expected_digest = state.get("attested_artifact_sha256")
-            if (
-                not isinstance(artifact, Path)
-                or not isinstance(manifest, BuildManifest)
-                or not isinstance(persisted_manifest, Path)
-                or not isinstance(expected_digest, str)
-                or persisted_manifest.is_symlink()
-            ):
-                raise RuntimeError("publish requires an attested artifact/manifest pair")
-            shutil.copyfile(artifact, staged)
-            shutil.copyfile(persisted_manifest, staged_manifest)
-            try:
-                staged_manifest_data = BuildManifest.from_dict(
-                    json.loads(staged_manifest.read_text(encoding="utf-8"))
-                )
-            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
-                raise RuntimeError("persisted manifest changed before publication") from exc
-            if staged_manifest_data != manifest:
-                raise RuntimeError("persisted manifest changed before publication")
-        else:
-            if not isinstance(artifact, Path) or not isinstance(manifest, BuildManifest):
-                raise RuntimeError("publish requires a verified artifact and manifest")
-            shutil.copyfile(artifact, staged)
-            manifest_service.write_manifest(manifest, staged_manifest)
-        package_candidate = state.get("package_candidate")
-        if not isinstance(package_candidate, Path) or not package_candidate.is_file():
-            raise RuntimeError("package-release completed without a safe release candidate")
-        shutil.copyfile(package_candidate, staged_package)
-        if pipeline_id == "document-publish" and sha256_file(staged) != expected_digest:
-            raise RuntimeError("artifact changed before publication")
-
-    manifest_destination = destination.with_suffix(destination.suffix + ".manifest.json")
-    release_destination = initial_root / "output" / "release" / f"{initial.doc_id}.zip"
-    operations: dict[str, Any] = {
-        "resolve-config": resolve_config,
-        "resolve-template": resolve_template,
-        "resolve-context": resolve_context,
-        "resolve-assets": resolve_assets,
-        "validate-contracts": validate_contracts,
-        "ingest-sources": lambda: _source_stage("ingest-sources"),
-        "normalize-sources": lambda: _source_stage("normalize-sources"),
-        "compile-structure": lambda: _source_stage("compile-structure"),
-        "build-docx": render,
-        "structural-audit": _review_stage_operation("structural-audit", audit),
-        "editorial-review": _review_stage_operation("editorial-review", verify),
-        "record-provenance": provenance,
-        "evidence-review": _review_stage_operation(
-            "evidence-review",
-            _callable_stage("evidence_review")
-            or (lambda: _native_document_review("evidence-review", ReviewDimension.EVIDENCE)),
-        ),
-        "consistency-review": _review_stage_operation(
-            "consistency-review",
-            _callable_stage("consistency_review")
-            or (lambda: _native_document_review("consistency-review", ReviewDimension.CONSISTENCY)),
-        ),
-        "package-release": stage_provider.operation("package_release") or _native_package_release,
-    }
-    operations.update(
-        {name.replace("_", "-"): operation for name, operation in explicit_stages.items()}
-    )
-    return PipelineService(
-        operations=operations,
-        publication=PublicationSpec(
-            (f"primary.{output_format}", f"primary.{output_format}.manifest.json", f"{initial.doc_id}.zip"),
-            (destination, manifest_destination, release_destination),
-            publish,
-        ),
-        capabilities=capabilities,
-        ledger=ledger,
-        atomic_transform=AtomicTransform(),
-        policy=policy,
-        run_id_sink=lambda value: state.__setitem__("run_id", value),
-        excluded_stages=frozenset(
-            {"build-docx", "build-html", "build-pdf"} - {f"build-{output_format}"}
-        ),
-        cleanup=lambda: _cleanup_scratch_dirs(scratch_dirs),
-        artifact_store=artifact_store,
-        record_sink=state["stage_artifacts"].extend,
-        run_start=state["stage_artifacts"].clear,
-        observability=getattr(deps, "observability", None),
-    )
-
-
-def _cleanup_scratch_dirs(scratch_dirs: list[Path]) -> None:
-    for path in scratch_dirs:
-        shutil.rmtree(path, ignore_errors=True)
+    return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
 def _promote_release_candidate(
@@ -1198,9 +107,19 @@ def _run(
     if command == "build" and not _batch_lock_held:
         resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
         root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-        with owned_directory_lock(root / "runs" / ".v2-batch.lock"):
-            return _run(ctx, command, json_output, formats, policy, dimensions, pipeline_id,
-                        artifact_path, manifest_path, _batch_lock_held=True)
+        with owned_directory_lock(root / "runs" / ".x20-batch.lock"):
+            return _run(
+                ctx,
+                command,
+                json_output,
+                formats,
+                policy,
+                dimensions,
+                pipeline_id,
+                artifact_path,
+                manifest_path,
+                _batch_lock_held=True,
+            )
     selected_document = ctx.obj.get("doc", "")
     if formats is None:
         resolved = ctx.obj["deps"].resolve_context(selected_document)
@@ -1224,22 +143,23 @@ def _run(
         batch_root.mkdir(parents=True, exist_ok=True)
         batch_journal = _batch_journal_path(batch_root)
         _recover_batch_transaction(batch_journal, _lock_held=True)
-        batch_backup = Path(tempfile.mkdtemp(prefix=".v2-batch-", dir=batch_root))
-        batch_paths = (Path("output") / "v2", Path("output") / "release")
+        batch_backup = Path(tempfile.mkdtemp(prefix=".x20-batch-", dir=batch_root))
+        batch_paths = _BATCH_OUTPUT_PATHS
         for relative in batch_paths:
             current = batch_root / relative
             if current.exists() and not current.is_symlink():
                 shutil.copytree(current, batch_backup / relative)
         _write_batch_journal(batch_journal, batch_root, batch_backup, batch_paths)
+
     def restore_batch() -> None:
         if batch_journal is not None:
             _recover_batch_transaction(batch_journal, _lock_held=True)
+
     try:
         for output_format in requested:
             selected_policy = PipelinePolicy(policy) if policy is not None else None
             provenance_run_id = f"cli-build-{output_format}-{uuid.uuid4().hex}" if command == "build" else None
-            service = create_document_service(
-                ctx.obj["deps"],
+            service = ctx.obj["deps"].create_document_pipeline_service(
                 output_format,
                 selected_policy,
                 document=selected_document,
@@ -1251,7 +171,7 @@ def _run(
             external_artifacts: set[str] | frozenset[str] | None = None
             if pipeline_id in {"document-package", "document-publish"}:
                 # The package sub-pipeline starts from the persisted, verified
-                # build boundary loaded by create_document_service.  The package
+                # build boundary loaded by create_document_pipeline_service.  The package
                 # service performs the artifact/manifest/provenance check;
                 # these contracts only tell the runtime that the boundary is
                 # intentionally supplied from the previous build.
@@ -1262,11 +182,11 @@ def _run(
                     source_manifest = manifest_path
                     if source_manifest is None:
                         resolved = ctx.obj["deps"].resolve_context(selected_document)
-                        source_artifact = (
-                            resolved.config.get("paths", {}).get("output_draft_dir")
-                        )
+                        source_artifact = resolved.config.get("paths", {}).get("output_draft_dir")
                         source_manifest = (
-                            Path(source_artifact).parent / "v2" / f"{resolved.doc_id}.{output_format}.manifest.json"
+                            Path(source_artifact).parent
+                            / "current"
+                            / f"{resolved.doc_id}.{output_format}.manifest.json"
                             if isinstance(source_artifact, str)
                             else None
                         )
@@ -1282,12 +202,15 @@ def _run(
                         }
                     except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
                         external_artifacts = set()
-            report = service.run(
-                provenance_run_id or f"cli-{command}-{output_format}",
-                publish=command == "build"
-                and pipeline_id in {"document", "document-publish"},
-                pipeline_id=pipeline_id,
-                external_artifacts=external_artifacts,
+            report = service.execute(
+                PipelineRequest(
+                    run_id=provenance_run_id or f"cli-{command}-{output_format}",
+                    publish=command == "build"
+                    and pipeline_id in {"document", "document-publish"}
+                    and (selected_policy is None or selected_policy.can_publish()),
+                    pipeline_id=pipeline_id,
+                    external_artifacts=(tuple(external_artifacts) if external_artifacts is not None else None),
+                )
             )
             report_payload = report.to_dict()
             if dimensions:
@@ -1312,9 +235,7 @@ def _run(
                             and isinstance(item.get("stage"), str)
                             and stage_dimensions.get(item["stage"]) in selected
                         ]
-                        report_payload["succeeded"] = all(
-                            item.get("ok", False) for item in execution["results"]
-                        )
+                        report_payload["succeeded"] = all(item.get("ok", False) for item in execution["results"])
                 report_payload["dimensions"] = [dimension.value for dimension in dimensions]
             item: dict[str, Any] = {
                 "command": command,
@@ -1326,6 +247,7 @@ def _run(
                 command == "build"
                 and pipeline_id in {"document", "document-publish", "document-package"}
                 and bool(report_payload.get("succeeded"))
+                and (selected_policy is None or selected_policy.can_publish())
             ):
                 resolved = ctx.obj["deps"].resolve_context(selected_document)
                 _promote_release_candidate(
@@ -1341,9 +263,11 @@ def _run(
                     and manifest_path is None
                     and isinstance(draft_dir, str)
                 ):
-                    artifact = Path(draft_dir).parent / "v2" / f"{resolved.doc_id}.{output_format}"
+                    artifact = Path(draft_dir).parent / "current" / f"{resolved.doc_id}.{output_format}"
                     if artifact.is_file():
-                        ledger = ProvenanceLedger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
+                        ledger = ProvenanceLedger(
+                            resolved_root / "runs" / "provenance.json", trusted_root=resolved_root
+                        )
                         recorded = ledger.load_attestation(provenance_run_id or "")
                         if recorded is None:
                             raise RuntimeError("missing pre-publication build attestation")
@@ -1378,7 +302,7 @@ def _run(
 
 
 def _batch_journal_path(root: Path) -> Path:
-    return root / "runs" / "v2-batch-transaction.json"
+    return root / "runs" / "x20-batch-transaction.json"
 
 
 def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[Path, ...]) -> None:
@@ -1397,7 +321,10 @@ def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[P
 
 
 def _batch_snapshot(directory: Path) -> dict[str, list[object]]:
-    if any(path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0) for path in (directory, *directory.parents)):
+    if any(
+        path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0)
+        for path in (directory, *directory.parents)
+    ):
         raise RuntimeError("batch recovery refuses redirected paths")
     if not directory.exists():
         return {}
@@ -1410,8 +337,12 @@ def _batch_snapshot(directory: Path) -> dict[str, list[object]]:
         if path.is_file():
             identity = path.stat()
             snapshot[path.relative_to(directory).as_posix()] = [
-                sha256_file(path), identity.st_dev, identity.st_ino,
-                identity.st_size, identity.st_mtime_ns, identity.st_ctime_ns,
+                sha256_file(path),
+                identity.st_dev,
+                identity.st_ino,
+                identity.st_size,
+                identity.st_mtime_ns,
+                identity.st_ctime_ns,
             ]
         elif not path.is_dir():
             raise RuntimeError("batch recovery refuses non-regular paths")
@@ -1443,16 +374,19 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     if not journal.exists():
         return
     if not _lock_held:
-        with owned_directory_lock(journal.parent / ".v2-batch.lock"):
+        with owned_directory_lock(journal.parent / ".x20-batch.lock"):
             return _recover_batch_transaction(journal, _lock_held=True)
     payload = json.loads(journal.read_text(encoding="utf-8"))
     root = journal.parent.parent.resolve()
     backup = Path(payload["backup"])
-    paths = (Path("output/current"), Path("output/release"))
-    if (Path(payload["root"]).resolve() != root
-            or journal.resolve() != _batch_journal_path(root)
-            or backup.parent.resolve() != root or not backup.name.startswith(".v2-batch-")
-            or payload.get("paths") != [path.as_posix() for path in paths]):
+    paths = _BATCH_OUTPUT_PATHS
+    if (
+        Path(payload["root"]).resolve() != root
+        or journal.resolve() != _batch_journal_path(root)
+        or backup.parent.resolve() != root
+        or not backup.name.startswith(".x20-batch-")
+        or payload.get("paths") != [path.as_posix() for path in paths]
+    ):
         raise RuntimeError("batch recovery path scope is invalid")
     if not isinstance(payload.get("expected"), dict) or not isinstance(payload.get("saved"), dict):
         raise RuntimeError("batch recovery ownership unavailable; preserve journal for manual recovery")
@@ -1478,7 +412,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
             raise RuntimeError("batch recovery backup changed")
         checked_snapshot(relative)
     # Copy first. A failed copy never removes a live output or consumes backups.
-    with tempfile.TemporaryDirectory(prefix=".v2-batch-restore-", dir=root) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".x20-batch-restore-", dir=root) as temporary:
         staged = Path(temporary)
         for relative in paths:
             saved_dir = backup / relative
@@ -1503,36 +437,6 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     shutil.rmtree(backup)
 
 
-def _document_create_payload(deps: Any, doc_id: str, template: str, title: str) -> dict[str, str]:
-    template_name = template or (deps.document_repository.list_templates()[:1] or [""])[0]
-    if not template_name:
-        raise RuntimeError("No templates are available. Create one in templates/.")
-    deps.documents.create(doc_id, template_name, title=title)
-    return {
-        "document_id": doc_id,
-        "path": str((deps.workspace.doc_root(doc_id) / "document.json").resolve()),
-        "template": template_name,
-        "title": title or doc_id,
-    }
-
-
-@document_app.command("create")
-def create(
-    ctx: typer.Context,
-    doc_id: str = typer.Argument(..., metavar="id"),
-    template: str = typer.Option("", "--template"),
-    title: str = typer.Option("", "--title"),
-    json_output: bool = typer.Option(False, "--json"),
-) -> None:
-    """Create a document through the existing workspace document service."""
-    payload = _document_create_payload(ctx.obj["deps"], doc_id, template, title)
-    if json_output:
-        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    else:
-        typer.echo(payload["path"])
-        typer.echo(f"Document `{payload['document_id']}` created from `{payload['template']}` and marked active.")
-
-
 @document_app.command("release")
 def release(
     ctx: typer.Context,
@@ -1551,34 +455,70 @@ def release(
     )
 
 
-def _run_source_command(ctx: typer.Context, command: str, json_output: bool) -> None:
-    deps = ctx.obj["deps"]
-    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
-    root = deps.workspace.doc_root(resolved.doc_id)
-    service = _source_pipeline(deps)
-    if service is None:
-        raise typer.BadParameter("source ingest dependencies are unavailable")
-    report = (
-        service.ingest(resolved.doc_id, root, resolved.config)
-        if command == "ingest"
-        else service.prepare(resolved.doc_id, root, resolved.config)
-    )
-    output = json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    typer.echo(output if json_output else json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
-    if not report["succeeded"]:
-        raise typer.Exit(code=1)
-
-
 @document_app.command("ingest")
 def ingest(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")) -> None:
     """Ingest document sources through the native v2 source stage."""
-    _run_source_command(ctx, "ingest", json_output)
+    run_source_command(ctx, "ingest", json_output)
+
+
+@document_app.command("classify")
+def classify(
+    ctx: typer.Context,
+    relative_path: str | None = typer.Option(None, "--file"),
+    role: str | None = typer.Option(None, "--role"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Inspect or confirm source roles in the real ingest classification queue."""
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    queue_path = deps.workspace.doc_root(resolved.doc_id) / "inbox" / "_classification-queue.json"
+    if not queue_path.is_file():
+        raise typer.BadParameter("classification queue is unavailable; run document ingest first")
+    queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
+    if relative_path is not None or role is not None:
+        if not relative_path or role not in {"evidence", "example", "normative"}:
+            raise typer.BadParameter("--file and --role are required; role must be evidence, example, or normative")
+        entry = next((item for item in entries if str(item.get("relative_path")) == relative_path), None)
+        if entry is None:
+            raise typer.BadParameter("source is not present in the classification queue")
+        entry["confirmed_role"] = role
+        queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    result = {"document_id": resolved.doc_id, "items": entries}
+    typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":") if json_output else None))
+
+
+@document_app.command("import")
+def import_source(
+    ctx: typer.Context,
+    source: Path = typer.Argument(..., exists=True, readable=True),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Copy a source into the active document inbox with a content hash."""
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    inbox = deps.workspace.doc_root(resolved.doc_id) / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    digest = sha256_file(source)
+    destination = inbox / f"{digest[:12]}-{source.name}"
+    temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+    shutil.copyfile(source, temporary)
+    temporary.replace(destination)
+    payload = {
+        "document_id": resolved.doc_id,
+        "filename": source.name,
+        "path": str(destination),
+        "sha256": digest,
+        "size": destination.stat().st_size,
+        "mime_type": _source_mime_type(source.name),
+    }
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=None if json_output else 2, sort_keys=True))
 
 
 @document_app.command("prepare")
 def prepare(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")) -> None:
     """Ingest, normalize, and compile the document source structure."""
-    _run_source_command(ctx, "prepare", json_output)
+    run_source_command(ctx, "prepare", json_output)
 
 
 @document_app.command("status")
@@ -1596,21 +536,247 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     output = resolved.config.get("output", {})
     output_format = output.get("format", "docx") if isinstance(output, Mapping) else "docx"
     renderer = deps.resolve_renderer(resolved.config)
-    capability_registry = _capabilities_for(
-        renderer, output_format, deps.workspace.doc_root(resolved.doc_id)
+    capability_registry = deps.create_capability_registry(
+        renderer,
+        output_format,
+        deps.workspace.doc_root(resolved.doc_id),
+        resolved.config.get("paths", {}),
     )
-    status_reader = payload.get("v2", {})
-    current_v2 = dict(status_reader) if isinstance(status_reader, Mapping) else {}
+    current_v2 = payload.get("v2", {})
     payload["v2"] = {
-        **current_v2,
+        **(dict(current_v2) if isinstance(current_v2, Mapping) else {}),
         "capabilities": capability_registry.report(),
         "capability_diagnostics": capability_registry.diagnostics(),
-        "unsupported_stages": current_v2.get("unsupported_stages", []),
-        "publication_blockers": current_v2.get("publication_blockers", []),
+        "unsupported_stages": (
+            dict(current_v2).get("unsupported_stages", []) if isinstance(current_v2, Mapping) else []
+        ),
+        "publication_blockers": (
+            dict(current_v2).get("publication_blockers", []) if isinstance(current_v2, Mapping) else []
+        ),
         "public_pipelines": [spec.pipeline_id for spec in PUBLIC_PIPELINES],
     }
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
+
+
+@document_app.command("run")
+def run_document(
+    ctx: typer.Context,
+    formats: list[str] | None = typer.Option(None, "--format"),
+    policy: PipelineMode | None = typer.Option(None, "--policy"),
+    strict: bool = typer.Option(False, "--strict", help="Run with strict verification policy."),
+    release: bool = typer.Option(False, "--release", help="Run with release policy and publication checks."),
+    async_run: bool = typer.Option(False, "--async", help="Queue the run and process it with a detached local worker."),
+    sync: bool = typer.Option(False, "--sync", help="Run synchronously in the current process (the default)."),
+    watch: bool = typer.Option(False, "--watch", help="Wait for a queued asynchronous run to finish."),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    """Execute the real document pipeline synchronously from source to verified output.
+
+    This is the CLI's end-to-end entry point. It intentionally delegates to
+    the same application pipeline used by build/release instead of creating a
+    second implementation or returning a synthetic run result.
+    """
+    if strict and release:
+        raise typer.BadParameter("--strict and --release are mutually exclusive")
+    if async_run and sync:
+        raise typer.BadParameter("--async and --sync are mutually exclusive")
+    selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release)
+    if watch and not async_run:
+        raise typer.BadParameter("--watch requires --async")
+    if async_run:
+        if len(formats or ["docx"]) != 1:
+            raise typer.BadParameter("--async supports exactly one --format")
+        deps = ctx.obj["deps"]
+        resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+        workspace_root = deps.workspace.documents_dir.parent.resolve()
+        registry_path = workspace_root / ".docs" / "workspaces.json"
+        # A document configured by this cwd must never fall back to the
+        # process-wide active workspace. That fallback can enqueue a run for a
+        # different project and makes the detached worker fail against the
+        # wrong document. Use the workspace-local registry unless the caller
+        # explicitly supplied DOCS_WORKSPACE_REGISTRY.
+        registry = WorkspaceRegistry(
+            registry_path
+            if registry_path.is_file()
+            else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+        )
+        active = registry.active()
+        if active is None:
+            raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
+        workspace_root = Path(str(active["root"])).resolve()
+        state = workspace_root / ".docs" / "x20.sqlite3"
+        run_id = str(uuid.uuid4())
+        payload = {
+            "run_id": run_id,
+            "document_id": resolved.doc_id,
+            "workspace_id": active["id"],
+            "pipeline_id": "document",
+            "format": (formats or ["docx"])[0],
+            "policy": selected_policy.value,
+        }
+        SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
+        SqliteJobQueue(state).enqueue(run_id, payload)
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        worker_env = os.environ.copy()
+        source_root = Path(__file__).resolve().parents[4]
+        worker_env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (os.fspath(source_root), worker_env.get("PYTHONPATH")) if part
+        )
+        worker_log = workspace_root / ".docs" / "worker.log"
+        # Windows keeps redirected handles alive across a detached process
+        # boundary more aggressively than POSIX. The durable run/passport is
+        # the authoritative structured record; avoid holding the workspace
+        # log open after the worker exits so temporary workspaces and clean
+        # shutdowns are actually removable. POSIX keeps the diagnostic file.
+        worker_output = subprocess.DEVNULL if os.name == "nt" else worker_log.open("ab")
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "docs.local_worker",
+                "--workspace-root",
+                os.fspath(workspace_root),
+            ],
+            cwd=os.fspath(workspace_root),
+            stdin=subprocess.DEVNULL,
+            stdout=worker_output,
+            stderr=worker_output,
+            env=worker_env,
+            # The worker is intentionally detached from the CLI, but it must
+            # not inherit unrelated descriptors (especially on Windows). An
+            # inherited log handle keeps temporary workspaces locked after a
+            # successful run and makes clean shutdown impossible.
+            close_fds=True,
+            creationflags=creationflags,
+            start_new_session=True,
+        )
+        if hasattr(worker_output, "close"):
+            worker_output.close()
+        if watch:
+            import time
+
+            store = SqliteRunStore(state)
+            while True:
+                item = store.get(run_id)
+                if item is None:
+                    raise typer.BadParameter(f"Run disappeared: {run_id}")
+                if item.status in {"succeeded", "completed", "failed", "cancelled", "expired"}:
+                    break
+                time.sleep(0.25)
+        queued_run = SqliteRunStore(state).get(run_id)
+        result = {
+            "id": run_id,
+            "status": queued_run.status if queued_run is not None else "queued",
+        }
+        typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
+        return
+    # Synchronous execution uses the same durable worker path as async runs.
+    # This keeps the CLI's two modes semantically identical: both create a
+    # real Run, execute the real pipeline, and persist passport/evidence.
+    if len(formats or ["docx"]) != 1:
+        raise typer.BadParameter("--sync supports exactly one --format")
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    workspace_root = deps.workspace.documents_dir.parent.resolve()
+    registry_path = workspace_root / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(
+        registry_path
+        if registry_path.is_file()
+        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+    )
+    active = registry.active()
+    if active is None:
+        raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
+    workspace_root = Path(str(active["root"])).resolve()
+    state = workspace_root / ".docs" / "x20.sqlite3"
+    run_id = str(uuid.uuid4())
+    payload = {
+        "run_id": run_id,
+        "document_id": resolved.doc_id,
+        "workspace_id": active["id"],
+        "pipeline_id": "document",
+        "format": (formats or ["docx"])[0],
+        "policy": selected_policy.value,
+    }
+    SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
+    SqliteJobQueue(state).enqueue(run_id, payload)
+    # Import lazily to avoid making the CLI composition root depend on the
+    # sidecar at import time; the worker composition remains the single
+    # implementation of execution and evidence finalization.
+    from docs.infrastructure.persistence.sqlite_runtime import (
+        SqliteFindingStore,
+        SqlitePublicationStore,
+    )
+    from docs.sidecar import _build_worker
+
+    worker = _build_worker(
+        workspace_root,
+        SqliteJobQueue(state),
+        state,
+        SqliteRunStore(state),
+        SqlitePassportStore(state),
+        SqliteArtifactStore(state),
+        SqliteFindingStore(state),
+        SqlitePublicationStore(state),
+    )
+    worker_result = worker.run_once()
+    if worker_result is None:
+        raise typer.BadParameter(f"Unable to claim synchronous run: {run_id}")
+    final = SqliteRunStore(state).get(run_id)
+    status = final.status if final is not None else worker_result.state
+    output = {"id": run_id, "status": status}
+    typer.echo(json.dumps(output, sort_keys=True) if json_output else f"{run_id}\t{status}")
+
+
+def _durable_evidence_stores(ctx: typer.Context):
+    deps = ctx.obj["deps"]
+    root = deps.workspace.documents_dir.parent.resolve()
+    registry_path = root / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(
+        registry_path
+        if registry_path.is_file()
+        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+    )
+    active = registry.active()
+    if active is not None:
+        root = Path(str(active["root"])).resolve()
+    state = root / ".docs" / "x20.sqlite3"
+    return SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state)
+
+
+@document_app.command("passport")
+def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
+    """Show the immutable evidence passport for a durable run."""
+    passport_store, _, _ = _durable_evidence_stores(ctx)
+    passport = passport_store.get(run_id)
+    if passport is None:
+        raise typer.BadParameter(f"Passport not found for run: {run_id}")
+    payload = passport.to_dict()
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
+
+
+@document_app.command("evidence")
+def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
+    """Show the passport and all findings/artifacts produced by a durable run."""
+    passport_store, artifact_store, finding_store = _durable_evidence_stores(ctx)
+    passport = passport_store.get(run_id)
+    if passport is None:
+        raise typer.BadParameter(f"Evidence not found for run: {run_id}")
+    payload = {
+        "passport": passport.to_dict(),
+        "artifacts": [item.to_dict() for item in artifact_store.list_for_run(run_id)],
+        "findings": finding_store.list_for_run(run_id),
+    }
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
         else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     )
@@ -1625,8 +791,8 @@ def plan(
 ) -> None:
     """Show the ordered stages and external contracts of a registered pipeline."""
     deps = ctx.obj["deps"]
-    service = create_document_service(
-        deps, output_format, document=ctx.obj.get("doc", ""), pipeline_id=pipeline_id
+    service = deps.create_document_pipeline_service(
+        output_format, document=ctx.obj.get("doc", ""), pipeline_id=pipeline_id
     )
     try:
         registered = service.registry.resolve(pipeline_id)
@@ -1656,7 +822,7 @@ def build(
     artifact: Path | None = typer.Option(None, "--artifact", help="Verified existing artifact for publish/package."),
     manifest: Path | None = typer.Option(None, "--manifest", help="Verified existing manifest for publish/package."),
 ) -> None:
-    """Build verified v2 artifacts in one or more requested formats."""
+    """Build verified artifacts in one or more requested formats."""
     _run(
         ctx,
         "build",
@@ -1678,149 +844,12 @@ def verify(
     dimensions: list[ReviewDimension] | None = typer.Option(None, "--dimension"),
     pipeline_id: str = typer.Option("document", "--pipeline", help="Registered pipeline boundary to execute."),
 ) -> None:
-    """Verify v2 artifacts without publishing them."""
+    """Verify artifacts without publishing them."""
     _run(ctx, "verify", json_output, formats, policy, dimensions, pipeline_id)
 
 
-def _artifact_payload(path: Path) -> dict[str, object]:
-    digest = sha256_file(path)
-    return {
-        "path": str(path.resolve()),
-        "media_type": mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-        "sha256": digest,
-        "size_bytes": path.stat().st_size,
-    }
-
-
-def _require_contained(path: Path, root: Path, label: str) -> None:
-    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
-        raise typer.BadParameter(f"publish refuses symlinked {label}: {path.name}")
-    try:
-        path.resolve(strict=False).relative_to(root.resolve(strict=False))
-    except ValueError as exc:
-        raise typer.BadParameter(f"publish {label} path escapes its intended root") from exc
-
-
-def _package_files(
-    source_dir: Path, *, _allow_staging: bool = False, _verify_attestation: bool = True
-) -> tuple[tuple[str, bytes], ...]:
-    """Validate the complete v2 artifact set before creating a package."""
-    valid_source = source_dir.name == "v2" and source_dir.parent.name == "output"
-    valid_staging = (
-        _allow_staging
-        and source_dir.name.startswith(".v2-package-")
-        and source_dir.parent.name == "output"
-    )
-    if not (valid_source or valid_staging):
-        raise typer.BadParameter("package requires an output/current source directory")
-    if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):
-        raise typer.BadParameter("package refuses a symlinked source boundary")
-    candidates = tuple(sorted(source_dir.rglob("*"), key=lambda path: path.relative_to(source_dir).as_posix()))
-    unsafe = next((path for path in candidates if path.is_symlink()), None)
-    if unsafe is not None:
-        raise typer.BadParameter(f"package refuses symlinked path: {unsafe.name}")
-    files = tuple(path for path in candidates if path.is_file() and not path.is_symlink())
-    artifacts = tuple(path for path in files if not path.name.endswith(".manifest.json"))
-    if not artifacts:
-        raise typer.BadParameter("package requires at least one v2 artifact")
-    document_root = source_dir.parent.parent
-    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
-    expected_manifests: set[Path] = set()
-    snapshots: dict[str, bytes] = {}
-    generation_identity: tuple[tuple[object, ...], dict[str, tuple[tuple[str, str], ...]]] | None = None
-    for artifact in artifacts:
-        manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
-        if not manifest_path.is_file():
-            raise typer.BadParameter(f"package requires a matching manifest for {artifact.name}")
-        try:
-            artifact_bytes = _read_package_file(artifact, document_root)
-            manifest_bytes = _read_package_file(manifest_path, document_root)
-            manifest = BuildManifest.from_dict(json.loads(manifest_bytes.decode(encoding="utf-8")))
-            manifest.validate_for_publication()
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            raise typer.BadParameter(f"package requires a valid manifest for {artifact.name}: {exc}") from exc
-        artifact_digest = hashlib.sha256(artifact_bytes).hexdigest()
-        matching = [
-            entry
-            for entry in manifest.artifacts
-            if (
-                entry.path == str(artifact.resolve())
-                or (_allow_staging and entry.sha256 == artifact_digest)
-            )
-        ]
-        if len(matching) != 1 or matching[0].sha256 != artifact_digest:
-            raise typer.BadParameter(f"package requires the manifest artifact hash to match {artifact.name}")
-        if _verify_attestation and not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
-            raise typer.BadParameter(f"package requires a verifiable provenance attestation for {artifact.name}")
-        shared_identity = (
-            manifest.document_id,
-            manifest.source_hash,
-            manifest.template_hash,
-            manifest.template_ir_hash,
-            manifest.config_hash,
-            manifest.context_hash,
-            tuple(sorted(manifest.asset_hashes.items())),
-        )
-        format_name = artifact.suffix.lstrip(".")
-        renderer_identity = tuple(sorted(manifest.renderer_versions.items()))
-        if generation_identity is None:
-            generation_identity = (shared_identity, {format_name: renderer_identity})
-        elif shared_identity != generation_identity[0]:
-            raise typer.BadParameter(
-                f"package refuses mixed source generation for {artifact.name}"
-            )
-        elif format_name in generation_identity[1] and renderer_identity != generation_identity[1][format_name]:
-            raise typer.BadParameter(
-                f"package refuses mixed renderer generation for {artifact.name}"
-            )
-        else:
-            generation_identity[1][format_name] = renderer_identity
-        expected_manifests.add(manifest_path)
-        snapshots[artifact.relative_to(source_dir).as_posix()] = artifact_bytes
-        snapshots[manifest_path.relative_to(source_dir).as_posix()] = manifest_bytes
-    actual_manifests = {path for path in files if path.name.endswith(".manifest.json")}
-    if actual_manifests != expected_manifests:
-        raise typer.BadParameter("package requires each manifest to match one v2 artifact")
-    return tuple((relative, snapshots[relative]) for relative in sorted(snapshots))
-
-
-def _read_package_file(path: Path, document_root: Path) -> bytes:
-    """Read one immutable package input through a regular-file descriptor."""
-    try:
-        path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
-    except (OSError, ValueError) as exc:
-        raise typer.BadParameter(f"package file escapes document root: {path.name}") from exc
-    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
-        raise typer.BadParameter(f"package refuses symlinked path: {path.name}")
-    resolved = path.resolve(strict=True)
-    ancestors = tuple(
-        (ancestor, (os.stat(ancestor, follow_symlinks=False).st_dev, os.stat(ancestor, follow_symlinks=False).st_ino))
-        for ancestor in (document_root, *path.parents)
-        if ancestor.exists()
-    )
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        descriptor = os.open(path, flags)
-    except OSError as exc:
-        raise typer.BadParameter(f"package refuses unsafe file: {path.name}: {exc}") from exc
-    try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode) or path.is_symlink():
-            raise typer.BadParameter(f"package requires a regular non-symlink file: {path.name}")
-        if any(
-            (os.stat(ancestor, follow_symlinks=False).st_dev, os.stat(ancestor, follow_symlinks=False).st_ino) != identity
-            for ancestor, identity in ancestors
-        ):
-            raise typer.BadParameter(f"package path boundary changed while reading: {path.name}")
-        opened = os.fstat(descriptor)
-        expected = os.stat(resolved, follow_symlinks=False)
-        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
-            raise typer.BadParameter(f"package input changed while reading: {path.name}")
-        with os.fdopen(descriptor, "rb") as handle:
-            descriptor = -1
-            return handle.read()
-    finally:
-        if descriptor != -1:
-            os.close(descriptor)
+def _artifact_payload(ctx: typer.Context, path: Path) -> dict[str, object]:
+    return ctx.obj["deps"].artifact_reports.inspect(path)
 
 
 def _directory_identity(path: Path) -> tuple[int, int]:
@@ -1835,39 +864,9 @@ def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operati
 
 @contextmanager
 def _package_lock(output: Path):
-    """Serialize package read/merge/write transactions across processes."""
+    """Serialize existing release-package merge and publication transactions."""
     with owned_directory_lock(output.with_name(output.name + ".lock")):
         yield
-
-
-def _write_package_archive(
-    output: Path,
-    source_dir: Path,
-    *,
-    _allow_staging: bool = False,
-    _verify_attestation: bool = True,
-    _lock_held: bool = False,
-) -> None:
-    """Validate v2 package inputs and delegate atomic archive publication."""
-    with nullcontext() if _lock_held else _package_lock(output):
-        files = _package_files(
-            source_dir,
-            _allow_staging=_allow_staging,
-            _verify_attestation=_verify_attestation,
-        )
-        try:
-            PackageService(
-                lock=owned_directory_lock,
-                directory_guard=directory_handle_guard,
-                normalize_docx_zip_timestamps=normalize_docx_zip_timestamps,
-                assert_directory_identity=_assert_directory_identity,
-            ).write(
-                output,
-                tuple(PackageFile(relative, content) for relative, content in files),
-                lock_held=True,
-            )
-        except PackagePublicationError as exc:
-            raise typer.BadParameter(str(exc)) from exc
 
 
 @document_app.command("baseline")
@@ -1897,43 +896,44 @@ def baseline(
 
 @document_app.command("inspect")
 def inspect(
+    ctx: typer.Context,
     artifact: Path = typer.Argument(..., exists=True, readable=True),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Inspect an artifact identity without modifying it."""
-    payload = _artifact_payload(artifact)
+    payload = _artifact_payload(ctx, artifact)
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
 
 
 @document_app.command("diff")
 def diff(
+    ctx: typer.Context,
     left: Path = typer.Argument(..., exists=True, readable=True),
     right: Path = typer.Argument(..., exists=True, readable=True),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Compare two derived artifacts by identity and readable text when available."""
-    left_payload = _artifact_payload(left)
-    right_payload = _artifact_payload(right)
-    changes: list[str] = []
-    try:
-        left_text = left.read_text(encoding="utf-8").splitlines(keepends=True)
-        right_text = right.read_text(encoding="utf-8").splitlines(keepends=True)
-        changes = list(unified_diff(left_text, right_text, fromfile=str(left), tofile=str(right)))
-    except UnicodeDecodeError:
-        changes = []
-    payload = {"same": left_payload["sha256"] == right_payload["sha256"], "left": left_payload, "right": right_payload, "text_diff": changes}
-    typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True) if json_output else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    payload = ctx.obj["deps"].artifact_reports.compare(left, right)
+    typer.echo(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if json_output
+        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    )
 
 
 @document_app.command("package")
 def package(
+    ctx: typer.Context,
     source_dir: Path = typer.Argument(..., exists=True, file_okay=False),
     output: Path = typer.Argument(...),
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Package verified derived artifacts atomically as a ZIP archive."""
-    _write_package_archive(output, source_dir)
-    payload = {"path": str(output.resolve()), "artifact": _artifact_payload(output)}
+    try:
+        ctx.obj["deps"].package_publications.package(output, source_dir)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = {"path": str(output.resolve()), "artifact": _artifact_payload(ctx, output)}
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))
 
 
@@ -1946,34 +946,15 @@ def publish(
     json_output: bool = typer.Option(False, "--json"),
 ) -> None:
     """Publish one verified artifact only under a policy that permits release."""
-    selected = PipelinePolicy(policy)
-    if not selected.can_publish():
-        raise typer.BadParameter("publish requires --policy strict or --policy release")
-    manifest_path = source.with_suffix(source.suffix + ".manifest.json")
-    document_root = source.parent.parent.parent
-    if source.parent.name != "v2" or source.parent.parent.name != "output":
-        raise typer.BadParameter("publish requires a v2 artifact with its matching manifest")
-    _require_contained(source, document_root / "output" / "v2", "source")
-    _require_contained(manifest_path, document_root / "output" / "v2", "manifest")
-    if not manifest_path.is_file():
-        raise typer.BadParameter("publish requires a v2 artifact with its matching manifest")
-    _require_contained(destination, document_root, "destination")
+    publication_service = ctx.obj["deps"].package_publications
     try:
-        manifest_bytes = _read_package_file(manifest_path, document_root)
-        manifest = BuildManifest.from_dict(json.loads(manifest_bytes.decode(encoding="utf-8")))
-        manifest.validate_for_publication()
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise typer.BadParameter(f"publish requires a valid manifest: {exc}") from exc
-    source_identity = str(source.resolve())
-    source_bytes = _read_package_file(source, document_root)
-    _require_contained(source, document_root / "output" / "v2", "source")
-    _require_contained(manifest_path, document_root / "output" / "v2", "manifest")
-    matching = [artifact for artifact in manifest.artifacts if artifact.path == source_identity]
-    if len(matching) != 1 or matching[0].sha256 != hashlib.sha256(source_bytes).hexdigest():
-        raise typer.BadParameter("publish requires the manifest artifact hash to match the source")
+        prepared = publication_service.preflight_publish(source, destination, policy=policy)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    document_root = source.parent.parent.parent
     output_format = source.suffix.removeprefix(".")
     try:
-        resolved, config, renderer = _resolve_publish_inputs(ctx, document_root, output_format)
+        resolved, config, renderer = _resolve_publish_inputs(ctx.obj["deps"], document_root, output_format)
         current = _current_input_identities(
             resolved=resolved,
             config=config,
@@ -1983,40 +964,14 @@ def publish(
         )
     except Exception as exc:
         raise typer.BadParameter(f"publish requires resolvable current inputs: {exc}") from exc
-    for field, label in (
-        ("template_hash", "template"),
-        ("template_ir_hash", "template IR"),
-        ("config_hash", "config"),
-        ("context_hash", "context"),
-        ("asset_hashes", "asset"),
-        ("renderer_versions", "renderer"),
-        ("source_hash", "source inputs"),
-    ):
-        if field == "template_ir_hash" and not getattr(manifest, field):
-            continue
-        if current[field] != getattr(manifest, field):
-            raise typer.BadParameter(f"publish requires unchanged {label} identity")
-    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
-    if not ledger.verify_attestation(manifest.provenance_run or "", manifest.attestation()):
-        raise typer.BadParameter("publish requires a present, verifiable provenance attestation")
-    destination_manifest = destination.with_suffix(destination.suffix + ".manifest.json")
-    def write_publication(scratch: Path) -> None:
-        (scratch / "artifact").write_bytes(source_bytes)
-        (scratch / "manifest").write_bytes(manifest_bytes)
-
-    publication = AtomicTransform().run(
-        TransformSpec(
-            expected_outputs=("artifact", "manifest"),
-            destinations=(destination, destination_manifest),
-        ),
-        write_publication,
-    )
-    if not publication.ok:
-        raise typer.BadParameter(f"publish failed: {publication.error}")
+    try:
+        result = publication_service.publish(prepared, current_identities=current)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     payload = {
         "published": True,
-        "artifact": _artifact_payload(destination),
-        "manifest": str(destination_manifest.resolve()),
-        "warnings": list(publication.warnings),
+        "artifact": _artifact_payload(ctx, result.artifact),
+        "manifest": str(result.manifest.resolve()),
+        "warnings": list(result.warnings),
     }
     typer.echo(json.dumps(payload, sort_keys=True) if json_output else json.dumps(payload, indent=2, sort_keys=True))

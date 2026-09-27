@@ -6,11 +6,13 @@ from pathlib import Path
 from docs.domain.context import TopicStatus
 from docs.domain.models.template import ContextSchema, Topic
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import validate_workspace_marker
 from docs.infrastructure.persistence.context_markdown import parse_topic, render_topic
 
 
 class JsonContextRepository:
     def __init__(self, workspace: Workspace) -> None:
+        validate_workspace_marker(workspace.root)
         self.workspace = workspace
 
     def _context_dir(self, doc_id: str) -> Path:

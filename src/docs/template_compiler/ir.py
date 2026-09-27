@@ -72,7 +72,7 @@ def _copy_frozen_model(
 class TemplateIR(BaseModel):
     """Stable intermediate representation for compiled templates.
 
-    The ``legacy_config`` snapshot is intentional: permissive template
+    The ``source_config`` snapshot is intentional: permissive template
     extensions must survive compilation even when they are not part of the
     renderer-neutral vocabulary yet.
     """
@@ -89,7 +89,7 @@ class TemplateIR(BaseModel):
     section_contracts: dict[str, dict[str, Any]] = Field(default_factory=dict)
     context_schema: dict[str, Any] = Field(default_factory=dict)
     template_contract: dict[str, Any] | None = None
-    legacy_config: dict[str, Any] = Field(default_factory=dict)
+    source_config: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("ir_version")
     @classmethod
@@ -105,7 +105,7 @@ class TemplateIR(BaseModel):
         "section_contracts",
         "context_schema",
         "template_contract",
-        "legacy_config",
+        "source_config",
         mode="after",
     )
     @classmethod

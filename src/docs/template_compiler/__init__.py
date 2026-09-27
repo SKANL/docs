@@ -5,11 +5,15 @@ from .compiler import (
     TemplateCompiler,
     compile_template,
     compile_template_json,
-    legacy_template,
+    source_template,
 )
 from .ir import TEMPLATE_IR_VERSION, TemplateIR
-from .legacy import from_legacy_template, to_legacy_config, to_legacy_template
 from .lowering import RendererLoweringMetadata
+from .source_adapter import (
+    from_source_template,
+    to_source_config,
+    to_source_template,
+)
 
 __all__ = [
     "TEMPLATE_IR_VERSION",
@@ -19,8 +23,8 @@ __all__ = [
     "TemplateIR",
     "compile_template",
     "compile_template_json",
-    "from_legacy_template",
-    "legacy_template",
-    "to_legacy_config",
-    "to_legacy_template",
+    "from_source_template",
+    "source_template",
+    "to_source_config",
+    "to_source_template",
 ]

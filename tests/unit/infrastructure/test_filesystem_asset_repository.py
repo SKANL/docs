@@ -1,7 +1,15 @@
-# tests/unit/infrastructure/test_filesystem_asset_repository.py
+import hashlib
 from pathlib import Path
 
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
+
+CURRENT_UNVERSIONED = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "workspaces"
+    / "legacy"
+    / "current-unversioned"
+)
 
 
 def test_ensure_dir_creates_nested_directories(tmp_path: Path):
@@ -100,3 +108,21 @@ def test_file_exists_true_for_existing_file(tmp_path: Path):
 def test_file_exists_false_for_missing_file(tmp_path: Path):
     repo = FilesystemAssetRepository()
     assert repo.file_exists(tmp_path / "missing.docx") is False
+
+
+def test_current_unversioned_fixture_preserves_referenced_asset_bytes_and_hash() -> None:
+    assets = (
+        CURRENT_UNVERSIONED
+        / "documents"
+        / "sanitized-report"
+        / "assets"
+        / "figures"
+    )
+    paths = FilesystemAssetRepository().list_assets(assets, (".png",))
+
+    assert [path.name for path in paths] == ["fig-431ced69.png"]
+    payload = paths[0].read_bytes()
+    assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+    assert hashlib.sha256(payload).hexdigest() == (
+        "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460"
+    )

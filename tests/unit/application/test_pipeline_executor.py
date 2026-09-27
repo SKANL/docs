@@ -1,4 +1,4 @@
-from docs.application.pipeline_executor import PipelineExecutor
+from docs.application.pipeline_executor import _PipelineExecutor
 from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord, PipelineDefinition, StageResult, StageSpec
 
 
@@ -12,26 +12,29 @@ def test_executes_in_definition_plan_and_reports_results_deterministically():
     )
     calls = []
     handlers = {
-        "first": lambda: (calls.append("first") or StageResult("first", True)),
-        "second": lambda: (calls.append("second") or StageResult("second", True)),
+        "first": lambda: calls.append("first") or StageResult("first", True),
+        "second": lambda: calls.append("second") or StageResult("second", True),
     }
 
-    report = PipelineExecutor(definition, handlers).run()
+    report = _PipelineExecutor(definition, handlers).run()
 
     assert calls == ["first", "second"]
     assert [result.stage for result in report.results] == ["first", "second"]
-    assert report.to_json() == '{"results":[{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"first","warnings":[]},{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"second","warnings":[]}]}'
+    assert (
+        report.to_json()
+        == '{"results":[{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"first","warnings":[]},{"artifacts":[],"errors":[],"ok":true,"outcome":"succeeded","stage":"second","warnings":[]}]}'
+    )
 
 
 def test_fail_fast_failure_stops_unconnected_stages():
     definition = PipelineDefinition(stages=(StageSpec("fail"), StageSpec("later")))
     calls = []
     handlers = {
-        "fail": lambda: (calls.append("fail") or StageResult("fail", False, errors=("boom",))),
-        "later": lambda: (calls.append("later") or StageResult("later", True)),
+        "fail": lambda: calls.append("fail") or StageResult("fail", False, errors=("boom",)),
+        "later": lambda: calls.append("later") or StageResult("later", True),
     }
 
-    report = PipelineExecutor(definition, handlers).run()
+    report = _PipelineExecutor(definition, handlers).run()
 
     assert calls == ["fail"]
     assert report.results[0].errors == ("boom",)
@@ -45,11 +48,11 @@ def test_connected_fail_fast_failure_stops_independent_stages():
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
-            "build": lambda: (calls.append("build") or StageResult("build", False, errors=("boom",))),
-            "later": lambda: (calls.append("later") or StageResult("later", True)),
+            "build": lambda: calls.append("build") or StageResult("build", False, errors=("boom",)),
+            "later": lambda: calls.append("later") or StageResult("later", True),
         },
     ).run()
 
@@ -68,12 +71,12 @@ def test_connected_fail_fast_failure_records_blocked_dependents_without_running_
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
-            "build": lambda: (calls.append("build") or StageResult("build", False, errors=("boom",))),
-            "dependent": lambda: (calls.append("dependent") or StageResult("dependent", True)),
-            "unrelated": lambda: (calls.append("unrelated") or StageResult("unrelated", True)),
+            "build": lambda: calls.append("build") or StageResult("build", False, errors=("boom",)),
+            "dependent": lambda: calls.append("dependent") or StageResult("dependent", True),
+            "unrelated": lambda: calls.append("unrelated") or StageResult("unrelated", True),
         },
     ).run()
 
@@ -93,12 +96,12 @@ def test_failure_blocks_dependents_but_does_not_stop_independent_stages():
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
-            "build": lambda: (calls.append("build") or StageResult("build", False, errors=("boom",))),
-            "dependent": lambda: (calls.append("dependent") or StageResult("dependent", True)),
-            "independent": lambda: (calls.append("independent") or StageResult("independent", True)),
+            "build": lambda: calls.append("build") or StageResult("build", False, errors=("boom",)),
+            "dependent": lambda: calls.append("dependent") or StageResult("dependent", True),
+            "independent": lambda: calls.append("independent") or StageResult("independent", True),
         },
     ).run()
 
@@ -115,9 +118,9 @@ def test_executor_rejects_missing_external_prerequisite_before_running_handlers(
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"build": lambda: (calls.append("build") or StageResult("build", True))},
+        {"build": lambda: calls.append("build") or StageResult("build", True)},
     ).run()
 
     assert calls == []
@@ -126,21 +129,27 @@ def test_executor_rejects_missing_external_prerequisite_before_running_handlers(
 
 def test_executor_records_non_negative_stage_duration():
     definition = PipelineDefinition(stages=(StageSpec("render"),))
-    report = PipelineExecutor(definition, {"render": lambda: StageResult("render", True)}).run()
+    report = _PipelineExecutor(definition, {"render": lambda: StageResult("render", True)}).run()
 
     assert report.results[0].duration_ms is not None
     assert report.results[0].duration_ms >= 0
 
 
 def test_failed_producer_does_not_execute_dependent_stage_even_when_not_fail_fast():
-    definition = PipelineDefinition(artifacts=(ArtifactContract("optional-output"),), stages=(StageSpec("optional", produces=("optional-output",), fail_fast=False), StageSpec("later", requires=("optional-output",))))
+    definition = PipelineDefinition(
+        artifacts=(ArtifactContract("optional-output"),),
+        stages=(
+            StageSpec("optional", produces=("optional-output",), fail_fast=False),
+            StageSpec("later", requires=("optional-output",)),
+        ),
+    )
     calls = []
     handlers = {
-        "optional": lambda: (calls.append("optional") or StageResult("optional", False, errors=("skip",))),
-        "later": lambda: (calls.append("later") or StageResult("later", True)),
+        "optional": lambda: calls.append("optional") or StageResult("optional", False, errors=("skip",)),
+        "later": lambda: calls.append("later") or StageResult("later", True),
     }
 
-    report = PipelineExecutor(definition, handlers).run()
+    report = _PipelineExecutor(definition, handlers).run()
 
     assert calls == ["optional"]
     assert [result.stage for result in report.results] == ["optional", "later"]
@@ -158,10 +167,10 @@ def test_unsupported_stage_result_is_deterministic_and_keeps_pipeline_running_in
     )
     calls = []
     handlers = {
-        "current": lambda: (calls.append("current") or StageResult("current", True)),
+        "current": lambda: calls.append("current") or StageResult("current", True),
     }
 
-    report = PipelineExecutor(definition, handlers).run()
+    report = _PipelineExecutor(definition, handlers).run()
 
     assert calls == ["current"]
     assert report.results[0].outcome == "unsupported"
@@ -184,9 +193,9 @@ def test_excluded_stage_with_produced_artifact_blocks_downstream_stage():
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"verify": lambda: (calls.append("verify") or StageResult("verify", True))},
+        {"verify": lambda: calls.append("verify") or StageResult("verify", True)},
     ).run(excluded_stages={"build"})
 
     assert calls == []
@@ -199,7 +208,7 @@ def test_excluded_stage_with_produced_artifact_blocks_downstream_stage():
 def test_handler_exception_is_reported_as_failed_stage_result():
     definition = PipelineDefinition(stages=(StageSpec("explode"), StageSpec("later")))
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
             "explode": lambda: (_ for _ in ()).throw(RuntimeError("boom")),
@@ -220,7 +229,7 @@ def test_required_dependency_skip_is_reported_as_blocking_result():
             StageSpec("check", requires=("built",), produces=("checked",)),
         ),
     )
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {"build": lambda: StageResult("build", False, errors=("broken",))},
     ).run()
@@ -238,7 +247,7 @@ def test_unsupported_optional_stage_blocks_a_required_output_dependency():
             StageSpec("publish", requires=("generated",), produces=("published",)),
         ),
     )
-    report = PipelineExecutor(definition, {}).run()
+    report = _PipelineExecutor(definition, {}).run()
     assert report.results[0].outcome == "unsupported"
     assert report.results[1].errors == ("required dependency unavailable: generated",)
 
@@ -249,13 +258,9 @@ def test_stage_report_rejects_artifacts_outside_declared_outputs():
         stages=(StageSpec("render", produces=("rendered",)),),
     )
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"render": lambda: StageResult("render", True, artifacts=(
-            ArtifactRecord(
-                "other", "other.bin", "abc"
-            ),
-        ))},
+        {"render": lambda: StageResult("render", True, artifacts=(ArtifactRecord("other", "other.bin", "abc"),))},
     ).run()
 
     assert report.results[0].ok is False
@@ -268,13 +273,17 @@ def test_stage_report_rejects_a_required_artifact_record_with_the_wrong_identity
         stages=(StageSpec("render", produces=("rendered",)),),
     )
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"render": lambda: StageResult("render", True, artifacts=(
-            ArtifactRecord(
-                "rendered", "report.txt", "0" * 64, media_type="application/json", size_bytes=1
-            ),
-        ))},
+        {
+            "render": lambda: StageResult(
+                "render",
+                True,
+                artifacts=(
+                    ArtifactRecord("rendered", "report.txt", "0" * 64, media_type="application/json", size_bytes=1),
+                ),
+            )
+        },
     ).run()
 
     assert report.results[0].ok is False
@@ -289,17 +298,17 @@ def test_stage_report_rejects_missing_media_metadata_for_explicit_media_contract
         stages=(StageSpec("render", produces=("rendered",)),),
     )
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"render": lambda: StageResult("render", True, artifacts=(
-            ArtifactRecord("rendered", "report.txt", "0" * 64),
-        ))},
+        {
+            "render": lambda: StageResult(
+                "render", True, artifacts=(ArtifactRecord("rendered", "report.txt", "0" * 64),)
+            )
+        },
     ).run()
 
     assert report.results[0].ok is False
-    assert report.results[0].errors == (
-        "artifact rendered does not satisfy its contract: media_type is required",
-    )
+    assert report.results[0].errors == ("artifact rendered does not satisfy its contract: media_type is required",)
 
 
 def test_stage_report_preserves_compact_records_for_implicit_media_contracts():
@@ -308,11 +317,9 @@ def test_stage_report_preserves_compact_records_for_implicit_media_contracts():
         stages=(StageSpec("render", produces=("rendered",)),),
     )
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"render": lambda: StageResult("render", True, artifacts=(
-            ArtifactRecord("rendered", "report.txt", "abc"),
-        ))},
+        {"render": lambda: StageResult("render", True, artifacts=(ArtifactRecord("rendered", "report.txt", "abc"),))},
     ).run()
 
     assert report.results[0].ok is True
@@ -324,11 +331,9 @@ def test_stage_report_rejects_short_digest_for_explicit_strict_contracts():
         stages=(StageSpec("render", produces=("rendered",)),),
     )
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
-        {"render": lambda: StageResult("render", True, artifacts=(
-            ArtifactRecord("rendered", "report.txt", "abc"),
-        ))},
+        {"render": lambda: StageResult("render", True, artifacts=(ArtifactRecord("rendered", "report.txt", "abc"),))},
     ).run()
 
     assert report.results[0].ok is False
@@ -342,10 +347,13 @@ def test_failed_optional_stage_with_fail_fast_does_not_stop_required_unrelated_s
         stages=(StageSpec("optional", optional=True, fail_fast=True), StageSpec("required"))
     )
     calls = []
-    report = PipelineExecutor(definition, {
-        "optional": lambda: (calls.append("optional") or StageResult("optional", False, errors=("degraded",))),
-        "required": lambda: (calls.append("required") or StageResult("required", True)),
-    }).run()
+    report = _PipelineExecutor(
+        definition,
+        {
+            "optional": lambda: calls.append("optional") or StageResult("optional", False, errors=("degraded",)),
+            "required": lambda: calls.append("required") or StageResult("required", True),
+        },
+    ).run()
 
     assert calls == ["optional", "required"]
     assert report.results[-1].ok is True
@@ -362,14 +370,12 @@ def test_failed_optional_producer_blocks_only_its_downstream_consumers():
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
-            "optional": lambda: (
-                calls.append("optional") or StageResult("optional", False, errors=("degraded",))
-            ),
-            "consumer": lambda: (calls.append("consumer") or StageResult("consumer", True)),
-            "unrelated": lambda: (calls.append("unrelated") or StageResult("unrelated", True)),
+            "optional": lambda: calls.append("optional") or StageResult("optional", False, errors=("degraded",)),
+            "consumer": lambda: calls.append("consumer") or StageResult("consumer", True),
+            "unrelated": lambda: calls.append("unrelated") or StageResult("unrelated", True),
         },
     ).run()
 
@@ -391,11 +397,11 @@ def test_missing_required_declared_output_fails_producer_and_blocks_consumer():
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
-            "build": lambda: (calls.append("build") or StageResult("build", True)),
-            "publish": lambda: (calls.append("publish") or StageResult("publish", True)),
+            "build": lambda: calls.append("build") or StageResult("build", True),
+            "publish": lambda: calls.append("publish") or StageResult("publish", True),
         },
     ).run()
 
@@ -418,12 +424,12 @@ def test_excluded_stage_blocks_explicit_after_dependent_without_artifact_require
     )
     calls: list[str] = []
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {
-            "prepare": lambda: (calls.append("prepare") or StageResult("prepare", True)),
-            "after-prepare": lambda: (calls.append("after-prepare") or StageResult("after-prepare", True)),
-            "independent": lambda: (calls.append("independent") or StageResult("independent", True)),
+            "prepare": lambda: calls.append("prepare") or StageResult("prepare", True),
+            "after-prepare": lambda: calls.append("after-prepare") or StageResult("after-prepare", True),
+            "independent": lambda: calls.append("independent") or StageResult("independent", True),
         },
     ).run(excluded_stages={"prepare"})
 
@@ -444,9 +450,16 @@ def test_executor_preserves_durable_contract_records_in_stage_reports() -> None:
         stages=(StageSpec("prepare", produces=("prepared",)),),
     )
 
-    report = PipelineExecutor(
+    report = _PipelineExecutor(
         definition,
         {"prepare": lambda: StageResult("prepare", True, artifacts=(record,))},
     ).run()
 
     assert report.results[0].artifacts == (record,)
+
+
+from docs.application import pipeline_executor
+
+
+def test_pipeline_executor_is_private_to_the_application_service() -> None:
+    assert not hasattr(pipeline_executor, "PipelineExecutor")

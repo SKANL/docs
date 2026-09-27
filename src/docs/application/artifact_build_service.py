@@ -54,7 +54,7 @@ class ArtifactBuildService:
     ) -> ArtifactBuildResult:
         scratch_parent = scratch_parent.resolve()
         scratch_parent.mkdir(parents=True, exist_ok=True)
-        scratch_dir = self._scratch_factory(f".v2-{output_format}-", scratch_parent)
+        scratch_dir = self._scratch_factory(f".x20-{output_format}-", scratch_parent)
         self._assert_scratch_dir_lexically_contained(scratch_dir, scratch_parent)
         scratch_dir.mkdir(parents=True, exist_ok=True)
         self._assert_scratch_dir(scratch_dir, scratch_parent)

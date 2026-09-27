@@ -13,6 +13,7 @@ from docs.domain.ports.document_repository import (
 from docs.domain.ports.registry_repository import Registry, RegistryRepository
 from docs.domain.ports.template_repository import TemplateRepository
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import validate_workspace_marker
 
 
 class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRepository):
@@ -20,6 +21,7 @@ class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRep
     should depend on the narrow port they actually use, not on this class."""
 
     def __init__(self, workspace: Workspace) -> None:
+        validate_workspace_marker(workspace.root)
         self.workspace = workspace
 
     # registry -----------------------------------------------------------------
@@ -64,7 +66,10 @@ class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRep
         return self.workspace.doc_root(doc_id) / "document.json"
 
     def exists(self, doc_id: str) -> bool:
-        return self.workspace.doc_root(doc_id).exists()
+        # An import creates the document directory and inbox before the
+        # lifecycle manifest exists.  The directory alone is therefore not
+        # evidence that a document has been created.
+        return self._document_json(doc_id).is_file()
 
     def read_document(self, doc_id: str) -> Document:
         path = self._document_json(doc_id)

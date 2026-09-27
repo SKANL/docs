@@ -19,13 +19,9 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def workspace(tmp_path, monkeypatch):
-    documents = tmp_path / "documents"
+def workspace(canonical_cli_workspace):
+    tmp_path = canonical_cli_workspace
     templates = tmp_path / "templates"
-    documents.mkdir()
-    templates.mkdir()
-    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(documents))
-    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
     return templates
 
 
@@ -88,7 +84,7 @@ def test_validate_rejects_a_genuinely_invalid_template(workspace):
     assert result.exit_code != 0
 
 
-def test_validate_accepts_the_real_reporte_estadia_tic_fixture(workspace, tmp_path):
+def test_validate_accepts_the_real_reporte_estadia_tic_fixture(workspace):
     import shutil
     from pathlib import Path
 

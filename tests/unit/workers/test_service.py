@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.domain.contracts import Job, Run
+from docs.domain.runtime_records import Job, Run
 from docs.workers.service import WorkerResult, WorkerService
 
 

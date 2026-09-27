@@ -4,10 +4,12 @@ from pathlib import Path
 
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.workspace import Workspace
+from docs.domain.workspace_format import validate_workspace_marker
 
 
 class JsonSectionRepository:
     def __init__(self, workspace: Workspace) -> None:
+        validate_workspace_marker(workspace.root)
         self.workspace = workspace
 
     def _sections_dir(self, doc_id: str) -> Path:

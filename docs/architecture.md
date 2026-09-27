@@ -1,24 +1,24 @@
-# Docs Harness v2 Architecture
+# Docs Harness X20 Architecture
 
-V2 is the contract-driven public surface for preparing sources, building, checking, inspecting, comparing, packaging, and publishing document artifacts. It keeps source inputs separate from derived outputs and records content-bound evidence before publication.
+Canonical X20 is the contract-driven public surface for preparing sources, building, checking, inspecting, comparing, packaging, and publishing document artifacts. It keeps source inputs separate from derived outputs and records content-bound evidence before publication.
 
 ## Public surface
 
-Run from the harness checkout or use the installed `docs` entry point. The `document` group is canonical; `source ingest` is the source-specific public boundary; the document group is the only public document command surface.
+Run from the harness checkout or use the installed `docs` entry point. `doc init` creates a workspace and `doc new` is the single document-creation command. The `document` group is the canonical pipeline surface; `source ingest` is the source-specific public boundary.
 
 | Command | Purpose | Writes |
 |---|---|---|
-| `document create <id> [--template T] [--title X] [--json]` | Create and activate a workspace document through the existing document service. | Document source structure. |
-| `document release [--format F]... [--policy release] [--json]` | Run the complete verified build/package/publication pipeline for the active document. | Verified v2 artifacts, manifests, provenance, and release package. |
-| `document ingest [--json]` | Convert the active document's inbox sources through the native v2 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
+| `doc new <id> [--template T] [--title X]` | Create and activate a workspace document. | Document source structure. |
+| `document release [--format F]... [--policy release] [--json]` | Run the complete verified build/package/publication pipeline for the active document. | Verified X20 artifacts, manifests, provenance, and release package. |
+| `document ingest [--json]` | Convert the active document's inbox sources through the native X20 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
 | `document prepare [--json]` | Run ingest, normalization, and structure compilation in order. | Prepared sources, `sections/v2-structure.json`, and `runs/v2-prepare.json`. |
-| `document status [--json]` | Report domain status plus v2 capabilities, manifests, and provenance details. | No source changes; status may read existing run data. |
-| `document build [--format F]... [--policy P] [--json]` | Run the v2 plan and publish verified requested formats into `output/current/`. | Derived artifacts, sidecar manifests, QA data, and v2 provenance. |
+| `document status [--json]` | Report domain status plus X20 capabilities, manifests, and provenance details. | No source changes; status may read existing run data. |
+| `document build [--format F]... [--policy P] [--json]` | Run the X20 plan and publish verified requested formats into `output/current/`. | Derived artifacts, sidecar manifests, QA data, and X20 provenance. |
 | `document verify [--format F]... [--policy P] [--json]` | Run format checks without publishing. | Verification output only; it does not create a build attestation for `cli-verify-*`. |
 | `document inspect <artifact> [--json]` | Report path, media type, size, and SHA-256. | Nothing. |
 | `document diff <left> <right> [--json]` | Compare identities and, for UTF-8 files, return a text diff. | Nothing. |
-| `document package <dir> <zip> [--json]` | Package a verified v2 artifact directory as a deterministic ZIP through a temporary file. | The requested ZIP after close succeeds. |
-| `document publish <source> <destination> [--policy strict\|release] [--json]` | Publish one attested v2 artifact and its manifest atomically. | Destination artifact and manifest. |
+| `document package <dir> <zip> [--json]` | Package a verified X20 artifact directory as a deterministic ZIP through a temporary file. | The requested ZIP after close succeeds. |
+| `document publish <source> <destination> [--policy strict\|release] [--json]` | Publish one attested X20 artifact and its manifest atomically. | Destination artifact and manifest. |
 
 `--format` is repeatable and currently accepts the configured renderer formats (`docx`, `html`, `pdf`). `build` defaults to the document configuration when no format is supplied. `status`, `ingest`, and `prepare` use the active document selected by the workspace context.
 
@@ -26,7 +26,7 @@ Run from the harness checkout or use the installed `docs` entry point. The `docu
 
 Durable source inputs are `document.json`, section Markdown, resolved context, template/configuration, and workspace assets. Rendered DOCX/HTML/PDF files, manifests, QA reports, ZIP packages, and published copies are derived artifacts. Derived artifacts never replace source Markdown.
 
-The native runtime does not silently fall back to a alternate pipeline. Its build and publication boundary writes verified artifacts under `output/current/`; it never promotes those artifacts into unverified output. `docs document publish` remains a separate document-lifecycle operation that snapshots current `output/work/` into `output/published/`, and does not consume or promote v2 artifacts. The normal CLI and flat pipeline commands now use the native v2 boundary directly. Published artifacts are the only supported outputs. V2 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
+The native runtime does not silently fall back to a alternate pipeline. Its build and publication boundary writes verified artifacts under `output/current/`; it never promotes those artifacts into unverified output. `docs document publish` remains a separate document-lifecycle operation that snapshots current `output/work/` into `output/published/`, and does not consume or promote X20 artifacts. The normal CLI and flat pipeline commands now use the native X20 boundary directly. Published artifacts are the only supported outputs. Canonical X20 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
 
 ## Pipeline kernel
 
@@ -98,11 +98,7 @@ errors. A failed visual stage blocks its dependent cover and document build.
 
 The kernel validates stage names, artifact contracts, dependency availability, duplicate producers, and cycles before execution. Each stage produces a named `<stage>-complete` contract in the current bridge. Execution is fail-fast for a failed required stage. Optional stages can report visible `skipped` or `unsupported` outcomes; policy decides whether those warnings are acceptable.
 
-The current workspace bridge wires all public stage adapters through
-`StageProvider`, the single composition-root boundary for resolving stage
-services. Tests may intentionally construct a partial service map to exercise
-dependency failure behavior, but the CLI composition root does not rely on
-that partial map for a normal document build.
+The shared composition in `src/docs/composition.py` constructs the application dependencies and `PipelineService`. The service owns registration and execution of the stage graph; `_PipelineExecutor` remains a private mechanical executor used by that service, not a second public pipeline API. Do not describe or integrate a separate `PipelineRuntime` application layer. Tests may inject partial operations to exercise dependency failures.
 
 ## Policies and capabilities
 
@@ -121,3 +117,10 @@ A publishable artifact must be under `output/current/`, have a matching `<artifa
 ## Format boundaries
 
 DOCX uses the existing format audit and QA adapters. HTML is decoded as UTF-8 and must contain exactly one HTML root and one body root. PDF must start with `%PDF-` and reopen with the available PDF reader with at least one page and valid render dimensions. Non-DOCX formats are not silently treated as DOCX. PDF is derived and therefore not byte-deterministic.
+
+
+## Composition entry points
+
+`compose_application(workspace=None, observability=None)` in `src/docs/composition.py` is the shared application factory. It resolves or accepts the workspace and observability dependencies and returns a typed `ApplicationComposition`. The CLI root (`src/docs/cli/main.py`), API bootstrap, and worker composition use this shared dependency graph rather than assembling duplicate business services.
+
+The factory does not own process lifecycle or transport configuration. CLI argument parsing and local workspace selection, API host/port/auth/CORS settings, and worker queue/lease/polling/retry settings remain specific to those process bootstraps. Keep these operational concerns separate from reusable application composition.

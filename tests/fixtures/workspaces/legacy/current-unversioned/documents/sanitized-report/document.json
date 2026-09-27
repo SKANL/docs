@@ -1,0 +1,29 @@
+{
+  "id": "sanitized-report",
+  "lifecycle": "draft",
+  "overrides": {},
+  "project": {
+    "author": "Example Author",
+    "language": "en"
+  },
+  "structure": [
+    {
+      "id": "overview",
+      "type": "section"
+    },
+    {
+      "id": "references",
+      "type": "section"
+    },
+    {
+      "id": "plain-notes",
+      "type": "section"
+    },
+    {
+      "id": "opaque-source",
+      "type": "section"
+    }
+  ],
+  "template": "documento-generico",
+  "title": "Sanitized Workspace Report"
+}
