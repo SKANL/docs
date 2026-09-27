@@ -9,11 +9,12 @@ import mimetypes
 import threading
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlencode, urlsplit
 from uuid import uuid4
+
+from pydantic import ValidationError
 
 from docs.application.graph_queries import GraphQueryService
 from docs.application.imports import ImportError, SourceImportService
@@ -23,6 +24,13 @@ from docs.domain.contracts import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
+from .dto import (
+    WorkspaceCreateRequest,
+    WorkspaceDeleteResponse,
+    WorkspacePage,
+    WorkspaceRenameRequest,
+    WorkspaceResponse,
+)
 from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_openapi_document, canonical_json
@@ -522,38 +530,38 @@ class X20Application:
         del request
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
-        return Response.json({"items": self.workspace_registry.list()})
+        page = WorkspacePage(
+            items=[WorkspaceResponse.model_validate(item) for item in self.workspace_registry.list()]
+        )
+        return Response.json(page.model_dump(mode="json"))
+
+    @staticmethod
+    def _workspace_request(
+        model: type[WorkspaceCreateRequest] | type[WorkspaceRenameRequest],
+        request: Request,
+    ) -> WorkspaceCreateRequest | WorkspaceRenameRequest:
+        try:
+            return model.model_validate(request.json(object_only=True))
+        except ValidationError as exc:
+            raise APIError("invalid_request", "Request body does not match workspace contract", 400) from exc
+
+    @staticmethod
+    def _workspace_response(item: Mapping[str, Any]) -> dict[str, str]:
+        return WorkspaceResponse.model_validate(item).model_dump(mode="json")
 
     def _create_workspace(self, request: Request) -> Response:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
-        data = request.json(object_only=True)
-        if set(data) != {"name"}:
-            raise APIError("invalid_request", "Workspace creation accepts only name; root is server-managed", 400)
+        data = self._workspace_request(WorkspaceCreateRequest, request)
         if self.managed_workspace_root is None:
             raise APIError("workspace_root_not_configured", "Managed workspace root is not configured", 503)
         root = self.managed_workspace_root / uuid4().hex
         try:
-            item = self.workspace_registry.create(str(data.get("name", "")), root)
+            item = self.workspace_registry.create(data.name, root)
         except WorkspaceRegistryError as exc:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             raise APIError(str(exc), str(exc), status) from exc
-        self._seed_builtin_templates(Path(str(item["root"])))
-        return Response.json(item, 201)
-
-    @staticmethod
-    def _seed_builtin_templates(workspace_root: Path) -> None:
-        """Make workspaces created through the API immediately importable."""
-        templates = workspace_root / "templates"
-        templates.mkdir(parents=True, exist_ok=True)
-        if any(templates.glob("*.json")):
-            return
-        package = files("docs.templates.builtin")
-        for entry in package.iterdir():
-            if entry.name.endswith(".json"):
-                (templates / entry.name).write_text(
-                    entry.read_text(encoding="utf-8"), encoding="utf-8"
-                )
+        return Response.json(self._workspace_response(item), 201)
 
     def _import_document(self, request: Request) -> Response:
         if self.workspace_registry is None:
@@ -758,16 +766,16 @@ class X20Application:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
-            return Response.json(self.workspace_registry.get(workspace_id))
+            return Response.json(self._workspace_response(self.workspace_registry.get(workspace_id)))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
 
     def _rename_workspace(self, workspace_id: str, request: Request) -> Response:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
-        data = request.json(object_only=True)
+        data = self._workspace_request(WorkspaceRenameRequest, request)
         try:
-            return Response.json(self.workspace_registry.rename(workspace_id, str(data.get("name", ""))))
+            return Response.json(self._workspace_response(self.workspace_registry.rename(workspace_id, data.name)))
         except WorkspaceRegistryError as exc:
             status = 409 if str(exc) == "workspace_name_conflict" else 400
             if str(exc) == "workspace_not_found":
@@ -782,7 +790,7 @@ class X20Application:
             self.workspace_registry.delete(workspace_id)
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
-        return Response.json({"deleted": workspace_id})
+        return Response.json(WorkspaceDeleteResponse(deleted=workspace_id).model_dump(mode="json"))
 
     def _run(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)

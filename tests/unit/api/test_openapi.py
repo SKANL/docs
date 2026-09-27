@@ -192,5 +192,19 @@ def test_workspace_identity_is_required_for_workspace_content_and_optional_for_g
     assert raw_import_workspace["in"] == "query" and raw_import_workspace["required"] is True
 
     create_workspace = paths["/v2/workspaces"]["post"]["requestBody"]["content"]["application/json"]["schema"]
-    assert create_workspace["required"] == ["name"]
-    assert "root" not in create_workspace["properties"]
+    assert create_workspace == {"$ref": "#/components/schemas/workspace_create_request"}
+
+
+def test_workspace_openapi_uses_the_runtime_dto_component_schemas() -> None:
+    document = build_openapi_document()
+    schemas = document["components"]["schemas"]
+    paths = document["paths"]
+
+    assert paths["/v2/workspaces"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/workspace_page"}
+    assert set(paths["/v2/workspaces"]["post"]["responses"]) >= {"201", "400", "401", "404"}
+    assert paths["/v2/workspaces/{workspace_id}"]["patch"]["requestBody"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/workspace_rename_request"}
+    assert paths["/v2/workspaces/{workspace_id}"]["delete"]["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/workspace_delete_response"}
+    for name in ("workspace", "workspace_page", "workspace_create_request", "workspace_rename_request", "workspace_delete_response"):
+        assert schemas[name]["additionalProperties"] is False
+    assert schemas["workspace_page"]["properties"]["next_cursor"]["default"] is None
+    assert schemas["workspace_page"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/workspace"}

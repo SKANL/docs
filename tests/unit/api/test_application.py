@@ -127,6 +127,51 @@ def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_pa
     assert application.dispatch(Request("GET", f"/v2/documents/d1/status?workspace_id={workspace['id']}")).status == 404
 
 
+def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(tmp_path):
+    registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+        managed_workspace_root=tmp_path / "managed-workspaces",
+    )
+
+    created = application.dispatch(Request("POST", "/v2/workspaces", body={"name": "Managed"}))
+    workspace = body(created)
+    listed = application.dispatch(Request("GET", "/v2/workspaces"))
+    renamed = application.dispatch(
+        Request("PATCH", f"/v2/workspaces/{workspace['id']}", body={"name": "Renamed"})
+    )
+    fetched = application.dispatch(Request("GET", f"/v2/workspaces/{workspace['id']}"))
+    deleted = application.dispatch(Request("DELETE", f"/v2/workspaces/{workspace['id']}"))
+
+    assert created.status == 201
+    assert set(workspace) == {"id", "name", "root"}
+    assert list(Path(workspace["root"]).glob("templates/*.json"))
+    assert body(listed) == {"items": [workspace], "next_cursor": None}
+    assert body(renamed) == {**workspace, "name": "Renamed"}
+    assert body(fetched) == body(renamed)
+    assert body(deleted) == {"deleted": workspace["id"]}
+
+
+@pytest.mark.parametrize("method,path,payload", [
+    ("POST", "/v2/workspaces", {"name": "Managed", "root": "/client-controlled"}),
+    ("POST", "/v2/workspaces", {"name": 1}),
+    ("PATCH", "/v2/workspaces/missing", {"name": "Renamed", "unexpected": True}),
+    ("PATCH", "/v2/workspaces/missing", {"name": 1}),
+])
+def test_workspace_transport_dtos_reject_unknown_fields_and_non_string_names(tmp_path, method, path, payload):
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=WorkspaceRegistry(tmp_path / "registry.json"),
+        managed_workspace_root=tmp_path / "managed-workspaces",
+    )
+
+    response = application.dispatch(Request(method, path, body=payload))
+
+    assert response.status == 400
+    assert body(response)["error"]["code"] == "invalid_request"
+
+
 def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root(tmp_path):
     registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
     managed_root = tmp_path / "managed-workspaces"

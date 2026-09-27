@@ -6,6 +6,8 @@ import copy
 import json
 from typing import Any
 
+from .dto import workspace_openapi_schemas
+
 
 def _ref(name: str) -> dict[str, str]:
     return {"$ref": f"#/components/schemas/{name}"}
@@ -47,7 +49,6 @@ def _schemas() -> dict[str, Any]:
         "page": {"type": "object", "required": ["items", "next_cursor"], "properties": {"items": {"type": "array", "items": {}}, "next_cursor": {"type": ["string", "null"]}}},
         "document": _item_schema("document", {"id": {"type": "string"}, "name": {"type": "string"}, "status": _ref("status")}),
         "section": _item_schema("section", {"id": {"type": "string"}, "filename": {"type": "string"}, "body": {"type": "string"}}),
-        "workspace": _item_schema("workspace", {"id": {"type": "string"}, "name": {"type": "string"}, "root": {"type": "string"}}),
         "import_job": _item_schema("import_job", {"id": {"type": "string"}, "document_id": {"type": "string"}, "filename": {"type": "string"}, "path": {"type": "string"}, "mime_type": {"type": "string"}, "size": {"type": "integer", "minimum": 1}, "sha256": {"type": "string"}, "deduplicated": {"type": "boolean"}}),
         "stage": _item_schema("stage", {"name": {"type": "string"}, "status": _ref("status"), "progress": {"type": "number"}, "started_at": {"type": ["string", "null"], "format": "date-time"}, "finished_at": {"type": ["string", "null"], "format": "date-time"}}),
         "run": _item_schema("run", {"schema": {"type": "string", "const": "docs.x20/v1"}, "id": {"type": "string"}, "status": _ref("status"), "payload": {"type": "object"}, "created_at": {"type": "string", "format": "date-time"}}),
@@ -91,13 +92,13 @@ def build_openapi_document() -> dict[str, Any]:
     }
     paths: dict[str, Any] = {
         "/v2/workspaces": {
-            "get": _operation("List workspaces", page("workspace"), scopes=("workspaces:read",)),
-            "post": _operation("Create workspace", _json_response(_ref("workspace")), request={"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}, "additionalProperties": False}, scopes=("workspaces:write",)),
+            "get": _operation("List workspaces", _json_response(_ref("workspace_page")), scopes=("workspaces:read",)),
+            "post": _operation("Create workspace", _json_response(_ref("workspace")), request=_ref("workspace_create_request"), scopes=("workspaces:write",), success_status=201),
         },
         "/v2/workspaces/{workspace_id}": {
             "get": _operation("Get workspace", _json_response(_ref("workspace")), scopes=("workspaces:read",)),
-            "patch": _operation("Rename workspace", _json_response(_ref("workspace")), request={"type": "object", "required": ["name"], "properties": {"name": {"type": "string"}}}, scopes=("workspaces:write",)),
-            "delete": _operation("Delete workspace", _json_response({"type": "object"}), scopes=("workspaces:write",)),
+            "patch": _operation("Rename workspace", _json_response(_ref("workspace")), request=_ref("workspace_rename_request"), scopes=("workspaces:write",)),
+            "delete": _operation("Delete workspace", _json_response(_ref("workspace_delete_response")), scopes=("workspaces:write",)),
         },
         "/v2/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document")), request={"type": "object", "required": ["workspace_id", "document_id", "template", "title"], "properties": {"workspace_id": {"type": "string"}, "document_id": {"type": "string"}, "template": {"type": "string"}, "title": {"type": "string"}}, "additionalProperties": False}, scopes=("documents:write",))},
         "/v2/documents/import": {
@@ -310,7 +311,9 @@ def build_openapi_document() -> dict[str, Any]:
             parameters.extend([_parameter("limit", "query", {"type": "integer", "minimum": 1, "maximum": 100}), _parameter("cursor", "query", {"type": "string"})])
         if parameters:
             item["parameters"] = parameters
-    return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": _schemas()}}
+    schemas = _schemas()
+    schemas.update(workspace_openapi_schemas())
+    return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": schemas}}
 
 
 def canonical_json(value: Any) -> str:
