@@ -393,6 +393,18 @@ def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_b
     assert revision_store.promote("revision-1") is None
 
 
+def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> None:
+    from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+    from docs.sidecar import _WorkspaceRunStore
+
+    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    workspace = registry.create("Workspace", tmp_path / "workspace")
+    (Path(workspace["root"]) / "workspace.json").unlink()
+
+    with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
+        _WorkspaceRunStore(registry).put(Run("run", payload={"workspace_id": workspace["id"]}))
+
+
 def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace(tmp_path: Path) -> None:
     from docs.application.workspaces import WorkspaceRegistry
     from docs.sidecar import _WorkspaceEvidenceStores, _WorkspaceJobQueue, _WorkspaceRunStore

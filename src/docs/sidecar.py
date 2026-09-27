@@ -104,7 +104,7 @@ class _FilesystemTemplateStore:
 
     def _root_for(self, workspace_id: str | None = None) -> Path:
         if workspace_id and self.registry is not None:
-            return Path(str(self.registry.get(workspace_id)["root"])).resolve() / "templates"
+            return Path(str(self.registry.resolve(workspace_id)["root"])).resolve() / "templates"
         return self._root()
 
     def list(self) -> list[dict[str, Any]]:
@@ -150,7 +150,7 @@ class _WorkspaceJsonCollectionStore:
 
     def _root_for(self, workspace_id: str | None = None) -> Path:
         if workspace_id and self.registry is not None:
-            return Path(str(self.registry.get(workspace_id)["root"])).resolve()
+            return Path(str(self.registry.resolve(workspace_id)["root"])).resolve()
         return self._active_root()
 
     def list(self) -> list[dict[str, Any]]:
@@ -249,7 +249,7 @@ class _WorkspaceRunStore:
     def put(self, run: Any) -> None:
         workspace_id = run.payload.get("workspace_id") if isinstance(run.payload, Mapping) else None
         if isinstance(workspace_id, str) and workspace_id:
-            self._store(self.registry.get(workspace_id)["root"]).put(run)
+            self._store(self.registry.resolve(workspace_id)["root"]).put(run)
         elif self.fallback_root is not None:
             self._store(self.fallback_root).put(run)
         else:
@@ -291,7 +291,7 @@ class _WorkspaceJobQueue:
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         workspace_id = payload.get("workspace_id")
         if isinstance(workspace_id, str) and workspace_id:
-            self._queue(self.registry.get(workspace_id)["root"]).enqueue(job_id, payload)
+            self._queue(self.registry.resolve(workspace_id)["root"]).enqueue(job_id, payload)
         elif self.fallback_root is not None:
             self._queue(self.fallback_root).enqueue(job_id, payload)
         else:
@@ -351,7 +351,7 @@ class _WorkspaceEvidenceStores:
             workspace_id = run.payload.get("workspace_id")
             if isinstance(workspace_id, str) and workspace_id:
                 try:
-                    return Path(str(self.registry.get(workspace_id)["root"])).resolve()
+                    return Path(str(self.registry.resolve(workspace_id)["root"])).resolve()
                 except Exception as exc:
                     _LOG.debug("workspace lookup failed for run %s: %s", run_id, exc)
         return self.fallback_root
@@ -469,7 +469,7 @@ class _WorkspaceGraphStore:
         return self.fallback_root / ".docs" / "x20.sqlite3"
 
     def _store(self, workspace_id: str | None = None) -> SqliteGraphStore:
-        selected = self.registry.get(workspace_id) if workspace_id else self.registry.active()
+        selected = self.registry.resolve(workspace_id) if workspace_id else self.registry.active()
         root = Path(str(selected["root"])).resolve() if selected is not None else self.fallback_root
         return SqliteGraphStore(root / ".docs" / "x20.sqlite3")
 
@@ -951,7 +951,7 @@ def _build_worker(
             workspace_id = payload.get("workspace_id")
             if isinstance(workspace_id, str) and workspace_id:
                 try:
-                    selected = registry.get(workspace_id)
+                    selected = registry.resolve(workspace_id)
                 except WorkspaceRegistryError:
                     # A CLI worker may use the user-level registry while the
                     # durable queue lives inside the workspace. The worker is
