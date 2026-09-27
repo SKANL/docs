@@ -885,7 +885,8 @@ class X20Application:
     def _progress(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)
         payload = dict(run.payload) if isinstance(run.payload, Mapping) else {}
-        checkpoint = payload.get("progress") if isinstance(payload.get("progress"), Mapping) else {}
+        progress = payload.get("progress")
+        checkpoint: Mapping[Any, Any] = progress if isinstance(progress, Mapping) else {}
         event = {
             "type": str(checkpoint.get("stage", run.status)),
             "progress": checkpoint.get("percent"),
@@ -1159,6 +1160,7 @@ class X20Application:
                 None,
             )
         elif self.workspace_registry is not None:
+            assert isinstance(workspace_id, str)
             try:
                 workspace = self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
@@ -1371,10 +1373,13 @@ class X20Application:
         if isinstance(workspace_id, str) and self.workspace_registry is not None:
             self._resolve_workspace(workspace_id)
         promote_for_workspace = getattr(self.baseline_store, "promote_for_workspace", None)
-        promote = promote_for_workspace if isinstance(workspace_id, str) and callable(promote_for_workspace) else getattr(self.baseline_store, "promote", None)
-        if not callable(promote):
-            raise APIError("not_found", "Baseline not found", 404)
-        result = promote(workspace_id, baseline_id, data) if promote is promote_for_workspace else promote(baseline_id, data)
+        if isinstance(workspace_id, str) and callable(promote_for_workspace):
+            result = promote_for_workspace(workspace_id, baseline_id, data)
+        else:
+            promote = getattr(self.baseline_store, "promote", None)
+            if not callable(promote):
+                raise APIError("not_found", "Baseline not found", 404)
+            result = promote(baseline_id, data)
         if result is None:
             raise APIError("not_found", "Baseline not found", 404)
         return Response.json(_dict(result))

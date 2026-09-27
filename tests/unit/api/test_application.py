@@ -1053,6 +1053,33 @@ class Baselines:
         return {"id": baseline_id, "status": "passed", "promoted": True}
 
 
+def test_promote_baseline_uses_non_workspace_callback_when_workspace_callback_is_not_callable(tmp_path):
+    class FallbackBaselines:
+        promote_for_workspace = None
+
+        def __init__(self):
+            self.calls = []
+
+        def promote(self, baseline_id, payload):
+            self.calls.append((baseline_id, payload))
+            return {"id": baseline_id, "promoted": True}
+
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Workspace", tmp_path / "workspace")
+    baselines = FallbackBaselines()
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), baseline_store=baselines, workspace_registry=registry,
+    )
+
+    response = application._promote_baseline(
+        Request("POST", "/v2/baselines/promotions", body={"baseline_id": "base-1", "workspace_id": workspace["id"]})
+    )
+
+    assert body(response) == {"id": "base-1", "promoted": True}
+    assert baselines.calls == [("base-1", {"baseline_id": "base-1", "workspace_id": workspace["id"]})]
+
+
 class Plugins:
     def list(self):
         return [{"id": "plugin-b", "version": "2"}, {"id": "plugin-a", "version": "1"}]

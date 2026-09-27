@@ -8,6 +8,7 @@ import mimetypes
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import uuid
 from collections.abc import Mapping
@@ -635,7 +636,7 @@ def run_document(
         worker_output = subprocess.DEVNULL if os.name == "nt" else worker_log.open("ab")
         subprocess.Popen(
             [
-                os.fspath(Path(os.sys.executable)),
+                sys.executable,
                 "-m",
                 "docs.local_worker",
                 "--workspace-root",
@@ -667,9 +668,10 @@ def run_document(
                 if item.status in {"succeeded", "completed", "failed", "cancelled", "expired"}:
                     break
                 time.sleep(0.25)
+        queued_run = SqliteRunStore(state).get(run_id)
         result = {
             "id": run_id,
-            "status": SqliteRunStore(state).get(run_id).status if SqliteRunStore(state).get(run_id) else "queued",
+            "status": queued_run.status if queued_run is not None else "queued",
         }
         typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
         return
@@ -722,11 +724,11 @@ def run_document(
         SqliteFindingStore(state),
         SqlitePublicationStore(state),
     )
-    result = worker.run_once()
-    if result is None:
+    worker_result = worker.run_once()
+    if worker_result is None:
         raise typer.BadParameter(f"Unable to claim synchronous run: {run_id}")
     final = SqliteRunStore(state).get(run_id)
-    status = final.status if final is not None else result.state
+    status = final.status if final is not None else worker_result.state
     output = {"id": run_id, "status": status}
     typer.echo(json.dumps(output, sort_keys=True) if json_output else f"{run_id}\t{status}")
 
