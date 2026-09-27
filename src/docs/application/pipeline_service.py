@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.atomic_transform import AtomicTransform, TransformSpec
-from docs.application.pipeline_components import ArtifactStore, PipelinePlanner, PipelineRegistry
 from docs.application.pipeline_executor import PipelineReport, StageHandler, _PipelineExecutor
+from docs.application.pipeline_registry import PipelinePlanner, PipelineRegistry
 from docs.application.provenance import ProvenanceLedger
+from docs.application.stage_artifact_store import StageArtifactStore
 from docs.domain.pipeline_kernel import (
     ArtifactContract,
     ArtifactRecord,
@@ -122,7 +123,7 @@ class PipelineService:
         run_id_sink: Callable[[str], None] | None = None,
         excluded_stages: frozenset[str] = frozenset(),
         cleanup: Callable[[], None] | None = None,
-        artifact_store: ArtifactStore | None = None,
+        artifact_store: StageArtifactStore | None = None,
         record_sink: Callable[[tuple[ArtifactRecord, ...]], None] | None = None,
         run_start: Callable[[], None] | None = None,
         observability: ObservabilityPort | None = None,
@@ -438,7 +439,7 @@ class PipelineService:
         *,
         artifact_root: Path | None = None,
         artifact_writer: Callable[[str, str, str], ArtifactRecord] | None = None,
-        artifact_store: ArtifactStore | None = None,
+        artifact_store: StageArtifactStore | None = None,
         contract: ArtifactContract | None = None,
         record_sink: Callable[[tuple[ArtifactRecord, ...]], None] | None = None,
         receipt_directory: Callable[[], str] | None = None,

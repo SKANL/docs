@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from docs.application.atomic_transform import AtomicTransform
-from docs.application.pipeline_components import PUBLIC_PIPELINES, ArtifactStore
+from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import (
     FULL_STAGE_IDS,
     PipelineRequest,
@@ -15,6 +15,7 @@ from docs.application.pipeline_service import (
     PublicationSpec,
 )
 from docs.application.provenance import ProvenanceLedger
+from docs.application.stage_artifact_store import StageArtifactStore
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
@@ -159,7 +160,7 @@ def _service(
     dependencies: SimpleNamespace,
     policy: PipelinePolicy | None = None,
     capabilities: ToolCapabilityRegistry | None = None,
-    artifact_store: ArtifactStore | None = None,
+    artifact_store: StageArtifactStore | None = None,
     ledger: ProvenanceLedger | None = None,
 ) -> PipelineService:
     stage_names = {
@@ -698,7 +699,7 @@ def test_materializes_durable_records_for_successful_non_skipped_stages(tmp_path
     service = _service(
         tmp_path,
         _dependencies(tmp_path, calls),
-        artifact_store=ArtifactStore(tmp_path / "stage-records", AtomicFileAdapter()),
+        artifact_store=StageArtifactStore(tmp_path / "stage-records", AtomicFileAdapter()),
     )
 
     report = service.execute(PipelineRequest(run_id="durable-stage-records"))

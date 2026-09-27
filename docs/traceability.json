@@ -502,7 +502,7 @@
   },
   "public_pipelines": {
     "status": "registered-and-dispatchable",
-    "catalog": "src/docs/application/pipeline_components.py:PUBLIC_PIPELINES",
+    "catalog": "src/docs/application/pipeline_registry.py:PUBLIC_PIPELINES",
     "registry": "src/docs/application/pipeline_service.py:PipelineService.__init__",
     "stage_backed": [
       {

@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.package_release_service import PackageReleaseService
-from docs.application.pipeline_components import ArtifactStore
 from docs.application.provenance import ProvenanceLedger
+from docs.application.stage_artifact_store import StageArtifactStore
 from docs.application.stage_provider import StageProvider
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
@@ -20,7 +20,7 @@ from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToo
 class PipelineResources:
     capabilities: ToolCapabilityRegistry
     ledger: ProvenanceLedger
-    artifact_store: ArtifactStore
+    artifact_store: StageArtifactStore
     publication: PackageReleaseService
 
 
@@ -90,7 +90,7 @@ def assemble_pipeline_resources(
         ),
     )
     ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
-    store = ArtifactStore(document_root / "runs" / "v2-stage-artifacts", atomic_file_writer)
+    store = StageArtifactStore(document_root / "runs" / "v2-stage-artifacts", atomic_file_writer)
     release_root = document_root / "output" / "release"
     publication = PackageReleaseService(
         artifact=artifact or (lambda: None),

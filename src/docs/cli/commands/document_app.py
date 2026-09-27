@@ -23,7 +23,7 @@ from docs.application.document_pipeline import (
     _current_input_identities,
     _resolve_publish_inputs,
 )
-from docs.application.pipeline_components import PUBLIC_PIPELINES
+from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineRequest
 from docs.application.provenance import ProvenanceLedger
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
