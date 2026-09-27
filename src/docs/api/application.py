@@ -24,16 +24,16 @@ from docs.domain.runtime_records import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
-from .dto import (
+from .enterprise import encode_sse_event
+from .http import APIError, Request, Response, Router, paginate
+from .openapi import build_openapi_document, canonical_json
+from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
     WorkspacePage,
     WorkspaceRenameRequest,
     WorkspaceResponse,
 )
-from .enterprise import encode_sse_event
-from .http import APIError, Request, Response, Router, paginate
-from .openapi import build_openapi_document, canonical_json
 
 _LOG = logging.getLogger("docs.api.application")
 

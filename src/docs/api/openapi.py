@@ -6,7 +6,7 @@ import copy
 import json
 from typing import Any
 
-from .dto import workspace_openapi_schemas
+from .workspace_dto import workspace_openapi_schemas
 
 
 def _ref(name: str) -> dict[str, str]:

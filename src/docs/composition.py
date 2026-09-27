@@ -1,4 +1,4 @@
-# src/docs/cli/_shared.py
+# src/docs/composition.py
 from __future__ import annotations
 
 import json
