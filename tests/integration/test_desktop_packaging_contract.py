@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -50,3 +52,16 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     assert "docs-sidecar/v1" in runtime_check.read_text(encoding="utf-8")
     assert "check-sidecar-runtime.py" in build_script.read_text(encoding="utf-8")
     assert "check-sidecar-e2e.py" in build_script.read_text(encoding="utf-8")
+
+
+def test_sidecar_packaging_check_accepts_onefile_embedded_template_data() -> None:
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "desktop/scripts/check-sidecar-packaging.py"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

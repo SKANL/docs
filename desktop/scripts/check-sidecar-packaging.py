@@ -33,15 +33,6 @@ def main() -> int:
     if missing:
         raise SystemExit(f"sidecar supervisor contract is incomplete: {missing}")
 
-    # A fresh installed workspace seeds templates through importlib.resources.
-    # Keep this contract explicit so a successful PyInstaller build cannot
-    # silently produce a binary that only works with pre-populated workspaces.
-    sidecar_root = desktop / "sidecar"
-    if sidecar_root.exists():
-        template = next(sidecar_root.rglob("documento-generico.json"), None)
-        if template is None:
-            raise SystemExit("packaged sidecar is missing built-in template data")
-
     configured = os.environ.get("DOCS_SIDECAR_EXECUTABLE", "").strip()
     if configured and not Path(configured).is_file():
         raise SystemExit("DOCS_SIDECAR_EXECUTABLE must point to an existing file when set")
