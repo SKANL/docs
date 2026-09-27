@@ -11,10 +11,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ..domain.workspace_format import validate_workspace_layout, validate_workspace_marker
+from ..sidecar import SidecarConfig
+from ..sidecar import build_application as build_sidecar_application
 from .auth import Principal
 from .oidc import BearerTokenValidator, JWKSCacheProvider
 from .server import TransportConfig
-from ..sidecar import SidecarConfig, build_application as build_sidecar_application
 
 
 def build_application(config: TransportConfig):
@@ -28,6 +30,9 @@ def build_application(config: TransportConfig):
     workspace = config.workspace or _workspace_from_environment()
     if workspace is None:
         raise ValueError("workspace is required for the self-hosted API")
+    workspace = Path(workspace).expanduser().resolve()
+    validate_workspace_layout(workspace, workspace / "documents", workspace / "templates")
+    validate_workspace_marker(workspace)
     validator = _token_validator()
     application = build_sidecar_application(
         SidecarConfig(
@@ -74,7 +79,7 @@ def _token_validator():
     raw = os.environ.get("DOCS_API_TOKENS", "")
     entries = {}
     for item in raw.split(","):
-        token, separator, subject = item.strip().partition("=")
+        token, _separator, subject = item.strip().partition("=")
         if token:
             entries[token] = subject or "docs-api-user"
 

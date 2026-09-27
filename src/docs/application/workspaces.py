@@ -20,7 +20,12 @@ from docs.domain.workspace_format import (
 
 
 class WorkspaceRegistryError(ValueError):
-    pass
+    """A typed workspace registry or canonical-format failure."""
+
+    def __init__(self, code: str, path: Path | None = None) -> None:
+        self.code = code
+        self.path = path
+        super().__init__(f"{code}: {path}" if path is not None else code)
 
 
 class WorkspaceRegistry:
@@ -54,7 +59,7 @@ class WorkspaceRegistry:
                     write_workspace_marker(resolved)
                 self._ensure_layout(resolved)
             except WorkspaceFormatError as exc:
-                raise WorkspaceRegistryError(str(exc)) from exc
+                raise WorkspaceRegistryError(exc.code, exc.path) from exc
             except OSError as exc:
                 raise WorkspaceRegistryError("invalid_workspace_root") from exc
             item = {"id": uuid4().hex, "name": normalized, "root": str(resolved)}
@@ -111,10 +116,15 @@ class WorkspaceRegistry:
                     return dict(item)
         raise WorkspaceRegistryError("workspace_not_found")
 
-    def select(self, workspace_id: str) -> dict[str, Any]:
+    def resolve(self, workspace_id: str) -> dict[str, Any]:
+        """Return a registered workspace only when its canonical root is valid."""
         item = self.get(workspace_id)
+        self._validate_root(Path(str(item["root"])).expanduser().resolve())
+        return item
+
+    def select(self, workspace_id: str) -> dict[str, Any]:
+        item = self.resolve(workspace_id)
         root = Path(str(item["root"])).expanduser().resolve()
-        self._validate_root(root)
         self._ensure_layout(root)
         self._seed_builtin_templates(root)
         with self._lock:
@@ -152,9 +162,8 @@ class WorkspaceRegistry:
             active = self._read().get("active")
         if not active:
             return None
-        item = self.get(active)
+        item = self.resolve(active)
         root = Path(str(item["root"])).expanduser().resolve()
-        self._validate_root(root)
         self._ensure_layout(root)
         return item
 
@@ -164,7 +173,7 @@ class WorkspaceRegistry:
             validate_workspace_layout(root, root / "documents", root / "templates")
             validate_workspace_marker(root)
         except WorkspaceFormatError as exc:
-            raise WorkspaceRegistryError(str(exc)) from exc
+            raise WorkspaceRegistryError(exc.code, exc.path) from exc
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():

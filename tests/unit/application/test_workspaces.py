@@ -177,3 +177,34 @@ def test_registry_active_rejects_missing_marker_before_creating_workspace_layout
         WorkspaceRegistry(registry_path).active()
 
     assert not root.exists()
+
+
+def test_registry_resolve_returns_only_a_valid_canonical_workspace(tmp_path: Path) -> None:
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    item = registry.create("Primary", tmp_path / "workspace")
+
+    assert registry.resolve(item["id"]) == item
+
+
+def test_registry_resolve_rejects_missing_marker_without_mutating_root(
+    tmp_path: Path,
+) -> None:
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    item = registry.create("Primary", tmp_path / "workspace")
+    root = Path(item["root"])
+    (root / "workspace.json").unlink()
+    before = {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+    with pytest.raises(WorkspaceRegistryError) as captured:
+        registry.resolve(item["id"])
+
+    assert captured.value.code == "workspace_marker_missing"
+    assert {
+        path.relative_to(root): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    } == before

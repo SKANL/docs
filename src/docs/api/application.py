@@ -472,7 +472,7 @@ class X20Application:
                     400,
                 )
             try:
-                workspace = self.workspace_registry.get(workspace_id)
+                workspace = self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             document_id = data.get("document_id")
@@ -562,7 +562,7 @@ class X20Application:
         _LOG.info("document_import_started")
         workspace_id = data.get("workspace_id")
         try:
-            workspace = self.workspace_registry.get(str(workspace_id))
+            workspace = self._resolve_workspace(str(workspace_id))
             result = self.import_service.import_base64(
                 workspace["root"],
                 str(data.get("filename", "")),
@@ -591,7 +591,7 @@ class X20Application:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         workspace_id = str(request.query.get("workspace_id", ""))
         try:
-            workspace = self.workspace_registry.get(workspace_id)
+            workspace = self._resolve_workspace(workspace_id)
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         if not isinstance(request.body, (bytes, bytearray)) or not request.body:
@@ -615,7 +615,7 @@ class X20Application:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
-            workspace = self.workspace_registry.get(workspace_id)
+            workspace = self._resolve_workspace(workspace_id)
             result = self.document_creator(
                 workspace["root"],
                 str(data.get("document_id", "")),
@@ -634,7 +634,7 @@ class X20Application:
         if self.workspace_registry is None:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
-            workspace = self.workspace_registry.get(workspace_id)
+            workspace = self._resolve_workspace(workspace_id)
             if action in {"build", "verify", "publish"}:
                 manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
                 if not manifest.is_file():
@@ -669,7 +669,7 @@ class X20Application:
         if not workspace_id:
             raise APIError("workspace_required", "workspace_id is required", 400)
         try:
-            workspace = self.workspace_registry.get(str(workspace_id))
+            workspace = self._resolve_workspace(str(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         document_root = Path(str(workspace["root"])) / "documents" / document_id
@@ -736,11 +736,22 @@ class X20Application:
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
         if not workspace_id:
             raise APIError("workspace_required", "workspace_id is required", 400)
+        return self._resolve_workspace(str(workspace_id))
+
+    def _resolve_workspace(self, workspace_id: str) -> Mapping[str, Any]:
+        """Resolve and validate a workspace before any workspace-owned I/O."""
+        if self.workspace_registry is None:
+            raise APIError(
+                "workspace_not_configured",
+                "Workspace registry is not configured",
+                503,
+            )
         try:
-            workspace = self.workspace_registry.get(str(workspace_id))
+            return self.workspace_registry.resolve(workspace_id)
         except WorkspaceRegistryError as exc:
-            raise APIError(str(exc), "Workspace not found", 404) from exc
-        return workspace
+            if exc.code == "workspace_not_found":
+                raise APIError(exc.code, "Workspace not found", 404) from exc
+            raise APIError(exc.code, "Workspace format is invalid", 409) from exc
 
     def _workspace(self, workspace_id: str, request: Request) -> Response:
         del request
@@ -993,13 +1004,13 @@ class X20Application:
             raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         if workspace_id and hasattr(self.document_store, "list_for_workspace"):
             try:
-                workspace = self.workspace_registry.get(workspace_id)
+                workspace = self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             items = self.document_store.list_for_workspace(workspace["root"])
         elif workspace_id:
             try:
-                workspace = self.workspace_registry.get(workspace_id)
+                workspace = self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             documents = Path(str(workspace["root"])) / "documents"
@@ -1067,7 +1078,7 @@ class X20Application:
             raise APIError("workspace_required", "workspace_id is required", 400)
         if requested and self.workspace_registry is not None:
             try:
-                self.workspace_registry.get(requested)
+                self._resolve_workspace(requested)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             return requested
@@ -1131,7 +1142,7 @@ class X20Application:
             raise APIError("workspace_required", "workspace_id is required", 400)
         if workspace_id and self.workspace_registry is not None and hasattr(self.document_store, "list_for_workspace"):
             try:
-                workspace = self.workspace_registry.get(workspace_id)
+                workspace = self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             document = next(
@@ -1141,7 +1152,7 @@ class X20Application:
             )
         elif self.workspace_registry is not None:
             try:
-                workspace = self.workspace_registry.get(workspace_id)
+                workspace = self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             manifest = Path(str(workspace["root"])) / "documents" / document_id / "document.json"
@@ -1196,7 +1207,7 @@ class X20Application:
         workspace_id = payload.get("workspace_id")
         if self.workspace_registry is not None and isinstance(workspace_id, str):
             try:
-                workspace_root = Path(str(self.workspace_registry.get(workspace_id)["root"])).resolve()
+                workspace_root = Path(str(self._resolve_workspace(workspace_id)["root"])).resolve()
                 metadata = _dict(artifact).get("metadata", {})
                 raw_value = metadata.get("value") if isinstance(metadata, Mapping) else None
                 record = ast.literal_eval(raw_value) if isinstance(raw_value, str) else raw_value
@@ -1329,7 +1340,7 @@ class X20Application:
         if not workspace_id:
             raise APIError("workspace_required", "workspace_id is required", 400)
         try:
-            workspace = self.workspace_registry.get(str(workspace_id))
+            workspace = self._resolve_workspace(str(workspace_id))
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         try:
@@ -1349,6 +1360,8 @@ class X20Application:
         workspace_id = data.get("workspace_id")
         if self.workspace_registry is not None and not isinstance(workspace_id, str):
             raise APIError("workspace_required", "workspace_id is required to promote a baseline", 400)
+        if isinstance(workspace_id, str) and self.workspace_registry is not None:
+            self._resolve_workspace(workspace_id)
         promote_for_workspace = getattr(self.baseline_store, "promote_for_workspace", None)
         promote = promote_for_workspace if isinstance(workspace_id, str) and callable(promote_for_workspace) else getattr(self.baseline_store, "promote", None)
         if not callable(promote):
@@ -1372,7 +1385,7 @@ class X20Application:
             raise APIError("workspace_required", "workspace_id is required", 400)
         if workspace_id and self.workspace_registry is not None:
             try:
-                self.workspace_registry.get(workspace_id)
+                self._resolve_workspace(workspace_id)
             except WorkspaceRegistryError as exc:
                 raise APIError(str(exc), "Workspace not found", 404) from exc
             list_for_workspace = getattr(store, "list_for_workspace", None)
