@@ -20,7 +20,15 @@ workspace_app = typer.Typer(help="Manage persistent Doc Harness workspaces.")
 
 
 def _registry() -> WorkspaceRegistry:
-    return WorkspaceRegistry()
+    """Resolve the cwd-local registry before configured/global fallbacks.
+
+    ``doc init`` activates its workspace in ``.docs/workspaces.json`` so the
+    workspace command group must consult that same registry.  When no local
+    registry exists, ``WorkspaceRegistry`` retains its explicit environment
+    variable and global-home fallback behavior.
+    """
+    local_registry = Path.cwd() / ".docs" / "workspaces.json"
+    return WorkspaceRegistry(local_registry if local_registry.is_file() else None)
 
 
 def _migration_record_payload(record: MigrationRecord) -> dict[str, Any]:
