@@ -1,10 +1,10 @@
 # src/docs/infrastructure/ingest/opendataloader_pdf_adapter.py
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import uuid
-import os
 from pathlib import Path
 from typing import Any
 

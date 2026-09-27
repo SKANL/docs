@@ -999,4 +999,3 @@ def _package_lock(output: Path):
     """Serialize existing release-package merge and publication transactions."""
     with owned_directory_lock(output.with_name(output.name + ".lock")):
         yield
-

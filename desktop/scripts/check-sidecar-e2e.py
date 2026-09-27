@@ -47,9 +47,9 @@ def main() -> int:
                 if call(base, "/health")[1].get("ready"):
                     healthy = True
                     break
-            except OSError:
+            except OSError as error:
                 if process.poll() is not None:
-                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}")
+                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}") from error
                 time.sleep(0.25)
         if not healthy:
             raise SystemExit("packaged sidecar did not become healthy within 20 seconds")

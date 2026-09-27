@@ -5,9 +5,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import signal
 import socket
 import subprocess
-import signal
 import tempfile
 import time
 import urllib.error

@@ -10,8 +10,8 @@ import socket
 import subprocess
 import tempfile
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 from process_cleanup import terminate_process_tree
@@ -56,9 +56,9 @@ def main() -> int:
             try:
                 if call(base, "/health")[1].get("ready"):
                     break
-            except OSError:
+            except OSError as error:
                 if process.poll() is not None:
-                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}")
+                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}") from error
                 time.sleep(0.25)
         else:
             raise SystemExit("packaged sidecar did not become healthy within 60 seconds")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -26,7 +26,7 @@ def main() -> int:
     manifest = {
         "version": args.version,
         "notes": f"Review Studio {args.version}",
-        "pub_date": datetime.now(timezone.utc).isoformat(),
+        "pub_date": datetime.now(UTC).isoformat(),
         "platforms": platforms,
     }
     args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

@@ -69,4 +69,3 @@ if (!terminal) throw new Error("real browser run timed out");
 await startProxy();
 process.stdout.write(`real Review Studio fixture ready: ${run.id}`);
 setInterval(() => {}, 1000);
-

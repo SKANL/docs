@@ -25,5 +25,3 @@ def from_source_template(template: Template) -> dict[str, Any]:
     """Serialize exactly as current callers serialize a ``Template``."""
 
     return template.model_dump(exclude_none=True, mode="python")
-
-
