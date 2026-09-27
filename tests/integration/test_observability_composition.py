@@ -28,7 +28,10 @@ def _api_kwargs():
     }
 
 
-def test_cli_composition_invokes_environment_observability_factory(monkeypatch, tmp_path):
+def test_cli_composition_invokes_environment_observability_factory(
+    monkeypatch, canonical_workspace_root
+):
+    tmp_path = canonical_workspace_root
     marker = object()
     monkeypatch.setattr(application_composition, "create_observability_from_env", lambda: marker)
     workspace = Workspace(tmp_path / "documents", tmp_path / "templates")

@@ -21,13 +21,10 @@ _TEMPLATE = {
 
 
 @pytest.fixture
-def ws(tmp_path, monkeypatch):
-    (tmp_path / "documents").mkdir()
+def ws(canonical_cli_workspace):
+    tmp_path = canonical_cli_workspace
     templates = tmp_path / "templates"
-    templates.mkdir()
     (templates / "tesina.json").write_text(json.dumps(_TEMPLATE), encoding="utf-8")
-    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(tmp_path / "documents"))
-    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
     # `doc new` is Task 6 scope and doesn't exist yet — same deviation as
     # Tasks 1-2 (test_cli_core.py / test_cli_collection.py).
     Deps().documents.create("doc1", "tesina")

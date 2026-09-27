@@ -29,17 +29,17 @@ def test_the_command_is_registered_with_help_text():
     assert "--to" in result.output
 
 
-def test_a_missing_input_file_fails_with_a_spanish_message(tmp_path):
+def test_a_missing_input_file_fails_with_a_spanish_message(tmp_path, canonical_cli_workspace):
     result = runner.invoke(app, ["translate", str(tmp_path / "nope.pdf"), "--to", "es"])
     assert result.exit_code != 0
     assert "no existe" in result.output.lower()
 
 
-def test_the_target_language_is_required(sample_pdf):
+def test_the_target_language_is_required(sample_pdf, canonical_cli_workspace):
     assert runner.invoke(app, ["translate", str(sample_pdf)]).exit_code != 0
 
 
-def test_the_first_run_writes_a_document_and_a_pending_slot_file(sample_pdf, tmp_path):
+def test_the_first_run_writes_a_document_and_a_pending_slot_file(sample_pdf, tmp_path, canonical_cli_workspace):
     out = tmp_path / "out.pdf"
     result = runner.invoke(app, ["translate", str(sample_pdf), "--to", "es", "--output", str(out)])
     assert result.exit_code == 0, result.output
@@ -51,7 +51,7 @@ def test_the_first_run_writes_a_document_and_a_pending_slot_file(sample_pdf, tmp
     assert all(b["translation"] == "" for b in blocks)
 
 
-def test_filling_the_slot_file_translates_on_the_second_run(sample_pdf, tmp_path):
+def test_filling_the_slot_file_translates_on_the_second_run(sample_pdf, tmp_path, canonical_cli_workspace):
     out = tmp_path / "out.pdf"
     runner.invoke(app, ["translate", str(sample_pdf), "--to", "es", "--output", str(out)])
 
@@ -69,7 +69,7 @@ def test_filling_the_slot_file_translates_on_the_second_run(sample_pdf, tmp_path
     assert (tmp_path / "translations").is_dir(), "translations must land in the memory"
 
 
-def test_the_third_run_is_byte_identical_to_the_second(sample_pdf, tmp_path):
+def test_the_third_run_is_byte_identical_to_the_second(sample_pdf, tmp_path, canonical_cli_workspace):
     out = tmp_path / "out.pdf"
     runner.invoke(app, ["translate", str(sample_pdf), "--to", "es", "--output", str(out)])
     pending = tmp_path / "out.pdf.pending.json"
@@ -84,20 +84,20 @@ def test_the_third_run_is_byte_identical_to_the_second(sample_pdf, tmp_path):
     assert out.read_bytes() == second, "a warm cache must reproduce identical bytes"
 
 
-def test_the_output_line_reports_what_was_not_translated(sample_pdf, tmp_path):
+def test_the_output_line_reports_what_was_not_translated(sample_pdf, tmp_path, canonical_cli_workspace):
     out = tmp_path / "out.pdf"
     result = runner.invoke(app, ["translate", str(sample_pdf), "--to", "es", "--output", str(out)])
     assert "sin traducir" in result.output
     assert "Pendiente:" in result.output
 
 
-def test_the_default_output_name_carries_the_target_language(sample_pdf):
+def test_the_default_output_name_carries_the_target_language(sample_pdf, canonical_cli_workspace):
     result = runner.invoke(app, ["translate", str(sample_pdf), "--to", "pt"])
     assert result.exit_code == 0, result.output
     assert sample_pdf.with_name("doc.pt.pdf").exists()
 
 
-def test_identical_blocks_share_one_translation(tmp_path):
+def test_identical_blocks_share_one_translation(tmp_path, canonical_cli_workspace):
     """A DELIBERATE decision, pinned here so it cannot drift into a bug report.
 
     The translation memory is content-addressed, and that is precisely what
@@ -150,7 +150,7 @@ def test_identical_blocks_share_one_translation(tmp_path):
         ("truncated.pdf", b"%PDF-1.7\nstartxref\n999999\n%%EOF\n"),
     ],
 )
-def test_a_malformed_pdf_exits_non_zero(tmp_path, name, content):
+def test_a_malformed_pdf_exits_non_zero(tmp_path, name, content, canonical_cli_workspace):
     """`AGENTS.md` promises exit codes usable in CI. A malformed input
     reported as a successful translation would make that promise false."""
     src = tmp_path / name
@@ -159,7 +159,7 @@ def test_a_malformed_pdf_exits_non_zero(tmp_path, name, content):
     assert result.exit_code != 0
 
 
-def test_a_pdf_with_no_text_layer_exits_non_zero(tmp_path):
+def test_a_pdf_with_no_text_layer_exits_non_zero(tmp_path, canonical_cli_workspace):
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("pdf")
     import matplotlib.pyplot as plt

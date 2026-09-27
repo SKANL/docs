@@ -14,13 +14,10 @@ _TEMPLATE = {"type": "tesina", "title": "Tesina", "sections": [], "section_contr
 
 
 @pytest.fixture
-def ws(tmp_path, monkeypatch):
-    (tmp_path / "documents").mkdir()
+def ws(canonical_cli_workspace):
+    tmp_path = canonical_cli_workspace
     templates = tmp_path / "templates"
-    templates.mkdir()
     (templates / "tesina.json").write_text(json.dumps(_TEMPLATE), encoding="utf-8")
-    monkeypatch.setenv("DOCS_DOCUMENTS_DIR", str(tmp_path / "documents"))
-    monkeypatch.setenv("DOCS_TEMPLATES_DIR", str(templates))
     runner.invoke(app, ["doc", "new", "doc1", "--template", "tesina"])
     return tmp_path
 
