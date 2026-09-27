@@ -356,6 +356,19 @@ def test_list_runs_returns_records_from_injected_store():
     assert body(response)["items"] == [application.run_store.get("run-1").to_dict()]
 
 
+def test_list_runs_filters_by_workspace_id_inside_run_payload():
+    application = app()
+    run = Run("run-workspace-one", payload={"document_id": "d1", "workspace_id": "workspace-one"}, created_at="2026-01-01T00:00:00+00:00")
+    other = Run("run-workspace-two", payload={"document_id": "d2", "workspace_id": "workspace-two"}, created_at="2026-01-02T00:00:00+00:00")
+    application.run_store.put(run)
+    application.run_store.put(other)
+
+    response = application.dispatch(Request("GET", "/v2/runs?workspace_id=workspace-one"))
+
+    assert response.status == 200
+    assert body(response)["items"] == [run.to_dict()]
+
+
 @pytest.mark.parametrize("path", ["/v2/artifacts", "/v2/templates", "/v2/revisions", "/v2/publications"])
 def test_review_studio_collection_routes_return_empty_pages(path):
     response = app().dispatch(Request("GET", path))
