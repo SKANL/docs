@@ -16,6 +16,11 @@ from docs.domain.workspace import Workspace
 from docs.sidecar import SidecarConfig, _persist_worker_evidence, build_application, build_server, run
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
+    """Opt this module into canonical temporary workspaces."""
+
+
 def test_api_document_creation_composes_the_requested_workspace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

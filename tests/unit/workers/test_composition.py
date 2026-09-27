@@ -15,6 +15,11 @@ from docs.workers.composition import (
 from docs.workers.service import WorkerService
 
 
+@pytest.fixture(autouse=True)
+def _canonical_workspace_root(canonical_workspace_root):
+    """Opt this module into canonical temporary workspaces."""
+
+
 class Queue:
     def enqueue(self, job_id, payload): pass
     def claim(self, worker_id): return None
