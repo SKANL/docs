@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .domain.workspace_format import validate_workspace_layout, validate_workspace_marker
 from .infrastructure.persistence.x20 import (
     SqliteArtifactStore,
     SqliteFindingStore,
@@ -22,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--iterations", type=int, default=1)
     args = parser.parse_args(argv)
     root = args.workspace_root.expanduser().resolve()
+    validate_workspace_layout(root, root / "documents", root / "templates")
+    validate_workspace_marker(root)
     state = root / ".docs" / "x20.sqlite3"
     queue = SqliteJobQueue(state)
     run_store = SqliteRunStore(state)
