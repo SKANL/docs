@@ -9,11 +9,11 @@ from docs.domain.ports.job_queue import CancellableJobQueue, JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.plugin_executor import PluginExecutor
 from docs.domain.ports.run_store import ArtifactStore, PassportStore, RunStore
-from docs.domain.ports.x20 import X20_PORT_CONTRACT
+from docs.domain.runtime_records import SCHEMA
 
 
 def test_public_port_contract_is_explicitly_versioned() -> None:
-    assert X20_PORT_CONTRACT == "docs.x20/v1"
+    assert SCHEMA == "docs.x20/v1"
 
 
 def test_runtime_ports_are_protocols() -> None:

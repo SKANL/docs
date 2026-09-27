@@ -10,9 +10,9 @@ from typing import cast
 import pytest
 
 from docs.domain.runtime_records import Artifact, Blob, Graph, Job, Passport, Run
-from docs.infrastructure.persistence.x20 import (
-    FilesystemBlobStore,
-    RedisJobQueue,
+from docs.infrastructure.persistence.filesystem_blob_store import FilesystemBlobStore
+from docs.infrastructure.persistence.redis_job_queue import _REDIS_QUARANTINE_SCRIPT, RedisJobQueue
+from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteGraphStore,
     SqliteJobQueue,
@@ -293,16 +293,12 @@ def test_redis_queue_quarantines_job_that_fails_contract_decoding(monkeypatch: p
 
 
 def test_redis_quarantine_script_removes_claim_without_decoding_raw_payload() -> None:
-    from docs.infrastructure.persistence.x20 import _REDIS_QUARANTINE_SCRIPT
-
     assert "cjson.decode" not in _REDIS_QUARANTINE_SCRIPT
     assert "HGETALL" not in _REDIS_QUARANTINE_SCRIPT
     assert "ARGV[1]" in _REDIS_QUARANTINE_SCRIPT
 
 
 def test_redis_quarantine_removes_only_claimed_duplicate_payload_by_id() -> None:
-    from docs.infrastructure.persistence.x20 import _REDIS_QUARANTINE_SCRIPT
-
     payload = b'{"same":"payload"}'
     hashes = {"job-1": payload, "job-2": payload}
     quarantine: list[bytes] = []
