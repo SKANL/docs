@@ -25,6 +25,23 @@ def test_registry_persists_create_and_active_selection(tmp_path: Path) -> None:
     assert registry.active() == first
 
 
+def test_registry_construction_and_read_do_not_create_missing_parent(tmp_path: Path) -> None:
+    registry_path = tmp_path / "missing" / "registry.json"
+    registry = WorkspaceRegistry(registry_path)
+
+    assert not registry_path.parent.exists()
+    assert registry.list() == []
+    assert not registry_path.parent.exists()
+
+
+def test_registry_first_write_creates_missing_parent(tmp_path: Path) -> None:
+    registry_path = tmp_path / "missing" / "registry.json"
+
+    WorkspaceRegistry(registry_path).create("Primary", tmp_path / "workspace")
+
+    assert registry_path.is_file()
+
+
 def test_registry_rejects_invalid_name_and_duplicate(tmp_path: Path) -> None:
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     registry.create("Primary", tmp_path / "one")
@@ -117,6 +134,7 @@ def test_registry_create_writes_the_canonical_workspace_marker(tmp_path: Path) -
 
 def test_registry_rejects_unversioned_workspace_without_mutating_it(tmp_path: Path) -> None:
     root = tmp_path / "legacy"
+    registry_path = tmp_path / "registry" / "registry.json"
     shutil.copytree(CURRENT_UNVERSIONED, root)
     before = {
         path.relative_to(root): path.read_bytes()
@@ -125,7 +143,7 @@ def test_registry_rejects_unversioned_workspace_without_mutating_it(tmp_path: Pa
     }
 
     with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
-        WorkspaceRegistry(tmp_path / "registry.json").create("Legacy", root)
+        WorkspaceRegistry(registry_path).create("Legacy", root)
 
     after = {
         path.relative_to(root): path.read_bytes()
@@ -134,6 +152,7 @@ def test_registry_rejects_unversioned_workspace_without_mutating_it(tmp_path: Pa
     }
     assert after == before
     assert not (root / "workspace.json").exists()
+    assert not registry_path.parent.exists()
 
 
 def test_registry_select_rejects_invalid_marker_before_mutating_registry_or_root(

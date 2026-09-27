@@ -32,7 +32,6 @@ class WorkspaceRegistry:
     def __init__(self, registry_path: str | Path | None = None) -> None:
         configured = registry_path or os.environ.get("DOCS_WORKSPACE_REGISTRY")
         self.path = Path(configured or (Path.home() / ".docs" / "workspaces.json")).expanduser().resolve()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = RLock()
 
     def list(self) -> list[dict[str, Any]]:
@@ -187,6 +186,7 @@ class WorkspaceRegistry:
         return value
 
     def _write(self, value: dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
         temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         temporary.replace(self.path)
