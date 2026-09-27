@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins as _builtins
 from collections import deque
 from time import monotonic
 
@@ -15,6 +16,9 @@ class InMemoryRunStore:
 
     def get(self, run_id: str) -> Run | None:
         return self._items.get(run_id)
+
+    def list(self) -> _builtins.list[Run]:
+        return list(self._items.values())
 
 
 class InMemoryPassportStore:
@@ -38,7 +42,10 @@ class InMemoryArtifactStore:
     def get(self, artifact_id: str) -> Artifact | None:
         return self._items.get(artifact_id)
 
-    def list_for_run(self, run_id: str) -> list[Artifact]:
+    def list(self) -> _builtins.list[Artifact]:
+        return list(self._items.values())
+
+    def list_for_run(self, run_id: str) -> _builtins.list[Artifact]:
         return [item for item in self._items.values() if item.run_id == run_id]
 
 

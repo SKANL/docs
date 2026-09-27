@@ -12,7 +12,7 @@ from docs.domain.ports.job_queue import JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.run_store import ArtifactStore, PassportStore, RunStore
 from docs.domain.runtime_records import Artifact, Blob, Graph, Lease, Passport, Run
-from docs.infrastructure.memory.x20 import (
+from docs.infrastructure.memory.in_memory_runtime_stores import (
     InMemoryArtifactStore,
     InMemoryBlobStore,
     InMemoryGraphStore,
@@ -123,8 +123,10 @@ def test_in_memory_stores_are_interchangeable_ports():
     stores[4].put(graph)
 
     assert stores[0].get(run.id) == run
+    assert stores[0].list() == [run]
     assert stores[1].get(run.id) == passport
     assert stores[2].get(artifact.id) == artifact
+    assert stores[2].list() == [artifact]
     assert stores[3].get(blob.key) == (blob, b"abc")
     assert stores[4].get() == graph
 

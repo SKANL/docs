@@ -18,7 +18,7 @@ from docs.domain.semantic_graph import NormalizedSourceRecord
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
     PythonDocxImageMetadataAdapter,
 )
-from docs.infrastructure.memory.x20 import (
+from docs.infrastructure.memory.in_memory_runtime_stores import (
     InMemoryArtifactStore,
     InMemoryJobQueue,
     InMemoryRunStore,
