@@ -144,13 +144,13 @@ def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_p
     response = application.dispatch(
         Request(
             "POST",
-            "/v1/runs",
+            "/v2/runs",
             body={"id": run_id, "document_id": "vertical", "template_ir_hash": ir.ir_hash, "provenance_run": run_id},
         )
     )
     assert response.status == 201
     assert json.loads(response.body)["payload"]["template_ir_hash"] == ir.ir_hash
-    assert application.dispatch(Request("GET", f"/v1/runs/{run_id}/passport")).status == 200
-    graph_response = application.dispatch(Request("GET", "/v1/graph"))
+    assert application.dispatch(Request("GET", f"/v2/runs/{run_id}/passport")).status == 200
+    graph_response = application.dispatch(Request("GET", "/v2/graph"))
     assert graph_response.status == 200
     assert any(node["id"] == "artifact:html" for node in json.loads(graph_response.body)["nodes"])
