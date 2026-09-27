@@ -98,12 +98,21 @@ def _load_workspace_config() -> dict[str, str] | None:
         return None
 
 
+def _validated_workspace(root: Path, documents_dir: Path, templates_dir: Path) -> Workspace:
+    """Build a canonical workspace only after its read-only guards pass."""
+    validate_workspace_layout(root, documents_dir, templates_dir)
+    validate_workspace_marker(root)
+    return Workspace(root=root, documents_dir=documents_dir, templates_dir=templates_dir)
+
+
 def build_workspace() -> Workspace:
-    """Workspace roots: `docs.config.json` (cwd) -> env vars (injectable in
-    tests) -> cwd-relative defaults, in that precedence order (spec:
-    workspace-config "Config Precedence Resolution"). Current hardcoded
-    HARNESS_ROOT/documents & templates; no library equivalent (Judgment call
-    2)."""
+    """Resolve and validate workspace roots before exposing them to services.
+
+    Bootstrap and migration commands establish canonical state through their
+    dedicated flows. All ordinary config, environment, default, and selected
+    workspace resolution paths are read-only and reject an unmarked root before
+    any service can construct adapters or create state.
+    """
     config = _load_workspace_config()
     # A selected local workspace is the CLI's durable source of truth when no
     # explicit per-cwd config or environment override is supplied. This keeps
@@ -115,7 +124,7 @@ def build_workspace() -> Workspace:
         active = registry.active()
         if active is not None:
             root = Path(str(active["root"])).resolve()
-            return Workspace(root=root, documents_dir=root / "documents", templates_dir=root / "templates")
+            return _validated_workspace(root, root / "documents", root / "templates")
     documents_dir, templates_dir = resolve_workspace_roots(
         config, os.environ, (Path("documents"), Path("templates"))
     )
@@ -124,10 +133,10 @@ def build_workspace() -> Workspace:
     resolved_templates = templates_dir.expanduser().resolve()
     if config is None and resolved_documents.parent == resolved_templates.parent:
         # Explicit environment roots can select a canonical sibling workspace
-        # without changing cwd.  This is exact-parent identity, never a broad
+        # without changing cwd. This is exact-parent identity, never a broad
         # common-ancestor inference for legacy split roots.
         root = resolved_documents.parent
-    return Workspace(root=root, documents_dir=documents_dir, templates_dir=templates_dir)
+    return _validated_workspace(root, documents_dir, templates_dir)
 
 
 logger = logging.getLogger(__name__)

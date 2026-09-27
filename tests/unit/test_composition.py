@@ -61,6 +61,28 @@ def test_application_composition_is_a_typed_dataclass_with_the_complete_dependen
     assert all(field.type is not None for field in fields(ApplicationComposition))
 
 
+def test_compose_application_rejects_resolved_unmarked_workspace_without_mutation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from docs import composition as composition_module
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DOCS_WORKSPACE_REGISTRY", str(tmp_path / "registry.json"))
+    adapter_constructed = False
+
+    def adapter_init(self, *args, **kwargs):
+        nonlocal adapter_constructed
+        adapter_constructed = True
+
+    monkeypatch.setattr(composition_module.JsonDocumentRepository, "__init__", adapter_init)
+
+    with pytest.raises(WorkspaceFormatError, match="workspace_marker_missing"):
+        composition_module.compose_application()
+
+    assert adapter_constructed is False
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_compose_application_rejects_missing_workspace_marker_before_adapter_construction(
     monkeypatch, tmp_path: Path
 ) -> None:
