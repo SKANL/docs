@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from docs.composition import ApplicationComposition
-from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
+from docs.domain.ports.job_queue import JobQueue
+from docs.domain.ports.lease_store import LeaseStore
+from docs.domain.ports.run_store import PassportStore, RunStore
 from docs.domain.runtime_records import Job
 from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteJobQueue,

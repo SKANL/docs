@@ -21,7 +21,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from docs.domain.ports.x20 import JobQueue, LeaseStore, PassportStore, RunStore
+from docs.domain.ports.job_queue import JobQueue
+from docs.domain.ports.lease_store import LeaseStore
+from docs.domain.ports.run_store import PassportStore, RunStore
 from docs.domain.runtime_records import Job, Run
 from docs.observability import NoOpObservability, ObservabilityPort
 
@@ -141,9 +143,7 @@ class WorkerService:
             return result
 
     async def run_async(self) -> WorkerResult | None:
-        job, cancellation = await self._shield_and_drain(
-            asyncio.to_thread(self.queue.claim, self.worker_id)
-        )
+        job, cancellation = await self._shield_and_drain(asyncio.to_thread(self.queue.claim, self.worker_id))
         if cancellation is not None:
             if job is not None:
                 payload = dict(job.payload)
@@ -197,8 +197,10 @@ class WorkerService:
                         if inspect.iscoroutine(value):
                             value.close()
                         raise TypeError("run_sync cannot execute an awaitable handler")
-                    state = "lease_lost" if heartbeat.lost.is_set() else (
-                        "cancelled" if self._is_cancelled(run_id) else "succeeded"
+                    state = (
+                        "lease_lost"
+                        if heartbeat.lost.is_set()
+                        else ("cancelled" if self._is_cancelled(run_id) else "succeeded")
                     )
                     if state == "lease_lost":
                         owned = False
@@ -248,9 +250,7 @@ class WorkerService:
             if cancel_error is not None or self._is_cancelled(run_id):
                 result = WorkerResult(job.id, run_id, "cancelled", attempt, retry_of, self.worker_id)
             else:
-                _, operation_cancellation = await self._shield_and_drain(
-                    asyncio.to_thread(scratch.mkdir, parents=True)
-                )
+                _, operation_cancellation = await self._shield_and_drain(asyncio.to_thread(scratch.mkdir, parents=True))
                 cancel_error = cancel_error or operation_cancellation
                 _, operation_cancellation = await self._shield_and_drain(
                     asyncio.to_thread(self._put_run, run_id, "running", payload)
@@ -296,7 +296,9 @@ class WorkerService:
                         result = WorkerResult(
                             job.id,
                             run_id,
-                            "lease_lost" if lease_lost else ("cancelled" if self._is_cancelled(run_id) else "succeeded"),
+                            "lease_lost"
+                            if lease_lost
+                            else ("cancelled" if self._is_cancelled(run_id) else "succeeded"),
                             attempt,
                             retry_of,
                             self.worker_id,
@@ -363,9 +365,7 @@ class WorkerService:
             raise _LeaseLost("worker lease was lost while the job was running")
         return await handler_task
 
-    async def _shield_and_drain(
-        self, awaitable: Awaitable[Any]
-    ) -> tuple[Any, asyncio.CancelledError | None]:
+    async def _shield_and_drain(self, awaitable: Awaitable[Any]) -> tuple[Any, asyncio.CancelledError | None]:
         """Await an operation without abandoning its side effects on cancellation."""
         task = asyncio.ensure_future(awaitable)
         value: Any = None

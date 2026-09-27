@@ -6,16 +6,12 @@ from types import MappingProxyType
 
 import pytest
 
+from docs.domain.ports.blob_store import BlobStore
+from docs.domain.ports.graph_store import GraphStore
+from docs.domain.ports.job_queue import JobQueue
+from docs.domain.ports.lease_store import LeaseStore
+from docs.domain.ports.run_store import ArtifactStore, PassportStore, RunStore
 from docs.domain.runtime_records import Artifact, Blob, Graph, Lease, Passport, Run
-from docs.domain.ports.x20 import (
-    ArtifactStore,
-    BlobStore,
-    GraphStore,
-    JobQueue,
-    LeaseStore,
-    PassportStore,
-    RunStore,
-)
 from docs.infrastructure.memory.x20 import (
     InMemoryArtifactStore,
     InMemoryBlobStore,
