@@ -11,7 +11,7 @@ import pytest
 
 import docs.sidecar as sidecar
 from docs.api.http import Request
-from docs.domain.runtime_records import Run
+from docs.domain.runtime_records import Artifact, Run
 from docs.domain.workspace import Workspace
 from docs.sidecar import SidecarConfig, _persist_worker_evidence, build_application, build_server, run
 
@@ -326,3 +326,101 @@ def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_filesystem_stores_follow_the_selected_workspace_and_ignore_invalid_manifests(tmp_path: Path) -> None:
+    """The sidecar reads each canonical workspace boundary, never process cwd state."""
+    from docs.application.workspaces import WorkspaceRegistry
+    from docs.sidecar import _FilesystemDocumentStore, _FilesystemTemplateStore
+
+    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    first_root, second_root = tmp_path / "first", tmp_path / "second"
+    registry.create("First", first_root)
+    second = registry.create("Second", second_root)
+    registry.select(second["id"])
+    (first_root / "documents" / "first").mkdir(parents=True)
+    (first_root / "documents" / "first" / "document.json").write_text('{"title":"First"}', encoding="utf-8")
+    (second_root / "documents" / "second").mkdir(parents=True)
+    (second_root / "documents" / "second" / "document.json").write_text('{"title":"Second"}', encoding="utf-8")
+    (second_root / "documents" / "broken").mkdir(parents=True)
+    (second_root / "documents" / "broken" / "document.json").write_text("not json", encoding="utf-8")
+    (first_root / "templates").mkdir(parents=True, exist_ok=True)
+    (second_root / "templates").mkdir(parents=True, exist_ok=True)
+    (second_root / "templates" / "template.json").write_text('{"template_version":"2"}', encoding="utf-8")
+    (second_root / "templates" / "bad.json").write_text("[", encoding="utf-8")
+
+    documents = _FilesystemDocumentStore(tmp_path, registry)
+    templates = _FilesystemTemplateStore(tmp_path, registry)
+
+    assert documents.list() == [{"title": "Second", "id": "second"}]
+    assert documents.get("second") == {"title": "Second", "id": "second"}
+    assert documents.get("missing") is None
+    assert documents.list_for_workspace(first_root) == [{"title": "First", "id": "first"}]
+    template = next(item for item in templates.list_for_workspace(second["id"]) if item["id"] == "template")
+    assert template["id"] == "template"
+    assert template["version"] == "2"
+    assert template["source_path"].endswith("template.json")
+
+
+def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_baselines(tmp_path: Path) -> None:
+    from docs.application.workspaces import WorkspaceRegistry
+    from docs.sidecar import _WorkspaceJsonCollectionStore
+
+    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    workspace = registry.create("Workspace", tmp_path / "workspace")
+    registry.select(workspace["id"])
+    root = Path(workspace["root"])
+    baselines = root / "baselines"
+    baselines.mkdir(exist_ok=True)
+    (baselines / "baseline.json").write_text('{"id":"baseline","status":"passed"}', encoding="utf-8")
+    (baselines / "active.json").write_text('{"id":"old"}', encoding="utf-8")
+    revisions = root / "documents" / "doc" / "sections" / "_revisions"
+    revisions.mkdir(parents=True)
+    (revisions / "revision-log.json").write_text('[{"id":"revision-1"}]', encoding="utf-8")
+
+    baseline_store = _WorkspaceJsonCollectionStore(tmp_path, "baselines", registry)
+    revision_store = _WorkspaceJsonCollectionStore(tmp_path, "revisions", registry)
+
+    assert [item["id"] for item in baseline_store.list()] == ["baseline"]
+    assert [item["id"] for item in revision_store.list()] == ["revision-1"]
+    assert baseline_store.promote("missing") is None
+    promoted = baseline_store.promote_for_workspace(workspace["id"], "baseline", {"actor": "test"})
+    assert promoted is not None
+    assert {key: promoted[key] for key in ("id", "status", "promoted", "promotion")} == {
+        "id": "baseline", "status": "passed", "promoted": True, "promotion": {"actor": "test"}
+    }
+    assert json.loads((baselines / "active.json").read_text(encoding="utf-8")) == promoted
+    assert revision_store.promote("revision-1") is None
+
+
+def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace(tmp_path: Path) -> None:
+    from docs.application.workspaces import WorkspaceRegistry
+    from docs.sidecar import _WorkspaceEvidenceStores, _WorkspaceJobQueue, _WorkspaceRunStore
+
+    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    first = registry.create("First", tmp_path / "first")
+    second = registry.create("Second", tmp_path / "second")
+    runs = _WorkspaceRunStore(registry, tmp_path)
+    queue = _WorkspaceJobQueue(registry, tmp_path)
+    first_run = Run("first-run", payload={"workspace_id": first["id"]})
+    second_run = Run("second-run", payload={"workspace_id": second["id"]})
+    runs.put(first_run)
+    runs.put(second_run)
+    queue.enqueue("first-run", {"workspace_id": first["id"]})
+    queue.enqueue("second-run", {"workspace_id": second["id"]})
+
+    assert [run.id for run in runs.list()] == ["first-run", "second-run"]
+    assert queue.claim("worker").id == "first-run"
+    assert queue.cancel("second-run") is True
+    assert queue.is_cancelled("second-run") is True
+
+    evidence = _WorkspaceEvidenceStores(registry, runs, tmp_path)
+    artifact = Artifact("artifact-1", "second-run", "docx", "digest")
+    evidence.artifact().put(artifact)
+    evidence.finding().put({"id": "finding-1", "run_id": "second-run", "severity": "high"})
+    evidence.publication().put({"id": "publication-1", "run_id": "second-run"})
+
+    assert evidence.artifact().get("artifact-1") == artifact
+    assert evidence.artifact().list_for_run("second-run") == [artifact]
+    assert evidence.finding().list_for_run("second-run")[0]["id"] == "finding-1"
+    assert evidence.publication().list_for_workspace(second["id"]) == [{"id": "publication-1", "run_id": "second-run"}]
