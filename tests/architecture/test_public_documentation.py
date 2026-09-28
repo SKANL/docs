@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 
+from docs.api.openapi import build_openapi_document
 from docs.application.pipeline_service import FULL_STAGE_IDS
 from docs.cli.commands.document_app import _BATCH_OUTPUT_PATHS, _record_batch_outputs, _write_batch_journal
 
@@ -12,9 +13,10 @@ REPOSITORY_ROOT = Path(__file__).parents[2]
 CURRENT_PUBLIC_DOCS = (
     REPOSITORY_ROOT / "README.md",
     REPOSITORY_ROOT / "AGENTS.md",
-    REPOSITORY_ROOT / "docs" / "architecture.md",
-    REPOSITORY_ROOT / "docs" / "pipeline.md",
-    REPOSITORY_ROOT / "docs" / "runtime-guide.md",
+    *sorted((REPOSITORY_ROOT / "docs").glob("*.md")),
+)
+MIGRATION_HISTORY_API_CONTRACT = (
+    REPOSITORY_ROOT / "docs" / "superpowers" / "specs" / "2026-09-21-api-v2-contract.md"
 )
 
 
@@ -124,3 +126,21 @@ def test_current_docs_do_not_advertise_ghost_pipeline_commands() -> None:
         "pipeline all",
     ):
         assert command not in current_guidance
+
+
+def test_current_api_docs_use_only_v2_routes() -> None:
+    documents = _read_current_public_docs()
+    current_guidance = "\n".join(documents.values())
+    documented_prefixes = set(re.findall(r"/v\d+(?=/|\*)", current_guidance))
+    openapi_paths = build_openapi_document()["paths"]
+
+    assert "/v1/" not in current_guidance
+    assert documented_prefixes == {"/v2"}
+    assert all(any(path.startswith(prefix + "/") for path in openapi_paths) for prefix in documented_prefixes)
+
+    historical_contracts = tuple(
+        path
+        for path in sorted((REPOSITORY_ROOT / "docs" / "superpowers" / "specs").rglob("*.md"))
+        if "/v1/" in path.read_text(encoding="utf-8")
+    )
+    assert historical_contracts == (MIGRATION_HISTORY_API_CONTRACT,)

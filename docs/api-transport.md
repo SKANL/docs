@@ -42,7 +42,7 @@ the X20 application still enforces its own business-route authentication.
 
 `/healthz` is a transport liveness check and `/readyz` reports the configured
 readiness callback. They are the only transport-owned paths; all other paths,
-including `/v1/*`, go to `X20Application`. If `base_url` includes a path (for
+including `/v2/*`, go to `X20Application`. If `base_url` includes a path (for
 example `/docs`), the endpoints and application are served below that prefix.
 
 The adapter validates `Content-Length` before dispatch, rejects unsupported
@@ -58,4 +58,4 @@ shutdown waits for active requests up to `graceful_shutdown_timeout` and is
 safe to call more than once. A reverse proxy should forward `Host`,
 `X-Forwarded-Proto`, `X-Request-ID`, and the request body, and must not buffer
 SSE responses (for example, disable proxy buffering and use a long read
-timeout for `/v1/runs/*/progress`).
+timeout for `/v2/runs/*/progress`).

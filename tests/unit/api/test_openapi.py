@@ -208,3 +208,10 @@ def test_workspace_openapi_uses_the_runtime_dto_component_schemas() -> None:
         assert schemas[name]["additionalProperties"] is False
     assert schemas["workspace_page"]["properties"]["next_cursor"]["default"] is None
     assert schemas["workspace_page"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/workspace"}
+
+
+def test_openapi_declares_only_the_v2_public_route_prefix() -> None:
+    paths = build_openapi_document()["paths"]
+
+    assert paths
+    assert {path.split("/", 2)[1] for path in paths} == {"v2"}

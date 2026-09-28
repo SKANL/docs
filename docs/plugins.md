@@ -16,7 +16,7 @@ The registry validates manifests and hashes the canonical JSON. Discovery does
 not import or execute plugin code. Untrusted plugins run as subprocesses;
 builtin in-process execution is restricted to explicitly allowlisted sources.
 The API exposes the registered identity, version, capabilities, trust level,
-and digest at `GET /v1/plugins`.
+and digest at `GET /v2/plugins`.
 
 ## Safety and reproducibility
 

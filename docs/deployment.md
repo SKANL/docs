@@ -16,7 +16,7 @@ CLI, API, and worker bootstraps use `compose_application` from `src/docs/composi
 ## API process
 
 `docs-api` wraps an application factory and exposes `/healthz`, `/readyz`, and
-the authenticated `/v1/*` API. Keep the process on loopback unless the
+the authenticated `/v2/*` API. Keep the process on loopback unless the
 deployment explicitly needs a public bind:
 
 ```bash
@@ -48,19 +48,19 @@ Use `--allow-public-bind` only with a reviewed network policy. TLS termination,
 authentication, rate limiting, and request-size policy belong at the reverse
 proxy as well as in the application. Forward `Host`, `X-Forwarded-Proto`,
 `X-Request-ID`, and the request body. Do not buffer
-`/v1/runs/{run_id}/progress`; use a long read timeout for SSE.
+`/v2/runs/{run_id}/progress`; use a long read timeout for SSE.
 
 The API owns transport liveness (`/healthz`) and readiness (`/readyz`). The
 application owns business routes and authentication scopes. The main run flow
 is:
 
 ```text
-POST /v1/runs
-GET  /v1/runs/{run_id}
-GET  /v1/runs/{run_id}/progress
-GET  /v1/runs/{run_id}/passport
-GET  /v1/runs/{run_id}/artifacts
-GET  /v1/runs/{run_id}/graph
+POST /v2/runs
+GET  /v2/runs/{run_id}
+GET  /v2/runs/{run_id}/progress
+GET  /v2/runs/{run_id}/passport
+GET  /v2/runs/{run_id}/artifacts
+GET  /v2/runs/{run_id}/graph
 ```
 
 Authenticated production principals must carry tenant and organization
@@ -95,7 +95,7 @@ Before release, run the strict path and inspect the evidence:
 ```bash
 uv run docs document build --format docx --format html --policy release --json
 uv run docs document verify --format docx --format html --policy release --json
-uv run docs document publish output/current/report.docx output/published/report.docx --policy release --json
+uv run docs document publish output/current/report.docx output/release/report.docx --policy release --json
 uv run docs doctor --strict
 ```
 

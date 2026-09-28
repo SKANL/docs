@@ -107,6 +107,12 @@ def test_openapi_endpoint_returns_deterministic_json_without_workspace():
     assert first.status == second.status == 200
     assert first.headers["content-type"] == "application/json"
     assert first.body == second.body == canonical_json(build_openapi_document()).encode()
+
+
+def test_application_exposes_only_the_v2_openapi_endpoint():
+    application = app()
+
+    assert application.dispatch(Request("GET", "/v2/openapi.json")).status == 200
     assert application.dispatch(Request("GET", "/v1/openapi.json")).status == 404
 
 
