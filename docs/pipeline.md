@@ -23,20 +23,10 @@ uv run docs document publish documents/report/output/current/report.docx documen
 
 | Operation | Report | Stage(s) | Main derived files |
 |---|---|---|---|
-| `ingest` | `runs/v2-ingest.json` | `ingest-sources` | `sections/ingested/*`, registered assets, ingest report data |
-| `prepare` | `runs/v2-prepare.json` | `ingest-sources`, `normalize-sources`, `compile-structure` | normalized ingested Markdown and `sections/v2-structure.json` |
+| `document ingest` | `runs/v2-ingest.json` | `ingest-sources` | `sections/ingested/*`, registered assets, ingest report data |
+| `document prepare` | `runs/v2-prepare.json` | `ingest-sources`, `normalize-sources`, `compile-structure` | normalized ingested Markdown and `sections/v2-structure.json` |
 
-Each report has `schema: "docs.sources/v2"`, `document_id`, `succeeded`, ordered `stages`, and `artifacts`. This shape is also mandatory for failure reports: construction, invocation, malformed-result, and empty-stage failures retain the selected document's `document_id`. A source command exits non-zero when its report is unsuccessful.
-
-The flat native command routes `pipeline ingest` to
-`SourcePipeline.ingest` and `pipeline prepare` to
-`SourcePipeline.prepare`. It projects each v2 stage into the existing
-current summary shape (`stage_set`, `strict`, `passed`, and `stages`) while
-retaining the complete v2 report, including warnings, errors, and artifacts,
-in each stage's `detail`. It forwards `--strict` when the selected callable
-accepts `strict`; `prepare` currently reports strict as advisory because its
-native operation does not accept that argument. The current `pipeline prep`
-route remains unchanged.
+Each report has `schema: "docs.sources/v2"`, `document_id`, `succeeded`, ordered `stages`, and `artifacts`. This shape is also mandatory for failure reports: construction, invocation, malformed-result, and empty-stage failures retain the selected document's `document_id`. A source command exits non-zero when its report is unsuccessful. Use `document ingest` to convert inbox material and `document prepare` to add normalization and structure compilation; the command tree exposes those boundaries directly.
 
 ## Stage results
 
@@ -130,29 +120,6 @@ follow symlinked or escaped paths.
 ## Inspecting pipeline contracts
 
 Use `docs document plan --pipeline document-build --json` to inspect the ordered stages, external artifacts, and contracts without executing or publishing a build. The command uses the same registered DAG that `build` and `verify --pipeline` execute.
-
-## Flat CLI migration boundary
-
-The native policy for the unprefixed `retired pipeline command` command
-is intentionally explicit and finite. `ingest` and `prepare` are routed through the
-native v2 source pipeline and its result is adapted back to the current summary
-shape (`stage_set`, `strict`, `passed`, and `stages`). `assemble` now routes
-through the native v2 build runtime and projects its execution report back to
-the current summary shape. `prep` and `all` now execute through the native
-`FlatPipelineV2Adapter`, which reuses injected stage operations while
-owning ordering, fail-fast behavior, and the stable flat summary. Unknown stage
-sets remain on the current service until their output and publication semantics
-have equivalent v2 coverage. This policy is declared in
-`removed native module`; it is not inferred from
-the public v2 catalog. Consequently, existing exit codes and JSON/human output
-contracts remain stable while migration proceeds incrementally.
-
-For the flat `ingest` route, `--strict` is forwarded when the selected v2
-operation declares that keyword. If the adapter does not accept it, the command
-does not silently discard the flag: it keeps the result degradable and emits a
-structured `pipeline.strict_advisory` warning in JSON. A v2 report without any
-stage is always a native failure with `pipeline.empty_v2_report`.
-
 
 ## Pipeline ownership
 

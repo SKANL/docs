@@ -111,3 +111,16 @@ def test_current_docs_use_current_and_release_output_contract(tmp_path: Path) ->
         (runtime_contract[0][0], "`<document-id>.<format>` plus its manifest sidecar after a publish-permitted full build."),
         (runtime_contract[1][0], "`<document-id>.zip` after the managed release pipeline packages successfully."),
     )
+
+
+def test_current_docs_do_not_advertise_ghost_pipeline_commands() -> None:
+    current_guidance = "\n".join(_read_current_public_docs().values())
+
+    for command in (
+        "pipeline ingest",
+        "pipeline prep",
+        "pipeline prepare",
+        "pipeline assemble",
+        "pipeline all",
+    ):
+        assert command not in current_guidance

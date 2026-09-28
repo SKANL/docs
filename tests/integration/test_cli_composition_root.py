@@ -65,6 +65,7 @@ def test_root_app_command_surface_exposes_only_the_canonical_creation_command():
     click_app = typer.main.get_command(app)
     names = set(click_app.commands.keys())
     assert names == _EXPECTED_FLAT_COMMANDS | set(_EXPECTED_GROUPS)
+    assert "pipeline" not in names
     for group_name, expected_subcommands in _EXPECTED_GROUPS.items():
         group = click_app.commands[group_name]
         assert set(group.commands.keys()) == expected_subcommands
