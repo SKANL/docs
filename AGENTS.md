@@ -100,8 +100,8 @@ docs review-section <id> --json     # 11. iterate to green (see loop below)
 docs document build              # 12. render the final output(s), --format html|pdf|docx
 docs document verify                         # 13. structural + audit verification
 # 14. optional, after a first assemble: docs doc revise <id> "<request>" <file>
-docs document package output/current output/release/release.zip  # 15. optional: create a release package
-docs document publish output/current/<artifact> output/release/<artifact> --policy release  # 16. optional: publish one attested artifact
+docs document package <document-root>/output/current <document-root>/output/release/release.zip  # 15. optional: create a release package
+docs document publish <document-root>/output/current/<artifact> <document-root>/output/release/<artifact> --policy release  # 16. optional: publish one attested artifact
 ```
 
 **WARNING — `build-section` vs `stamp-section`: not interchangeable.**

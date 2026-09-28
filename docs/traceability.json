@@ -59,10 +59,6 @@
     },
     "boundary": "These tests prove the named assertions, not that every declared stage owns an independent real-tool integration test."
   },
-  "architecture": {
-    "test": "tests/architecture/test_plugin_independence.py::test_v2_runtime_has_no_plugin_imports_or_plugin_dependencies",
-    "claim": "Python runtime imports and declared project dependencies contain no plugin-named dependency boundary."
-  },
   "public_pipelines": {
     "test": "tests/integration/test_pipeline_service.py::test_public_catalog_marks_stage_backed_boundaries_and_read_only_artifact_operations",
     "claim": "The catalog separates six non-empty stage-backed boundaries from the read-only document-diff and document-inspect operations."
