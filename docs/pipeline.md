@@ -42,29 +42,20 @@ A `failed` stage stops its downstream dependency chain. A visible optional `unsu
 
 ## Traceability boundary
 
-`docs/traceability.json` keeps four claims separate for every
-runtime stage:
+`docs/traceability.json` records executable evidence as repository-relative
+pytest node IDs in fields named `test`. Run
+`uv run python tools/validate_traceability.py` to check the complete file. The
+validator recursively finds those fields, rejects empty, duplicate, absolute,
+or traversal-shaped references, and asks pytest to collect only the referenced
+test files. Parameterized collection IDs are normalized to their base
+`file::test` node before comparison.
 
-1. **Declaration** — the stage is named by `FULL_STAGE_IDS`.
-2. **Runtime wiring** — `PipelineService` owns and registers the stage handler.
-3. **Executable evidence** — an integration test exercises and asserts the stage.
-4. **Observed outcome** — that test records whether the stage succeeded,
-   remained unsupported, or was not observed.
-
-Each nested claim has a strict shape: declaration and runtime wiring require
-non-empty `source` fields; covered executable evidence requires a `test`,
-while not-covered evidence requires a `reason`; observed outcomes always carry
-a `test` field (or `null` when not observed). A succeeded outcome is valid only
-when executable evidence is covered and points to the same test. An unsupported
-outcome is valid only when executable evidence is not-covered and includes the
-test that observed the unsupported result. The integration contract also
-compares the JSON public-pipeline classification with the runtime
-`PUBLIC_PIPELINES` catalog, keeping stage-backed boundaries distinct from the
-read-only `document-diff` and `document-inspect` operations.
-
-A declared and wired stage is not automatically covered. The traceability file
-deliberately leaves untested stages as `not-covered` and `not-observed` rather
-than inferring support from the registry.
+This is a resolution check, NOT a semantic proof engine. A collected test proves
+only what its assertions establish; the validator cannot infer that nearby
+prose accurately describes those assertions. Reviewers must read each
+referenced test and narrow or remove unsupported claims. The traceability file
+therefore groups evidence around the bounded behavior each test asserts rather
+than manufacturing one success claim per declared stage.
 
 ## Full stage plan
 

@@ -36,7 +36,7 @@ def test_traceability_distinguishes_real_toolchain_proof_from_unavailable_capabi
 
     journey = traceability["real_toolchain_journey"]
     assert journey["status"] == "proved-when-capable"
-    assert journey["test"] == "tests/integration/test_v2_real_toolchain_journey.py::test_v2_real_toolchain_journey"
+    assert journey["test"] == "tests/integration/test_real_toolchain_journey.py::test_v2_real_toolchain_journey"
     assert journey["proved"] == ["pandoc", "libreoffice", "poppler", "mermaid", "resvg"]
     assert journey["unavailable"] == "controlled skip with capability names in pytest output"
 

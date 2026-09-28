@@ -1,23 +1,25 @@
 {
   "schema": "docs.traceability/1",
-  "scope": "Docs Harness v2 acceptance coverage",
+  "scope": "Docs Harness current acceptance evidence",
+  "validation": {
+    "command": "uv run python tools/validate_traceability.py",
+    "mechanical_boundary": "Every field named test must be a unique repository-relative tests/**/*.py::test_name node collected by pytest.",
+    "semantic_boundary": "Resolution does not prove the surrounding claim. Reviewers must read the referenced assertions and narrow or remove any unsupported prose."
+  },
   "journey": {
-    "status": "closest-real-journey",
-    "test": "tests/integration/test_v2_end_to_end.py::test_v2_public_journey_creates_prepares_builds_verifies_packages_and_publishes",
-    "covered": [
-      "doc new",
-      "source ingest",
-      "source prepare",
-      "verified v2 build",
-      "standalone verify",
-      "deterministic package",
-      "policy-gated publish"
+    "status": "bounded-deterministic-vertical",
+    "test": "tests/integration/test_document_runtime_vertical_journey.py::test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run",
+    "proved": [
+      "template compilation produces a stable IR hash",
+      "a generated visual is bound into deterministic HTML",
+      "provenance and evidence-passport attestations replay",
+      "the v2 run, passport, and graph routes expose the recorded result"
     ],
-    "gap": "Creation remains an explicit user action; `document release` composes the complete verified build, package, and publication pipeline for the active document. The acceptance test invokes the real commands in sequence against one temporary workspace and uses a deterministic in-test ingest adapter and DOCX renderer because optional external renderers are environment-dependent."
+    "boundary": "This test uses deterministic in-process renderers. It does not exercise document creation, source ingestion, DOCX/PDF output, packaging, publication, or external tool availability."
   },
   "real_toolchain_journey": {
     "status": "proved-when-capable",
-    "test": "tests/integration/test_v2_real_toolchain_journey.py::test_v2_real_toolchain_journey",
+    "test": "tests/integration/test_real_toolchain_journey.py::test_v2_real_toolchain_journey",
     "proved": [
       "pandoc",
       "libreoffice",
@@ -25,565 +27,81 @@
       "mermaid",
       "resvg"
     ],
-    "adapters": {
-      "pandoc": "src/docs/infrastructure/ingest/pandoc_ingest_adapter.py::PandocIngestAdapter",
-      "libreoffice": "src/docs/infrastructure/docx/libreoffice_qa_adapter.py::LibreOfficeQaAdapter",
-      "mermaid": "src/docs/infrastructure/visuals/mermaid_svg_renderer.py::MermaidSvgRenderer",
-      "resvg": "src/docs/infrastructure/visuals/resvg_rasterizer_adapter.py::ResvgRasterizerAdapter",
-      "poppler": "pdfinfo and pdftoppm executables consumed by the acceptance fixture"
-    },
-    "availability": "CI installs pandoc, LibreOffice, Mermaid CLI, and resvg; Poppler is resolved from the runner PATH.",
     "unavailable": "controlled skip with capability names in pytest output",
-    "scope": "This proves the external adapter chain independently of the deterministic v2 CLI journey; the latter remains the closest-real-journey test above."
+    "boundary": "The test exercises the external adapters only when every named executable resolves; it does not prove the full document lifecycle."
   },
   "docx_pdf_edit_journey": {
     "status": "proved-when-capable",
     "test": "tests/integration/test_docx_pdf_edit_journey.py::test_docx_import_to_pdf_edit_journey_is_deterministic_and_bounded",
-    "covered": [
-      "deterministic DOCX import",
-      "editable Markdown section and asset preservation",
-      "DOCX render and audit reopen",
-      "PDF conversion",
-      "bounded PDF text edit",
-      "untouched text and page geometry",
-      "provenance ledger and evidence passport replay"
+    "proved": [
+      "repeatable DOCX import with preserved source and embedded image bytes",
+      "editable Markdown rendered back to an auditable DOCX",
+      "LibreOffice PDF conversion and bounded text replacement",
+      "unchanged page geometry, untouched text, provenance, and passport replay"
     ],
-    "adapters": {
-      "docx_import": "src/docs/application/docx_import.py::DocxImportService",
-      "docx_render": "src/docs/infrastructure/docx/python_docx_assembly_adapter.py::PythonDocxAssemblyAdapter",
-      "pdf_conversion": "src/docs/infrastructure/docx/libreoffice_qa_adapter.py::LibreOfficeQaAdapter",
-      "pdf_edit": "src/docs/infrastructure/pdf/pypdfium2_text_edit_adapter.py::Pypdfium2TextEditAdapter"
-    },
-    "unavailable": "real conversion/edit path skips when LibreOffice is absent; companion test asserts WARN, no PDF, and no partial output",
-    "scope": "Readable structure and bounded visual edits are verified; arbitrary OOXML lossless round-tripping and PDF byte identity are not promised."
+    "boundary": "The test skips without pandoc or LibreOffice and does not promise arbitrary OOXML round-tripping or source-PDF byte identity."
   },
-  "pipeline_stages": [
-    {
-      "stage": "resolve-config",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
+  "pipeline": {
+    "declarative_plan": {
+      "test": "tests/integration/test_pipeline_service.py::test_exposes_the_full_declarative_stage_plan_without_artificial_serial_dependencies",
+      "claim": "The runtime definition exposes the ordered stage inventory and the asserted build dependencies, with package-release optional."
     },
-    {
-      "stage": "resolve-template",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
+    "current_handlers": {
+      "test": "tests/integration/test_pipeline_service.py::test_explicit_current_handlers_cover_safe_migration_stages",
+      "claim": "The explicit handler set named by the assertion executes in the expected call order and the report succeeds."
     },
-    {
-      "stage": "resolve-context",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
+    "publication": {
+      "test": "tests/integration/test_pipeline_service.py::test_runs_current_adapters_in_order_and_publishes_atomically_after_verification",
+      "claim": "A successful full service run reaches verified provenance and atomic publication after the asserted adapter sequence."
     },
-    {
-      "stage": "resolve-assets",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
+    "package": {
+      "test": "tests/unit/application/test_package_release_service.py::test_package_release_service_packages_current_verified_generation_atomically",
+      "claim": "The release package service atomically packages the current verified generation."
     },
-    {
-      "stage": "validate-contracts",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "ingest-sources",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "normalize-sources",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "compile-structure",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "generate-visuals",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "compose-cover",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "build-docx",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "build-html",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "build-pdf",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "structural-audit",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "editorial-review",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "evidence-review",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "consistency-review",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "accessibility-review",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "visual-review",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "reproducibility-check",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "record-provenance",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "package-release",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    },
-    {
-      "stage": "publish-draft",
-      "declaration": {
-        "status": "declared",
-        "source": "src/docs/application/pipeline_service.py:FULL_STAGE_IDS"
-      },
-      "runtime_wiring": {
-        "status": "wired",
-        "source": "src/docs/application/pipeline_service.py:PipelineService.__init__"
-      },
-      "executable_evidence": {
-        "status": "covered",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      },
-      "observed_outcome": {
-        "status": "succeeded",
-        "test": "tests/integration/test_v2_full_stage_execution.py::test_full_stage_inventory_executes_explicit_operations_in_order_through_quality_gates"
-      }
-    }
-  ],
+    "boundary": "These tests prove the named assertions, not that every declared stage owns an independent real-tool integration test."
+  },
   "architecture": {
-    "plugin_independence_test": "tests/architecture/test_v2_plugin_independence.py::test_v2_runtime_has_no_plugin_imports_or_plugin_dependencies",
-    "constraint": "The runtime source tree and pyproject dependencies contain no plugin imports or plugin-named dependencies."
+    "test": "tests/architecture/test_plugin_independence.py::test_v2_runtime_has_no_plugin_imports_or_plugin_dependencies",
+    "claim": "Python runtime imports and declared project dependencies contain no plugin-named dependency boundary."
   },
   "public_pipelines": {
-    "status": "registered-and-dispatchable",
-    "catalog": "src/docs/application/pipeline_registry.py:PUBLIC_PIPELINES",
-    "registry": "src/docs/application/pipeline_service.py:PipelineService.__init__",
-    "stage_backed": [
-      {
-        "id": "source-ingest",
-        "kind": "stage-backed",
-        "stages": [
-          "resolve-config",
-          "resolve-context",
-          "resolve-assets",
-          "ingest-sources"
-        ]
-      },
-      {
-        "id": "document-prepare",
-        "kind": "stage-backed",
-        "stages": [
-          "normalize-sources",
-          "compile-structure"
-        ]
-      },
-      {
-        "id": "document-build",
-        "kind": "stage-backed",
-        "stages": [
-          "generate-visuals",
-          "compose-cover",
-          "build-docx",
-          "build-html",
-          "build-pdf"
-        ]
-      },
-      {
-        "id": "document-verify",
-        "kind": "stage-backed",
-        "stages": [
-          "structural-audit",
-          "editorial-review",
-          "evidence-review",
-          "consistency-review",
-          "accessibility-review",
-          "visual-review",
-          "reproducibility-check"
-        ]
-      },
-      {
-        "id": "document-publish",
-        "kind": "stage-backed",
-        "stages": [
-          "record-provenance",
-          "publish-draft"
-        ]
-      },
-      {
-        "id": "document-package",
-        "kind": "stage-backed",
-        "stages": [
-          "package-release"
-        ]
-      }
-    ],
-    "read_only_artifact_operations": [
-      {
-        "id": "document-diff",
-        "kind": "read-only-artifact-operation",
-        "stages": []
-      },
-      {
-        "id": "document-inspect",
-        "kind": "read-only-artifact-operation",
-        "stages": []
-      }
-    ],
-    "gap": "document-diff and document-inspect are read-only artifact operations, not stage-backed pipelines; stage-backed boundaries are registered, inspectable with document plan, and dispatchable.",
-    "dispatch": "src/docs/application/pipeline_service.py::PipelineService.execute(PipelineRequest)",
-    "cli": "src/docs/cli/commands/document_app.py::plan,build,verify; src/docs/cli/commands/source_app.py::source_ingest"
+    "test": "tests/integration/test_pipeline_service.py::test_public_catalog_marks_stage_backed_boundaries_and_read_only_artifact_operations",
+    "claim": "The catalog separates six non-empty stage-backed boundaries from the read-only document-diff and document-inspect operations."
   },
   "public_commands": {
-    "source_ingest": "src/docs/cli/commands/source_app.py::source_ingest",
-    "template_create": "src/docs/cli/commands/template_app.py::template_create",
-    "pipeline_plan": "src/docs/cli/commands/document_app.py::plan",
-    "pipeline_selection": "src/docs/cli/commands/document_app.py::_run",
-    "document_release": "src/docs/cli/commands/document_app.py::release"
-  }
+    "test": "tests/integration/test_cli_composition_root.py::test_root_app_command_surface_exposes_only_the_canonical_creation_command",
+    "claim": "The root Typer command tree equals the asserted canonical groups and does not expose a pipeline command group."
+  },
+  "reconciliation_regressions": [
+    {
+      "area": "keyed classification",
+      "test": "tests/integration/test_ingest_roles_duplicates.py::test_document_classify_does_not_conflate_duplicate_basenames",
+      "claim": "Classification updates the requested relative-path entry without changing a same-basename sibling."
+    },
+    {
+      "area": "installed worker",
+      "test": "tests/unit/test_local_worker.py::test_declared_entry_point_dispatches_to_local_worker",
+      "claim": "The declared docs-worker entry point dispatches to the local worker boundary."
+    },
+    {
+      "area": "lifecycle outputs",
+      "test": "tests/architecture/test_public_documentation.py::test_current_docs_use_current_and_release_output_contract",
+      "claim": "Current public documentation uses the runtime-owned current and release destination contract."
+    },
+    {
+      "area": "retired commands",
+      "test": "tests/architecture/test_public_documentation.py::test_current_docs_do_not_advertise_ghost_pipeline_commands",
+      "claim": "Current public documentation does not advertise the five retired flat pipeline commands."
+    },
+    {
+      "area": "v2 API",
+      "test": "tests/unit/api/test_application.py::test_application_exposes_only_the_v2_openapi_endpoint",
+      "claim": "The application serves /v2/openapi.json and returns not found for /v1/openapi.json."
+    },
+    {
+      "area": "CI and QA",
+      "test": "tests/architecture/test_public_documentation.py::test_ci_and_qa_docs_match_workflow_coverage_and_toolchain_contract",
+      "claim": "CI and QA prose matches the checked workflow coverage and toolchain facts."
+    }
+  ]
 }
