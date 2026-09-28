@@ -10,10 +10,10 @@
     "status": "bounded-deterministic-vertical",
     "test": "tests/integration/test_document_runtime_vertical_journey.py::test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run",
     "proved": [
-      "template compilation produces a stable IR hash",
-      "a generated visual is bound into deterministic HTML",
-      "provenance and evidence-passport attestations replay",
-      "the v2 run, passport, and graph routes expose the recorded result"
+      "template compilation returns a 64-character IR hash",
+      "a generated visual is cataloged, bound, and referenced by rendered HTML",
+      "the recorded provenance attestation verifies and repeated passport finalization returns an equal result",
+      "the v2 run creation returns 201, the passport route returns 200, and the graph response includes the recorded HTML artifact node"
     ],
     "boundary": "This test uses deterministic in-process renderers. It does not exercise document creation, source ingestion, DOCX/PDF output, packaging, publication, or external tool availability."
   },
@@ -56,7 +56,7 @@
     },
     "package": {
       "test": "tests/unit/application/test_package_release_service.py::test_package_release_service_packages_current_verified_generation_atomically",
-      "claim": "The release package service atomically packages the current verified generation."
+      "claim": "The release service requests a hidden .document.zip.candidate from staging that contains the asserted artifact bytes and manifest JSON."
     },
     "boundary": "These tests prove the named assertions, not that every declared stage owns an independent real-tool integration test."
   },
@@ -99,9 +99,19 @@
       "claim": "The application serves /v2/openapi.json and returns not found for /v1/openapi.json."
     },
     {
-      "area": "CI and QA",
+      "area": "CI and QA documentation literals",
       "test": "tests/architecture/test_public_documentation.py::test_ci_and_qa_docs_match_workflow_coverage_and_toolchain_contract",
-      "claim": "CI and QA prose matches the checked workflow coverage and toolchain facts."
+      "claim": "CI and QA documents contain the asserted job, Python, coverage, toolchain, and skip-policy text and omit the stale 93 and check literals."
+    },
+    {
+      "area": "quality workflow",
+      "test": "tests/architecture/test_github_workflows.py::test_quality_workflow_documents_current_coverage_contract",
+      "claim": "quality.yml declares the quality job, Python 3.11 installation, 86% project coverage, and 70% differential coverage command literals."
+    },
+    {
+      "area": "toolchains workflow",
+      "test": "tests/architecture/test_github_workflows.py::test_toolchains_workflow_has_no_doctor_or_skip_failure_gate",
+      "claim": "toolchains.yml contains no docs doctor command and no unexpected-or-arbitrary skip-failure pattern."
     }
   ]
 }
