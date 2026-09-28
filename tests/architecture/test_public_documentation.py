@@ -50,17 +50,22 @@ def test_public_stage_order_matches_full_stage_ids() -> None:
 
 def _runtime_output_contract(tmp_path: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
     root = tmp_path / "document"
+    root.mkdir()
+    journal = root / "runs" / "x20-batch-transaction.json"
+    backup = root / "backup"
+    _write_batch_journal(journal, root, backup, _BATCH_OUTPUT_PATHS)
+    before = json.loads(journal.read_text(encoding="utf-8"))["expected"]
+    assert before == {path.as_posix(): {} for path in _BATCH_OUTPUT_PATHS}
+
     current, release = (root / path for path in _BATCH_OUTPUT_PATHS)
     current.mkdir(parents=True)
     release.mkdir(parents=True)
     (current / "document-id.pdf").write_bytes(b"artifact")
     (current / "document-id.pdf.manifest.json").write_text("{}", encoding="utf-8")
     (release / "document-id.zip").write_bytes(b"package")
-    journal = root / "runs" / "x20-batch-transaction.json"
-    backup = root / "backup"
-    _write_batch_journal(journal, root, backup, _BATCH_OUTPUT_PATHS)
     _record_batch_outputs(journal, "document-id", "pdf")
     expected = json.loads(journal.read_text(encoding="utf-8"))["expected"]
+    assert expected != before
     return tuple(
         (path.as_posix() + "/", tuple(sorted(expected[path.as_posix()])))
         for path in _BATCH_OUTPUT_PATHS

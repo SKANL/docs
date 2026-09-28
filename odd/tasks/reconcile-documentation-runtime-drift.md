@@ -51,6 +51,10 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 
 - Bound the documentation destination table to `_BATCH_OUTPUT_PATHS` and `_record_batch_outputs` behavior. The test now derives `output/current/` as the verified artifact plus manifest destination and `output/release/` as the managed ZIP destination, so swapping their documented meanings fails. **Evidence:** `uv run pytest tests/architecture/test_public_documentation.py tests/integration/test_pipeline_service.py -q` — 31 passed; `git diff --check` — PASS. Rollback boundary: revert the destination-table parser and runtime batch-journal assertion with the corresponding architecture table. Work-unit commit: `test(docs): bind output contract to runtime`.
 
+## DRIFT-03 review correction — round 3
+
+- Initialized the runtime batch journal before creating publication fixtures and asserted that `_record_batch_outputs` adds the current artifact/manifest and release ZIP entries. This prevents a prepopulated journal snapshot from masking a no-op or swapped mapping. **Evidence:** `uv run pytest tests/architecture/test_public_documentation.py tests/integration/test_pipeline_service.py -q` — 31 passed; `git diff --check` — PASS. Rollback boundary: revert the pre-publication journal setup and addition assertion in the documentation contract test. Work-unit commit: `test(docs): verify output contract additions`.
+
 ## Acceptance criteria
 
 - [ ] All seven discrepancies satisfy the acceptance criteria in the architectural design.
