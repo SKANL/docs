@@ -84,7 +84,6 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "workspace list": "GET /v2/workspaces",
     "workspace create": "POST /v2/workspaces",
     "workspace rename": "PATCH /v2/workspaces/{workspace_id}",
-    "workspace delete": "DELETE /v2/workspaces/{workspace_id}",
     "doc list": "GET /v2/documents",
     "doc show": "GET /v2/documents/{document_id}",
     "context status": "GET /v2/documents/{document_id}/context",
@@ -97,7 +96,6 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "run show": "GET /v2/runs/{run_id}",
     "run cancel": "POST /v2/runs/{run_id}/cancel",
     "run retry": "POST /v2/runs/{run_id}/retry",
-    "run watch": "GET /v2/runs/{run_id}/progress",
     "template list": "GET /v2/templates",
 }
 
