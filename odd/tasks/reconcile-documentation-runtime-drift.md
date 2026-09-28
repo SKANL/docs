@@ -49,7 +49,11 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 
 ## DRIFT-07 review correction — round 2
 
-- Removed the repeated-passport-finalization equality statement from both traceability and the round-1 ODD narrative. The underlying test compares returned objects, but the persisted evidence contract does not define that equality as a public guarantee, so the traceability map now retains only the reviewed IR-shape, visual-reference, and exact v2 response assertions. **Evidence:** `uv run pytest tests/architecture/test_traceability.py tests/integration/test_document_runtime_vertical_journey.py::test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run -q` — 11 passed; `uv run python tools/validate_traceability.py` — PASS (`18 referenced test node(s) resolve`); `git diff --check` — PASS. Rollback boundary: revert this one claim removal and recovery note. Round-2 correction commit: `fix(traceability): remove unsupported passport claim` (ID reported after creation).
+- Removed the repeated-passport-finalization equality statement from both traceability and the round-1 ODD narrative. The traceability map now retains only the reviewed IR-shape, visual-reference, and exact v2 response assertions. **Evidence:** `uv run pytest tests/architecture/test_traceability.py tests/integration/test_document_runtime_vertical_journey.py::test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run -q` — 11 passed; `uv run python tools/validate_traceability.py` — PASS (`18 referenced test node(s) resolve`); `git diff --check` — PASS. Rollback boundary: revert this one claim removal and recovery note. Round-2 correction commit: `4005e544` (`fix(traceability): remove unsupported passport claim`).
+
+## DRIFT-07 review correction — round 3
+
+- Removed the unsupported ODD explanation that characterized what the underlying passport test compares. No replacement claim was added; the recovery record now states only the claim removal and the traceability statements retained after review. **Evidence:** `uv run pytest tests/architecture/test_traceability.py -q` — 10 passed; `uv run python tools/validate_traceability.py` — PASS (`18 referenced test node(s) resolve`); Markdown structural readback — PASS (16 unique H2 headings; unsupported sentence absent); `git diff --check` — PASS. Rollback boundary: revert this sentence removal and recovery note only. Round-3 correction commit: `docs(traceability): remove unsupported review rationale` (ID reported after creation).
 
 ## DRIFT-03 review correction
 
@@ -86,7 +90,7 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 
 - DRIFT-01 through DRIFT-06 and the initial DRIFT-07 implementation are committed locally; Task 7 commit `0e66a201` is recorded above.
 - Focused Task 7 validation passes; the latest required full-suite run remains recorded as one timing failure with a passing isolated retry. No remote operation occurred, and `.atl/**` remains unrelated and unstaged.
-- Completed tasks: 6/7; DRIFT-07 implementation and focused checks are complete, but its required full-suite gate is not. Cumulative authored changed lines: 1,606 (additions plus deletions from `f36341eb` through DRIFT-07, excluding `.atl/**` and the unrelated untracked plan). The branch exceeds the advisory 400-line delivery budget; Task 7 remains one cohesive initial work unit plus one bounded review-correction commit, no PR slice was created, and `ask-on-risk` still requires a maintainer chain-strategy decision before remote delivery.
+- Completed tasks: 6/7; DRIFT-07 implementation and focused checks are complete, but its required full-suite gate is not. Cumulative authored changed lines: 1,610 (additions plus deletions from `f36341eb` through DRIFT-07, excluding `.atl/**` and the unrelated untracked plan). The branch exceeds the advisory 400-line delivery budget; Task 7 remains one cohesive initial work unit plus three bounded review-correction commits, no PR slice was created, and `ask-on-risk` still requires a maintainer chain-strategy decision before remote delivery.
 
 ## Next step
 
