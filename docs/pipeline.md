@@ -13,8 +13,8 @@ uv run docs document prepare --json
 uv run docs document build --format docx --policy strict --json
 uv run docs document verify --format docx --policy strict --json
 uv run docs document inspect documents/report/output/current/report.docx --json
-uv run docs document package documents/report/output/current release.zip --json
-uv run docs document publish documents/report/output/current/report.docx published/report.docx --policy release --json
+uv run docs document package documents/report/output/current documents/report/output/release/release.zip --json
+uv run docs document publish documents/report/output/current/report.docx documents/report/output/release/report.docx --policy release --json
 ```
 
 `document ingest` converts inbox material. `document prepare` repeats ingest, normalizes ingested Markdown, and writes the compiled source structure. Both commands persist `docs.sources/v2` reports below `runs/`; they do not author section prose.
@@ -105,7 +105,7 @@ resolve-config -> resolve-template -> resolve-context -> resolve-assets
 -> package-release -> publish-draft
 ```
 
-`build` runs the full `document` pipeline by default and writes successful formats to `output/current/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes `publish-draft` and `package-release` by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. The shared composition constructs the native `PipelineService` and its stage operations for application entry points. Stages may report `skipped` when no applicable input exists (for example, no visual specs or no cover); injected partial operation sets remain useful for failure tests, not the normal application setup.
+`build` runs the full `document` pipeline by default and writes successful formats to `output/current/`. Use `--pipeline document-build` to execute only the registered build boundary without publication. `verify` excludes the release-only `package-release` and `publish-draft` stages by default; use `--pipeline document-verify` for the registered verification boundary. Its `cli-verify-*` run does not overwrite the build attestation. `package` creates the explicit ZIP release artifact, conventionally in `output/release/`; `publish` explicitly copies one attested artifact to its supplied release destination. The shared composition constructs the native `PipelineService` and its stage operations for application entry points. Stages may report `skipped` when no applicable input exists (for example, no visual specs or no cover); injected partial operation sets remain useful for failure tests, not the normal application setup.
 
 ## Format selection
 

@@ -295,6 +295,7 @@ def test_does_not_publish_when_verification_fails(tmp_path: Path) -> None:
 
 def test_exports_reusable_full_stage_ids() -> None:
     assert FULL_STAGE_IDS == STAGE_IDS
+    assert FULL_STAGE_IDS[-3:] == ("record-provenance", "package-release", "publish-draft")
 
 
 def test_registers_public_pipeline_boundaries():

@@ -77,7 +77,7 @@ The harness owns the document lifecycle; external plugins are not runtime depend
 
 #### Inspecting QA evidence
 
-After assembly, inspect `output/work/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+After a verified build, inspect `output/current/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Package or publish verified artifacts explicitly to `output/release/`; use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
 
 #### Extending renderers and templates
 
@@ -100,7 +100,8 @@ docs review-section <id> --json     # 11. iterate to green (see loop below)
 docs document build              # 12. render the final output(s), --format html|pdf|docx
 docs document verify                         # 13. structural + audit verification
 # 14. optional, after a first assemble: docs doc revise <id> "<request>" <file>
-docs document publish                 # 15. optional: flip lifecycle draft -> final, snapshot draft build into output/published/
+docs document package output/current output/release/release.zip  # 15. optional: create a release package
+docs document publish output/current/<artifact> output/release/<artifact> --policy release  # 16. optional: publish one attested artifact
 ```
 
 **WARNING — `build-section` vs `stamp-section`: not interchangeable.**
@@ -236,9 +237,9 @@ The native runtime exposes `docs document build --json` and
 `docs document verify --json`. 
 existing callers. These commands resolve the active document, execute
 the contract-driven stage DAG, run DOCX audit/visual QA adapters, record
-provenance only after successful verification, and publish verified copies
-under `output/current/`. They never promote to `output/published/` and never silently
-use an alternate pipeline. See `docs/architecture.md` and
+provenance only after successful verification, and write verified build artifacts
+under `output/current/`. Package or publish a verified artifact explicitly to
+`output/release/`; neither action is an implicit transition. See `docs/architecture.md` and
 `docs/pipeline.md` for the migration contract.
 
 The same surface provides `docs document inspect`, `docs document diff`,
@@ -573,24 +574,13 @@ argument/content; use `apply-corrections` for literal text substitutions.
 
 ## 6. Document lifecycle and build version
 
-Every document starts `lifecycle: draft`. `docs document publish [<id>]`
-(defaults to the active document) flips it to `final` — a one-way,
-user-driven signal with no effect on build mechanics; it exists so an agent
-or reviewer can tell, from `docs doc status --json`, whether a document is
-still being iterated on or considered done.
-
-**`document publish` also promotes the current draft build into `output/published/`.**
-Beyond flipping the lifecycle flag, `docs document publish` copies every file
-currently in `output/work/` into `output/published/` — a **point-in-time
-snapshot**, not a live mirror: it reflects whatever was last built at the
-moment `document publish` ran. If you edit a section and re-assemble afterward,
-`output/work/` moves ahead and `output/published/` is now stale — **re-run
-`docs document publish` to re-sync it** after any further edit+assemble cycle.
-If `output/work/` is empty when `document publish` runs (nothing has been
-assembled yet), it WARNs and promotes nothing — `document publish` never fails,
-but `output/published/` stays empty until at least one `document build` has
-run. `docs doc status --json`'s `output.final_exists` reflects whether
-`output/published/` currently has any file in it (see the table below).
+A document starts as a draft. The runtime keeps build, verification, packaging,
+and publication separate: `docs document build` writes verified artifacts to
+`output/current/`, `docs document verify` checks them without publishing, and
+`docs document package` or `docs document publish` creates an explicit release
+artifact, conventionally under `output/release/`. `document publish` requires
+one attested source artifact and an explicit destination; it neither rebuilds
+nor promotes a directory automatically.
 
 Each `docs document build`/`all` run appends a `build_version` (an
 incrementing integer, starting at `1`) to the document's `runs/` history —
@@ -613,9 +603,7 @@ this is a wall-clock log, not part of the deterministic build artifact
 | `sections.authored` | Raw count of section files that exist on disk, regardless of scaffold/needs_review state. |
 | `ingest.classification_pending` | Count of `inbox/_classification-queue.json` entries with no `confirmed_role` yet (§1). |
 | `figures.count` | Number of entries in `sections/figure-catalog.json`, built by `document ingest` from image assets found under `inbox/` (declared + heuristically-detected images, plus rendered vector-PDF pages). It is **not** a count of inline `[[figure:label]]` markers (§3) — those are independent, resolved/numbered only at build time, and never increment this field; a section can reference figures via `[[figure:...]]` with `figures.count` still `0` if no image ever went through `document ingest`. |
-| `lifecycle` | `"draft"` or `"final"`, set by `docs document publish` (above). |
 | `build_version` | Highest `build_version` recorded under `runs/`, or `null` before the first `document build`. |
-| `output.final_exists` | Whether `output/published/` currently contains any file — becomes `true` after a `docs document publish` run that had a non-empty `output/work/` to promote (above); stays `false` before the first successful promotion. |
 
 ## 7. Reproducibility boundary (read this before worrying about "identical output")
 
@@ -671,7 +659,8 @@ This means:
     _revisions/             # docs doc revise: per-edit .diff snapshots + revision-log.json
   context/                # per-topic context fields (docs context set/status)
   assets/                 # figures/images referenced by sections
-  output/work|final/     # rendered .docx/html/pdf output; draft/ is always the current build, final/ is a snapshot copy `docs document publish` promotes it into (see §6)
+  output/current/         # verified rendered .docx/html/pdf build artifacts
+  output/release/         # explicit package and publication destinations
   runs/                   # command history + build_version (document runs, document status)
 ```
 
@@ -685,9 +674,9 @@ harness's own suite asserts the installed copy never drifts from it.
 
 ### Current X20 public contract
 
-Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline command set is `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `document release` runs the complete verified build/package/publication pipeline for the active document. Build publishes verified requested formats under `output/current`; verify runs without publication. The native runtime does not fall back to an alternate pipeline or promote to `output/published`.
+Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline command set is `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `document release` runs the complete verified build/package/publication pipeline for the active document. Build writes verified requested formats under `output/current/`; verify runs without publication. Package and publish create explicit release artifacts under `output/release/` and never fall back to an alternate pipeline.
 
-`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `publish-draft`, `package-release`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete current migration.
+`FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `package-release`, `publish-draft`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete current migration.
 
 Policies are `draft`, `strict`, and `release`. Draft may warn for permitted optional capability gaps and cannot publish. Strict and release promote warnings and missing required capabilities to errors and permit publication only after verification. Capabilities are local executable checks injected through the composition root; plugins are not runtime dependencies.
 
