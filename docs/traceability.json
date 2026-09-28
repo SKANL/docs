@@ -12,7 +12,6 @@
     "proved": [
       "template compilation returns a 64-character IR hash",
       "a generated visual is cataloged, bound, and referenced by rendered HTML",
-      "the recorded provenance attestation verifies and repeated passport finalization returns an equal result",
       "the v2 run creation returns 201, the passport route returns 200, and the graph response includes the recorded HTML artifact node"
     ],
     "boundary": "This test uses deterministic in-process renderers. It does not exercise document creation, source ingestion, DOCX/PDF output, packaging, publication, or external tool availability."
