@@ -43,6 +43,10 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 - [ ] **DRIFT-06 — Align CI and QA documentation.** Document the quality job, Python 3.11, 86% project coverage, 70% differential coverage, the absence of `doctor`/arbitrary-skip failure in toolchains, and conditional optional Playwright browser QA. **Route:** delegated direct; workflows, adapter evidence, tests, and docs span multiple files. **Evidence:** focused workflow-contract command/result, optional-browser-QA scenario/result or explicit N/A, rollback boundary, commit identity.
 - [ ] **DRIFT-07 — Rebuild honest traceability.** Rebuild `docs/traceability.json` using only real tests/evidence and add validation that every referenced `file::test` exists and supports the stated claim. **Route:** delegated direct; traceability data, validator behavior, tests, and evidence review are inseparable. **Evidence:** focused validator command/result, traceability validation scenario/result, rollback boundary, commit identity.
 
+## DRIFT-03 review correction
+
+- Round 1 corrected lifecycle wording to be policy- and pipeline-dependent: only a publish-permitted full `document` build writes `output/current/`; `document-build` and `verify` do not publish; `release` invokes the full release-policy pipeline; direct package/publish use explicit destinations while the managed release pipeline uses `output/release/`. Strengthened the documentation contract against these distinctions. **Evidence:** `uv run pytest tests/architecture/test_public_documentation.py tests/integration/test_pipeline_service.py -q` — 31 passed; `git diff --check` — PASS. Rollback boundary: revert this correction's prose and strengthened assertions, retaining the original DRIFT-03 contract. Work-unit commit: `fix(docs): scope lifecycle output claims`.
+
 ## Acceptance criteria
 
 - [ ] All seven discrepancies satisfy the acceptance criteria in the architectural design.

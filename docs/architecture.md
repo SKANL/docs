@@ -13,7 +13,7 @@ Run from the harness checkout or use the installed `docs` entry point. `doc init
 | `document ingest [--json]` | Convert the active document's inbox sources through the native X20 source stage. | Ingested sections/assets and `runs/v2-ingest.json`. |
 | `document prepare [--json]` | Run ingest, normalization, and structure compilation in order. | Prepared sources, `sections/v2-structure.json`, and `runs/v2-prepare.json`. |
 | `document status [--json]` | Report domain status plus X20 capabilities, manifests, and provenance details. | No source changes; status may read existing run data. |
-| `document build [--format F]... [--policy P] [--json]` | Run the X20 plan and write verified requested formats into `output/current/`. | Derived artifacts, sidecar manifests, QA data, and X20 provenance. |
+| `document build [--format F]... [--policy P] [--json]` | Run the X20 plan; the full pipeline writes verified requested formats into `output/current/` only when its policy permits publication. | Derived artifacts, sidecar manifests, QA data, and X20 provenance. |
 | `document verify [--format F]... [--policy P] [--json]` | Run format checks without publishing. | Verification output only; it does not create a build attestation for `cli-verify-*`. |
 | `document inspect <artifact> [--json]` | Report path, media type, size, and SHA-256. | Nothing. |
 | `document diff <left> <right> [--json]` | Compare identities and, for UTF-8 files, return a text diff. | Nothing. |
@@ -26,7 +26,7 @@ Run from the harness checkout or use the installed `docs` entry point. `doc init
 
 Durable source inputs are `document.json`, section Markdown, resolved context, template/configuration, and workspace assets. Rendered DOCX/HTML/PDF files, manifests, QA reports, ZIP packages, and published copies are derived artifacts. Derived artifacts never replace source Markdown.
 
-The native runtime does not silently fall back to an alternate pipeline. `docs document build` writes verified artifacts under `output/current/`; `docs document verify` checks artifacts without publishing them. `docs document package` creates a ZIP release artifact, conventionally under `output/release/`, and `docs document publish` explicitly copies one attested artifact to its supplied release destination. These are separate transitions: building or verifying never releases an artifact, and publishing never rebuilds one. Canonical X20 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
+The native runtime does not silently fall back to an alternate pipeline. The full `document` build pipeline writes verified artifacts under `output/current/` only when the selected policy and pipeline permit publication; `document-build` and `document verify` do not publish artifacts. `document release` runs the full pipeline under the release policy, where the release stages are eligible. `docs document package` takes an explicit output path, while `docs document publish` takes an explicit destination; the managed release pipeline uses `output/release/` for its package artifact. These are separate transitions: building, verifying, packaging, and publishing have distinct side effects. Canonical X20 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
 
 ## Pipeline kernel
 

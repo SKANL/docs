@@ -55,3 +55,10 @@ def test_current_docs_use_current_and_release_output_contract() -> None:
     assert "output/current/" in current_guidance
     assert "output/release/" in current_guidance
     assert "document publish" in current_guidance
+
+    architecture = documents[REPOSITORY_ROOT / "docs" / "architecture.md"]
+    assert "only when the selected policy and pipeline permit publication" in architecture
+    assert "`document-build` and `document verify` do not publish artifacts" in architecture
+    assert "`document release` runs the full pipeline under the release policy" in architecture
+    assert "takes an explicit output path" in architecture
+    assert "takes an explicit destination" in architecture

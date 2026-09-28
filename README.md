@@ -72,8 +72,7 @@ uv run docs document publish output/current/report.docx output/release/report.do
 
 It resolves the active document, renders the primary DOCX, runs format and
 visual checks, records hashes only after verification succeeds, and writes verified build
-artifacts to `output/current/` atomically. Package or publish a verified artifact
-explicitly into `output/release/`; neither action is an implicit lifecycle transition.
+artifacts to `output/current/` atomically only when the selected full pipeline and policy permit publication. `document package` and `document publish` take explicit output destinations; `output/release/` is the managed release pipeline location. Neither action is implicit.
 
 The document reference is split by reader need:
 
@@ -163,7 +162,7 @@ CI runs all three on every push and pull request, with a coverage floor.
 
 ## Current X20 contract
 
-Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline commands are `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `release` executes the complete verified build/package/publication pipeline for the active document. `build` writes verified requested formats under `output/current/`; `verify` performs the same format checks without publishing. Inspection and diff are read-only; packaging and publication use temporary files and atomic replacement. The native runtime does not silently fall back to an alternate pipeline or write unverified output.
+Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline commands are `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `release` executes the complete verified build/package/publication pipeline for the active document under the release policy. The full `document` build pipeline writes verified requested formats under `output/current/` only when its policy permits publication; `--pipeline document-build` and `verify` do not publish. Package and publish take explicit output destinations. Inspection and diff are read-only; packaging and publication use temporary files and atomic replacement. The native runtime does not silently fall back to an alternate pipeline or write unverified output.
 
 The `PipelineService` owns the registered stage graph, execution, policy, and publication boundary. Its 23-stage `FULL_STAGE_IDS` inventory is: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `package-release`, `publish-draft`. The shared composition in `src/docs/composition.py` constructs the pipeline service and native stage handlers for the CLI/API application. Process-specific transport and worker lifecycle configuration stays at each process bootstrap; stages without applicable input may be explicit `skipped` results. Publication failures appear under `publication_blockers`. Use `document plan --pipeline <id>` to inspect stage contracts. Build and verify also accept `--pipeline <id>` to execute a registered public boundary such as `document-build` or `document-verify`.
 

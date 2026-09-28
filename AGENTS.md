@@ -77,7 +77,7 @@ The harness owns the document lifecycle; external plugins are not runtime depend
 
 #### Inspecting QA evidence
 
-After a verified build, inspect `output/current/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Package or publish verified artifacts explicitly to `output/release/`; use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
+After a full build whose selected policy permits publication, inspect `output/current/` and the QA report at `output_qa_dir/<docx-stem>/qa-report.md`, alongside page previews under `output_qa_dir/<docx-stem>/previews/` (normally `output/qa/<artifact-stem>/qa-report.md` and `output/qa/<artifact-stem>/previews/`). Package and publish take explicit output destinations; the managed release pipeline uses `output/release/`. Use `docs doctor` to see unavailable optional tools. A skipped preview is a documented draft degradation, not proof that layout is correct.
 
 #### Extending renderers and templates
 
@@ -238,8 +238,9 @@ The native runtime exposes `docs document build --json` and
 existing callers. These commands resolve the active document, execute
 the contract-driven stage DAG, run DOCX audit/visual QA adapters, record
 provenance only after successful verification, and write verified build artifacts
-under `output/current/`. Package or publish a verified artifact explicitly to
-`output/release/`; neither action is an implicit transition. See `docs/architecture.md` and
+under `output/current/` when the selected full pipeline and policy permit publication.
+Package and publish take explicit output destinations; the managed release pipeline uses
+`output/release/`. Neither action is implicit. See `docs/architecture.md` and
 `docs/pipeline.md` for the migration contract.
 
 The same surface provides `docs document inspect`, `docs document diff`,
@@ -575,12 +576,13 @@ argument/content; use `apply-corrections` for literal text substitutions.
 ## 6. Document lifecycle and build version
 
 A document starts as a draft. The runtime keeps build, verification, packaging,
-and publication separate: `docs document build` writes verified artifacts to
-`output/current/`, `docs document verify` checks them without publishing, and
-`docs document package` or `docs document publish` creates an explicit release
-artifact, conventionally under `output/release/`. `document publish` requires
-one attested source artifact and an explicit destination; it neither rebuilds
-nor promotes a directory automatically.
+and publication separate: the full `docs document build` pipeline writes verified
+artifacts to `output/current/` only when policy permits publication, while
+`--pipeline document-build` and `docs document verify` do not publish.
+`docs document release` runs the full release-policy pipeline. `docs document package`
+and `docs document publish` each require explicit output destinations; the managed
+release pipeline uses `output/release/` for its package artifact. `document publish`
+requires one attested source artifact and neither rebuilds nor promotes a directory automatically.
 
 Each `docs document build`/`all` run appends a `build_version` (an
 incrementing integer, starting at `1`) to the document's `runs/` history —
@@ -659,8 +661,8 @@ This means:
     _revisions/             # docs doc revise: per-edit .diff snapshots + revision-log.json
   context/                # per-topic context fields (docs context set/status)
   assets/                 # figures/images referenced by sections
-  output/current/         # verified rendered .docx/html/pdf build artifacts
-  output/release/         # explicit package and publication destinations
+  output/current/         # verified artifacts from a publish-permitted full build
+  output/release/         # managed release-pipeline package destination
   runs/                   # command history + build_version (document runs, document status)
 ```
 
@@ -674,7 +676,7 @@ harness's own suite asserts the installed copy never drifts from it.
 
 ### Current X20 public contract
 
-Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline command set is `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `document release` runs the complete verified build/package/publication pipeline for the active document. Build writes verified requested formats under `output/current/`; verify runs without publication. Package and publish create explicit release artifacts under `output/release/` and never fall back to an alternate pipeline.
+Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline command set is `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `document release` runs the complete verified build/package/publication pipeline for the active document. The full build pipeline writes verified requested formats under `output/current/` only when policy permits publication; `document-build` and verify run without publication. Package and publish take explicit destinations, while the managed release pipeline writes its package under `output/release/` and never falls back to an alternate pipeline.
 
 `FULL_STAGE_IDS` is the authoritative 23-stage order: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `package-release`, `publish-draft`. Stages not wired by the current workspace bridge are explicit no-op contract stages; this is not a claim of complete current migration.
 
