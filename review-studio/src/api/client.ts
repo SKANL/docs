@@ -244,6 +244,7 @@ export class ReviewApiClient {
 
   listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => result.items.map(normalizeRun)); }
   getRun(id:string) { return this.scopedRequest<Record<string, unknown>>("runs/" + encodeURIComponent(id)); }
+  getCapabilities() { return this.request<import("./models").CapabilityCatalog>("capabilities"); }
   async health() {
     const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
     if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
@@ -405,3 +406,5 @@ export async function yieldSse(stream: ReadableStream<Uint8Array>, onEvent: (eve
     buffer += decoder.decode();
   } finally { reader.releaseLock(); }
 }
+
+
