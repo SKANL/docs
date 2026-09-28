@@ -13,8 +13,12 @@ from __future__ import annotations
 import json
 import unicodedata
 from pathlib import Path
+from types import SimpleNamespace
+
+from typer.testing import CliRunner
 
 from docs.application.ingest import IngestService
+from docs.cli.main import app
 
 
 def _strip_accents(text: str) -> str:
@@ -49,6 +53,82 @@ class _TextEchoHandler:
 
 def _service(kind_by_name: dict[str, str]) -> IngestService:
     return IngestService(_FakeDetector(kind_by_name), {"md": _TextEchoHandler(), "pdf": _TextEchoHandler()})
+
+
+def _classify_deps(tmp_path: Path):
+    root = tmp_path / "documents" / "brief"
+    return SimpleNamespace(
+        resolve_context=lambda doc="": SimpleNamespace(doc_id="brief"),
+        workspace=SimpleNamespace(doc_root=lambda doc_id: root),
+    ), root
+
+
+def test_document_classify_updates_the_requested_keyed_entry(monkeypatch, tmp_path: Path):
+    deps, root = _classify_deps(tmp_path)
+    queue_path = root / "inbox" / "_classification-queue.json"
+    queue_path.parent.mkdir(parents=True)
+    original = {
+        "schema": 1,
+        "entries": {
+            "normativa/shared.md": {"relative_path": "normativa/shared.md", "confirmed_role": None},
+            "examples/shared.md": {"relative_path": "examples/shared.md", "confirmed_role": None},
+        },
+    }
+    queue_path.write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(
+        app,
+        ["document", "classify", "--file", "normativa/shared.md", "--role", "normative", "--json"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    updated = json.loads(queue_path.read_text(encoding="utf-8"))
+    assert updated["entries"]["normativa/shared.md"]["confirmed_role"] == "normative"
+    assert updated["entries"]["examples/shared.md"]["confirmed_role"] is None
+    assert json.loads(result.stdout)["items"] == list(updated["entries"].values())
+
+    before_invalid = queue_path.read_bytes()
+    invalid = CliRunner().invoke(
+        app,
+        ["document", "classify", "--file", "normativa/shared.md", "--role", "invalid"],
+    )
+    missing = CliRunner().invoke(
+        app,
+        ["document", "classify", "--file", "missing/shared.md", "--role", "evidence"],
+    )
+    assert invalid.exit_code != 0
+    assert missing.exit_code != 0
+    assert queue_path.read_bytes() == before_invalid
+
+
+def test_document_classify_does_not_conflate_duplicate_basenames(monkeypatch, tmp_path: Path):
+    deps, root = _classify_deps(tmp_path)
+    queue_path = root / "inbox" / "_classification-queue.json"
+    queue_path.parent.mkdir(parents=True)
+    queue_path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "entries": {
+                    "normativa/shared.md": {"relative_path": "normativa/shared.md", "confirmed_role": None},
+                    "examples/shared.md": {"relative_path": "examples/shared.md", "confirmed_role": None},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+
+    result = CliRunner().invoke(
+        app,
+        ["document", "classify", "--file", "examples/shared.md", "--role", "example"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    updated = json.loads(queue_path.read_text(encoding="utf-8"))["entries"]
+    assert updated["normativa/shared.md"]["confirmed_role"] is None
+    assert updated["examples/shared.md"]["confirmed_role"] == "example"
 
 
 # --- 8.4/8.5: classification queue + source-manifest wiring --------------

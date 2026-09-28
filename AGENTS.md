@@ -292,14 +292,14 @@ summary) and `inbox/_classification-queue.json` (one entry per source file:
 **Classification is advisory, not a gate.** In the default (non-`--strict`)
 mode, `document ingest` still succeeds (exit 0) even when a file's role is
 `unknown` or low-confidence — arbitrarily-named source files are common and
-expected. There is no CLI command that "confirms" a role: hand-edit
-`_classification-queue.json`, setting `confirmed_role` on an entry, and the
-*next* `document ingest` run reads it back. `confirmed_role` accepts exactly
-one of `evidence | example | normative` — any other value (a typo, a
-section id, `unknown`) is rejected with a WARNING and the entry stays
-pending, same as if it were never confirmed. Confirming a role only clears
-that file's count in `doc status --json`'s `classification_pending` field
-(§6) — **it does not write anything into a section.**
+expected. Confirm one exact queue entry with `docs document classify --file
+<relative-path> --role <role>`; for example, `docs document classify --file
+normativa/reglas.md --role normative`. The accepted roles are exactly
+`evidence | example | normative`; any other value (a typo, a section id,
+`unknown`) is rejected and the entry stays pending. The next `document ingest`
+run reads the confirmation back. Confirming a role only clears that file's
+count in `doc status --json`'s `classification_pending` field (§6) — **it
+does not write anything into a section.**
 
 **The harness never writes section prose, ever.** Converted source material
 under `sections/ingested/*.md` (plus `inbox/intake-report.md` and, once

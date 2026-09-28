@@ -160,3 +160,10 @@ def test_the_determinism_promise_is_scoped_to_a_toolchain():
     prose = " ".join(AGENTS_MD.split())
     assert "not across toolchain versions" in prose
     assert "docs doctor" in prose
+
+
+def test_documents_classification_uses_the_registered_confirmation_command():
+    assert "docs document classify --file" in AGENTS_MD
+    assert "--role <role>" in AGENTS_MD
+    assert "evidence | example | normative" in AGENTS_MD
+    assert 'There is no CLI command that "confirms" a role' not in AGENTS_MD

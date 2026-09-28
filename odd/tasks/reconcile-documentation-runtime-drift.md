@@ -27,14 +27,15 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 
 - Delivery strategy: `ask-on-risk`.
 - Chain strategy: unresolved; ask only if forecast or running authored changes exceed roughly 400 lines before the next commit.
-- Effective TDD mode: unresolved, but its source is required before implementation. Resolve it from existing project/session configuration or an explicit user choice; do not infer it from the presence of tests and do not use SDD initialization.
-- Exact test runner: unresolved with the TDD source. Record both before the first implementation delegation.
+- Effective TDD mode: disabled. Authoritative source: parent execution ruling (no active current TDD configuration).
+- Exact test runner: `uv run pytest`; ordinary focused checks are required, with no RED/GREEN claims.
+- DRIFT-01 pre-change worktree evidence: feature branch `codex/reconcile-doc-runtime-drift`; pre-existing untouched `.atl/**` paths: `.atl/.skill-registry.cache.json`, `.atl/skill-registry.md`.
 - When TDD is enabled, behavior changes require observed RED -> GREEN -> REFACTOR. When disabled, focused functional checks remain mandatory.
 - Every completed task requires a Conventional Commit work-unit commit on a feature branch, with tests and documentation alongside behavior and the commit identity recorded here.
 
 ## Tasks
 
-- [ ] **DRIFT-01 — Reconcile keyed classification confirmation.** Fix `document_app` classify keyed-queue behavior, add regression coverage in `tests/integration/test_ingest_roles_duplicates.py`, and document the real CLI confirmation flow. **Route:** delegated direct; preparation and writer triggers apply because code, tests, and docs must be read and changed together. **Evidence:** focused test command/result, CLI scenario/result, rollback boundary, commit identity.
+- [x] **DRIFT-01 — Reconcile keyed classification confirmation.** Fixed `document_app` classify behavior for canonical keyed queues, added exact-path duplicate-basename regression coverage, and documented the real CLI confirmation flow. **Route:** delegated direct; preparation and writer triggers apply because code, tests, and docs must be read and changed together. **Evidence:** `uv run pytest tests/integration/test_ingest_roles_duplicates.py -q` — 15 passed; `uv run pytest tests/unit/test_agents_md_content.py -q` — 13 passed; keyed inspect/confirm CLI scenario — PASS; `git diff --check` — PASS. Rollback boundary: revert the Task 1 changes in `document_app.py`, its integration and contract tests, and the AGENTS classification paragraph; this restores legacy queue handling only. Review assessment: not run because receipt-driven development is user-owned and was not enabled. Work-unit commit: `fix(cli): update keyed classification entries`.
 - [ ] **DRIFT-02 — Wire the installed worker entry point.** Make the installed `docs-worker` entry point execute the local worker, test installed dispatch, and document the SQLite/single-host boundary without implying Redis/S3 or distributed support. **Route:** delegated direct; preparation and writer triggers apply across packaging, worker, tests, and docs. **Evidence:** focused test command/result, installed-entry-point scenario/result, rollback boundary, commit identity.
 - [ ] **DRIFT-03 — Correct lifecycle, output, and stage-order claims.** Replace stale output paths with `output/current` and `output/release`, state explicit publish semantics, and document the order from `pipeline_service.FULL_STAGE_IDS` and `document_app` publication behavior. **Route:** delegated direct; multiple runtime and documentation sources require bounded mapping plus writing. **Evidence:** focused assertions/result, lifecycle scenario/result, rollback boundary, commit identity.
 - [ ] **DRIFT-04 — Remove ghost flat-pipeline commands.** Remove public references to `pipeline ingest`, `pipeline prep`, `pipeline assemble`, and `pipeline all`; point to commands registered in `cli/main`; add command-surface regression coverage. **Route:** delegated direct; public-doc sweep and CLI tests cross multiple files. **Evidence:** focused test command/result, help-surface scenario/result, stale-command search, rollback boundary, commit identity.
@@ -65,8 +66,8 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 
 - Planning artifacts authored; no production files, tests, configuration, or `.atl` files changed.
 - No tests or builds run and no commits created, by scope.
-- Completed tasks: 0/7.
+- Completed tasks: 1/7 (DRIFT-01 committed).
 
 ## Next step
 
-Resolve the effective TDD mode, its authoritative source, and the exact test runner. Then delegate DRIFT-01 on a feature branch, keeping its code, regression test, documentation, verification, and rollback evidence in one work-unit commit.
+Proceed with DRIFT-02 while preserving the DRIFT-01 work-unit boundary and unrelated `.atl/**` changes.

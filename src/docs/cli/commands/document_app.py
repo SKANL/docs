@@ -475,12 +475,19 @@ def classify(
     if not queue_path.is_file():
         raise typer.BadParameter("classification queue is unavailable; run document ingest first")
     queue = json.loads(queue_path.read_text(encoding="utf-8"))
-    entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
+    keyed_entries = queue.get("entries") if isinstance(queue, Mapping) else None
+    if isinstance(keyed_entries, Mapping):
+        entries = list(keyed_entries.values())
+    else:
+        entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
     if relative_path is not None or role is not None:
         if not relative_path or role not in {"evidence", "example", "normative"}:
             raise typer.BadParameter("--file and --role are required; role must be evidence, example, or normative")
-        entry = next((item for item in entries if str(item.get("relative_path")) == relative_path), None)
-        if entry is None:
+        if isinstance(keyed_entries, Mapping):
+            entry = keyed_entries.get(relative_path)
+        else:
+            entry = next((item for item in entries if str(item.get("relative_path")) == relative_path), None)
+        if not isinstance(entry, dict):
             raise typer.BadParameter("source is not present in the classification queue")
         entry["confirmed_role"] = role
         queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
