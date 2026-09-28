@@ -35,7 +35,7 @@ observability = [
 
 [project.scripts]
 docs = "docs.cli.main:main"
-docs-worker = "docs.workers.cli:main"
+docs-worker = "docs.local_worker:main"
 docs-api = "docs.api.server:main"
 docs-sidecar = "docs.sidecar:main"
 

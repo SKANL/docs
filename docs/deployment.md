@@ -70,13 +70,21 @@ tenant isolation.
 
 ## Worker process and persistence
 
-Run `docs-worker` with the same workspace and configuration as the API. SQLite
-stores are suitable for a single-host deployment. Use the Redis queue and the
-blob backend when API and workers are split across hosts. The worker lease and
-cancellation stores must be durable and shared by all worker instances.
+The shipped `docs-worker` executable runs the local worker for one canonical
+workspace:
 
-Back up the workspace's source inputs, `runs/`, passport storage, and durable
-queue state together. Rendered artifacts are replaceable; provenance and
+```bash
+docs-worker --workspace-root <path> [--iterations N]
+```
+
+It records queue and run state in `<workspace>/.docs/x20.sqlite3`. This is a
+single-host boundary: run the worker against local workspace storage and do not
+claim Redis, S3/blob storage, cross-host queues, distributed leases, or
+multi-worker coordination from this entry point. `docs.workers.cli` remains an
+injectable library boundary; it is not the installed worker executable.
+
+Back up the workspace's source inputs, `runs/`, passport storage, and the local
+SQLite state together. Rendered artifacts are replaceable; provenance and
 passport records are not. Publish only artifacts that have a matching X20
 manifest and verifiable attestation (`docs/provenance.md`).
 
