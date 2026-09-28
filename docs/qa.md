@@ -28,9 +28,10 @@ baseline is an explicit authored operation outside verification.
 
 ```bash
 uv sync --locked
-uv run ruff check .
-uv run mypy
-uv run pytest -q --cov=src --cov-report=term-missing --cov-fail-under=93
+uv run ruff check src tests
+uv run mypy src tools
+uv run pytest -q --cov=src --cov-report=xml:coverage.xml --cov-report=term --cov-fail-under=86
+uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=70
 uv run pytest tests/architecture -q
 ```
 
@@ -80,10 +81,7 @@ possible zoom level. DOCX and HTML retain byte-level reproducibility checks.
   HTML checks static body content, embedded/local images, and declared pixel
   dimensions exceeding ancestor dimensions. Such declared overflow/clipping is
   a warning requiring browser confirmation, not computed-layout evidence.
-- **Capability boundary:** no browser is launched or installed. HTML always
-  reports `render.layout.unavailable`; requested HTML previews additionally
-  report `render.previews.unavailable`. SVG XML can be inspected but its rendered
-  appearance remains unverified. External image URLs are not fetched.
+- **Capability boundary:** Playwright browser QA is conditional and optional: it runs only when the Playwright package and browser capability are available. Otherwise, HTML retains static checks and reports browser layout or preview capability as unavailable. SVG XML can be inspected but its rendered appearance remains unverified. External image URLs are not fetched.
 
 The service uses `visual_qa.allow_blank_pages` (default false),
 `visual_qa.require_previews` (default false), and optional
@@ -109,7 +107,7 @@ Draft mode may preserve permitted optional gaps as warnings and never publishes.
 
 ## CI evidence
 
-The repository workflow runs lint, type checks, tests, architecture invariants, and a full optional-toolchain job. The toolchain job is important because the normal check job intentionally exercises degradation without every optional tool. See [ci.md](ci.md) for the exact workflow.
+The repository workflows run lint, type checks, tests, architecture invariants, and an optional-toolchain job. The `quality` job enforces `86%` project coverage and `70%` differential coverage; toolchains records available capability paths without making optional browser QA mandatory. See [ci.md](ci.md) for the exact workflow.
 
 ## Visual baseline snapshots
 

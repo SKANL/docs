@@ -144,3 +144,27 @@ def test_current_api_docs_use_only_v2_routes() -> None:
         if "/v1/" in path.read_text(encoding="utf-8")
     )
     assert historical_contracts == (MIGRATION_HISTORY_API_CONTRACT,)
+
+
+def test_ci_and_qa_docs_match_workflow_coverage_and_toolchain_contract() -> None:
+    documents = _read_current_public_docs()
+    ci = documents[REPOSITORY_ROOT / "docs" / "ci.md"]
+    qa = documents[REPOSITORY_ROOT / "docs" / "qa.md"]
+
+    assert "`quality`" in ci
+    assert "Python 3.11" in ci
+    assert "`86%`" in ci
+    assert "`70%`" in ci
+    assert "`86%`" in qa
+    assert "`70%`" in qa
+    assert "does not run `docs doctor`" in ci
+    assert "does not fail solely because an optional-tool test skips" in ci
+    assert "93" not in f"{ci}\n{qa}"
+    assert "`check`" not in ci
+
+
+def test_qa_docs_describe_playwright_browser_checks_as_optional() -> None:
+    qa = _read_current_public_docs()[REPOSITORY_ROOT / "docs" / "qa.md"]
+
+    assert "Playwright browser QA is conditional and optional" in qa
+    assert "when the Playwright package and browser capability are available" in qa

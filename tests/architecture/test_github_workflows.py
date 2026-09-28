@@ -37,3 +37,19 @@ def test_toolchain_downloads_have_checksums_and_release_does_not_publish() -> No
 def test_security_and_reusable_workflows_exist() -> None:
     assert (WORKFLOW_DIR / "security.yml").exists()
     assert (WORKFLOW_DIR / "reusable-python.yml").exists()
+
+
+def test_quality_workflow_documents_current_coverage_contract() -> None:
+    quality = (WORKFLOW_DIR / "quality.yml").read_text(encoding="utf-8")
+
+    assert re.search(r"(?m)^\s{2}quality:\s*$", quality)
+    assert "uv python install 3.11" in quality
+    assert "--cov-fail-under=86" in quality
+    assert "diff-cover coverage.xml --compare-branch=origin/main --fail-under=70" in quality
+
+
+def test_toolchains_workflow_has_no_doctor_or_skip_failure_gate() -> None:
+    toolchains = (WORKFLOW_DIR / "toolchains.yml").read_text(encoding="utf-8")
+
+    assert "docs doctor" not in toolchains
+    assert re.search(r"(?i)(unexpected|arbitrary).*skip.*fail", toolchains) is None
