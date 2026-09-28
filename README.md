@@ -1,173 +1,176 @@
-# docs — a deterministic document-creation harness
+<div align="center">
 
-Turn source material and a document template into a finished `.docx`, HTML or
-PDF, where **every mechanical step is done by the harness and exactly one step
-is left to a human or an AI agent**: writing the prose.
+# docs
 
+### A deterministic document-creation harness
+
+Turn source material and a declarative template into reviewable **DOCX**, **HTML**, and **PDF** artifacts—without delegating document mechanics to a language model.
+
+`Python 3.11+` · `uv` · `DOCX / HTML / PDF` · `Deterministic by design`
+
+</div>
+
+---
+
+## The promise
+
+Most document tooling asks a model to generate everything and then hopes the result is correct. **docs** draws a harder boundary:
+
+| You write | The harness guarantees |
+| --- | --- |
+| The section prose, arguments, and evidence | Structure, numbering, references, rendering, review, QA, provenance, and safe publication |
+
+That boundary leaves one deliberate cognitive slot—writing the document—while making the rest observable and repeatable.
+
+> [!IMPORTANT]
+> DOCX and HTML builds are byte-deterministic for unchanged inputs. PDF is a derived artifact rendered through LibreOffice, so its bytes may vary by renderer version.
+
+```text
+inbox/ → ingest → context → prepare → write prose → review → build → verify
+                                        ▲
+                                        └── the only cognitive slot
 ```
-inbox/  →  ingest  →  context  →  prep  →  ✍ author  →  review  →  assemble  →  verify
-                                            ▲
-                                            └── the only cognitive slot
-```
 
-## The one idea
+## Start here
 
-Most document tooling asks a model to produce the whole document and then
-hopes the result is right. This inverts that. The harness owns figure and
-table numbering, cross-reference resolution, section ordering, cover and TOC
-assembly, `.docx` structure, deterministic zip output and every review
-heuristic. It never guesses prose. The author — human or agent — writes the
-body of each section's `.md` file, and nothing else.
-
-That boundary is what makes the second property possible:
-
-> **`.md` → `.docx`/HTML is a byte-identical pure function.** Same sections,
-> same template, same config → the same bytes, on any machine, every time. If
-> an unchanged source produces different output, that is a harness bug, not
-> environmental noise.
-
-PDF is an explicitly excepted derived artifact: it goes through LibreOffice,
-whose rendering varies by version, and is never held to byte identity.
-
-## Native contracts and QA
-
-The CLI is self-contained: it does **not** require the Documents, PDF, or Template Creator plugins at runtime. Plugins may assist a user, but artifact generation, provenance, verification, and publication remain native harness responsibilities.
-
-- **Contracts and provenance:** transforms declare expected artifacts; outputs and section edits retain evidence, hashes, authorship, diffs, and append-only history.
-- **Safe publication:** transforms build in scratch, validate declared outputs, then publish; failed publication restores the previous output and cleans temporary files.
-- **Verification:** editorial review checks prose, structural verification checks document mechanics and template requirements, and visual verification checks rendered pages.
-- **Degradation:** draft mode reports permitted missing tools/evidence as warnings or skips; strict mode requires complete evidence and gates on applicable errors.
-- **Template fidelity:** templates may opt into `template_contract` for geometry, styles, components, editable slots, assets, fidelity checks, and allowed degradations.
-
-Assembly writes `qa-report.md` plus available render previews below the configured QA output directory (normally `output/qa/<artifact-stem>/previews/`). Open the report and page images together; `docs doctor` explains unavailable optional tools. Extend the system by implementing and registering a renderer behind its domain port with deterministic/degradation tests, or by scaffolding and validating a data-only template with `docs template init <id>` and `docs template validate <id>`.
-
-## Quick start
+**Prerequisites:** Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
-uv run docs doc init                 # bootstrap a workspace
-uv run docs doc new mi-informe       # create a document
-uv run docs document ingest          # convert whatever is in inbox/
-uv run docs document prepare            # rules, evidence, section scaffolds
-#   ...author the section bodies under sections/NNN-<id>.md...
-uv run docs review-section intro --json   # iterate until "passed": true
-uv run docs document build        # build the output
+
+# Create a document workspace and an active document.
+uv run docs doc init
+uv run docs doc new my-report
+
+# Add source material under the active document's inbox/, then prepare it.
+uv run docs document ingest
+uv run docs document prepare
+
+# Write the bodies in sections/NNN-<id>.md, then review and build.
+uv run docs review-section intro --json
+uv run docs document build --format docx --format html --format pdf --json
 ```
 
-### Document pipelines
+Run `uv run docs doctor` at any point to see which optional local tools are available and what degrades when one is absent.
 
-The contract-driven pipeline is available through the `document` command
-group (the document command is the only public pipeline interface):
+## What you get
+
+| Capability | What it does |
+| --- | --- |
+| **Source intake** | Converts and classifies inbox material without injecting it into authored prose. |
+| **Declarative templates** | Define sections, context, policies, geometry, and review requirements as data. |
+| **Deterministic rendering** | Builds DOCX and HTML reproducibly; treats PDF as an explicitly derived format. |
+| **Layered QA** | Separates editorial, structural, accessibility, visual, and reproducibility checks. |
+| **Evidence and publication** | Records manifests and provenance before atomically publishing verified artifacts. |
+| **Optional capabilities** | Uses Pandoc, LibreOffice, Mermaid, resvg, and browser QA when available; reports honest degradation when they are not. |
+
+## The workflow at a glance
+
+```text
+Template + context + sources + authored Markdown
+                    │
+                    ▼
+          contract-driven pipeline
+                    │
+     ┌──────────────┼──────────────┐
+     ▼              ▼              ▼
+   DOCX           HTML           PDF*
+     │              │              │
+     └──── QA, manifests, provenance ────┘
+                    │
+                    ▼
+     verified artifacts and release package
+
+* PDF is rendered through LibreOffice and is not byte-deterministic.
+```
+
+### Create and author a document
+
+1. Run `docs doc init` once in a workspace.
+2. Choose or create a template, then run `docs doc new <id>`.
+3. Place raw material in `<document>/inbox/` and run `docs document ingest`.
+4. Run `docs document prepare` to normalize sources and scaffold sections.
+5. Edit only the Markdown body below each section's managed front matter.
+6. Run `docs stamp-section <id> --by <author>` after authoring.
+7. Iterate on `docs review-section <id> --json`, then build and verify.
+
+> [!TIP]
+> `build-section` is scaffolding, not an authoring command. Once prose exists, use `stamp-section`; it preserves the body and refreshes provenance metadata.
+
+## Output and verification
+
+The `document` command group is the public pipeline interface:
 
 ```bash
-uv run docs document ingest --json
-uv run docs document prepare --json
 uv run docs document build --format docx --format html --format pdf --json
 uv run docs document verify --format docx --format html --format pdf --json
-uv run docs document inspect output/report.pdf --json
-uv run docs document diff old.docx new.docx --json
-uv run docs document package output/current output/release/release.zip --json
-uv run docs document publish output/current/report.docx output/release/report.docx --policy release --json
+uv run docs document inspect <artifact> --json
+uv run docs document diff <before> <after> --json
 ```
 
-It resolves the active document, renders the primary DOCX, runs format and
-visual checks, records hashes only after verification succeeds, and writes verified build
-artifacts to `output/current/` atomically only when the selected full pipeline and policy permit publication. `document package` and `document publish` take explicit output destinations; `output/release/` is the managed release pipeline location. Neither action is implicit.
+When the selected pipeline and policy permit publication, verified build artifacts are written under the active document root's `output/current/`. Release packages belong under `output/release/`; direct package and publish commands require explicit, cwd-relative source and destination paths.
 
-The document reference is split by reader need:
+## Templates and formats
 
-- [Architecture](docs/architecture.md) — boundaries, stages, policies, and publication.
-- [Pipeline](docs/pipeline.md) — command path and stage results.
-- [Contracts](docs/contracts.md) — artifact, manifest, and report schemas.
-- [Templates](docs/templates.md) — template inputs and portability rules.
-- [Covers](docs/covers.md) — declarative variants, slots, and cover assets.
-- [QA](docs/qa.md) — verification, degradation, and CI evidence.
-- [DOCX import](docs/docx-import.md) — editable import categories and the DOCX-to-PDF bounded-edit journey.
-- [Provenance](docs/provenance.md) — hashes, ledger attestations, and publication proof.
-- [Deployment](docs/deployment.md) — API/worker topology, persistence, proxying, and release checks.
-- [API transport](docs/api-transport.md) — HTTP boundary, authentication, and request/response contract.
-- [Plugins](docs/plugins.md) — manifest, trust, permissions, and deterministic execution boundary.
-- [OpenTelemetry](docs/observability.md) — fail-open OTLP configuration and redaction policy.
-- [Tauri desktop](docs/desktop-tauri.md) — sidecar resource/health contract and Windows packaging.
-- [Migration](docs/runtime-guide.md) — canonical runtime architecture and release workflow.
-- [CI](docs/ci.md) — local and GitHub Actions checks.
-
-`docs guide` prints the full agent contract — the end-to-end workflow,
-conventions, and the exact boundary between what the harness does and what you
-write. `docs explain <code>` explains any finding the review loop reports.
-
-## What a document type is
-
-A template is one JSON file. It declares the sections, what each section's
-contract requires, the context topics to elicit, the citation policy, the page
-geometry and the strict-mode policy. Adding a new kind of document means
-writing that file — never touching Python.
+Templates are JSON contracts, not Python extensions. A template can declare section structure, required context, citation rules, page geometry, and strict policy without changing the harness.
 
 ```bash
-uv run docs template init informe-tecnico   # documented skeleton
-uv run docs template validate informe-tecnico
+uv run docs template list --available
+uv run docs template init technical-report
+uv run docs template validate technical-report
 ```
 
-Three templates ship built in: `documento-generico`, `technical-report-srs`
-and `reporte-estadia-tic`.
+Built-in templates: `documento-generico`, `technical-report-srs`, and `reporte-estadia-tic`.
 
-## Architecture
+## Architecture in one picture
 
-Hexagonal, and enforced rather than asserted:
-
+```text
+CLI / API / workers
+        │
+        ▼
+application services
+        │
+        ▼
+domain models + ports  ◀── infrastructure adapters
 ```
-cli/ ──▶ application/ ──▶ domain/          infrastructure/ ──implements──▶ domain/ports/
-```
 
-- `domain/` — pure logic and `typing.Protocol` ports. No I/O.
-- `application/` — services that depend only on ports.
-- `infrastructure/` — adapters: python-docx, pandoc, LibreOffice, pdfium2,
-  matplotlib, mermaid-cli, resvg.
-- `composition.py` — shared application composition root used by CLI, API, and worker bootstraps.
-- `cli/` — Typer command adapters; `cli/_shared.py` contains CLI-facing helpers and compatibility wiring, not the application composition root.
+The runtime center is a contract-validated pipeline DAG. The composition root connects domain ports to renderers, repositories, QA adapters, locks, and publication services.
 
-`tests/architecture/` turns the rules into checks: the layering rule is
-verified against the GitNexus import graph, every `.docx` writer is proven to
-route through the deterministic-zip normalizer, and every capability spec is
-proven to name the code that implements it.
+## Optional local tools
 
-## Requirements
+| Tool | Enables | Without it |
+| --- | --- | --- |
+| Pandoc | Markdown → DOCX / HTML | Those formats are skipped with evidence. |
+| LibreOffice | PDF output and visual QA | PDF and visual review are skipped. |
+| Java | Some PDF ingestion paths | Affected source files are skipped. |
+| Mermaid CLI + resvg | Generated Mermaid figures | The affected visual is skipped. |
+| Playwright + browser | Browser-level HTML QA | Static HTML checks still run. |
 
-Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/). Everything else is
-optional and degrades to a warning rather than a failure:
-
-| Tool | Needed for | Without it |
-|---|---|---|
-| `pandoc` | markdown → docx/HTML | those formats are skipped |
-| LibreOffice | PDF output, visual QA | PDF and visual QA are skipped |
-| Java | some PDF ingest paths | those sources are skipped |
-| `mmdc` (mermaid-cli) | mermaid diagrams | that visual is skipped |
-| `resvg` | SVG → PNG | that figure is skipped |
-
-`docs doctor` reports which of them it can find.
-
-## Development
+## For contributors
 
 ```bash
-uv run pytest              # full test suite (the count is reported by pytest/CI)
-uv run ruff check .
-uv run mypy
+uv run pytest
+uv run ruff check src tests
+uv run mypy src tools
 ```
 
-CI runs all three on every push and pull request, with a coverage floor.
+The suite includes unit, integration, toolchain, and architecture checks. The architecture tests enforce dependency direction, deterministic document writing, and declared capability evidence.
 
-- `AGENTS.md` — the agent contract (also `docs guide`)
-- `CLAUDE.md` — conventions, determinism gotchas, knowledge-graph routing
-- `openspec/specs/` — the 12 capability contracts
+## Go deeper
 
-## Current X20 contract
+| Need | Read |
+| --- | --- |
+| End-to-end authoring contract | [AGENTS.md](AGENTS.md) or `docs guide` |
+| Runtime boundaries and stages | [Architecture](docs/architecture.md) · [Pipeline](docs/pipeline.md) |
+| Template authoring | [Templates](docs/templates.md) · [Covers](docs/covers.md) |
+| Verification and evidence | [QA](docs/qa.md) · [Provenance](docs/provenance.md) |
+| Service operation | [Deployment](docs/deployment.md) · [API transport](docs/api-transport.md) |
+| Platform integrations | [Plugins](docs/plugins.md) · [Tauri desktop](docs/desktop-tauri.md) |
 
-Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline commands are `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `release` executes the complete verified build/package/publication pipeline for the active document under the release policy. The full `document` build pipeline writes verified requested formats under `output/current/` only when its policy permits publication; `--pipeline document-build` and `verify` do not publish. Package and publish take explicit output destinations. Inspection and diff are read-only; packaging and publication use temporary files and atomic replacement. The native runtime does not silently fall back to an alternate pipeline or write unverified output.
+---
 
-The `PipelineService` owns the registered stage graph, execution, policy, and publication boundary. Its 23-stage `FULL_STAGE_IDS` inventory is: `resolve-config`, `resolve-template`, `resolve-context`, `resolve-assets`, `validate-contracts`, `ingest-sources`, `normalize-sources`, `compile-structure`, `generate-visuals`, `compose-cover`, `build-docx`, `build-html`, `build-pdf`, `structural-audit`, `editorial-review`, `evidence-review`, `consistency-review`, `accessibility-review`, `visual-review`, `reproducibility-check`, `record-provenance`, `package-release`, `publish-draft`. The shared composition in `src/docs/composition.py` constructs the pipeline service and native stage handlers for the CLI/API application. Process-specific transport and worker lifecycle configuration stays at each process bootstrap; stages without applicable input may be explicit `skipped` results. Publication failures appear under `publication_blockers`. Use `document plan --pipeline <id>` to inspect stage contracts. Build and verify also accept `--pipeline <id>` to execute a registered public boundary such as `document-build` or `document-verify`.
+<div align="center">
 
-Policies are `draft`, `strict`, and `release`: draft may warn for permitted optional capability gaps and cannot publish; strict/release promote warnings and missing required capabilities to errors and can publish only after verification. Capabilities are local executable checks; plugins are not runtime dependencies.
+**Write the document. Let the harness prove the mechanics.**
 
-Publication requires a matching X20 manifest and verifiable ledger attestation for the exact artifact bytes. The manifest must include SHA-256 source/template/config/context, asset and artifact identities, renderer versions, passed verification, and a provenance run. HTML verification checks UTF-8 and one HTML/body root; PDF verification checks its header and readable page structure; DOCX uses format audit and QA. PDF is derived and not byte-deterministic.
-
-Canonical X20 sources are `document.json`, sections, context, template/configuration, and assets. Rendered files, manifests, QA reports, packages, and published copies are derived. The separate X20 provenance ledger records hashes only after successful stages.
+</div>
