@@ -83,6 +83,9 @@ def _schemas() -> dict[str, Any]:
 _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "workspace list": "GET /v2/workspaces",
     "workspace create": "POST /v2/workspaces",
+    "workspace use": "POST /v2/workspaces/{workspace_id}/use",
+    "workspace status": "GET /v2/workspaces/{workspace_id}/status",
+    "workspace migrate": "POST /v2/workspaces/{workspace_id}/migrate",
     "workspace rename": "PATCH /v2/workspaces/{workspace_id}",
     "doc list": "GET /v2/documents",
     "doc show": "GET /v2/documents/{document_id}",
@@ -200,6 +203,15 @@ def build_openapi_document() -> dict[str, Any]:
             "get": _operation("Get workspace", _json_response(_ref("workspace")), scopes=("workspaces:read",)),
             "patch": _operation("Rename workspace", _json_response(_ref("workspace")), request=_ref("workspace_rename_request"), scopes=("workspaces:write",)),
             "delete": _operation("Delete workspace", _json_response(_ref("workspace_delete_response")), scopes=("workspaces:write",)),
+        },
+        "/v2/workspaces/{workspace_id}/use": {
+            "post": _operation("Use workspace", _json_response(_ref("workspace")), scopes=("workspaces:write",)),
+        },
+        "/v2/workspaces/{workspace_id}/status": {
+            "get": _operation("Get workspace status", _json_response(_ref("workspace_status")), scopes=("workspaces:read",)),
+        },
+        "/v2/workspaces/{workspace_id}/migrate": {
+            "post": _operation("Migrate workspace", _json_response(_ref("workspace_migration")), request=_ref("workspace_migrate_request"), scopes=("workspaces:write",)),
         },
         "/v2/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document")), request={"type": "object", "required": ["workspace_id", "document_id", "template", "title"], "properties": {"workspace_id": {"type": "string"}, "document_id": {"type": "string"}, "template": {"type": "string"}, "title": {"type": "string"}}, "additionalProperties": False}, scopes=("documents:write",))},
         "/v2/documents/import": {

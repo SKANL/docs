@@ -20,6 +20,7 @@ from docs.application.graph_queries import GraphQueryService
 from docs.application.imports import ImportError, SourceImportService
 from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.application.workspace_migration import WorkspaceMigrationError, WorkspaceMigrationInspector, WorkspaceMigrationPublisher
 from docs.domain.runtime_records import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
@@ -33,6 +34,9 @@ from .workspace_dto import (
     WorkspacePage,
     WorkspaceRenameRequest,
     WorkspaceResponse,
+    WorkspaceStatusResponse,
+    WorkspaceMigrateRequest,
+    WorkspaceMigrationResponse,
 )
 
 _LOG = logging.getLogger("docs.api.application")
@@ -291,6 +295,10 @@ class X20Application:
                 return "workspaces:write"
             if len(parts) == 3 and method == "DELETE":
                 return "workspaces:write"
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return "workspaces:read"
+            if len(parts) == 4 and parts[3] in {"use", "migrate"} and method == "POST":
+                return "workspaces:write"
         if parts[:2] == ["v2", "documents"] and len(parts) in {3, 4, 5}:
             if len(parts) == 3 and method == "GET":
                 return "documents:read"
@@ -434,6 +442,12 @@ class X20Application:
                 return lambda request: self._rename_workspace(workspace_id, request)
             if len(parts) == 3 and method == "DELETE":
                 return lambda request: self._delete_workspace(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "use" and method == "POST":
+                return lambda request: self._use_workspace(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return lambda request: self._workspace_status(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "migrate" and method == "POST":
+                return lambda request: self._migrate_workspace(workspace_id, request)
             return None
         if parts[:2] == ["v2", "plugins"]:
             if len(parts) == 3 and method == "GET":
@@ -793,6 +807,59 @@ class X20Application:
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         return Response.json(WorkspaceDeleteResponse(deleted=workspace_id).model_dump(mode="json"))
+
+    def _use_workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        self._resolve_workspace(workspace_id)
+        item = self.workspace_registry.select(workspace_id)
+        return Response.json(self._workspace_response(item))
+
+    def _workspace_status(self, workspace_id: str, request: Request) -> Response:
+        del request
+        item = self._resolve_workspace(workspace_id)
+        assert self.workspace_registry is not None
+        active = self.workspace_registry.active()
+        response = WorkspaceStatusResponse(
+            workspace=WorkspaceResponse.model_validate(item),
+            active=active is not None and active["id"] == workspace_id,
+        )
+        return Response.json(response.model_dump(mode="json"))
+
+    def _migrate_workspace(self, workspace_id: str, request: Request) -> Response:
+        item = self._resolve_workspace(workspace_id)
+        try:
+            data = WorkspaceMigrateRequest.model_validate(request.json(object_only=True) if request.body else {})
+        except ValidationError as exc:
+            raise APIError("invalid_request", "Request body does not match workspace contract", 400) from exc
+        if self.managed_workspace_root is None:
+            raise APIError("workspace_root_not_configured", "Managed workspace root is not configured", 503)
+        destination = self.managed_workspace_root / uuid4().hex
+        report = WorkspaceMigrationInspector().inspect(item["root"], destination=destination)
+        if data.apply and not report.ready:
+            raise APIError("migration_source_not_ready", "Workspace migration source is not ready", 409)
+        published_workspace = None
+        if data.apply:
+            self.managed_workspace_root.mkdir(parents=True, exist_ok=True)
+            try:
+                publication = WorkspaceMigrationPublisher().publish(item["root"], destination)
+                assert self.workspace_registry is not None
+                name = f"{item['name'][:48]} migrated {uuid4().hex[:8]}"
+                published_workspace = WorkspaceResponse.model_validate(
+                    self.workspace_registry.create(name, publication.destination)
+                )
+            except WorkspaceMigrationError as exc:
+                raise APIError(exc.code, exc.code, 409) from exc
+        response = WorkspaceMigrationResponse(
+            source_workspace_id=workspace_id,
+            detected_format=report.detected_format,
+            ready=report.ready,
+            published=data.apply,
+            workspace=published_workspace,
+            errors=[error.code for error in report.errors],
+        )
+        return Response.json(response.model_dump(mode="json"))
 
     def _run(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)

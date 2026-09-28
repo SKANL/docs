@@ -210,6 +210,23 @@ def test_workspace_openapi_uses_the_runtime_dto_component_schemas() -> None:
     assert schemas["workspace_page"]["properties"]["items"]["items"] == {"$ref": "#/components/schemas/workspace"}
 
 
+def test_workspace_lifecycle_routes_have_runtime_dtos_and_scopes() -> None:
+    document = build_openapi_document()
+    paths = document["paths"]
+    schemas = document["components"]["schemas"]
+    for action, method, scope, response in (
+        ("use", "post", "workspaces:write", "workspace"),
+        ("status", "get", "workspaces:read", "workspace_status"),
+        ("migrate", "post", "workspaces:write", "workspace_migration"),
+    ):
+        operation = paths[f"/v2/workspaces/{{workspace_id}}/{action}"][method]
+        assert operation["x-rbac-scopes"] == [scope]
+        assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {"$ref": f"#/components/schemas/{response}"}
+    assert paths["/v2/workspaces/{workspace_id}/migrate"]["post"]["requestBody"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/workspace_migrate_request"}
+    for name in ("workspace_status", "workspace_migrate_request", "workspace_migration"):
+        assert schemas[name]["additionalProperties"] is False
+
+
 def test_openapi_declares_only_the_v2_public_route_prefix() -> None:
     paths = build_openapi_document()["paths"]
 

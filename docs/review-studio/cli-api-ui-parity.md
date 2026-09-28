@@ -75,7 +75,7 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs workspace create` | `POST /v2/workspaces` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
 | `docs workspace delete` | `DELETE /v2/workspaces/{workspace_id}` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
 | `docs workspace list` | `GET /v2/workspaces` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:read` |
-| `docs workspace migrate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs workspace migrate` | `POST /v2/workspaces/{workspace_id}/migrate` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
 | `docs workspace rename` | `PATCH /v2/workspaces/{workspace_id}` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
-| `docs workspace status` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs workspace use` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs workspace status` | `GET /v2/workspaces/{workspace_id}/status` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:read` |
+| `docs workspace use` | `POST /v2/workspaces/{workspace_id}/use` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |

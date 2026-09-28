@@ -159,6 +159,97 @@ def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(
     assert body(deleted) == {"deleted": workspace["id"]}
 
 
+def test_workspace_lifecycle_use_status_and_migrate(tmp_path):
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Source", tmp_path / "source")
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+        managed_workspace_root=tmp_path / "managed",
+    )
+    workspace_id = workspace["id"]
+
+    before = application.dispatch(Request("GET", f"/v2/workspaces/{workspace_id}/status"))
+    selected = application.dispatch(Request("POST", f"/v2/workspaces/{workspace_id}/use"))
+    after = application.dispatch(Request("GET", f"/v2/workspaces/{workspace_id}/status"))
+    inspected = application.dispatch(Request("POST", f"/v2/workspaces/{workspace_id}/migrate", body={}))
+    assert not (tmp_path / "managed").exists()
+    migrated = application.dispatch(Request("POST", f"/v2/workspaces/{workspace_id}/migrate", body={"apply": True}))
+
+    assert before.status == selected.status == after.status == inspected.status == migrated.status == 200
+    assert body(before) == {"workspace": workspace, "active": False}
+    assert body(selected) == workspace
+    assert body(after) == {"workspace": workspace, "active": True}
+    assert body(inspected)["ready"] is True and body(inspected)["published"] is False
+    assert body(migrated)["published"] is True
+    new_workspace = body(migrated)["workspace"]
+    assert new_workspace["id"] != workspace_id
+    assert Path(new_workspace["root"]).parent == tmp_path / "managed"
+    assert registry.get(new_workspace["id"]) == new_workspace
+
+
+@pytest.mark.parametrize("method,action,body_value", [
+    ("POST", "use", None), ("GET", "status", None), ("POST", "migrate", {}),
+])
+def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, action, body_value):
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=WorkspaceRegistry(tmp_path / "registry.json"),
+    )
+    response = application.dispatch(Request(method, f"/v2/workspaces/missing/{action}", body=body_value))
+    assert response.status == 404
+    assert body(response)["error"]["code"] == "workspace_not_found"
+
+
+def test_workspace_migration_rejects_unknown_request_fields(tmp_path):
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Source", tmp_path / "source")
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+    )
+    response = application.dispatch(Request("POST", f"/v2/workspaces/{workspace['id']}/migrate", body={"destination": str(tmp_path / "outside")}))
+    assert response.status == 400
+    assert body(response)["error"]["code"] == "invalid_request"
+
+
+@pytest.mark.parametrize("method,action,allowed_scope", [
+    ("POST", "use", "workspaces:read"),
+    ("GET", "status", "workspaces:write"),
+    ("POST", "migrate", "workspaces:read"),
+])
+def test_workspace_lifecycle_denies_insufficient_scope(tmp_path, method, action, allowed_scope):
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Source", tmp_path / "source")
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+    )
+    application.auth = lambda token: Principal("ada", frozenset({allowed_scope})) if token == "ok" else None
+    response = application.dispatch(Request(method, f"/v2/workspaces/{workspace['id']}/{action}", headers={"Authorization": "Bearer ok"}))
+    assert response.status == 403
+    assert body(response)["error"]["code"] == "insufficient_scope"
+
+
+def test_workspace_use_is_reachable_through_wsgi(tmp_path):
+    import io
+
+    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    workspace = registry.create("Source", tmp_path / "source")
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+    )
+    statuses = []
+    result = application(
+        {"REQUEST_METHOD": "POST", "PATH_INFO": f"/v2/workspaces/{workspace['id']}/use", "wsgi.input": io.BytesIO(), "CONTENT_LENGTH": "0"},
+        lambda status, headers: statuses.append(status),
+    )
+    assert statuses == ["200 OK"]
+    assert registry.active() == workspace
+    assert json.loads(b"".join(result)) == workspace
+
+
 @pytest.mark.parametrize("method,path,payload", [
     ("POST", "/v2/workspaces", {"name": "Managed", "root": "/client-controlled"}),
     ("POST", "/v2/workspaces", {"name": 1}),
