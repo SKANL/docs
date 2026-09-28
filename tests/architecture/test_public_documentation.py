@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 from docs.application.pipeline_service import FULL_STAGE_IDS
+from docs.cli.commands.document_app import _BATCH_OUTPUT_PATHS, _record_batch_outputs, _write_batch_journal
 
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
@@ -46,7 +48,39 @@ def test_public_stage_order_matches_full_stage_ids() -> None:
     assert all(order == FULL_STAGE_IDS for order in declared_orders.values())
 
 
-def test_current_docs_use_current_and_release_output_contract() -> None:
+def _runtime_output_contract(tmp_path: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    root = tmp_path / "document"
+    current, release = (root / path for path in _BATCH_OUTPUT_PATHS)
+    current.mkdir(parents=True)
+    release.mkdir(parents=True)
+    (current / "document-id.pdf").write_bytes(b"artifact")
+    (current / "document-id.pdf.manifest.json").write_text("{}", encoding="utf-8")
+    (release / "document-id.zip").write_bytes(b"package")
+    journal = root / "runs" / "x20-batch-transaction.json"
+    backup = root / "backup"
+    _write_batch_journal(journal, root, backup, _BATCH_OUTPUT_PATHS)
+    _record_batch_outputs(journal, "document-id", "pdf")
+    expected = json.loads(journal.read_text(encoding="utf-8"))["expected"]
+    return tuple(
+        (path.as_posix() + "/", tuple(sorted(expected[path.as_posix()])))
+        for path in _BATCH_OUTPUT_PATHS
+    )
+
+
+def _extract_documented_destination_contract(document: str) -> tuple[tuple[str, str], ...]:
+    match = re.search(
+        r"## Runtime output destinations\n\n\| Destination \| Runtime-owned contents \|\n"
+        r"\|---\|---\|\n(?P<rows>(?:\|.*\|\n)+)",
+        document,
+    )
+    assert match is not None, "architecture must declare the runtime output destinations"
+    return tuple(
+        (destination, contents)
+        for destination, contents in re.findall(r"\| `([^`]+)` \| ([^|]+) \|", match.group("rows"))
+    )
+
+
+def test_current_docs_use_current_and_release_output_contract(tmp_path: Path) -> None:
     documents = _read_current_public_docs()
     current_guidance = "\n".join(documents.values())
 
@@ -62,3 +96,13 @@ def test_current_docs_use_current_and_release_output_contract() -> None:
     assert "`document release` runs the full pipeline under the release policy" in architecture
     assert "takes an explicit output path" in architecture
     assert "takes an explicit destination" in architecture
+
+    runtime_contract = _runtime_output_contract(tmp_path)
+    assert runtime_contract == (
+        ("output/current/", ("document-id.pdf", "document-id.pdf.manifest.json")),
+        ("output/release/", ("document-id.zip",)),
+    )
+    assert _extract_documented_destination_contract(architecture) == (
+        (runtime_contract[0][0], "`<document-id>.<format>` plus its manifest sidecar after a publish-permitted full build."),
+        (runtime_contract[1][0], "`<document-id>.zip` after the managed release pipeline packages successfully."),
+    )

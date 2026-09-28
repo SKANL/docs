@@ -47,6 +47,10 @@ Architectural design: `docs/superpowers/specs/2026-09-27-reconcile-documentation
 
 - Round 1 corrected lifecycle wording to be policy- and pipeline-dependent: only a publish-permitted full `document` build writes `output/current/`; `document-build` and `verify` do not publish; `release` invokes the full release-policy pipeline; direct package/publish use explicit destinations while the managed release pipeline uses `output/release/`. Strengthened the documentation contract against these distinctions. **Evidence:** `uv run pytest tests/architecture/test_public_documentation.py tests/integration/test_pipeline_service.py -q` — 31 passed; `git diff --check` — PASS. Rollback boundary: revert this correction's prose and strengthened assertions, retaining the original DRIFT-03 contract. Work-unit commit: `fix(docs): scope lifecycle output claims`.
 
+## DRIFT-03 review correction — round 2
+
+- Bound the documentation destination table to `_BATCH_OUTPUT_PATHS` and `_record_batch_outputs` behavior. The test now derives `output/current/` as the verified artifact plus manifest destination and `output/release/` as the managed ZIP destination, so swapping their documented meanings fails. **Evidence:** `uv run pytest tests/architecture/test_public_documentation.py tests/integration/test_pipeline_service.py -q` — 31 passed; `git diff --check` — PASS. Rollback boundary: revert the destination-table parser and runtime batch-journal assertion with the corresponding architecture table. Work-unit commit: `test(docs): bind output contract to runtime`.
+
 ## Acceptance criteria
 
 - [ ] All seven discrepancies satisfy the acceptance criteria in the architectural design.

@@ -28,6 +28,13 @@ Durable source inputs are `document.json`, section Markdown, resolved context, t
 
 The native runtime does not silently fall back to an alternate pipeline. The full `document` build pipeline writes verified artifacts under `output/current/` only when the selected policy and pipeline permit publication; `document-build` and `document verify` do not publish artifacts. `document release` runs the full pipeline under the release policy, where the release stages are eligible. `docs document package` takes an explicit output path, while `docs document publish` takes an explicit destination; the managed release pipeline uses `output/release/` for its package artifact. These are separate transitions: building, verifying, packaging, and publishing have distinct side effects. Canonical X20 source preparation intentionally reuses existing ingest/render/audit adapters through ports; this is an implementation bridge, not a plugin dependency.
 
+## Runtime output destinations
+
+| Destination | Runtime-owned contents |
+|---|---|
+| `output/current/` | `<document-id>.<format>` plus its manifest sidecar after a publish-permitted full build. |
+| `output/release/` | `<document-id>.zip` after the managed release pipeline packages successfully. |
+
 ## Pipeline kernel
 
 The exported `FULL_STAGE_IDS` declaration has 23 stages. It is the registry's
