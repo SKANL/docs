@@ -44,7 +44,7 @@ jobs:
             --nsis $nsis.FullName `
             --output latest.json
       - name: Publish signed release
-        uses: softprops/action-gh-release@a4f117a9dd5572319a486154ec1147aebabd285c # master
+        uses: softprops/action-gh-release@4d8ab33c14495378882c8fef6babbed32e187639 # master
         with:
           generate_release_notes: true
           files: |
