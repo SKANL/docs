@@ -36,7 +36,7 @@ jobs:
           echo '3c1d52850a78bc4ed0e9d05605b53ad21bb5313184f14bf72515d29cb98cda10  /tmp/resvg.tar.gz' | sha256sum --check
           sudo tar -xzf /tmp/resvg.tar.gz -C /usr/local/bin resvg
           sudo chmod +x /usr/local/bin/resvg
-      - uses: astral-sh/setup-uv@e4db8464a088ece1b920f60402e813ea4de65b8f # v4.7.0
+      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.7.0
         with:
           version: '0.8.22'
           enable-cache: true
