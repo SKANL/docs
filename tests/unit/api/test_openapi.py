@@ -175,7 +175,8 @@ def test_baseline_contract_contains_only_live_read_operations() -> None:
 
 
 def test_workspace_identity_is_required_for_workspace_content_and_optional_for_global_plugins() -> None:
-    paths = build_openapi_document()["paths"]
+    document = build_openapi_document()
+    paths = document["paths"]
     for path in ("/v2/documents", "/v2/runs", "/v2/graph", "/v2/baselines", "/v2/revisions"):
         workspace = next(parameter for parameter in paths[path]["parameters"] if parameter["name"] == "workspace_id")
         assert workspace["in"] == "query"
@@ -184,6 +185,9 @@ def test_workspace_identity_is_required_for_workspace_content_and_optional_for_g
     plugin_workspace = next(parameter for parameter in paths["/v2/plugins"]["parameters"] if parameter["name"] == "workspace_id")
     assert plugin_workspace["required"] is False
     create_workspace = paths["/v2/documents"]["post"]["requestBody"]["content"]["application/json"]["schema"]
+    if "$ref" in create_workspace:
+        schema_name = create_workspace["$ref"].rsplit("/", 1)[-1]
+        create_workspace = document["components"]["schemas"][schema_name]
     assert "workspace_id" in create_workspace["required"]
     raw_import_workspace = next(
         parameter for parameter in paths["/v2/documents/import/raw"]["parameters"]
@@ -243,3 +247,39 @@ def test_capability_discovery_has_a_versioned_openapi_response() -> None:
     assert document["components"]["schemas"]["capability"]["required"] == [
         "id", "cli_command", "route", "scopes", "surface", "slice", "status"
     ]
+
+
+def test_document_lifecycle_routes_have_strict_dtos_scopes_and_active_state_contract():
+    document = build_openapi_document()
+    paths = document["paths"]
+    schemas = document["components"]["schemas"]
+
+    assert paths["/v2/documents"]["post"]["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/document_create_request"
+    }
+    assert paths["/v2/documents"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["allOf"][1]["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/document_summary"
+    }
+    assert paths["/v2/current-document"]["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/document_current_response"
+    }
+    assert paths["/v2/documents/{document_id}/use"]["post"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/document_summary"
+    }
+    assert paths["/v2/documents/{document_id}"]["patch"]["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/document_rename_request"
+    }
+    assert paths["/v2/documents/{document_id}"]["delete"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/document_delete_response"
+    }
+    assert paths["/v2/documents"]["post"]["x-rbac-scopes"] == ["documents:write"]
+    assert paths["/v2/documents"]["get"]["x-rbac-scopes"] == ["documents:read"]
+    assert paths["/v2/current-document"]["get"]["x-rbac-scopes"] == ["documents:read"]
+    assert paths["/v2/documents/{document_id}/use"]["post"]["x-rbac-scopes"] == ["documents:write"]
+    assert paths["/v2/documents/{document_id}"]["patch"]["x-rbac-scopes"] == ["documents:write"]
+    assert paths["/v2/documents/{document_id}"]["delete"]["x-rbac-scopes"] == ["documents:write"]
+    assert schemas["document_summary"]["additionalProperties"] is False
+    assert set(schemas["document_summary"]["properties"]) == {"id", "title", "template", "created_at", "active"}
+    assert schemas["document_create_request"]["additionalProperties"] is False
+    assert schemas["document_create_request"]["required"] == ["workspace_id", "document_id"]
+    assert schemas["document_rename_request"]["additionalProperties"] is False

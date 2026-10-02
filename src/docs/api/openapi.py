@@ -6,6 +6,7 @@ import copy
 import json
 from typing import Any
 
+from .document_dto import document_openapi_schemas
 from .workspace_dto import workspace_openapi_schemas
 
 
@@ -88,6 +89,11 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "workspace migrate": "POST /v2/workspaces/{workspace_id}/migrate",
     "workspace rename": "PATCH /v2/workspaces/{workspace_id}",
     "doc list": "GET /v2/documents",
+    "doc new": "POST /v2/documents",
+    "doc current": "GET /v2/current-document",
+    "doc use": "POST /v2/documents/{document_id}/use",
+    "doc rename": "PATCH /v2/documents/{document_id}",
+    "doc delete": "DELETE /v2/documents/{document_id}",
     "doc show": "GET /v2/documents/{document_id}",
     "context status": "GET /v2/documents/{document_id}/context",
     "context set": "POST /v2/documents/{document_id}/context",
@@ -213,7 +219,10 @@ def build_openapi_document() -> dict[str, Any]:
         "/v2/workspaces/{workspace_id}/migrate": {
             "post": _operation("Migrate workspace", _json_response(_ref("workspace_migration")), request=_ref("workspace_migrate_request"), scopes=("workspaces:write",)),
         },
-        "/v2/documents": {"get": _operation("List documents", page("document"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document")), request={"type": "object", "required": ["workspace_id", "document_id", "template", "title"], "properties": {"workspace_id": {"type": "string"}, "document_id": {"type": "string"}, "template": {"type": "string"}, "title": {"type": "string"}}, "additionalProperties": False}, scopes=("documents:write",))},
+        "/v2/documents": {"get": _operation("List documents", page("document_summary"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document_summary")), request=_ref("document_create_request"), scopes=("documents:write",), success_status=201)},
+        "/v2/current-document": {
+            "get": _operation("Get current document", _json_response(_ref("document_current_response")), scopes=("documents:read",)),
+        },
         "/v2/documents/import": {
             "post": _operation(
                 "Import document source",
@@ -253,7 +262,12 @@ def build_openapi_document() -> dict[str, Any]:
             ],
         },
         "/v2/documents/{document_id}": {
-            "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",))
+            "get": _operation("Get document", _json_response(_ref("document")), scopes=("documents:read",)),
+            "patch": _operation("Rename document", _json_response(_ref("document_summary")), request=_ref("document_rename_request"), scopes=("documents:write",)),
+            "delete": _operation("Delete document", _json_response(_ref("document_delete_response")), scopes=("documents:write",)),
+        },
+        "/v2/documents/{document_id}/use": {
+            "post": _operation("Use document", _json_response(_ref("document_summary")), scopes=("documents:write",)),
         },
         "/v2/documents/{document_id}/status": {
             "get": _operation("Get document status", _json_response({"type": "object"}), scopes=("documents:read",))
@@ -392,7 +406,7 @@ def build_openapi_document() -> dict[str, Any]:
     paths["/v2/runs/{run_id}/graph"]["get"]["summary"] = "Get run graph"
     paged_paths = {"/v2/documents", "/v2/findings", "/v2/artifacts", "/v2/templates", "/v2/revisions", "/v2/publications", "/v2/runs", "/v2/runs/{run_id}/artifacts", "/v2/runs/{run_id}/findings", "/v2/artifacts/{artifact_id}/previews", "/v2/baselines", "/v2/plugins"}
     workspace_scoped = {
-        "/v2/documents", "/v2/documents/{document_id}", "/v2/documents/{document_id}/status",
+        "/v2/documents", "/v2/current-document", "/v2/documents/{document_id}", "/v2/documents/{document_id}/use", "/v2/documents/{document_id}/status",
         "/v2/documents/{document_id}/sections", "/v2/documents/{document_id}/sections/{section_id}",
         "/v2/documents/{document_id}/context", "/v2/documents/{document_id}/classification",
         "/v2/documents/{document_id}/runs", "/v2/documents/{document_id}/prepare",
@@ -426,6 +440,7 @@ def build_openapi_document() -> dict[str, Any]:
             item["parameters"] = parameters
     schemas = _schemas()
     schemas.update(workspace_openapi_schemas())
+    schemas.update(document_openapi_schemas())
     return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": schemas}}
 
 

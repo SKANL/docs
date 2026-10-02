@@ -26,7 +26,7 @@ def test_api_document_creation_composes_the_requested_workspace(
 ) -> None:
     from docs.api.http import Request
     from docs.application.workspaces import WorkspaceRegistry
-    from docs.domain.models.document import Document
+    from docs.domain.models.document import DocumentSummary
 
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
@@ -38,8 +38,24 @@ def test_api_document_creation_composes_the_requested_workspace(
     calls: list[Workspace] = []
 
     class Documents:
-        def create(self, document_id: str, template: str, title: str) -> Document:
-            return Document(id=document_id, title=title, template=template)
+        def __init__(self) -> None:
+            self.items: list[DocumentSummary] = []
+            self.active_id = ""
+
+        def create(self, document_id: str, template: str, title: str) -> None:
+            self.items.append(DocumentSummary(
+                id=document_id,
+                title=title,
+                template=template,
+                created_at="2026-01-01T00:00:00",
+            ))
+            self.active_id = document_id
+
+        def list(self) -> list[DocumentSummary]:
+            return self.items
+
+        def current(self) -> str:
+            return self.active_id
 
     class Composition:
         documents = Documents()

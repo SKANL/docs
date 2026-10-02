@@ -12,8 +12,10 @@ from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
 from docs.application.workspaces import WorkspaceRegistry
+from docs.composition import compose_application
 from docs.domain.runtime_records import Artifact, Graph, Passport, Run
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
+from docs.domain.workspace import Workspace
 
 
 class Runs:
@@ -65,6 +67,97 @@ class Graphs:
 
 def body(response):
     return json.loads(response.body)
+
+
+def document_lifecycle_app(tmp_path):
+    root = tmp_path / "document-workspace"
+    registry = WorkspaceRegistry(tmp_path / "workspace-registry.json")
+    workspace = registry.create("Documents", root)
+
+    def document_service_factory(workspace_root):
+        workspace_root = Path(workspace_root)
+        return compose_application(Workspace(
+            workspace_root / "documents",
+            workspace_root / "templates",
+            root=workspace_root,
+        )).documents
+
+    application = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+        document_service_factory=document_service_factory,
+    )
+    return application, workspace, registry
+
+
+def test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection(tmp_path):
+    application, workspace, registry = document_lifecycle_app(tmp_path)
+    workspace_id = workspace["id"]
+
+    first = application.dispatch(Request(
+        "POST", "/v2/documents",
+        body={"workspace_id": workspace_id, "document_id": "first", "template": "documento-generico", "title": "First"},
+    ))
+    second = application.dispatch(Request(
+        "POST", "/v2/documents",
+        body={"workspace_id": workspace_id, "document_id": "second", "template": "documento-generico", "title": "Second"},
+    ))
+    listed = application.dispatch(Request("GET", f"/v2/documents?workspace_id={workspace_id}"))
+    current_after_create = application.dispatch(Request("GET", f"/v2/current-document?workspace_id={workspace_id}"))
+    selected = application.dispatch(Request("POST", f"/v2/documents/first/use?workspace_id={workspace_id}"))
+    renamed = application.dispatch(Request(
+        "PATCH", f"/v2/documents/first?workspace_id={workspace_id}", body={"new_id": "renamed"},
+    ))
+    current_after_rename = application.dispatch(Request("GET", f"/v2/current-document?workspace_id={workspace_id}"))
+    deleted = application.dispatch(Request("DELETE", f"/v2/documents/renamed?workspace_id={workspace_id}"))
+
+    restarted = X20Application(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
+        graph_store=Graphs(), workspace_registry=registry,
+        document_service_factory=application.document_service_factory,
+    )
+    persisted_current = restarted.dispatch(Request("GET", f"/v2/current-document?workspace_id={workspace_id}"))
+
+    assert first.status == second.status == 201
+    assert body(first) == {"id": "first", "title": "First", "template": "documento-generico", "created_at": body(first)["created_at"], "active": True}
+    assert body(second)["active"] is True
+    assert [(item["id"], item["active"]) for item in body(listed)["items"]] == [("first", False), ("second", True)]
+    assert body(current_after_create) == {"current_document_id": "second", "document": body(second)}
+    assert selected.status == renamed.status == 200
+    assert body(selected)["id"] == "first" and body(selected)["active"] is True
+    assert body(renamed)["id"] == "renamed" and body(renamed)["active"] is True
+    assert body(current_after_rename)["current_document_id"] == "renamed"
+    assert body(deleted) == {"deleted": "renamed", "current_document_id": "second"}
+    assert body(persisted_current)["current_document_id"] == "second"
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("POST", "/v2/documents/missing/use", None),
+        ("PATCH", "/v2/documents/missing", {"new_id": "renamed"}),
+        ("DELETE", "/v2/documents/missing", None),
+    ],
+)
+def test_document_lifecycle_mutations_report_missing_documents(tmp_path, method, path, payload):
+    application, workspace, _ = document_lifecycle_app(tmp_path)
+    query = f"?workspace_id={workspace['id']}"
+    response = application.dispatch(Request(method, path + query, body=payload))
+
+    assert response.status == 404
+    assert body(response)["error"]["code"] == "document_not_found"
+
+
+def test_document_create_rejects_unknown_request_fields(tmp_path):
+    application, workspace, _ = document_lifecycle_app(tmp_path)
+
+    response = application.dispatch(Request(
+        "POST", "/v2/documents",
+        body={"workspace_id": workspace["id"], "document_id": "valid", "unexpected": True},
+    ))
+
+    assert response.status == 400
+    assert body(response)["error"]["code"] == "invalid_request"
 
 
 ALL_SCOPES = frozenset({
