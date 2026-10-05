@@ -10,6 +10,8 @@ describe("createReviewApi", () => {
   it("selects the configured fetch-backed API", () => {
     const api = createReviewApi({ apiBaseUrl: "https://review.example.test/v1", fetch: viFetch() });
     expect(api.listRuns).toBeTypeOf("function");
+    expect(api.getCapabilities).toBeTypeOf("function");
+    expect(api.reviewDocument).toBeTypeOf("function");
     expect(ReviewApiClient).toBeTypeOf("function");
   });
 });

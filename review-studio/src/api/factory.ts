@@ -11,6 +11,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
   return {
     ...client.authoring,
     health: () => client.health(),
+    getCapabilities: () => client.getCapabilities(),
     listRuns: () => client.listRuns(),
     getRun: id => client.getRun(id),
     listDocuments: workspaceId => client.listDocuments(workspaceId),
