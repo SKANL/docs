@@ -36,7 +36,9 @@ supervised sidecar to become healthy, and drives the shared workspace/document
 journey: create a document, cancel a deletion, confirm it. It refuses to run if
 `%APPDATA%/com.docs.reviewstudio` already exists, so it cannot touch a real
 user's data; set `DESKTOP_RUNTIME_ALLOW_EXISTING_APPDATA=1` to override on a
-disposable machine.
+disposable machine. Pass `--fresh` (`npm run check:runtime -- --fresh`) to
+re-run: it deletes that directory only if it holds the `.runtime-check-owned`
+marker the script wrote when it created it; foreign data is never deleted.
 
 ## Real installer and PDF journeys
 

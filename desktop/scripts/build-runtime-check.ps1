@@ -9,7 +9,8 @@ $reviewStudio = Join-Path (Split-Path -Parent $desktop) 'review-studio'
 
 Push-Location $reviewStudio
 try {
-    $env:VITE_DOCS_API_BASE_URL = 'http://127.0.0.1:8765/v1'
+    # The client accepts /v2 directly; the /v1 form is a legacy alias.
+    $env:VITE_DOCS_API_BASE_URL = 'http://127.0.0.1:8765/v2'
     npm run build
     if ($LASTEXITCODE -ne 0) { throw "Review Studio build failed (exit code $LASTEXITCODE)." }
 } finally {
