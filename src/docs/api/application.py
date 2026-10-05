@@ -33,6 +33,7 @@ from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
 from .authoring_routes import AuthoringRoutes
+from .delivery_routes import DeliveryRoutes
 from .document_dto import (
     DocumentCreateRequest,
     DocumentCurrentResponse,
@@ -165,9 +166,15 @@ class X20Application:
             services_for=self._workspace_services_for,
             host=self,
         )
+        self._delivery = DeliveryRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+            owned_run=self._quality._owned_run,
+            publications=lambda: self.publication_store,
+        )
         self._operation_routes: dict[str, Any] = {
             "authoring": self._authoring, "sections": self._sections, "pipeline": self._pipeline,
-            "quality": self._quality,
+            "quality": self._quality, "delivery": self._delivery,
         }
         # SSE progress stream bounds: a stream never holds a worker thread longer
         # than `progress_max_seconds`; the client reconnects until terminal.

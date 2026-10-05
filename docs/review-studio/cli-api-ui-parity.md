@@ -51,11 +51,11 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs document import` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs document ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs document inspect` | `GET /v2/artifacts/{artifact_id}/inspect` | available | Not exposed yet (API only) | S4 | `artifacts:read` |
-| `docs document package` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
+| `docs document package` | `POST /v2/documents/{document_id}/package` | available | Not exposed yet (API only) | S5 | `documents:write` |
 | `docs document passport` | `GET /v2/runs/{run_id}/passport` | available | Not exposed yet (API only) | S4 | `passport:read` |
 | `docs document plan` | `POST /v2/documents/{document_id}/plan` | available | Not exposed yet (API only) | S3 | `documents:read` |
 | `docs document prepare` | `POST /v2/documents/{document_id}/prepare` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
-| `docs document publish` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
+| `docs document publish` | `POST /v2/documents/{document_id}/publications` | available | Not exposed yet (API only) | S5 | `documents:write` |
 | `docs document release` | `POST /v2/documents/{document_id}/run` | available | Not exposed yet (API only) | S5 | `documents:write` |
 | `docs document run` | `POST /v2/documents/{document_id}/run` | available | Not exposed yet (API only) | S3 | `documents:write` |
 | `docs document status` | `GET /v2/documents/{document_id}/status` | available | Workspace page (`#workspace`): document status panel | S6 | `documents:read` |

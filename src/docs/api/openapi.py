@@ -323,7 +323,7 @@ def build_openapi_document() -> dict[str, Any]:
         "/v2/documents/{document_id}/prepare": {"post": _operation("Prepare document", _json_response(_ref("document")), request=document_action_request, scopes=("documents:write",))},
         "/v2/documents/{document_id}/build": {"post": _operation("Build document", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
         "/v2/documents/{document_id}/verify": {"post": _operation("Verify document", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
-        "/v2/documents/{document_id}/publish": {"post": _operation("Publish document", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
+        "/v2/documents/{document_id}/publish": {"post": _operation("Enqueue document-publish pipeline run (asynchronous; for a direct synchronous publish of one artifact use POST .../publications)", _json_response(_ref("run")), request=document_action_request, scopes=("documents:write",), success_status=202)},
         "/v2/documents/{document_id}/revisions": {
             "post": _operation("Create document revision", _json_response(_ref("RevisionResponse")), request=_ref("RevisionRequest"), scopes=("documents:write",), success_status=201)
         },

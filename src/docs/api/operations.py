@@ -24,7 +24,7 @@ class Operation:
     request: type[dto.AuthoringDTO] | None
     response: type[dto.AuthoringDTO]
     success_status: int = 200
-    routes: str = "authoring"  # key of the handler object ("authoring", "sections", "pipeline" or "quality")
+    routes: str = "authoring"  # key of the handler object ("authoring", "sections", "pipeline", "quality" or "delivery")
 
     def request_ref(self) -> dict[str, str] | None:
         return _ref(self.request) if self.request else None
@@ -93,6 +93,14 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation(("qa-docx",), "POST", f"{_DOC}/qa-docx", "documents:write",
               "Run rendered DOCX QA (a missing render toolchain is a degraded result)",
               "qa_docx", dto.QaDocxRequest, dto.QaDocxResponse, routes="quality"),
+    Operation(("document package",), "POST", f"{_DOC}/package", "documents:write",
+              "Package the document's verified build output as a deterministic archive under "
+              "artifacts/packages (synchronous)",
+              "package_document", dto.PackageRequest, dto.PackageResponse, routes="delivery"),
+    Operation(("document publish",), "POST", f"{_DOC}/publications", "documents:write",
+              "Publish one verified artifact to a destination under output/release and record it "
+              "(synchronous; unlike POST .../publish, which queues a document-publish pipeline run)",
+              "publish_artifact", dto.PublishRequest, dto.PublicationResponse, 201, routes="delivery"),
     Operation(("apply-corrections",), "POST", f"{_DOC}/corrections/apply", "documents:write",
               "Apply pending section corrections", "apply_corrections", dto.WorkspaceScopedRequest,
               dto.CorrectionsResponse, routes="quality"),
