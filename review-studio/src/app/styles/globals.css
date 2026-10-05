@@ -32,7 +32,7 @@
   --ring: oklch(0.55 0.2 268);
   --success: oklch(0.48 0.12 160);
   --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.55 0.13 80);
+  --warning: oklch(0.48 0.12 75);
   --warning-foreground: oklch(0.985 0 0);
   --info: oklch(0.5 0.14 245);
   --info-foreground: oklch(0.985 0 0);

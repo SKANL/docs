@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { ApiError } from "@/api/client";
 import { useApi } from "@/app/providers";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -65,7 +64,8 @@ export function useAction<V, R>(fn: (variables: V) => Promise<R>, options: { suc
   return useMutation({
     mutationFn: fn,
     onSuccess: (result, variables) => {
-      toast.success(options.success(result, variables));
+      const message = options.success(result, variables);
+      void import("sonner").then(({ toast }) => toast.success(message)); // sonner stays out of the entry chunk
       options.invalidate?.forEach(queryKey => void queryClient.invalidateQueries({ queryKey }));
       options.onDone?.(result, variables);
     },

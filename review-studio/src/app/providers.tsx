@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { Suspense, createContext, lazy, useContext, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Toaster } from "@/components/ui/sonner";
+const Toaster = lazy(() => import("@/components/ui/sonner").then(m => ({ default: m.Toaster })));
 import type { ReviewApi } from "@/api/models";
 
 const ApiContext = createContext<ReviewApi | null>(null);
@@ -19,7 +19,7 @@ export function AppProviders({ api, children }: { api: ReviewApi; children: Reac
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         {children}
-        <Toaster />
+        <Suspense fallback={null}><Toaster /></Suspense>
       </TooltipProvider>
     </QueryClientProvider>
   </ApiContext.Provider>;

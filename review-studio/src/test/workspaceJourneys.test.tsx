@@ -43,8 +43,8 @@ describe("workspace and document journeys", () => {
     window.location.hash = "#workspace";
     render(<App api={makeApi({ listWorkspaces: async () => workspaces, createWorkspace })} />);
 
-    await screen.findByRole("heading", { name: "Workspace and document control" });
-    fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await screen.findByRole("heading", { name: "Workspace and document control" }, { timeout: 5000 });
+    fireEvent.click(await screen.findByRole("button", { name: "Create workspace" }));
     const dialog = await screen.findByRole("dialog", { name: "Create workspace" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Workspace name" }), { target: { value: "Studio" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));

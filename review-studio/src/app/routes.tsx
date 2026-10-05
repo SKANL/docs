@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { areas } from "@/app/areas";
 import { AppShell } from "@/app/shell/AppShell";
@@ -5,17 +6,19 @@ import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { ConfigureLayout, configureSections } from "@/features/templates/ConfigureLayout";
-import { DoctorPanel } from "@/features/templates/DoctorPanel";
-import { PluginsPanel } from "@/features/templates/PluginsPanel";
-import { TemplateEditorPage } from "@/features/templates/TemplateEditorPage";
-import { ToolsRoute } from "@/features/tools/ToolsRoute";
-import { DeliveryRoute } from "@/features/delivery/DeliveryRoute";
-import { AuthoringRoute } from "@/features/authoring/AuthoringRoute";
-import { QualityRoute } from "@/features/quality/QualityRoute";
-import { PipelineRoute } from "@/features/pipeline/PipelineRoute";
-import { RunDetailPage } from "@/features/pipeline/RunDetailPage";
-import { HomePage } from "@/features/home/HomePage";
-import { WorkspaceDocumentPage } from "@/features/workspace/WorkspaceDocumentPage";
+
+// Each feature area is its own chunk so the entry bundle holds only the shell (budget: docs/review-studio/release-proof.md).
+const HomePage = lazy(() => import("@/features/home/HomePage").then(m => ({ default: m.HomePage })));
+const AuthoringRoute = lazy(() => import("@/features/authoring/AuthoringRoute").then(m => ({ default: m.AuthoringRoute })));
+const PipelineRoute = lazy(() => import("@/features/pipeline/PipelineRoute").then(m => ({ default: m.PipelineRoute })));
+const RunDetailPage = lazy(() => import("@/features/pipeline/RunDetailPage").then(m => ({ default: m.RunDetailPage })));
+const QualityRoute = lazy(() => import("@/features/quality/QualityRoute").then(m => ({ default: m.QualityRoute })));
+const DeliveryRoute = lazy(() => import("@/features/delivery/DeliveryRoute").then(m => ({ default: m.DeliveryRoute })));
+const ToolsRoute = lazy(() => import("@/features/tools/ToolsRoute").then(m => ({ default: m.ToolsRoute })));
+const WorkspaceDocumentPage = lazy(() => import("@/features/workspace/WorkspaceDocumentPage").then(m => ({ default: m.WorkspaceDocumentPage })));
+const TemplateEditorPage = lazy(() => import("@/features/templates/TemplateEditorPage").then(m => ({ default: m.TemplateEditorPage })));
+const DoctorPanel = lazy(() => import("@/features/templates/DoctorPanel").then(m => ({ default: m.DoctorPanel })));
+const PluginsPanel = lazy(() => import("@/features/templates/PluginsPanel").then(m => ({ default: m.PluginsPanel })));
 
 function ConfigureIndex() {
   const area = areas.find(item => item.id === "configure")!;

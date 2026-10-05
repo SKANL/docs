@@ -4,7 +4,7 @@ import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorText, useActiveContext } from "@/features/authoring/data";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { BaselinesPanel } from "./BaselinesPanel";
@@ -32,13 +32,16 @@ export function QualityRoute() {
     {header}
     <Tabs value={current} onValueChange={next => navigate(`/review/${next}`)}>
       <TabsList className="h-auto flex-wrap">{tabs.map(([name, label]) => <TabsTrigger key={name} value={name}>{label}</TabsTrigger>)}</TabsList>
+      {/* Every trigger names its panel through aria-controls, so the active panel must be a real tabpanel. */}
+      <TabsContent value={current}>
+        {current === "findings" && <FindingsPanel workspaceId={workspaceId} selectedId={id} />}
+        {current === "artifacts" && <ArtifactsPanel workspaceId={workspaceId} selectedId={id} />}
+        {current === "evidence" && <EvidencePanel workspaceId={workspaceId} runId={id} />}
+        {current === "baselines" && <BaselinesPanel workspaceId={workspaceId} />}
+        {current === "diff" && <DiffPanel workspaceId={workspaceId} />}
+        {current === "qa" && <QaPanel />}
+        {current === "graph" && <GraphPanel workspaceId={workspaceId} />}
+      </TabsContent>
     </Tabs>
-    {current === "findings" && <FindingsPanel workspaceId={workspaceId} selectedId={id} />}
-    {current === "artifacts" && <ArtifactsPanel workspaceId={workspaceId} selectedId={id} />}
-    {current === "evidence" && <EvidencePanel workspaceId={workspaceId} runId={id} />}
-    {current === "baselines" && <BaselinesPanel workspaceId={workspaceId} />}
-    {current === "diff" && <DiffPanel workspaceId={workspaceId} />}
-    {current === "qa" && <QaPanel />}
-    {current === "graph" && <GraphPanel workspaceId={workspaceId} />}
   </div>;
 }
