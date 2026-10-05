@@ -80,11 +80,11 @@ def workspace_openapi_schemas() -> dict[str, dict[str, Any]]:
 __all__ = [
     "WorkspaceCreateRequest",
     "WorkspaceDeleteResponse",
+    "WorkspaceMigrateRequest",
+    "WorkspaceMigrationResponse",
     "WorkspacePage",
     "WorkspaceRenameRequest",
     "WorkspaceResponse",
     "WorkspaceStatusResponse",
-    "WorkspaceMigrateRequest",
-    "WorkspaceMigrationResponse",
     "workspace_openapi_schemas",
 ]
