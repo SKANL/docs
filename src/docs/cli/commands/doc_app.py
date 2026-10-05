@@ -13,9 +13,10 @@ from pathlib import Path
 
 import typer
 
+from docs.application.document_summary import build_document_summary
+from docs.application.templates import builtin_names, read_builtin
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
-from docs.cli.commands.template_app import _list_builtin_names, _read_builtin
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.domain.workspace_format import (
@@ -95,8 +96,8 @@ def doc_init(
     templates_path.mkdir(parents=True, exist_ok=True)
 
     if not any(templates_path.glob("*.json")):
-        for name in _list_builtin_names():
-            (templates_path / f"{name}.json").write_text(_read_builtin(name), encoding="utf-8")
+        for name in builtin_names():
+            (templates_path / f"{name}.json").write_text(read_builtin(name), encoding="utf-8")
 
     _activate_initialized_workspace()
 
@@ -186,46 +187,7 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
     figuras y salida -- para que un agente pueda retomar sin re-derivar el
     estado a mano."""
     deps, doc = _ctx(ctx)
-    resolved = deps.resolve_context(doc)
-    normative = resolve_normative_settings(resolved.config)
-    result = deps.status.status_summary(resolved.doc_id, resolved.template, resolved.config, normative=normative)
-    payload = result.to_dict()
-    output = resolved.config.get("output", {})
-    output_format = output.get("format", "docx") if isinstance(output, dict) else "docx"
-    invalid_format_diagnostic: dict[str, str | bool | None] | None = None
-    try:
-        renderer = deps.resolve_renderer(resolved.config)
-    except (AttributeError, TypeError, ValueError):
-        renderer = None
-        invalid_format_diagnostic = {
-            "available": False,
-            "path": None,
-            "required": True,
-            "policy": "required",
-            "kind": "format",
-            "version": None,
-            "diagnostic": f"Formato de salida no registrado: '{output_format}'.",
-            "requirement": "a registered output renderer",
-            "degradation": "diagnostics only; rendering remains unavailable",
-        }
-    registry = deps.create_capability_registry(
-        renderer,
-        str(output_format),
-        deps.workspace.doc_root(resolved.doc_id),
-        resolved.config.get("paths", {}),
-    )
-    capabilities = registry.report()
-    capability_diagnostics = registry.diagnostics()
-    if invalid_format_diagnostic is not None:
-        capabilities["output_format"] = {"available": False, "path": None}
-        capability_diagnostics["output_format"] = invalid_format_diagnostic
-    v2 = payload.get("v2", {})
-    current_v2 = dict(v2) if isinstance(v2, dict) else {}
-    payload["v2"] = {
-        **current_v2,
-        "capabilities": capabilities,
-        "capability_diagnostics": capability_diagnostics,
-    }
+    result, payload = build_document_summary(deps, doc)
     if as_json:
         print(json.dumps(payload, ensure_ascii=False, indent=None, sort_keys=True))
     else:

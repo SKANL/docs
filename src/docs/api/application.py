@@ -49,6 +49,7 @@ from .operations import match_operation
 from .pipeline_routes import PipelineRoutes, output_format
 from .quality_routes import QualityRoutes
 from .section_routes import SectionRoutes
+from .template_routes import TemplateRoutes
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
@@ -61,6 +62,12 @@ from .workspace_dto import (
 )
 
 _LOG = logging.getLogger("docs.api.application")
+
+# First two path segments whose sub-routes are matched dynamically.
+_DYNAMIC_ROOTS = tuple(
+    ["v2", root]
+    for root in ("runs", "documents", "workspaces", "plugins", "artifacts", "revisions", "baselines", "templates")
+)
 
 
 def _dict(value: Any) -> Any:
@@ -173,9 +180,13 @@ class X20Application:
             owned_run=self._quality._owned_run,
             publications=lambda: self.publication_store,
         )
+        self._templates_routes = TemplateRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+        )
         self._operation_routes: dict[str, Any] = {
             "authoring": self._authoring, "sections": self._sections, "pipeline": self._pipeline,
-            "quality": self._quality, "delivery": self._delivery,
+            "quality": self._quality, "delivery": self._delivery, "templates": self._templates_routes,
         }
         # SSE progress stream bounds: a stream never holds a worker thread longer
         # than `progress_max_seconds`; the client reconnects until terminal.
@@ -204,6 +215,7 @@ class X20Application:
             ("POST", "/v2/documents/import"),
             ("POST", "/v2/documents/import/raw"),
             ("POST", "/v2/documents"),
+            ("POST", "/v2/templates"),
             ("POST", "/v2/runs"),
         }
         self._validate_initial_route_collisions()
@@ -225,6 +237,7 @@ class X20Application:
         self._register_owned_route("POST", "/v2/documents/import", self._import_document)
         self._register_owned_route("POST", "/v2/documents/import/raw", self._import_raw_document)
         self._register_owned_route("POST", "/v2/documents", self._create_document)
+        self._register_owned_route("POST", "/v2/templates", self._templates_routes.create_template)
         self._register_owned_route("POST", "/v2/runs", self._create_run)
 
     def dispatch(self, request: Request) -> Response:
@@ -232,7 +245,7 @@ class X20Application:
             parts = request.route_path.strip("/").split("/")
             if (
                 len(parts) >= 3
-                and parts[:2] in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
+                and parts[:2] in _DYNAMIC_ROOTS
                 and request.route_path not in {"/v2/documents/import", "/v2/documents/import/raw"}
             ):
                 handler = self._dynamic_handler(request.method, request.route_path)
@@ -431,7 +444,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
+            or parts[:2] not in _DYNAMIC_ROOTS
         ):
             return False
         if match_operation(method, path) is not None:
@@ -472,7 +485,7 @@ class X20Application:
         if (
             len(parts) < 3
             or any(not part for part in parts)
-            or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
+            or parts[:2] not in _DYNAMIC_ROOTS
         ):
             return None
         resource_id = parts[2]

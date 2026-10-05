@@ -364,3 +364,56 @@ class PublicationResponse(AuthoringDTO):
     attestation_sha256: str
     identities: dict[str, Any]
     warnings: list[str]
+
+
+# -- templates, document summary, document import (S6.1) ------------------------
+class TemplateCreateRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    name: str
+
+
+class TemplateUseRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    force: bool = False
+
+
+class TemplateValidateRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    template: dict[str, Any] | None = None  # a draft to check instead of the stored file; never written
+
+
+class TemplateShowResponse(AuthoringDTO):
+    name: str
+    template: dict[str, Any]
+
+
+class TemplateWriteResponse(AuthoringDTO):
+    name: str
+    path: str  # workspace-relative
+
+
+class TemplateValidationResponse(AuthoringDTO):
+    name: str
+    passed: bool
+    issues: list[dict[str, Any]]
+
+
+class DocumentSummaryResponse(AuthoringDTO):
+    document_id: str
+    summary: dict[str, Any]  # exactly what `doc status --json` prints
+
+
+class DocumentImportRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    filename: str
+    content_base64: str
+
+
+class DocumentImportResponse(AuthoringDTO):
+    document_id: str
+    filename: str
+    path: str  # workspace-relative
+    sha256: str
+    size: int
+    mime_type: str
+    deduplicated: bool

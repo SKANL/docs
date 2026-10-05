@@ -66,9 +66,9 @@ def _schemas() -> dict[str, Any]:
             "id": {"type": "string"}, "cli_command": {"type": "string"},
             "route": {"type": ["string", "null"]},
             "scopes": {"type": "array", "items": {"type": "string"}},
-            "surface": {"type": "string", "enum": ["web+desktop"]},
+            "surface": {"type": "string", "enum": ["web+desktop", "cli"]},
             "slice": {"type": "string"},
-            "status": {"type": "string", "enum": ["available", "planned"]},
+            "status": {"type": "string", "enum": ["available", "planned", "excluded"]},
         }),
         "capability_group": _item_schema("capability_group", {
             "id": {"type": "string"},
@@ -152,11 +152,20 @@ def _slice_for(command: str) -> str:
     return "S6"
 
 
+# CLI commands that are terminal-only by nature; each needs the evidence for why HTTP is not the owner.
+_EXCLUDED_CLI_COMMANDS: dict[str, str] = {
+    "doc init": (
+        "Bootstraps the process current directory (writes docs.config.json and registers it as the local "
+        "workspace); over HTTP a workspace is created with POST /v2/workspaces."
+    ),
+}
+
+
 def build_capability_catalog() -> dict[str, Any]:
     """Return all current CLI commands, advertising only exact API-backed operations."""
     paths = build_openapi_document()["paths"]
     commands = _cli_commands()
-    stale = set(_AVAILABLE_CLI_ROUTES) - set(commands)
+    stale = (set(_AVAILABLE_CLI_ROUTES) | set(_EXCLUDED_CLI_COMMANDS)) - set(commands)
     if stale:
         raise ValueError(f"Capability mappings reference missing CLI commands: {sorted(stale)}")
     groups: dict[str, list[dict[str, Any]]] = {}
@@ -167,11 +176,14 @@ def build_capability_catalog() -> dict[str, Any]:
         if route is not None:
             method, path = route.split(" ", 1)
             scopes = list(paths[path][method.lower()].get("x-rbac-scopes", []))
-        groups.setdefault(group, []).append({
+        entry = {
             "id": command.replace(" ", "."), "cli_command": command,
             "route": route, "scopes": scopes, "surface": "web+desktop",
             "slice": _slice_for(command), "status": "available" if route else "planned",
-        })
+        }
+        if command in _EXCLUDED_CLI_COMMANDS and route is None:
+            entry |= {"status": "excluded", "surface": "cli", "reason": _EXCLUDED_CLI_COMMANDS[command]}
+        groups.setdefault(group, []).append(entry)
     return {"groups": [{"id": group, "capabilities": items} for group, items in groups.items()]}
 
 
@@ -404,6 +416,11 @@ def build_openapi_document() -> dict[str, Any]:
         "/v2/plugins": {"get": _operation("List plugins", page("plugin"), scopes=("plugins:read",))},
         "/v2/plugins/{plugin_id}": {"get": _operation("Get plugin", _json_response(_ref("plugin")), scopes=("plugins:read",))},
     }
+    for plugin_path in ("/v2/plugins", "/v2/plugins/{plugin_id}"):
+        paths[plugin_path]["get"]["description"] = (
+            "Plugins are read-only by design: manifests are inspected and never executed, "
+            "so no write method is routed."
+        )
     paths["/v2/runs/{run_id}/graph"] = copy.deepcopy(paths["/v2/graph"])
     paths["/v2/runs/{run_id}/findings"] = {"get": _operation("List run findings", page("finding"), scopes=("findings:read",))}
     paths["/v2/runs/{run_id}/previews/{name}"] = {"get": _operation("Get run preview", {"description": "PNG preview image", "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}}}, scopes=("artifacts:read",))}
@@ -435,7 +452,7 @@ def build_openapi_document() -> dict[str, Any]:
     } | {operation.path for operation in OPERATIONS}
     for path, item in paths.items():
         parameters = []
-        for segment in ("document_id", "run_id", "artifact_id", "revision_id", "baseline_id", "plugin_id", "workspace_id", "asset_name", "topic_id"):
+        for segment in ("document_id", "run_id", "artifact_id", "revision_id", "baseline_id", "plugin_id", "workspace_id", "asset_name", "topic_id", "template_name"):
             if "{" + segment + "}" in path:
                 parameters.append(_parameter(segment))
         parameters.extend(item.get("parameters", ()))
@@ -452,6 +469,7 @@ def build_openapi_document() -> dict[str, Any]:
         if parameters:
             item["parameters"] = parameters
     schemas = _schemas()
+    schemas["capability"]["properties"]["reason"] = {"type": "string"}  # optional: only `excluded` rows carry it
     schemas.update(workspace_openapi_schemas())
     schemas.update(document_openapi_schemas())
     schemas.update(component_schemas())

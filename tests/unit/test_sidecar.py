@@ -515,6 +515,58 @@ def test_sidecar_wsgi_delivery_routes_package_and_publish_a_verified_build(tmp_p
         thread.join(timeout=2)
 
 
+def test_sidecar_wsgi_template_and_summary_routes_use_real_composition(tmp_path: Path) -> None:
+    server = build_server(SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path))
+    application = server._docs_application.application
+    workspace = application.workspace_registry.list()[0]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+
+    def call(method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}{path}",
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    scope = f"workspace_id={workspace['id']}"
+    try:
+        status, shown = call("GET", f"/v2/templates/documento-generico?{scope}")
+        assert status == 200 and shown["template"]["type"], shown
+        status, missing = call("GET", f"/v2/templates/nope?{scope}")
+        assert status == 404 and missing["error"]["code"] == "template_not_found", missing
+        status, created = call("POST", f"/v2/templates?{scope}", {"name": "borrador"})
+        assert status == 201 and created["path"] == "templates/borrador.json", created
+        status, again = call("POST", f"/v2/templates?{scope}", {"name": "borrador"})
+        assert status == 409 and again["error"]["code"] == "template_exists", again
+        status, refused = call("POST", f"/v2/templates/documento-generico/use?{scope}", {})
+        assert status == 409 and refused["error"]["code"] == "template_exists", refused
+        status, forced = call("POST", f"/v2/templates/documento-generico/use?{scope}", {"force": True})
+        assert status == 200, forced
+        status, checked = call("POST", f"/v2/templates/borrador/validate?{scope}", {})
+        assert status == 200 and checked["passed"] is False and checked["issues"], checked
+        status, escaped = call("POST", f"/v2/templates?{scope}", {"name": "../x"})
+        assert status == 400, escaped
+        status, _ = call("POST", "/v2/documents", {
+            "workspace_id": workspace["id"], "document_id": "sumario", "template": "documento-generico", "title": "S",
+        })
+        assert status == 201
+        status, summary = call("GET", f"/v2/documents/sumario/summary?{scope}")
+        assert status == 200 and summary["summary"]["doc_id"] == "sumario", summary
+        status, imported = call("POST", f"/v2/documents/sumario/imports?{scope}", {"filename": "n.md", "content_base64": "aGk="})
+        assert status == 201 and imported["path"].startswith("documents/sumario/inbox/"), imported
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
 def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     health_app = build_application(config)

@@ -7,34 +7,13 @@ Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted with
 from __future__ import annotations
 
 import json
-from importlib.resources import files
 
 import typer
 
+from docs.application.templates import TemplateError, TemplateService, builtin_names
 from docs.cli._shared import _ctx, emit_result
-from docs.domain.review import ReviewResult
-from docs.domain.template_skeleton import build_template_skeleton
-from docs.domain.template_validation import validate_template
 
 template_app = typer.Typer(help="Gestiona los tipos de documento (plantillas).")
-
-_BUILTIN_PACKAGE = "docs.templates.builtin"
-
-
-def _list_builtin_names() -> list[str]:
-    """Built-in template ids shippable as package data (design.md item C).
-    `importlib.resources.files` — never a hardcoded filesystem path — so this
-    resolves from an installed wheel with no repo checkout."""
-    return sorted(
-        entry.name.removesuffix(".json")
-        for entry in files(_BUILTIN_PACKAGE).iterdir()
-        if entry.name.endswith(".json")
-    )
-
-
-def _read_builtin(name: str) -> str:
-    return files(_BUILTIN_PACKAGE).joinpath(f"{name}.json").read_text(encoding="utf-8")
-
 
 @template_app.command("list")
 def template_list(
@@ -43,7 +22,7 @@ def template_list(
 ) -> None:
     """Lista las plantillas del workspace, o las integradas con `--available`."""
     if available:
-        for name in _list_builtin_names():
+        for name in builtin_names():
             print(f"- {name}")
         return
     deps, _ = _ctx(ctx)
@@ -65,16 +44,15 @@ def template_use(
     """Copia una plantilla integrada (package data) a templates_dir (design.md
     item C: `template use`, lo que `doc init` reutiliza para sembrar un
     workspace vacío)."""
-    if name not in _list_builtin_names():
-        print(f"No existe la plantilla integrada `{name}`. Usa `template list --available`.")
-        raise typer.Exit(code=1)
     deps, _ = _ctx(ctx)
-    path = deps.workspace.templates_dir / f"{name}.json"
-    if path.exists() and not force:
-        print(f"Ya existe `{path}`. Usa --force para sobrescribir.")
-        raise typer.Exit(code=1)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_read_builtin(name), encoding="utf-8")
+    try:
+        path = TemplateService(deps.workspace.templates_dir).use(name, force=force)
+    except TemplateError as exc:
+        if exc.code == "builtin_template_not_found":
+            print(f"No existe la plantilla integrada `{name}`. Usa `template list --available`.")
+        else:
+            print(exc)
+        raise typer.Exit(code=1) from exc
     print(f"Plantilla `{name}` copiada a {path}.")
 
 
@@ -91,10 +69,11 @@ def template_init(ctx: typer.Context, doc_type: str = typer.Argument(..., help="
     """Emite un esqueleto documentado con cada bloque de política reconocido
     (spec: document-template "init emits a documented skeleton")."""
     deps, _ = _ctx(ctx)
-    skeleton = build_template_skeleton(doc_type)
-    path = deps.workspace.templates_dir / f"{doc_type}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(skeleton, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        path = TemplateService(deps.workspace.templates_dir).create(doc_type, overwrite=True)
+    except TemplateError as exc:
+        print(exc)
+        raise typer.Exit(code=1) from exc
     print(f"Plantilla `{doc_type}` creada en {path}.")
     print(f"Complete los TODO y ejecute `template validate {doc_type}` antes de usarla.")
 
@@ -118,11 +97,10 @@ def template_validate(
     (spec: document-template "Template Structural and Completeness
     Validation")."""
     deps, _ = _ctx(ctx)
-    path = deps.workspace.templates_dir / f"{doc_type}.json"
-    if not path.exists():
-        print(f"No existe la plantilla `{doc_type}` en {path}.")
-        raise typer.Exit(code=1)
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    result = ReviewResult(validate_template(raw))
+    try:
+        result = TemplateService(deps.workspace.templates_dir).validate(doc_type)
+    except TemplateError as exc:
+        print(exc)
+        raise typer.Exit(code=1) from exc
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)

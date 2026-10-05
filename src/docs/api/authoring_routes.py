@@ -22,6 +22,7 @@ from docs.application.classification_queue import (
     ClassificationQueueUnavailable,
     review_classification_queue,
 )
+from docs.application.document_summary import build_document_summary
 from docs.application.imports import ImportError, SourceImportService
 from docs.domain.ports.document_repository import DocumentNotFoundError
 
@@ -105,6 +106,29 @@ class AuthoringRoutes(RouteSupport):
     ) -> None:
         super().__init__(workspace_root=workspace_root, services_for=services_for)
         self._import = import_service
+
+    # -- summary / import ---------------------------------------------------
+    def document_summary(self, request: Request, document_id: str) -> Response:
+        _, deps = self._open(request, document_id)
+        self._resolve(deps, document_id)  # a bad document is a 4xx, never a 500
+        _, payload = build_document_summary(deps, document_id)
+        return Response.json(dto.DocumentSummaryResponse(document_id=document_id, summary=_jsonable(payload)).model_dump())
+
+    def import_document_source(self, request: Request, document_id: str) -> Response:
+        data = self._body(request, dto.DocumentImportRequest)
+        root, _ = self._open(request, document_id, data.workspace_id)
+        try:
+            stored = self._import.import_base64(root, data.filename, data.content_base64, document_id=document_id)
+        except ImportError as exc:
+            raise APIError(str(exc), str(exc), 400) from exc
+        except OSError as exc:
+            raise APIError("upload_failed", "Could not store the source", 500) from exc
+        return Response.json(dto.DocumentImportResponse(
+            document_id=document_id, filename=stored["filename"],
+            path=Path(stored["path"]).resolve().relative_to(Path(root).resolve()).as_posix(),
+            sha256=stored["sha256"], size=stored["size"], mime_type=stored["mime_type"],
+            deduplicated=stored["deduplicated"],
+        ).model_dump(), 201)
 
     # -- assets ------------------------------------------------------------
     def list_assets(self, request: Request, document_id: str) -> Response:
