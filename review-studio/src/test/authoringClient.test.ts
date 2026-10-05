@@ -80,4 +80,42 @@ describe("authoring client", () => {
     expect(new URL(String(fetcher.mock.calls[0]![0])).pathname).toBe("/v2/documents/d/assets");
     expect(typeof api.confirmClassification).toBe("function");
   });
+
+  it("sends the workspace scope on classification reads and confirmations", async () => {
+    const read = setup({ document_id: "d", items: [] });
+    await read.client.getDocumentClassification("d");
+    expect(read.call()).toMatchObject({ method: "GET", query: { workspace_id: "ws-1" } });
+    const confirm = setup({ document_id: "d", items: [] });
+    await confirm.client.confirmDocumentClassification("d", { relative_path: "a/x.md", confirmed_role: "evidence" });
+    expect(confirm.call()).toMatchObject({ method: "POST", query: { workspace_id: "ws-1" } });
+  });
+
+  it("builds a section and packs context", async () => {
+    const build = setup({ document_id: "d", section_id: "intro", path: "sections/020-intro.md", proposal: false });
+    await expect(build.client.authoring.buildSection("d", "in tro")).resolves.toMatchObject({ proposal: false });
+    expect(build.call()).toMatchObject({ path: "/v2/documents/d/sections/in%20tro/build", method: "POST", body: {} });
+    const pack = setup({ document_id: "d", target: "all", paths: ["a"] });
+    await expect(pack.client.authoring.packContext("d", "all")).resolves.toMatchObject({ paths: ["a"] });
+    expect(pack.call()).toMatchObject({ path: "/v2/documents/d/context-pack", method: "POST", body: { target: "all" } });
+  });
+
+  it("reviews a section and a document with structured findings", async () => {
+    const finding = { severity: "error", message: "m", code: "c", dimension: "editorial" };
+    const section = setup({ document_id: "d", section_id: "intro", passed: false, findings: [finding] });
+    const reviewed = await section.client.authoring.reviewSection("d", "intro", { strict: true });
+    expect(reviewed.findings[0]?.code).toBe("c");
+    expect(section.call()).toMatchObject({ path: "/v2/documents/d/sections/intro/review", method: "POST", body: { strict: true } });
+    const document = setup({ document_id: "d", section_id: null, passed: true, findings: [] });
+    await document.client.authoring.reviewDocument("d", { dimensions: ["structural"] });
+    expect(document.call()).toMatchObject({ path: "/v2/documents/d/review", method: "POST", body: { dimensions: ["structural"] } });
+  });
+
+  it("stamps a section with the actor and revises a document", async () => {
+    const stamp = setup({ document_id: "d", section_id: "intro", path: "p", authored_by: "ada", model: "m", stamped_at: "t" });
+    await stamp.client.authoring.stampSection("d", "intro", { by: "ada", model: "m" });
+    expect(stamp.call()).toMatchObject({ path: "/v2/documents/d/sections/intro/stamp", method: "POST", body: { by: "ada", model: "m" } });
+    const revise = setup({ target_id: "intro", diff: "", summary: "", changed_sections: ["intro"], diff_path: "sections/_revisions/x.diff" });
+    await expect(revise.client.authoring.reviseDocument("d", { target_id: "intro", new_body: "x", request: "r" })).resolves.toMatchObject({ diff_path: "sections/_revisions/x.diff" });
+    expect(revise.call()).toMatchObject({ path: "/v2/documents/d/revisions", method: "POST", body: { target_id: "intro", new_body: "x", request: "r" } });
+  });
 });

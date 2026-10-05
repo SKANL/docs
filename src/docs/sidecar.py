@@ -796,6 +796,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         config_values = resolved.config
         strict = bool(payload.get("strict", False))
         normative = resolve_normative_settings(config_values)
+        manifest_exists, manifest_size = deps.rules_manifest_state(config_values)
         now = datetime.now(UTC).isoformat()
         target_kind = deps.revision.resolve_target(resolved.template, target_id)
         if target_kind == "topic":
@@ -806,8 +807,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
                 topic_id=target_id,
                 request=request,
                 strict=strict,
-                manifest_exists=False,
-                manifest_size=0,
+                manifest_exists=manifest_exists,
+                manifest_size=manifest_size,
                 normative=normative,
                 now=now,
                 new_value=value,
@@ -822,8 +823,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
                 new_body=value,
                 request=request,
                 strict=strict,
-                manifest_exists=False,
-                manifest_size=0,
+                manifest_exists=manifest_exists,
+                manifest_size=manifest_size,
                 normative=normative,
                 now=now,
             )

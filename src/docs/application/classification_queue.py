@@ -23,6 +23,24 @@ class ClassificationQueueUnavailable(ClassificationQueueError):
     """No classification queue exists yet (ingest has not produced one)."""
 
 
+def _entries(queue: Any) -> tuple[list[Any], Mapping[str, Any] | None]:
+    """Queue entries plus the keyed mapping they came from, if any; corrupt shapes raise."""
+    keyed: Mapping[str, Any] | None = None
+    if isinstance(queue, list):
+        entries = queue
+    elif isinstance(queue, Mapping):
+        raw = queue.get("entries")
+        if isinstance(raw, Mapping):
+            keyed, entries = raw, list(raw.values())
+        else:
+            entries = queue.get("items", queue.get("sources", []))
+    else:
+        raise ClassificationQueueError("classification queue is corrupt: unexpected top-level value")
+    if not isinstance(entries, list) or not all(isinstance(item, dict) for item in entries):
+        raise ClassificationQueueError("classification queue is corrupt: entries must be objects")
+    return entries, keyed
+
+
 def review_classification_queue(
     document_root: Path,
     relative_path: str | None = None,
@@ -32,12 +50,11 @@ def review_classification_queue(
     queue_path = Path(document_root) / "inbox" / CLASSIFICATION_QUEUE_NAME
     if not queue_path.is_file():
         raise ClassificationQueueUnavailable("classification queue is unavailable; run document ingest first")
-    queue = json.loads(queue_path.read_text(encoding="utf-8"))
-    keyed = queue.get("entries") if isinstance(queue, Mapping) else None
-    if isinstance(keyed, Mapping):
-        entries = list(keyed.values())
-    else:
-        entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
+    try:
+        queue = json.loads(queue_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ClassificationQueueError("classification queue is corrupt: not valid JSON") from exc
+    entries, keyed = _entries(queue)
     if relative_path is None and role is None:
         return entries
     if not relative_path or role not in CONFIRMABLE_ROLES:

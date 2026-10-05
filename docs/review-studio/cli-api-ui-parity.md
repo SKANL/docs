@@ -8,7 +8,7 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs build-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs build-ledger` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs build-rules` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs build-section` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs build-section` | `POST /v2/documents/{document_id}/sections/{section_id}/build` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs collect-code-evidence` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs collect-issues` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs collect-sources` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
@@ -16,13 +16,13 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs explain` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
 | `docs format-audit-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs guide` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
-| `docs pack-context` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs pack-context` | `POST /v2/documents/{document_id}/context-pack` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs qa-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
-| `docs review-document` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs review-document` | `POST /v2/documents/{document_id}/review` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs review-rules` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs review-section` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs review-section` | `POST /v2/documents/{document_id}/sections/{section_id}/review` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs stamp` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
-| `docs stamp-section` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs stamp-section` | `POST /v2/documents/{document_id}/sections/{section_id}/stamp` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs translate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs asset add` | `POST /v2/documents/{document_id}/assets` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs asset list` | `GET /v2/documents/{document_id}/assets` | available | Not exposed yet (API only) | S2 | `documents:read` |
@@ -39,7 +39,7 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs doc list` | `GET /v2/documents` | available | Workspace page (`#workspace`): document list | S1 | `documents:read` |
 | `docs doc new` | `POST /v2/documents` | available | Workspace page (`#workspace`): create document dialog | S1 | `documents:write` |
 | `docs doc rename` | `PATCH /v2/documents/{document_id}` | available | Workspace page (`#workspace`): rename document dialog | S1 | `documents:write` |
-| `docs doc revise` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs doc revise` | `POST /v2/documents/{document_id}/revisions` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs doc show` | `GET /v2/documents/{document_id}` | available | Not exposed yet (API only) | S1 | `documents:read` |
 | `docs doc status` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
 | `docs doc use` | `POST /v2/documents/{document_id}/use` | available | Workspace page (`#workspace`): select document | S1 | `documents:write` |

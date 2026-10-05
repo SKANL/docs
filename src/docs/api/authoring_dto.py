@@ -116,3 +116,86 @@ class ContextTopicResponse(AuthoringDTO):
 class ContextRemoveResponse(AuthoringDTO):
     document_id: str
     removed: str
+
+
+# Section authoring (S2.2). Paths are relative to the document root.
+class SectionBuildResponse(AuthoringDTO):
+    document_id: str
+    section_id: str
+    path: str
+    proposal: bool  # True when authored content exists and a candidate was written instead
+
+
+class ContextPackRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    target: str  # a section id, "all" or "document"
+
+
+class ContextPackResponse(AuthoringDTO):
+    document_id: str
+    target: str
+    paths: list[str]
+
+
+class ReviewRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    strict: bool = False
+
+
+class DocumentReviewRequest(ReviewRequest):
+    dimensions: list[Literal[
+        "editorial", "evidence", "consistency", "structural", "accessibility", "visual", "reproducibility",
+    ]] = Field(default_factory=list)
+
+
+class ReviewFinding(AuthoringDTO):
+    severity: str
+    message: str
+    code: str
+    dimension: str
+    evidence: str | None = None
+    resolution_condition: str | None = None
+    section: str | None = None
+    file: str | None = None
+    page: int | None = None
+    stage_originator: str | None = None
+
+
+class ReviewResponse(AuthoringDTO):
+    document_id: str
+    section_id: str | None
+    passed: bool
+    findings: list[ReviewFinding]
+
+
+class StampRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    by: str = Field(min_length=1)
+    model: str = ""
+
+
+class StampResponse(AuthoringDTO):
+    document_id: str
+    section_id: str
+    path: str
+    authored_by: str
+    model: str
+    stamped_at: str
+
+
+class RevisionRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    target_id: str
+    new_body: str | None = None
+    new_value: str | None = None
+    request: str = "API revision"
+    field: str = ""
+    strict: bool = False
+
+
+class RevisionResponse(AuthoringDTO):
+    target_id: str
+    diff: str
+    summary: str
+    changed_sections: list[str]
+    diff_path: str

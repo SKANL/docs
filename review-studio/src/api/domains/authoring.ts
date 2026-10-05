@@ -1,4 +1,4 @@
-// Typed client for source, asset, classification and context routes (S2.1).
+// Typed client for source, asset, classification, context (S2.1) and section authoring (S2.2) routes.
 
 export type ClassificationRole = "evidence" | "example" | "normative";
 
@@ -20,6 +20,20 @@ export interface ContextIngested { document_id: string; topics: string[] }
 export interface ContextTopicContent { document_id: string; topic: string; content: string }
 export interface ContextTopicRemoved { document_id: string; removed: string }
 
+export type ReviewDimension = "editorial" | "evidence" | "consistency" | "structural" | "accessibility" | "visual" | "reproducibility";
+export interface ReviewFinding {
+  severity: string; message: string; code: string; dimension: string;
+  evidence?: string | null; resolution_condition?: string | null; section?: string | null;
+  file?: string | null; page?: number | null; stage_originator?: string | null;
+}
+/** Paths are relative to the document root. */
+export interface SectionBuilt { document_id: string; section_id: string; path: string; proposal: boolean }
+export interface ContextPacked { document_id: string; target: string; paths: string[] }
+export interface ReviewResult { document_id: string; section_id: string | null; passed: boolean; findings: ReviewFinding[] }
+export interface SectionStamped { document_id: string; section_id: string; path: string; authored_by: string; model: string; stamped_at: string }
+export interface RevisionInput { target_id: string; new_body?: string; new_value?: string; request?: string; field?: string; strict?: boolean }
+export interface RevisionResult { target_id: string; diff: string; summary: string; changed_sections: string[]; diff_path: string }
+
 export interface AuthoringApi {
   listAssets(documentId: string, kind?: string): Promise<AssetList>;
   addAsset(documentId: string, input: { filename: string; contentBase64: string; name?: string }): Promise<AssetAdded>;
@@ -31,6 +45,12 @@ export interface AuthoringApi {
   ingestContext(documentId: string): Promise<ContextIngested>;
   showContextTopic(documentId: string, topic: string): Promise<ContextTopicContent>;
   removeContextTopic(documentId: string, topic: string): Promise<ContextTopicRemoved>;
+  buildSection(documentId: string, sectionId: string): Promise<SectionBuilt>;
+  packContext(documentId: string, target: string): Promise<ContextPacked>;
+  reviewSection(documentId: string, sectionId: string, options?: { strict?: boolean }): Promise<ReviewResult>;
+  reviewDocument(documentId: string, options?: { strict?: boolean; dimensions?: ReviewDimension[] }): Promise<ReviewResult>;
+  stampSection(documentId: string, sectionId: string, input: { by: string; model?: string }): Promise<SectionStamped>;
+  reviseDocument(documentId: string, input: RevisionInput): Promise<RevisionResult>;
 }
 
 /** Workspace-scoped request function supplied by the API client. */
@@ -51,5 +71,11 @@ export function createAuthoringApi(request: ScopedRequest): AuthoringApi {
     ingestContext: id => request(`${doc(id)}/context/ingest`, json("POST", {})),
     showContextTopic: (id, topic) => request(`${doc(id)}/context/${encodeURIComponent(topic)}`),
     removeContextTopic: (id, topic) => request(`${doc(id)}/context/${encodeURIComponent(topic)}`, json("DELETE")),
+    buildSection: (id, section) => request(`${doc(id)}/sections/${encodeURIComponent(section)}/build`, json("POST", {})),
+    packContext: (id, target) => request(`${doc(id)}/context-pack`, json("POST", { target })),
+    reviewSection: (id, section, options = {}) => request(`${doc(id)}/sections/${encodeURIComponent(section)}/review`, json("POST", options)),
+    reviewDocument: (id, options = {}) => request(`${doc(id)}/review`, json("POST", options)),
+    stampSection: (id, section, input) => request(`${doc(id)}/sections/${encodeURIComponent(section)}/stamp`, json("POST", input)),
+    reviseDocument: (id, input) => request(`${doc(id)}/revisions`, json("POST", input)),
   };
 }

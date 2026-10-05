@@ -391,6 +391,49 @@ def test_sidecar_wsgi_authoring_routes_use_real_composition(tmp_path: Path) -> N
         thread.join(timeout=2)
 
 
+def test_sidecar_wsgi_section_routes_use_real_composition(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    server = build_server(config)
+    workspace_id = server._docs_application.application.workspace_registry.list()[0]["id"]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+
+    def call(method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}{path}",
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=10)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    scope = f"workspace_id={workspace_id}"
+    base = "/v2/documents/sections"
+    try:
+        status, _ = call("POST", "/v2/documents", {
+            "workspace_id": workspace_id, "document_id": "sections", "template": "documento-generico", "title": "S",
+        })
+        assert status == 201
+        status, built = call("POST", f"{base}/sections/introduccion/build?{scope}", {})
+        assert status == 200 and built["proposal"] is False, built
+        status, reviewed = call("POST", f"{base}/sections/introduccion/review?{scope}", {"strict": True})
+        assert status == 200 and reviewed["findings"], reviewed
+        status, stamped = call("POST", f"{base}/sections/introduccion/stamp?{scope}", {"by": "ada", "model": "m"})
+        assert status == 200 and stamped["authored_by"] == "ada", stamped
+        status, revised = call("POST", f"{base}/revisions?{scope}", {"target_id": "introduccion", "new_body": "Nuevo.\n"})
+        assert status == 201 and revised["diff_path"].startswith("sections/_revisions/"), revised
+        status, missing = call("POST", f"/v2/documents/ghost/sections/introduccion/build?{scope}", {})
+        assert status == 404, missing
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
 def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     health_app = build_application(config)

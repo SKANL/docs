@@ -57,19 +57,18 @@ def _text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(_jsonable(value), sort_keys=True, ensure_ascii=False)
 
 
-class AuthoringRoutes:
+class RouteSupport:
+    """Request parsing and document resolution shared by every operation handler."""
+
     def __init__(
         self,
         *,
         workspace_root: Callable[[Request, str | None], str],
         services_for: Callable[[str], Any],
-        import_service: SourceImportService,
     ) -> None:
         self._workspace_root = workspace_root
         self._services_for = services_for
-        self._import = import_service
 
-    # -- shared plumbing -------------------------------------------------
     @staticmethod
     def _body(request: Request, model: type[_M]) -> _M:
         data = request.json(object_only=True) if request.body else {}
@@ -94,6 +93,18 @@ class AuthoringRoutes:
             raise APIError("document_not_found", "Document not found", 404) from exc
         except (ValueError, OSError, KeyError, RuntimeError) as exc:
             raise APIError("document_unresolvable", str(exc), 400) from exc
+
+
+class AuthoringRoutes(RouteSupport):
+    def __init__(
+        self,
+        *,
+        workspace_root: Callable[[Request, str | None], str],
+        services_for: Callable[[str], Any],
+        import_service: SourceImportService,
+    ) -> None:
+        super().__init__(workspace_root=workspace_root, services_for=services_for)
+        self._import = import_service
 
     # -- assets ------------------------------------------------------------
     def list_assets(self, request: Request, document_id: str) -> Response:
@@ -134,7 +145,10 @@ class AuthoringRoutes:
     def remove_asset(self, request: Request, document_id: str, asset_name: str) -> Response:
         _, deps = self._open(request, document_id)
         _safe_segment(asset_name, "invalid_filename")
-        present = {n.casefold() for n in deps.assets.list_assets(document_id)}
+        try:
+            present = {n.casefold() for n in deps.assets.list_assets(document_id, str(request.query.get("kind", "docx")))}
+        except ValueError as exc:
+            raise APIError("invalid_asset_kind", str(exc), 400) from exc
         if asset_name.casefold() not in present and Path(asset_name).stem.casefold() not in present:
             raise APIError("asset_not_found", "Asset not found", 404)
         try:
@@ -149,24 +163,35 @@ class AuthoringRoutes:
         root, deps = self._open(request, document_id, data.workspace_id)
         if data.files and not _UPLOAD_DOCUMENT_ID.fullmatch(document_id):
             raise APIError("invalid_document_id", "Document id cannot receive uploads", 400)
+        resolved = self._resolve(deps, document_id)  # before any write: a bad document leaves no uploads
         try:  # validate every upload before writing any of them
             decoded = [self._import.decode_upload(f.filename, f.content_base64) for f in data.files]
         except ImportError as exc:
             raise APIError(str(exc), str(exc), 400) from exc
-        uploaded = []
-        for filename, content in decoded:
-            try:
+        uploaded: list[dto.UploadedSource] = []
+        created: list[Path] = []  # files this request wrote, removed again if a later upload fails
+        try:
+            for filename, content in decoded:
                 stored = self._import.import_bytes(root, filename, content, document_id=document_id)
-            except ImportError as exc:
-                raise APIError(str(exc), str(exc), 400) from exc
-            uploaded.append(dto.UploadedSource(
-                filename=stored["filename"], sha256=stored["sha256"],
-                size=stored["size"], deduplicated=stored["deduplicated"],
-            ))
-        resolved = self._resolve(deps, document_id)
-        report = deps.create_source_pipeline().ingest(
-            document_id, deps.workspace.doc_root(document_id), resolved.config,
-        )
+                if not stored["deduplicated"]:
+                    created.append(Path(stored["path"]))
+                uploaded.append(dto.UploadedSource(
+                    filename=stored["filename"], sha256=stored["sha256"],
+                    size=stored["size"], deduplicated=stored["deduplicated"],
+                ))
+        except (ImportError, OSError) as exc:
+            for path in created:
+                path.unlink(missing_ok=True)
+            code = str(exc) if isinstance(exc, ImportError) else "upload_failed"
+            raise APIError(code, str(exc), 400 if isinstance(exc, ImportError) else 500) from exc
+        try:
+            report = deps.create_source_pipeline().ingest(
+                document_id, deps.workspace.doc_root(document_id), resolved.config,
+            )
+        except (ValueError, KeyError, FileNotFoundError) as exc:
+            raise APIError("ingest_failed", str(exc), 400) from exc
+        except (OSError, RuntimeError) as exc:
+            raise APIError("ingest_failed", str(exc), 500) from exc
         return Response.json(self._ingest_response(document_id, report, uploaded).model_dump())
 
     @staticmethod
@@ -253,5 +278,11 @@ class AuthoringRoutes:
     def remove_context_topic(self, request: Request, document_id: str, topic_id: str) -> Response:
         _, deps = self._open(request, document_id)
         self._known_topic(deps, document_id, topic_id)
-        deps.context.remove(document_id, self._resolve(deps, document_id).template, topic_id)
+        template = self._resolve(deps, document_id).template
+        try:
+            deps.context.remove(document_id, template, topic_id)
+        except (FileNotFoundError, KeyError) as exc:
+            raise APIError("topic_not_found", "Context topic has no saved content", 404) from exc
+        except ValueError as exc:
+            raise APIError("invalid_context", str(exc), 400) from exc
         return Response.json(dto.ContextRemoveResponse(document_id=document_id, removed=topic_id).model_dump())

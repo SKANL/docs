@@ -1,4 +1,4 @@
-import { createAuthoringApi, type AuthoringApi } from "./domains/authoring";
+import { createAuthoringApi, type AuthoringApi, type RevisionInput } from "./domains/authoring";
 import type {
   Artifact,
   Baseline,
@@ -338,7 +338,7 @@ export class ReviewApiClient {
   getDocumentClassification(documentId:string) { return this.scopedRequest<{document_id:string;items:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/classification"); }
   confirmDocumentClassification(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/classification", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
   setDocumentContext(documentId:string,input:{topic:string;field?:string;value:string}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/context", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  reviseDocument(documentId:string,input:{target_id:string;new_body?:string;new_value?:string;request?:string;field?:string}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/revisions", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  reviseDocument(documentId:string,input:RevisionInput) { return this.authoring.reviseDocument(documentId,input); }
   listDocumentSections(documentId:string) { return this.scopedRequest<{items:DocumentSection[]}>("documents/"+encodeURIComponent(documentId)+"/sections").then(result=>result.items); }
   getDocumentSection(documentId:string,sectionId:string) { return this.scopedRequest<DocumentSection>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId)); }
   updateDocumentSection(documentId:string,sectionId:string,body:string,request="Review Studio section edit") { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId), { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({body,request}) }); }
