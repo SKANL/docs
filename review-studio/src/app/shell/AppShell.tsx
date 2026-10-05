@@ -1,5 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { RouteErrorBoundary } from "@/components/shared/RouteErrorBoundary";
 import { useApi } from "@/app/providers";
 import { useApiHealth } from "@/components/ApiStatus";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -56,7 +57,7 @@ export function AppShell({ pollIntervalMs }: { pollIntervalMs?: number }) {
       <Sidebar />
       {/* Remount on cold-start recovery so pages refetch once the sidecar is ready. */}
       <main id="main" ref={main} tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 outline-none sm:px-8 md:py-10">
-        <Fragment key={health.readyEpoch}><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></Fragment>
+        <Fragment key={health.readyEpoch}><RouteErrorBoundary key={pathname}><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></RouteErrorBoundary></Fragment>
       </main>
     </div>
     <footer className="border-t bg-card px-4 py-4 text-xs text-muted-foreground sm:px-8">Review Studio foundation</footer>
