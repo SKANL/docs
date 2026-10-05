@@ -3,6 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
+  // One shared sidecar fixture: specs that rename, select, or run against its workspace must not interleave.
+  workers: 1,
   use: { baseURL: "http://127.0.0.1:5173", ...devices["Desktop Chrome"] },
   webServer: [
     { command: "node e2e/api-fixture.mjs", url: "http://127.0.0.1:4175/v2/workspaces", reuseExistingServer: true },

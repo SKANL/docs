@@ -1,4 +1,5 @@
 import { createAuthoringApi, type AuthoringApi, type RevisionInput } from "./domains/authoring";
+import { createPipelineApi, type PipelineApi } from "./domains/pipeline";
 import type {
   Artifact,
   Baseline,
@@ -186,6 +187,8 @@ export class ReviewApiClient {
   readonly baseUrl: string;
   /** Source, asset, classification and context operations. */
   readonly authoring: AuthoringApi = createAuthoringApi((path, init) => this.scopedRequest(path, init));
+  /** Plan, run and paged run list. */
+  readonly pipeline: PipelineApi = createPipelineApi((path, init) => this.scopedRequest(path, init));
   private readonly requestFetch: typeof globalThis.fetch;
   private readonly timeoutMs: number;
   private readonly accessToken?: string;
@@ -382,7 +385,7 @@ export class ReviewApiClient {
         await yieldSse(response.body, event => {
           onEvent(event);
           const status = (event.run as { status?: string } | undefined)?.status;
-          terminal = ["succeeded", "completed", "failed", "cancelled", "expired"].includes(String(status));
+          terminal = event.type === "terminal" || ["succeeded", "completed", "failed", "cancelled", "expired"].includes(String(status));
         });
       } finally { request.cancel(); }
       if (!terminal) await waitForProgress(signal, 750);
@@ -414,9 +417,15 @@ export async function yieldSse(stream: ReadableStream<Uint8Array>, onEvent: (eve
       const records = buffer.split(/\r?\n\r?\n/);
       buffer = records.pop() ?? "";
       for (const record of records) {
-        const data = record.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
+        const lines = record.split(/\r?\n/);
+        const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
         if (!data || data === "[DONE]") continue;
-        try { onEvent(JSON.parse(data) as ProgressEvent); } catch { /* Ignore malformed keep-alive records. */ }
+        const name = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
+        try {
+          const event = JSON.parse(data) as ProgressEvent;
+          // The server's closing frame is `event: terminal`; its payload carries no `type` of its own.
+          onEvent(name === "terminal" ? { ...event, type: "terminal" } : event);
+        } catch { /* Ignore malformed keep-alive records. */ }
       }
     }
     buffer += decoder.decode();

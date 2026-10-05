@@ -6,4 +6,8 @@ if (typeof window !== "undefined") {
   }) as MediaQueryList;
   globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
   Element.prototype.scrollIntoView ??= () => {};
+  // Radix Select (pointer-driven popper) probes these on open and on item selection.
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
 }

@@ -7,6 +7,8 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { AuthoringRoute } from "@/features/authoring/AuthoringRoute";
+import { PipelineRoute } from "@/features/pipeline/PipelineRoute";
+import { RunDetailPage } from "@/features/pipeline/RunDetailPage";
 import { WorkspaceDocumentPage } from "@/features/workspace/WorkspaceDocumentPage";
 
 /** An area with no feature yet. Honest by construction: no actions, only where it will arrive. */
@@ -44,8 +46,10 @@ export function AppRoutes({ pollIntervalMs }: { pollIntervalMs?: number }) {
   return <Routes>
     <Route element={<AppShell pollIntervalMs={pollIntervalMs} />}>
       <Route index element={<AreaPlaceholder area={areas[0]} />} />
-      {areas.filter(area => !["home", "configure", "authoring"].includes(area.id)).map(area => <Route key={area.id} path={area.id} element={<AreaPlaceholder area={area} />} />)}
+      {areas.filter(area => !["home", "configure", "authoring", "pipeline"].includes(area.id)).map(area => <Route key={area.id} path={area.id} element={<AreaPlaceholder area={area} />} />)}
       <Route path="authoring/:tab?" element={<AuthoringRoute />} />
+      <Route path="pipeline" element={<PipelineRoute />} />
+      <Route path="pipeline/runs/:runId" element={<RunDetailPage />} />
       <Route path="configure" element={<ConfigureIndex />} />
       <Route path="configure/workspaces" element={<Workspaces />} />
       <Route path="legacy/:id" element={<LegacyScreen />} />

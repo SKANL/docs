@@ -12,7 +12,7 @@ export function useCapability() {
   return (id: string) => data?.some(item => item.id === id && item.enabled) ?? false;
 }
 
-export type ActiveContext = { workspaceName: string | null; documentId: string | null; documentTitle: string | null };
+export type ActiveContext = { workspaceId: string | null; workspaceName: string | null; documentId: string | null; documentTitle: string | null };
 
 /** The selected workspace plus its current document. Never guesses either one. */
 export function useActiveContext() {
@@ -21,9 +21,9 @@ export function useActiveContext() {
     queryKey: ["authoring", "active-context"],
     queryFn: async (): Promise<ActiveContext> => {
       const workspace = (await api.listWorkspaces?.())?.[0];
-      if (!workspace) return { workspaceName: null, documentId: null, documentTitle: null };
+      if (!workspace) return { workspaceId: null, workspaceName: null, documentId: null, documentTitle: null };
       const current = await api.getCurrentDocument?.(workspace.id);
-      return { workspaceName: workspace.name, documentId: current?.current_document_id ?? null, documentTitle: current?.document?.title ?? null };
+      return { workspaceId: workspace.id, workspaceName: workspace.name, documentId: current?.current_document_id ?? null, documentTitle: current?.document?.title ?? null };
     },
   });
 }

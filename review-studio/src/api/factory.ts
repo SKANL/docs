@@ -10,6 +10,7 @@ export type ReviewApiEnvironment = {
 function remoteApi(client: ReviewApiClient): ReviewApi {
   return {
     ...client.authoring,
+    ...client.pipeline,
     health: () => client.health(),
     getCapabilities: () => client.getCapabilities(),
     listRuns: () => client.listRuns(),
