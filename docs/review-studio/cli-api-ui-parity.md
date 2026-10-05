@@ -53,18 +53,18 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs document inspect` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
 | `docs document package` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
 | `docs document passport` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
-| `docs document plan` | — | planned | Planned shared web+desktop action; no S0.1 UI | S3 | — |
+| `docs document plan` | `POST /v2/documents/{document_id}/plan` | available | Not exposed yet (API only) | S3 | `documents:read` |
 | `docs document prepare` | `POST /v2/documents/{document_id}/prepare` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs document publish` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
-| `docs document release` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
-| `docs document run` | — | planned | Planned shared web+desktop action; no S0.1 UI | S3 | — |
+| `docs document release` | `POST /v2/documents/{document_id}/run` | available | Not exposed yet (API only) | S5 | `documents:write` |
+| `docs document run` | `POST /v2/documents/{document_id}/run` | available | Not exposed yet (API only) | S3 | `documents:write` |
 | `docs document status` | `GET /v2/documents/{document_id}/status` | available | Workspace page (`#workspace`): document status panel | S6 | `documents:read` |
 | `docs document verify` | `POST /v2/documents/{document_id}/verify` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs run cancel` | `POST /v2/runs/{run_id}/cancel` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:write` |
 | `docs run list` | `GET /v2/runs` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
 | `docs run retry` | `POST /v2/runs/{run_id}/retry` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:write` |
 | `docs run show` | `GET /v2/runs/{run_id}` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
-| `docs run watch` | — | planned | Planned shared web+desktop action; no S0.1 UI | S3 | — |
+| `docs run watch` | `GET /v2/runs/{run_id}/progress` | available | Not exposed yet (API only) | S3 | `runs:read` |
 | `docs source ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs template create` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs template init` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |

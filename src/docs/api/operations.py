@@ -24,7 +24,7 @@ class Operation:
     request: type[dto.AuthoringDTO] | None
     response: type[dto.AuthoringDTO]
     success_status: int = 200
-    routes: str = "authoring"  # key of the handler object ("authoring" or "sections")
+    routes: str = "authoring"  # key of the handler object ("authoring", "sections" or "pipeline")
 
     def request_ref(self) -> dict[str, str] | None:
         return _ref(self.request) if self.request else None
@@ -70,6 +70,13 @@ OPERATIONS: tuple[Operation, ...] = (
               "Stamp section", "stamp_section", dto.StampRequest, dto.StampResponse, routes="sections"),
     Operation(("context rm",), "DELETE", f"{_DOC}/context/{{topic_id}}", "documents:write",
               "Remove context topic", "remove_context_topic", None, dto.ContextRemoveResponse),
+    Operation(("document plan",), "POST", f"{_DOC}/plan", "documents:read",
+              "Resolve pipeline plan", "plan_document", dto.PipelinePlanRequest, dto.PipelinePlanResponse,
+              routes="pipeline"),
+    Operation(("document run", "document release"), "POST", f"{_DOC}/run", "documents:write",
+              "Enqueue document pipeline run (always asynchronous; follow links.progress; "
+              "policy=release equals `document release`)",
+              "run_document", dto.PipelineRunRequest, dto.PipelineRunResponse, 202, routes="pipeline"),
 )
 
 # Shared with the existing classification route, which keeps its own handler

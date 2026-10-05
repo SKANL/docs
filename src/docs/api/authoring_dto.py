@@ -199,3 +199,42 @@ class RevisionResponse(AuthoringDTO):
     summary: str
     changed_sections: list[str]
     diff_path: str
+
+
+class PipelinePlanRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    pipeline_id: str = "document"
+    format: str = "docx"
+
+
+class PipelinePlanResponse(AuthoringDTO):
+    document_id: str
+    pipeline_id: str
+    stages: list[str]
+    external_artifacts: list[str]
+    contracts: list[dict[str, Any]]
+
+
+class PipelineRunRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    pipeline_id: str = "document"
+    format: str | None = None
+    policy: Literal["draft", "strict", "release"] | None = None
+    strict: bool = False
+    release: bool = False
+
+
+class RunLinks(AuthoringDTO):
+    self: str
+    progress: str
+    cancel: str
+
+
+class PipelineRunResponse(AuthoringDTO):
+    id: str
+    status: str
+    document_id: str
+    pipeline_id: str
+    format: str
+    policy: str
+    links: RunLinks

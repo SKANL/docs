@@ -87,5 +87,5 @@ def test_capability_catalog_http_route_returns_the_declared_catalog():
 # `review_classification_queue`, so the equivalence is no longer partial.
 def test_partial_cli_equivalents_are_not_advertised_as_available():
     by_command = {item["cli_command"]: item for item in _capabilities()}
-    for command in ("doc status", "document run", "document publish"):
+    for command in ("doc status", "document publish"):
         assert by_command[command]["status"] == "planned", command

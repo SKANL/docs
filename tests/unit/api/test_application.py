@@ -1199,7 +1199,7 @@ def test_run_progress_is_exposed_as_sse():
         )
     )
 
-    response = application.dispatch(Request("GET", "/v2/runs/r1/progress"))
+    response = application.dispatch(Request("GET", "/v2/runs/r1/progress?once=1"))
 
     assert response.status == 200
     assert response.headers["content-type"] == "text/event-stream"
