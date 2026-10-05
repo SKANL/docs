@@ -203,19 +203,21 @@ class WorkspaceRegistry:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         handle, name = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name, suffix=".tmp")
         temporary = Path(name)
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
-        # ponytail: bounded retry for another PROCESS (CLI vs sidecar) holding the file
-        # open on Windows; in-process access is already serialized by the path lock.
-        for attempt in range(50):
-            try:
-                temporary.replace(self.path)
-                return
-            except PermissionError:
-                if attempt == 49:
-                    temporary.unlink(missing_ok=True)
-                    raise
-                time.sleep(0.02)
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+            # ponytail: bounded retry for another PROCESS (CLI vs sidecar) holding the file
+            # open on Windows; in-process access is already serialized by the path lock.
+            for attempt in range(50):
+                try:
+                    temporary.replace(self.path)
+                    return
+                except PermissionError:
+                    if attempt == 49:
+                        raise
+                    time.sleep(0.02)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     @staticmethod
     def _name(value: str) -> str:
