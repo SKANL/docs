@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ReviewApi } from "../api/models";
 import { formatApiError } from "../api/client";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export type ApiHealth = { state: "checking" | "ready" | "unavailable"; detail: string; readyEpoch: number };
 
@@ -28,7 +30,9 @@ export function useApiHealth(api: ReviewApi, pollIntervalMs = 2000): ApiHealth {
   return health;
 }
 
+const tone = { ready: "border-success/40 text-success", checking: "border-info/40 text-info", unavailable: "border-destructive/40 text-destructive" } as const;
+
 export function ApiStatus({ health }: { health: ApiHealth }) {
   const label = health.state === "ready" ? "Review API ready" : health.state === "checking" ? "Checking Review API" : "Review API unavailable";
-  return <span className={`chip api-status ${health.state}`} role="status" aria-live="polite" title={health.detail}>{label}</span>;
+  return <Badge variant="outline" className={cn("api-status", tone[health.state])} role="status" aria-live="polite" title={health.detail}>{label}</Badge>;
 }

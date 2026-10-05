@@ -1,0 +1,26 @@
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
+import type { ReviewApi } from "@/api/models";
+
+const ApiContext = createContext<ReviewApi | null>(null);
+
+export function useApi(): ReviewApi {
+  const api = useContext(ApiContext);
+  if (!api) throw new Error("useApi must be used inside AppProviders");
+  return api;
+}
+
+export function AppProviders({ api, children }: { api: ReviewApi; children: ReactNode }) {
+  // One client per mounted app so tests and remounts never share a cache.
+  const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }));
+  return <ApiContext.Provider value={api}>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        {children}
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ApiContext.Provider>;
+}
