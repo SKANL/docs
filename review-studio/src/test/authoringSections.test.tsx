@@ -21,6 +21,21 @@ describe("section editor", () => {
     await waitFor(() => expect(updateDocumentSection).toHaveBeenCalledWith("doc-1", "intro", "Revised"));
   });
 
+  it("never retries a failed save against a different section", async () => {
+    const updateDocumentSection = vi.fn<(doc: string, id: string, text: string) => Promise<object>>(async () => { throw new Error("Server unavailable"); });
+    openAuthoring("sections", makeApi({ updateDocumentSection }));
+    const body = await screen.findByRole("textbox", { name: "Section body" });
+    await userEvent.type(body, " edited");
+    await userEvent.click(screen.getByRole("button", { name: "Save section" }));
+    await screen.findByText("Could not save the section");
+    await userEvent.click(screen.getByRole("button", { name: "summary" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Discard changes" }));
+    await waitFor(() => expect(bodyBox().value).toBe("Summary body"));
+    const retry = screen.queryByRole("button", { name: /try again/i });
+    if (retry) await userEvent.click(retry);
+    expect(updateDocumentSection.mock.calls.every(([, id]) => id === "intro")).toBe(true);
+  });
+
   it("guards unsaved changes when switching sections", async () => {
     openAuthoring("sections", makeApi());
     await userEvent.type(await screen.findByRole("textbox", { name: "Section body" }), " more");
