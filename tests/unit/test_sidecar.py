@@ -659,3 +659,48 @@ def test_sidecar_run_is_queued_and_watched_over_a_real_sse_stream(tmp_path: Path
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def test_sidecar_serves_evidence_baseline_and_inspect_from_real_workspace_stores(tmp_path: Path) -> None:
+    import hashlib
+
+    from PIL import Image
+
+    from docs.domain.runtime_records import Passport
+
+    health_app = build_application(SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path))
+    try:
+        app = health_app.application
+        workspace = app.workspace_registry.list()[0]
+        wid, root = workspace["id"], Path(workspace["root"])
+        run = Run("run-q", "succeeded", {"workspace_id": wid, "document_id": "doc"}, "")
+        app.run_store.put(run)
+        app.passport_store.put(Passport("run-q", ({"stage": "verify"},)))
+        previews = root / "output" / "qa" / "run-q"
+        previews.mkdir(parents=True)
+        png = previews / "page-1.png"
+        Image.new("RGB", (4, 4)).save(png)
+        digest = hashlib.sha256(png.read_bytes()).hexdigest()
+        app.artifact_store.put(Artifact(
+            "run-q-preview-0", "run-q", "preview", digest, "image/png", {"value": {"path": str(png)}},
+        ))
+
+        def call(method: str, path: str, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+            response = app.dispatch(Request(method, f"{path}?workspace_id={wid}", body=body))
+            return response.status, json.loads(response.body)
+
+        status, evidence = call("GET", "/v2/runs/run-q/evidence")
+        assert status == 200 and evidence["artifacts"][0]["digest"] == digest
+        assert evidence["previews"] == {"available": True, "artifact_ids": ["run-q-preview-0"]}
+        assert str(root) not in json.dumps(evidence)
+
+        status, inspected = call("GET", "/v2/artifacts/run-q-preview-0/inspect")
+        assert status == 200 and inspected["sha256"] == digest and inspected["path"] == "output/qa/run-q/page-1.png"
+
+        status, promoted = call("POST", "/v2/baselines/promotions", {"run_id": "run-q", "name": "golden"})
+        assert status == 201 and promoted["destination"] == "baselines/golden"
+        assert (root / "baselines" / "golden" / "page-1.png").read_bytes() == png.read_bytes()
+        assert call("POST", "/v2/baselines/promotions", {"run_id": "run-q", "name": "golden"})[0] == 409
+        assert call("GET", "/v2/baselines")[0] == 200  # the PNG directory does not break the JSON listing
+    finally:
+        health_app.shutdown()

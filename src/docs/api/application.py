@@ -45,6 +45,7 @@ from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_capability_catalog, build_openapi_document, canonical_json
 from .operations import match_operation
 from .pipeline_routes import PipelineRoutes, output_format
+from .quality_routes import QualityRoutes
 from .section_routes import SectionRoutes
 from .workspace_dto import (
     WorkspaceCreateRequest,
@@ -159,8 +160,14 @@ class X20Application:
             services_for=self._workspace_services_for,
             enqueue=self._enqueue_pipeline_run,
         )
+        self._quality = QualityRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+            host=self,
+        )
         self._operation_routes: dict[str, Any] = {
             "authoring": self._authoring, "sections": self._sections, "pipeline": self._pipeline,
+            "quality": self._quality,
         }
         # SSE progress stream bounds: a stream never holds a worker thread longer
         # than `progress_max_seconds`; the client reconnects until terminal.
@@ -1638,28 +1645,6 @@ class X20Application:
             # Embedded callers may provide a custom registry implementation;
             # retain its contract instead of making plugin listing mandatory.
             return self.plugin_registry
-
-    def _promote_baseline(self, request: Request) -> Response:
-        data = request.json(object_only=True)
-        baseline_id = data.get("baseline_id") or data.get("id")
-        if not baseline_id:
-            raise APIError("invalid_request", "baseline_id is required", 400)
-        workspace_id = data.get("workspace_id")
-        if self.workspace_registry is not None and not isinstance(workspace_id, str):
-            raise APIError("workspace_required", "workspace_id is required to promote a baseline", 400)
-        if isinstance(workspace_id, str) and self.workspace_registry is not None:
-            self._resolve_workspace(workspace_id)
-        promote_for_workspace = getattr(self.baseline_store, "promote_for_workspace", None)
-        if isinstance(workspace_id, str) and callable(promote_for_workspace):
-            result = promote_for_workspace(workspace_id, baseline_id, data)
-        else:
-            promote = getattr(self.baseline_store, "promote", None)
-            if not callable(promote):
-                raise APIError("not_found", "Baseline not found", 404)
-            result = promote(baseline_id, data)
-        if result is None:
-            raise APIError("not_found", "Baseline not found", 404)
-        return Response.json(_dict(result))
 
     @staticmethod
     def _store_items(store: Any, method: str, *args: Any) -> list[Any]:

@@ -24,7 +24,7 @@ class Operation:
     request: type[dto.AuthoringDTO] | None
     response: type[dto.AuthoringDTO]
     success_status: int = 200
-    routes: str = "authoring"  # key of the handler object ("authoring", "sections" or "pipeline")
+    routes: str = "authoring"  # key of the handler object ("authoring", "sections", "pipeline" or "quality")
 
     def request_ref(self) -> dict[str, str] | None:
         return _ref(self.request) if self.request else None
@@ -77,6 +77,25 @@ OPERATIONS: tuple[Operation, ...] = (
               "Enqueue document pipeline run (always asynchronous; follow links.progress; "
               "policy=release equals `document release`)",
               "run_document", dto.PipelineRunRequest, dto.PipelineRunResponse, 202, routes="pipeline"),
+    Operation(("document evidence",), "GET", "/v2/runs/{run_id}/evidence", "passport:read",
+              "Get run evidence bundle (immutable references; also requires artifacts:read and findings:read)",
+              "run_evidence", None, dto.EvidenceBundleResponse, routes="quality"),
+    Operation(("document baseline",), "POST", "/v2/baselines/promotions", "baselines:write",
+              "Promote a run's rendered previews to a workspace visual baseline",
+              "promote_baseline", dto.BaselinePromotionRequest, dto.BaselinePromotionResponse, 201,
+              routes="quality"),
+    Operation(("document inspect",), "GET", "/v2/artifacts/{artifact_id}/inspect", "artifacts:read",
+              "Inspect a workspace artifact", "inspect_artifact", None, dto.ArtifactInspectResponse,
+              routes="quality"),
+    Operation(("document diff",), "POST", "/v2/artifacts/diff", "artifacts:read",
+              "Compare two workspace artifacts", "diff_artifacts", dto.ArtifactDiffRequest,
+              dto.ArtifactDiffResponse, routes="quality"),
+    Operation(("qa-docx",), "POST", f"{_DOC}/qa-docx", "documents:write",
+              "Run rendered DOCX QA (a missing render toolchain is a degraded result)",
+              "qa_docx", dto.QaDocxRequest, dto.QaDocxResponse, routes="quality"),
+    Operation(("apply-corrections",), "POST", f"{_DOC}/corrections/apply", "documents:write",
+              "Apply pending section corrections", "apply_corrections", dto.WorkspaceScopedRequest,
+              dto.CorrectionsResponse, routes="quality"),
 )
 
 # Shared with the existing classification route, which keeps its own handler

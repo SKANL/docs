@@ -109,6 +109,7 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "run cancel": "POST /v2/runs/{run_id}/cancel",
     "run retry": "POST /v2/runs/{run_id}/retry",
     "template list": "GET /v2/templates",
+    "document passport": "GET /v2/runs/{run_id}/passport",  # same payload `document passport` prints
     **available_cli_routes(),
 }
 

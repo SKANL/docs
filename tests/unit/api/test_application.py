@@ -459,8 +459,11 @@ def test_contract_census_distinguishes_live_routes_from_openapi_only_operations(
     assert "/v2/runs/{run_id}/findings" in paths
     assert "/v2/runs/{run_id}/previews/{name}" in paths
 
-    # Unsupported mutation operations are not part of the public contract.
+    # Baseline promotion is a deliberate S4.1 operation (run-id based, never a path);
+    # other mutation shapes stay out of the public contract.
     assert "post" not in paths["/v2/baselines"]
+    assert "post" in paths["/v2/baselines/promotions"]
+    assert application._dynamic_handler("POST", "/v2/baselines/promotions") is not None
     assert "/v2/baselines/{baseline_id}/promote" not in paths
     assert "/v2/workspaces/{workspace_id}/select" not in paths
     assert application._dynamic_handler("POST", "/v2/baselines") is None
@@ -1240,47 +1243,13 @@ def test_x20_resource_routes_are_safe_for_missing_resources():
     assert application.dispatch(Request("GET", "/v2/runs/missing/previews/missing.png")).status == 404
     assert application.dispatch(Request("POST", "/v2/documents/missing/revisions", body={})).status == 404
     assert body(application.dispatch(Request("GET", "/v2/baselines"))) == {"items": [], "next_cursor": None}
-    assert application.dispatch(Request("POST", "/v2/baselines/promotions", body={})).status == 404
+    assert application.dispatch(Request("POST", "/v2/baselines/promotions", body={})).status == 400  # run_id required
     assert body(application.dispatch(Request("GET", "/v2/plugins"))) == {"items": [], "next_cursor": None}
 
 
 class Baselines:
-    def __init__(self):
-        self.promotions = []
-
     def list(self):
         return [{"id": "base-1", "status": "passed"}, {"id": "base-2", "status": "warnings"}]
-
-    def promote(self, baseline_id, payload):
-        self.promotions.append((baseline_id, payload))
-        return {"id": baseline_id, "status": "passed", "promoted": True}
-
-
-def test_promote_baseline_uses_non_workspace_callback_when_workspace_callback_is_not_callable(tmp_path):
-    class FallbackBaselines:
-        promote_for_workspace = None
-
-        def __init__(self):
-            self.calls = []
-
-        def promote(self, baseline_id, payload):
-            self.calls.append((baseline_id, payload))
-            return {"id": baseline_id, "promoted": True}
-
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
-    workspace = registry.create("Workspace", tmp_path / "workspace")
-    baselines = FallbackBaselines()
-    application = X20Application(
-        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), baseline_store=baselines, workspace_registry=registry,
-    )
-
-    response = application._promote_baseline(
-        Request("POST", "/v2/baselines/promotions", body={"baseline_id": "base-1", "workspace_id": workspace["id"]})
-    )
-
-    assert body(response) == {"id": "base-1", "promoted": True}
-    assert baselines.calls == [("base-1", {"baseline_id": "base-1", "workspace_id": workspace["id"]})]
 
 
 class Plugins:
@@ -1309,7 +1278,7 @@ def test_baselines_and_plugins_use_existing_read_store_contracts():
     assert body(plugin_page)["items"] == [{"id": "plugin-b", "version": "2"}]
     assert body(plugin_page)["next_cursor"]
     assert body(plugin_detail) == {"id": "plugin-a", "version": "1"}
-    assert application.dispatch(Request("POST", "/v2/baselines/promotions", body={})).status == 404
+    assert application.dispatch(Request("POST", "/v2/baselines/promotions", body={})).status == 400  # run_id required
 
 
 class SemanticGraphs:

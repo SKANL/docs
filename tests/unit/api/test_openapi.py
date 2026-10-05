@@ -34,7 +34,7 @@ def test_x20_catalog_covers_canonical_v2_resources() -> None:
     assert document["info"]["version"] == "2.0.0"
     assert all(path.startswith("/v2/") for path in document["paths"])
     assert "post" not in document["paths"]["/v2/baselines"]
-    assert "/v2/baselines/promotions" not in document["paths"]
+    assert set(document["paths"]["/v2/baselines/promotions"]) >= {"post"}  # S4.1: run-id based promotion
     assert "/v2/baselines/{baseline_id}/promote" not in document["paths"]
     assert "$ref" in json.dumps(document["paths"])
     assert "bearerAuth" in document["components"]["securitySchemes"]

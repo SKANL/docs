@@ -238,3 +238,91 @@ class PipelineRunResponse(AuthoringDTO):
     format: str
     policy: str
     links: RunLinks
+
+
+# Quality operations (evidence, baseline, inspect, diff, qa-docx, corrections).
+class BaselinePromotionRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    run_id: str
+    name: str | None = None
+    update: bool = False
+
+
+class BaselinePage(AuthoringDTO):
+    name: str
+    sha256: str
+
+
+class BaselinePromotionResponse(AuthoringDTO):
+    run_id: str
+    name: str
+    destination: str
+    replaced: bool
+    pages: list[BaselinePage]
+
+
+class EvidenceArtifactRef(AuthoringDTO):
+    id: str
+    kind: str
+    digest: str
+    media_type: str
+
+
+class PreviewAvailability(AuthoringDTO):
+    available: bool
+    artifact_ids: list[str]
+
+
+class EvidenceBundleResponse(AuthoringDTO):
+    run_id: str
+    evidence_sha256: str
+    passport: dict[str, Any]
+    artifacts: list[EvidenceArtifactRef]
+    findings: list[dict[str, Any]]
+    previews: PreviewAvailability
+
+
+class ArtifactReport(AuthoringDTO):
+    path: str
+    media_type: str
+    sha256: str
+    size_bytes: int
+
+
+class ArtifactInspectResponse(ArtifactReport):
+    artifact_id: str
+
+
+class ArtifactDiffRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    left: str
+    right: str
+
+
+class ArtifactDiffResponse(AuthoringDTO):
+    same: bool
+    left: ArtifactReport
+    right: ArtifactReport
+    text_diff: list[str]
+
+
+class QaDocxRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    artifact_id: str | None = None
+    strict: bool = False
+
+
+class QaDocxResponse(AuthoringDTO):
+    document_id: str
+    docx: str
+    strict: bool
+    passed: bool
+    message: str | None
+    degraded: bool
+    degraded_reason: str | None
+    report: str | None
+
+
+class CorrectionsResponse(AuthoringDTO):
+    document_id: str
+    applied: int
