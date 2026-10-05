@@ -43,9 +43,9 @@ The existing web and desktop frontends do not expose the full CLI capability set
 - [x] S6.1 Template and plugin API — `a18a075e`; TDD (17 RED); review approved+acknowledged. `doc init` excluded (bootstraps cwd).
 - [x] S6.2 Specialist tools API — `d6c8be62`; TDD (27 RED); review approved+acknowledged. `guide`, `stamp` excluded with reasons; catalogue has zero `planned` rows.
 - [x] S6.3 Tools UI — `f3747f60`; review approved+acknowledged; PENDING_UI emptied.
-- [x] S7.1 Executable parity coverage — `eb2a3f2e`-era mechanism (`test: enforce cli api ui parity`) + route-level API proofs (`test(api): prove every available command at its route`); matrix rendered from catalogue + `docs/review-studio/parity-ui.json`; 75 CLI commands: 72 available with API+UI proofs, 3 excluded with reasons (guide, stamp, doc init), 0 planned.
-- [x] S7.2 Retire legacy UI and cross-surface verification — `refactor(ui): retire legacy review studio`; legacy screens/hash routes/window.prompt/raw JSON removed with regression tests; Home built from server data; desktop checks repaired (`e1335468`).
-- [x] S7.3 Accessibility, performance, and release proof — `test: verify review studio parity release` + `docs/review-studio/release-proof.md`; axe 0 serious/critical on 24 pages; entry bundle 205.8 kB raw / 66.1 kB gzip (budget 350/110); real Tauri runtime check PASS.
+- [x] S7.1 Executable parity coverage — `99f9a091` (mechanism) + `aeebbda2` (route-level API proofs); matrix rendered from catalogue + `docs/review-studio/parity-ui.json`; 75 CLI commands: 72 available with API+UI proofs, 3 excluded with reasons (guide, stamp, doc init), 0 planned.
+- [x] S7.2 Retire legacy UI and cross-surface verification — `2dd094b2`; legacy screens/hash routes/window.prompt/raw JSON removed with regression tests; Home built from server data; desktop checks repaired (`e1335468`).
+- [x] S7.3 Accessibility, performance, and release proof — `506943d1` + `docs/review-studio/release-proof.md`; axe 0 serious/critical on 24 pages; entry bundle 205.8 kB raw / 66.1 kB gzip (budget 350/110); real Tauri runtime check PASS.
 
 ## Decisions and evidence
 - Reuse canonical application services from the API; do not invoke CLI commands from the UI or recreate their mechanics in frontend code.
