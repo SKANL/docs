@@ -32,16 +32,16 @@ The existing web and desktop frontends do not expose the full CLI capability set
 - [x] S1.3 Workspace/document journeys — `3d4697d9` + desktop fixes `d6ae8f15`, `36b27732`; real Tauri release runtime journey PASS on a fresh install (see 2026-10-04 evidence). Original note: in progress; continuing existing uncommitted work on `codex/review-studio-s0-1` at `bdc1b5ef`, without resetting, parallel implementation, commit, RDD, or generated `desktop/src/` edits. Scope: workspace create/select/status/migration and document create/select/status/rename/delete; cancellation, destructive confirmation, async/error recovery, shared browser/Tauri UI, tests/E2E. TDD enabled; runner `npm --prefix review-studio run test` (Vitest) plus Playwright workspace/migration E2E. API/service logic remains canonical.
 - [x] S2.1 Sources, assets, and context API — `7b5b0d99`; review approved+acknowledged; its advisory warnings fixed in `da659c08`.
 - [x] S2.2 Sections, review, stamp, and revision API — `da659c08`; review approved+acknowledged (range 7b5b0d99..da659c08).
-- [ ] H1 Hardening follow-ups from native review advisories (non-blocking): run payload records workspace_id=None when omitted (pipeline_routes); progress stream change detection on in-place mutation; `?once` truthiness; palette focus race / redirect focus steal (AppShell); select popper positioning; first E2E run after dependency changes times out during Vite dep optimization; review-document/review-section/stamp error mapping (section_routes.py); remove-asset across kinds; surface sidecar `workspace_marker_missing` health error with migrate guidance for pre-fix desktop installs; keep a slow health poll after ready to detect sidecar restarts; one UTC clock for stamp/revise timestamps; S1.3 advisories (create→select coupling may duplicate on retry, delete re-select failure, rename stale current, E2E shared state).
-- [ ] S2.3 Authoring workspace.
+- [ ] H1 Hardening follow-ups from native review advisories (non-blocking): workspace migration inspection flags pipeline-produced files as `unknown_workspace_record` (workspace 'Not ready' after first run); translate silent overwrite; broad RuntimeError->degraded in tool_routes; template write TOCTOU; import error code from message; publish broad except / policy-denied inferred; qa-docx relative draft dir; run ownership implicit workspace; RunDetail ignores terminal event; capability fetch failure masked in authoring; active context guesses first workspace; run payload records workspace_id=None when omitted (pipeline_routes); progress stream change detection on in-place mutation; `?once` truthiness; palette focus race / redirect focus steal (AppShell); select popper positioning; first E2E run after dependency changes times out during Vite dep optimization; review-document/review-section/stamp error mapping (section_routes.py); remove-asset across kinds; surface sidecar `workspace_marker_missing` health error with migrate guidance for pre-fix desktop installs; keep a slow health poll after ready to detect sidecar restarts; one UTC clock for stamp/revise timestamps; S1.3 advisories (create→select coupling may duplicate on retry, delete re-select failure, rename stale current, E2E shared state).
+- [x] S2.3 Authoring workspace — `e26a219f` + section-id contract fix `398805e3` + retry-target correction `8092aa2b` (native high-risk review: CRITICAL R4-save-retry-wrong-section corroborated, one bounded correction, native validation approved, acknowledged) + real-sidecar section save E2E `e7364e58`.
 - [x] S3.1 Plan, run, and watch API — `0d1272a0`; review approved+acknowledged (isolated detached worktree, range da659c08..0d1272a0). TDD DEVIATION: writer implemented before tests; RED observed only for the SSE single-frame test and the cursor pagination bug.
-- [ ] S3.2 Pipeline UI.
-- [ ] S4.1 Evidence, baseline, inspect, and diff API.
+- [x] S3.2 Pipeline UI — `2820cc05`; review approved+acknowledged; Vitest 112 passed; Playwright 8/8 (real sidecar, workers=1).
+- [x] S4.1 Evidence, baseline, inspect, and diff API — `fba57f4f`; strict TDD (20 RED observed); review approved+acknowledged.
 - [ ] S4.2 Review workspace.
-- [ ] S5.1 Package and release API.
+- [x] S5.1 Package and release API — `7e926924`; strict TDD (17 RED); reviewed with S2.3 range (approved after correction).
 - [ ] S5.2 Delivery UI.
-- [ ] S6.1 Template and plugin API.
-- [ ] S6.2 Specialist tools API.
+- [x] S6.1 Template and plugin API — `a18a075e`; TDD (17 RED); review approved+acknowledged. `doc init` excluded (bootstraps cwd).
+- [x] S6.2 Specialist tools API — `d6c8be62`; TDD (27 RED); review approved+acknowledged. `guide`, `stamp` excluded with reasons; catalogue has zero `planned` rows.
 - [ ] S6.3 Tools UI.
 - [ ] S7.1 Executable parity coverage.
 - [ ] S7.2 Retire legacy UI and cross-surface verification.
@@ -80,6 +80,9 @@ The existing web and desktop frontends do not expose the full CLI capability set
 
 - RDD budget: ranges above ~2–2.5k changed lines hit `lens_context_budget_exceeded` (terminal, no authority). Remedy used: split the local unpushed F1 commit into a 5-commit chain (soft reset, identical final tree verified with `git diff da1efeef HEAD` empty) and review each link against its predecessor from a temporary detached worktree (removed afterwards). Links 1–4 approved+acknowledged; link 5 `7d208cba` assessed `under_budget` (pending in slice, boundary e1a5e54b).
 - F1 verification (parent): Vitest 64 passed; typecheck 0; lint 0 errors (6 legacy warnings); build ok; Playwright full suite 5/5 passed (41.4s) after React 19 + react-router 7.18.4 (`npm audit`: 0 vulnerabilities). One racy legacy assertion (`84%` read before the second fetch) changed to `findByText`.
+
+- Full Python unit+architecture run after S6.2: `uv run pytest tests/unit tests/architecture -q` 2426 passed, 3 skipped (an earlier identical run had 1 failed + 1 error that did not reproduce; recorded as a probable load flake while a concurrent E2E run was active).
+- Parallelism: Python API writers and frontend writers ran concurrently on disjoint trees with an index-untouched rule; one commit accidentally captured the frontend writer's staged renames and was re-split with a soft reset (no working-tree change).
 
 ## Next step
 S1.3 functional and API/UI verification is complete, but keep its checkbox open until a safe Tauri packaged-runtime check and the authorized work-unit delivery gate are resolved. Preserve the current uncommitted candidate and continue with S2.1–S7 only under the user-approved full-scope workflow; do not generate/edit `desktop/src/`.
