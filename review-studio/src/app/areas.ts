@@ -1,6 +1,6 @@
-import { FileText, Home, PackageCheck, Play, Settings2, ShieldCheck, type LucideIcon } from "lucide-react";
+import { FileText, Home, PackageCheck, Play, Settings2, ShieldCheck, Wrench, type LucideIcon } from "lucide-react";
 
-export type Area = { id: string; label: string; path: string; slice: string; summary: string; icon: LucideIcon };
+export type Area = { id: string; label: string; path: string; slice: string; summary: string; icon: LucideIcon; secondary?: boolean };
 
 /** Task areas from the redesign spec's information architecture. `slice` names who delivers the real page. */
 export const areas: Area[] = [
@@ -10,6 +10,7 @@ export const areas: Area[] = [
   { id: "review", label: "Review", path: "/review", slice: "Slice 4 (Task S4.2)", summary: "Findings, artifacts, previews, visual baselines, passports, inspect, and diff.", icon: ShieldCheck },
   { id: "delivery", label: "Delivery", path: "/delivery", slice: "Slice 5 (Task S5.2)", summary: "Package, publish, releases, and evidence.", icon: PackageCheck },
   { id: "configure", label: "Configure", path: "/configure", slice: "Slice 6 (Task S6.3)", summary: "Workspaces, documents, templates, plugins, rules, and diagnostics.", icon: Settings2 },
+  { id: "tools", label: "Tools", path: "/tools", slice: "Slice 6 (Task S6.3)", summary: "Collection, rules, DOCX, and translation tools.", icon: Wrench, secondary: true },
 ];
 
 

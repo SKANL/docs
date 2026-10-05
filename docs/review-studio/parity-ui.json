@@ -39,21 +39,31 @@
   ]
  },
  "build-docx": {
-  "pending": "S6.3",
+  "ui": "/tools › Build DOCX",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_build_docx_defaults_to_the_draft_dir_and_accepts_a_workspace_output"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › builds a DOCX to a chosen output path",
+   "review-studio/src/test/toolsFeature.test.tsx › explains a DOCX that could not be built instead of claiming success"
   ]
  },
  "build-ledger": {
-  "pending": "S6.3",
+  "ui": "/tools › Build ledger",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_build_ledger_writes_the_ledger_under_the_workspace"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › builds the evidence rules and the fact ledger"
   ]
  },
  "build-rules": {
-  "pending": "S6.3",
+  "ui": "/tools › Build rules",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_build_rules_then_review_rules_are_structured"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › builds the evidence rules and the fact ledger"
   ]
  },
  "build-section": {
@@ -66,21 +76,30 @@
   ]
  },
  "collect-code-evidence": {
-  "pending": "S6.3",
+  "ui": "/tools › Collect code evidence",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_collect_code_evidence_defaults_to_the_workspace_and_rejects_other_roots"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › collects code evidence and reports a degraded tool instead of success"
   ]
  },
  "collect-issues": {
-  "pending": "S6.3",
+  "ui": "/tools › Collect issues",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_collect_issues_passes_the_workspace_root_as_default_repo_root"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › shows the server error when a repository root is refused"
   ]
  },
  "collect-sources": {
-  "pending": "S6.3",
+  "ui": "/tools › Collect sources",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_collect_sources_writes_the_manifest"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › collects sources for the current document and shows the written path"
   ]
  },
  "context elicit": {
@@ -199,15 +218,21 @@
   ]
  },
  "doc show": {
-  "pending": "unassigned",
+  "ui": "/configure/workspaces › Document details",
   "api": [
    "tests/unit/api/test_application.py::test_v2_workspace_contract_has_no_server_active_selection_or_fallback"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › shows the document record and its resumable summary on the workspace page"
   ]
  },
  "doc status": {
-  "pending": "unassigned",
+  "ui": "/configure/workspaces › Document details",
   "api": [
    "tests/unit/api/test_template_routes.py::test_summary_equals_what_the_cli_service_reports"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › shows the document record and its resumable summary on the workspace page"
   ]
  },
  "doc use": {
@@ -221,9 +246,14 @@
   ]
  },
  "doctor": {
-  "pending": "S6.3",
+  "ui": "/configure/diagnostics › Diagnostic checks",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_diagnostics_return_structured_checks"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › lists every check with a status badge and its version",
+   "review-studio/src/test/configureFeature.test.tsx › explains a degraded capability instead of calling it healthy",
+   "review-studio/e2e/tools.spec.ts › lists the diagnostic checks of the real sidecar"
   ]
  },
  "document baseline": {
@@ -275,9 +305,13 @@
   ]
  },
  "document import": {
-  "pending": "unassigned",
+  "ui": "/authoring/sources › Import source file",
   "api": [
    "tests/unit/api/test_template_routes.py::test_import_stores_a_hash_prefixed_copy_and_is_idempotent"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › imports a source file into the document from the authoring Sources tab",
+   "review-studio/src/test/toolsFeature.test.tsx › hides source import when the capability is unavailable"
   ]
  },
  "document ingest": {
@@ -299,9 +333,13 @@
   ]
  },
  "document package": {
-  "pending": "S5.2",
+  "ui": "/delivery › Package",
   "api": [
    "tests/unit/api/test_delivery_routes.py::test_package_writes_a_workspace_owned_archive_and_reports_its_digest"
+  ],
+  "proof": [
+   "review-studio/src/test/deliveryFeature.test.tsx › packages the document and shows the digest",
+   "review-studio/e2e/delivery.spec.ts › packages, is denied a draft publish by the server, and opens the publication history"
   ]
  },
  "document passport": {
@@ -332,15 +370,22 @@
   ]
  },
  "document publish": {
-  "pending": "S5.2",
+  "ui": "/delivery › Publish",
   "api": [
    "tests/unit/api/test_delivery_routes.py::test_publish_to_a_permitted_destination_returns_immutable_release_evidence"
+  ],
+  "proof": [
+   "review-studio/src/test/deliveryFeature.test.tsx › requires an explicit confirmation step that summarises destination and policy before sending",
+   "review-studio/src/test/deliveryFeature.test.tsx › renders the server policy denial verbatim and never says published"
   ]
  },
  "document release": {
-  "pending": "S5.2",
+  "ui": "/delivery › Release",
   "api": [
    "tests/unit/api/test_pipeline_routes.py::test_run_enqueues_and_returns_a_run_reference"
+  ],
+  "proof": [
+   "review-studio/src/test/deliveryFeature.test.tsx › starts a release run and opens its detail, leaving approval to the server"
   ]
  },
  "document run": {
@@ -372,15 +417,23 @@
   ]
  },
  "explain": {
-  "pending": "S6.3",
+  "ui": "/configure/diagnostics › Explain code",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_issue_code_explains_a_known_code_and_404s_an_unknown_one"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › explains an issue code with its meaning and fix",
+   "review-studio/src/test/configureFeature.test.tsx › reports an unknown issue code honestly",
+   "review-studio/e2e/tools.spec.ts › explains a known issue code"
   ]
  },
  "format-audit-docx": {
-  "pending": "S6.3",
+  "ui": "/tools › Format audit DOCX",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_format_audit_surfaces_strict_failure_and_non_strict_pass"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › audits the DOCX format in strict mode and shows the report as text"
   ]
  },
  "pack-context": {
@@ -413,9 +466,12 @@
   ]
  },
  "review-rules": {
-  "pending": "S6.3",
+  "ui": "/tools › Review rules",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_build_rules_then_review_rules_are_structured"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › reviews rules with a strict toggle and lists the issues"
   ]
  },
  "review-section": {
@@ -494,15 +550,23 @@
   ]
  },
  "template create": {
-  "pending": "S6.3",
+  "ui": "/configure/templates › Create template",
   "api": [
    "tests/unit/api/test_template_routes.py::test_create_writes_a_skeleton_and_conflicts_on_repeat"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › creates a new empty template skeleton",
+   "review-studio/src/test/configureFeature.test.tsx › shows the server name error when a template cannot be created"
   ]
  },
  "template init": {
-  "pending": "S6.3",
+  "ui": "/configure/templates › Create template",
   "api": [
    "tests/unit/api/test_template_routes.py::test_create_writes_a_skeleton_and_conflicts_on_repeat"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › creates a new empty template skeleton",
+   "review-studio/src/test/configureFeature.test.tsx › shows the server name error when a template cannot be created"
   ]
  },
  "template list": {
@@ -515,27 +579,45 @@
   ]
  },
  "template show": {
-  "pending": "S6.3",
+  "ui": "/configure/templates › Show template",
   "api": [
    "tests/unit/api/test_template_routes.py::test_show_returns_the_resolved_template_and_404_when_missing"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › shows a template structurally, never as raw JSON",
+   "review-studio/src/test/configureClient.test.ts › shows, installs, creates and validates through the template routes"
   ]
  },
  "template use": {
-  "pending": "S6.3",
+  "ui": "/configure/templates › Install built-in template",
   "api": [
    "tests/unit/api/test_template_routes.py::test_use_copies_a_missing_builtin_and_rejects_unknown_ones"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › installs a built-in template without forcing",
+   "review-studio/src/test/configureFeature.test.tsx › overwrites an installed template only after an explicit confirmation following template_exists"
   ]
  },
  "template validate": {
-  "pending": "S6.3",
+  "ui": "/configure/templates › Validate template",
   "api": [
    "tests/unit/api/test_template_routes.py::test_validate_reports_structured_issues_for_an_invalid_template"
+  ],
+  "proof": [
+   "review-studio/src/test/configureFeature.test.tsx › lists validation issues as messages, not raw JSON",
+   "review-studio/src/test/configureFeature.test.tsx › validates a pasted draft without storing it",
+   "review-studio/e2e/tools.spec.ts › validates an installed template and shows the outcome"
   ]
  },
  "translate": {
-  "pending": "S6.3",
+  "ui": "/tools › Translate PDF",
   "api": [
    "tests/unit/api/test_tool_routes.py::test_translate_a_workspace_artifact"
+  ],
+  "proof": [
+   "review-studio/src/test/toolsFeature.test.tsx › translates a workspace artifact and links the output and provenance paths",
+   "review-studio/src/test/toolsFeature.test.tsx › replaces an existing translation only after an explicit confirmation following output_exists",
+   "review-studio/src/test/toolsFeature.test.tsx › reports unavailable and untranslatable results honestly"
   ]
  },
  "workspace create": {

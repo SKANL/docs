@@ -21,12 +21,7 @@ PROOF_SEP = " › "
 # Available commands whose UI is still being built. `parity-ui.json` may mark a row `pending` only if it is
 # listed here, so an unfinished surface is a reviewed decision and never a silent default.
 # S7.2 must empty this set (and delete the skip on `test_no_pending_ui_rows_remain`) before release.
-PENDING_UI = frozenset({
-    "doc show", "doc status", "document import", "document package", "document publish", "document release",
-    "build-docx", "build-ledger", "build-rules", "collect-code-evidence", "collect-issues", "collect-sources",
-    "doctor", "explain", "format-audit-docx", "review-rules", "translate",
-    "template create", "template init", "template show", "template use", "template validate",
-})
+PENDING_UI: frozenset[str] = frozenset()
 # Available commands with no direct automated API test of their own route yet (the route exists and is
 # catalogued). S7.2 must close this set too.
 API_PROOF_GAPS: frozenset[str] = frozenset()

@@ -1,6 +1,8 @@
 import { createAuthoringApi, type AuthoringApi, type RevisionInput } from "./domains/authoring";
 import { createPipelineApi, type PipelineApi } from "./domains/pipeline";
 import { createDeliveryApi, type DeliveryApi } from "./domains/delivery";
+import { createTemplatesApi, type TemplatesApi } from "./domains/templates";
+import { createToolsApi, type ToolsApi } from "./domains/tools";
 import { createQualityApi, type QualityApi } from "./domains/review";
 import type {
   Artifact,
@@ -193,6 +195,10 @@ export class ReviewApiClient {
   readonly pipeline: PipelineApi = createPipelineApi((path, init) => this.scopedRequest(path, init));
   /** Package, publish and the publication history. */
   readonly delivery: DeliveryApi = createDeliveryApi((path, init) => this.scopedRequest(path, init));
+  /** Template administration. */
+  readonly templates: TemplatesApi = createTemplatesApi((path, init) => this.scopedRequest(path, init));
+  /** Specialist tools, diagnostics, issue codes and source import. */
+  readonly tools: ToolsApi = createToolsApi((path, init) => this.scopedRequest(path, init));
   /** Evidence, baseline promotion, inspect, diff, qa-docx and corrections. */
   readonly quality: QualityApi = createQualityApi((path, init) => this.scopedRequest(path, init));
   private readonly requestFetch: typeof globalThis.fetch;

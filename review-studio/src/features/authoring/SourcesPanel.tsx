@@ -31,6 +31,25 @@ function IngestResult({ result }: { result: SourceIngestResult }) {
   </section>;
 }
 
+function ImportSource({ documentId }: { documentId: string }) {
+  const api = useApi();
+  const [file, setFile] = useState<File | null>(null);
+  const imported = useAction(async () => api.importSourceFile!(documentId, { filename: file!.name, content_base64: await fileToBase64(file!) }), {
+    success: result => `Imported ${result.filename}.`, invalidate: [authoringKeys.classification(documentId)], onDone: () => setFile(null),
+  });
+  return <section aria-label="Import source file" className="grid max-w-xl gap-3">
+    <h3 className="text-lg font-semibold">Import source file</h3>
+    <p className="text-sm text-muted-foreground">Stores one file with the document as a hash-named copy, without converting it. Importing the same file again changes nothing.</p>
+    <form className="grid gap-3" onSubmit={event => { event.preventDefault(); if (file) imported.mutate(undefined); }}>
+      <Label htmlFor="import-file">Source file</Label>
+      <Input id="import-file" type="file" onChange={event => setFile(event.target.files?.[0] ?? null)} />
+      <Button type="submit" variant="outline" className="w-fit" disabled={!file || imported.isPending}>{imported.isPending ? "Importing…" : "Import source file"}</Button>
+    </form>
+    <ActionError action={imported} what="import the file" />
+    {imported.data && <p role="status" className="text-sm">{imported.data.deduplicated ? "Already imported: " : "Imported: "}<code>{imported.data.path}</code> ({imported.data.size} bytes)</p>}
+  </section>;
+}
+
 export function SourcesPanel({ documentId }: { documentId: string }) {
   const api = useApi();
   const can = useCapability();
@@ -49,5 +68,6 @@ export function SourcesPanel({ documentId }: { documentId: string }) {
     </form> : <Unavailable>Source ingestion is not available on this server.</Unavailable>}
     <ActionError action={ingest} what="ingest sources" />
     {ingest.data && <IngestResult result={ingest.data} />}
+    {can("document.import") && api.importSourceFile && <ImportSource documentId={documentId} />}
   </div>;
 }
