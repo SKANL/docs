@@ -286,6 +286,53 @@ def test_sidecar_runs_endpoint_reads_workspace_backed_store(tmp_path: Path) -> N
         thread.join(timeout=2)
 
 
+def test_sidecar_wsgi_routes_document_use_with_workspace_query(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    server = build_server(config)
+    application = server._docs_application.application
+    workspace_id = application.workspace_registry.list()[0]["id"]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+
+    def post(path: str, payload: dict[str, str]) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}{path}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=3)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    try:
+        status, created = post(
+            "/v2/documents",
+            {
+                "workspace_id": workspace_id,
+                "document_id": "wsgi-lifecycle",
+                "template": "documento-generico",
+                "title": "WSGI lifecycle",
+            },
+        )
+        assert status == 201
+
+        status, selected = post(
+            f"/v2/documents/{created['id']}/use?workspace_id={workspace_id}",
+            {},
+        )
+
+        assert status == 200, selected
+        assert selected["id"] == "wsgi-lifecycle"
+        assert selected["active"] is True
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
 def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     health_app = build_application(config)

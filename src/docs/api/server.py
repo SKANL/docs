@@ -226,7 +226,9 @@ class X20Transport:
     ) -> _ApplicationResponse:
         body = self._read_request_body(environ)
         child_environ = dict(environ)
-        child_environ["PATH_INFO"] = path
+        parsed_path = urlsplit(path)
+        child_environ["PATH_INFO"] = parsed_path.path or "/"
+        child_environ["QUERY_STRING"] = parsed_path.query
         child_environ["wsgi.input"] = BytesIO(body)
         child_environ["CONTENT_LENGTH"] = str(len(body))
         child_environ["HTTP_X_REQUEST_ID"] = request_id
@@ -315,7 +317,7 @@ class X20Transport:
         if self._header_value(headers, "Content-Type").lower().startswith("text/event-stream"):
             self._set_header(headers, "Cache-Control", "no-cache")
         self._set_header(headers, "access-control-allow-headers", "Authorization, Content-Type, Idempotency-Key, X-Request-ID")
-        self._set_header(headers, "access-control-allow-methods", "GET, POST, PUT, PATCH, OPTIONS")
+        self._set_header(headers, "access-control-allow-methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self._set_header(headers, "vary", "Origin")
         if origin and origin.rstrip("/") in self.config.cors_origins:
             self._set_header(headers, "access-control-allow-origin", origin)
@@ -527,6 +529,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._dispatch()
 
     def do_PATCH(self) -> None:
+        self._dispatch()
+
+    def do_DELETE(self) -> None:
         self._dispatch()
 
     def _dispatch(self, *, head_only: bool = False) -> None:
