@@ -17,5 +17,3 @@ export const areas: Area[] = [
 /** Capability `slice` (S0-S6, from the catalogue) to the task area that hosts it. */
 const sliceArea: Record<string, string> = { S0: "/", S1: "/configure/workspaces", S2: "/authoring", S3: "/pipeline", S4: "/review", S5: "/delivery", S6: "/configure" };
 export const areaPathForSlice = (slice: string) => sliceArea[slice] ?? "/";
-
-export const legacyScreens = [["overview", "Overview"], ["runs", "Run history"], ["findings", "Findings inbox"], ["artifacts", "Artifact preview"], ["passport", "Evidence passport"], ["graph", "Semantic graph"], ["templates", "Templates"], ["plugins", "Plugins"], ["baselines", "Baselines"], ["revisions", "Revisions"], ["publication", "Publication status"]] as const;

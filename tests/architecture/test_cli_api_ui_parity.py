@@ -20,7 +20,7 @@ PROOF_SEP = " › "
 
 # Available commands whose UI is still being built. `parity-ui.json` may mark a row `pending` only if it is
 # listed here, so an unfinished surface is a reviewed decision and never a silent default.
-# S7.2 must empty this set (and delete the skip on `test_no_pending_ui_rows_remain`) before release.
+# Empty since S7.2; `test_no_pending_ui_rows_remain` keeps it that way.
 PENDING_UI: frozenset[str] = frozenset()
 # Available commands with no direct automated API test of their own route yet (the route exists and is
 # catalogued). S7.2 must close this set too.
@@ -205,6 +205,5 @@ def test_committed_matrix_is_the_regenerated_output():
     assert MATRIX.read_text(encoding="utf-8") == _load_regen().render(), "run: uv run python tools/regen_parity_matrix.py"
 
 
-@pytest.mark.skip(reason=f"S7.2 must remove this skip once these UI/API gaps close: {sorted(PENDING_UI | API_PROOF_GAPS)}")
 def test_no_pending_ui_rows_remain():
     assert not PENDING_UI and not API_PROOF_GAPS

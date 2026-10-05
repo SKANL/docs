@@ -77,14 +77,6 @@ describe("routes", () => {
     expect(await screen.findByRole("heading", { name: "Workspace and document control" })).toBeTruthy();
     expect(window.location.hash).toBe("#/configure/workspaces");
   });
-
-  it("keeps other legacy screens reachable under /legacy/<id>", async () => {
-    window.location.hash = "#graph";
-    render(<App api={makeApi()} />);
-    await waitFor(() => expect(window.location.hash).toBe("#/legacy/graph"));
-    expect(await screen.findByRole("combobox", { name: "Query" })).toBeTruthy();
-  });
-
 });
 
 describe("design tokens", () => {

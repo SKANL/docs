@@ -1,13 +1,21 @@
 import { expect, test } from "@playwright/test";
 
 test("renders real workspace, run, artifact, and provenance data", async ({ page }) => {
-  await page.goto("/#/legacy/runs");
+  await page.goto("/#/pipeline");
   await expect(page.getByRole("row", { name: /[0-9a-f]{8}-[0-9a-f]{4}-/i }).first()).toBeVisible();
   await expect(page.getByText(/Live progress|succeeded|passed|warnings/i).first()).toBeVisible();
-  await page.getByRole("link", { name: "Artifact preview" }).click();
-  await expect(page.getByRole("heading", { name: "Artifact & page preview" })).toBeVisible();
-  await page.getByRole("link", { name: "Evidence passport" }).click();
-  await expect(page.getByRole("heading", { name: "Evidence passport" })).toBeVisible();
+  await page.getByRole("link", { name: "Review" }).click();
+  await page.goto("/#/review/artifacts");
+  await expect(page.getByRole("heading", { name: "Review", exact: true })).toBeVisible();
+  await page.goto("/#/review/evidence");
+  await expect(page.getByRole("region", { name: "Runs with evidence" })).toBeVisible();
+});
+
+test("Home shows the current document, recent runs and one next action", async ({ page }) => {
+  await page.goto("/#/");
+  await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Recent runs" }).getByRole("link").first()).toBeVisible();
+  await expect(page.getByRole("region", { name: "Next safe action" }).getByRole("link")).toHaveCount(1);
 });
 
 test("supports skip-link keyboard navigation and visible focus", async ({ page }) => {
