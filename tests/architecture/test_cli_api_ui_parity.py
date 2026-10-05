@@ -29,7 +29,7 @@ PENDING_UI = frozenset({
 })
 # Available commands with no direct automated API test of their own route yet (the route exists and is
 # catalogued). S7.2 must close this set too.
-API_PROOF_GAPS = frozenset({"context set"})
+API_PROOF_GAPS: frozenset[str] = frozenset()
 
 
 def _load_regen():

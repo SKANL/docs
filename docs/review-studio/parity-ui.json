@@ -112,7 +112,9 @@
  },
  "context set": {
   "ui": "/authoring/context › Set context value",
-  "api": [],
+  "api": [
+   "tests/unit/api/test_parity_routes.py::test_context_set_persists_and_is_readable_via_context_status"
+  ],
   "proof": [
    "review-studio/src/test/authoringIntake.test.tsx › sets a context value for a topic",
    "review-studio/e2e/authoring.spec.ts › authors the seeded document through the real sidecar"
@@ -237,7 +239,7 @@
  "document build": {
   "ui": "/pipeline › Build",
   "api": [
-   "tests/unit/api/test_openapi.py::test_document_actions_document_workspace_format_and_policy_contract"
+   "tests/unit/api/test_parity_routes.py::test_document_build_and_verify_queue_a_run_with_the_requested_payload"
   ],
   "proof": [
    "review-studio/src/test/pipelineFeature.test.tsx › launches build through the document action and opens the resulting run"
@@ -305,7 +307,7 @@
  "document passport": {
   "ui": "/review/evidence › Passport summary",
   "api": [
-   "tests/unit/api/test_application.py::test_endpoints_return_resources_and_cancel"
+   "tests/unit/api/test_parity_routes.py::test_document_passport_payload_equals_the_stored_passport"
   ],
   "proof": [
    "review-studio/src/test/reviewFeature.test.tsx › shows digests, the passport summary and artifacts without raw JSON"
@@ -323,7 +325,7 @@
  "document prepare": {
   "ui": "/pipeline › Prepare",
   "api": [
-   "tests/unit/api/test_openapi.py::test_document_actions_document_workspace_format_and_policy_contract"
+   "tests/unit/api/test_parity_routes.py::test_document_prepare_returns_its_synchronous_result"
   ],
   "proof": [
    "review-studio/src/test/pipelineFeature.test.tsx › prepare is synchronous: it reports success and stays on the page"
@@ -354,7 +356,7 @@
  "document status": {
   "ui": "/configure/workspaces › Document status panel",
   "api": [
-   "tests/unit/api/test_application.py::test_v2_workspace_contract_has_no_server_active_selection_or_fallback"
+   "tests/unit/api/test_parity_routes.py::test_document_status_reports_the_status_contract_fields"
   ],
   "proof": [
    "review-studio/src/test/workspaceJourneys.test.tsx › offers an explicit retry when document status loading fails"
@@ -363,7 +365,7 @@
  "document verify": {
   "ui": "/pipeline › Verify",
   "api": [
-   "tests/unit/api/test_openapi.py::test_document_actions_document_workspace_format_and_policy_contract"
+   "tests/unit/api/test_parity_routes.py::test_document_build_and_verify_queue_a_run_with_the_requested_payload"
   ],
   "proof": [
    "review-studio/src/test/pipelineFeature.test.tsx › does not render actions whose capability is unavailable"
@@ -548,7 +550,7 @@
  "workspace delete": {
   "ui": "/configure/workspaces › Delete workspace",
   "api": [
-   "tests/unit/api/test_application.py::test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes"
+   "tests/unit/api/test_parity_routes.py::test_workspace_delete_removes_it_then_404s"
   ],
   "proof": [
    "review-studio/src/test/workspaceJourneys.test.tsx › confirms workspace deletion and recovers after a transient delete error",
@@ -558,7 +560,7 @@
  "workspace list": {
   "ui": "/configure/workspaces › Workspace switcher",
   "api": [
-   "tests/unit/api/test_application.py::test_v2_workspace_contract_has_no_server_active_selection_or_fallback"
+   "tests/unit/api/test_parity_routes.py::test_workspace_list_shape_and_ordering"
   ],
   "proof": [
    "review-studio/e2e/review-studio.spec.ts › renders real workspace, run, artifact, and provenance data"
@@ -577,7 +579,7 @@
  "workspace rename": {
   "ui": "/configure/workspaces › Rename workspace",
   "api": [
-   "tests/unit/api/test_application.py::test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes"
+   "tests/unit/api/test_parity_routes.py::test_workspace_rename_is_persisted_and_conflicts_are_409"
   ],
   "proof": [
    "review-studio/src/test/workspaceJourneys.test.tsx › renames a workspace and recovers after a transient rename error",
