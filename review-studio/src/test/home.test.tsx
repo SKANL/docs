@@ -11,7 +11,7 @@ afterEach(() => { cleanup(); window.location.hash = ""; });
 const open = (api: ReviewApi) => { window.location.hash = "#/"; return render(<App api={api} />); };
 const homeApi = (over: Record<string, unknown> = {}) => makeApi({
   getDocumentStatus: async () => ({ succeeded: true, publication_blockers: [] }),
-  listAssets: async (documentId: string) => ({ document_id: documentId, kind: "source", items: [{ name: "a.md" }] }),
+  getDocumentClassification: async (documentId: string) => ({ document_id: documentId, items: [{ relative_path: "a.md" }] }),
   listRunPage: async () => page([run({ id: "run-9", status: "succeeded" })]),
   ...over,
 } as never);
@@ -31,7 +31,7 @@ describe("Home", () => {
     expect(next.getAttribute("href")).toBe("#/configure/workspaces");
   });
   it("points at sources, then pipeline, then review", async () => {
-    const { unmount } = open(homeApi({ listAssets: async (d: string) => ({ document_id: d, kind: "source", items: [] }) }));
+    const { unmount } = open(homeApi({ getDocumentClassification: async (d: string) => ({ document_id: d, items: [] }) }));
     expect((await screen.findByRole("link", { name: /Add sources/ })).getAttribute("href")).toBe("#/authoring/sources");
     unmount();
     const second = open(homeApi({ listRunPage: async () => page([]) }));
@@ -39,6 +39,30 @@ describe("Home", () => {
     second.unmount();
     open(homeApi({ listFindings: async () => [{ id: "f1", title: "t", severity: "high", status: "failed", location: "", summary: "", owner: "", updated: "" }] }));
     expect((await screen.findByRole("link", { name: /Review findings/ })).getAttribute("href")).toBe("#/review/findings");
+  });
+});
+
+describe("Home with unknown data", () => {
+  it.each([
+    ["sources", { getDocumentClassification: async () => { throw new Error("sources down"); } }],
+    ["runs", { listRunPage: async () => { throw new Error("runs down"); } }],
+    ["findings", { listFindings: async () => { throw new Error("findings down"); } }],
+  ])("shows an error with retry and no next action when %s fails", async (_name, over) => {
+    open(homeApi(over));
+    const alert = await screen.findByText(/down/);
+    expect(alert).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /try again/i }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("region", { name: "Next safe action" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Add sources/ })).toBeNull();
+  });
+  it("shows no next action while data is still loading", async () => {
+    open(homeApi({ getDocumentClassification: () => new Promise(() => {}) }));
+    await screen.findByRole("link", { name: "run-9" });
+    expect(screen.queryByRole("region", { name: "Next safe action" })).toBeNull();
+  });
+  it("labels the findings count as workspace-wide", async () => {
+    open(homeApi({ listFindings: async () => [{ id: "f1", title: "t", severity: "high", status: "failed", location: "", summary: "", owner: "", updated: "" }] }));
+    expect(await screen.findByText(/1 failing finding of 1 reported in this workspace/)).toBeTruthy();
   });
 });
 

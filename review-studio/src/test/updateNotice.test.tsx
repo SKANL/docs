@@ -22,4 +22,15 @@ describe("UpdateNotice", () => {
     await userEvent.click(screen.getByRole("button", { name: "Install update" }));
     await waitFor(() => expect(install).toHaveBeenCalled());
   });
+  it("shows an accessible error with retry when the install fails", async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    install.mockRejectedValueOnce(new Error("signature mismatch"));
+    render(<UpdateNotice />);
+    await userEvent.click(await screen.findByRole("button", { name: "Install update" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("signature mismatch");
+    install.mockResolvedValueOnce(undefined);
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+    await waitFor(() => expect(install).toHaveBeenCalledTimes(3));
+  });
 });
