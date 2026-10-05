@@ -53,35 +53,36 @@ def main() -> int:
                 time.sleep(0.25)
         if not healthy:
             raise SystemExit("packaged sidecar did not become healthy within 20 seconds")
-        _, workspaces = call(base, "/v1/workspaces")
+        _, workspaces = call(base, "/v2/workspaces")
         workspace_id = workspaces["items"][0]["id"]
         source = base64.b64encode(b"# Packaged E2E\n\nA real sidecar document.").decode()
-        status, imported = call(base, "/v1/documents/import", "POST", {
+        status, imported = call(base, "/v2/documents/import", "POST", {
             "workspace_id": workspace_id, "filename": "packaged.md",
             "content_base64": source, "document_id": "packaged-e2e",
             "template": "documento-generico", "title": "Packaged E2E",
         })
         if status != 201 or imported.get("document_id") != "packaged-e2e":
             raise SystemExit(f"import failed: {status} {imported}")
-        status, prepared = call(base, "/v1/documents/packaged-e2e/prepare", "POST", {"workspace_id": workspace_id})
+        status, prepared = call(base, "/v2/documents/packaged-e2e/prepare?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id})
         if status != 200 or prepared.get("succeeded") is False:
             raise SystemExit(f"prepare failed: {status} {prepared}")
-        _, run = call(base, "/v1/runs", "POST", {"workspace_id": workspace_id, "document_id": "packaged-e2e", "pipeline_id": "document", "format": "docx"})
+        _, run = call(base, "/v2/runs?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id, "document_id": "packaged-e2e", "pipeline_id": "document", "format": "docx"})
         run_id = run["id"]
+        scope = "?workspace_id=" + workspace_id
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
-            _, current = call(base, "/v1/runs/" + run_id)
+            _, current = call(base, "/v2/runs/" + run_id + scope)
             if current["status"] in {"succeeded", "failed", "cancelled", "expired"}:
                 break
             time.sleep(0.5)
         if current["status"] != "succeeded":
             raise SystemExit(f"run failed: {current}")
-        if call(base, "/v1/runs/" + run_id + "/passport")[0] != 200:
+        if call(base, "/v2/runs/" + run_id + "/passport" + scope)[0] != 200:
             raise SystemExit("successful run did not produce a passport")
-        _, artifacts = call(base, "/v1/runs/" + run_id + "/artifacts")
+        _, artifacts = call(base, "/v2/runs/" + run_id + "/artifacts" + scope)
         if not artifacts.get("items"):
             raise SystemExit("successful run did not produce artifacts")
-        _, findings = call(base, "/v1/runs/" + run_id + "/findings")
+        _, findings = call(base, "/v2/runs/" + run_id + "/findings" + scope)
         if "items" not in findings:
             raise SystemExit("successful run did not expose findings")
         print("packaged sidecar end-to-end smoke test passed")

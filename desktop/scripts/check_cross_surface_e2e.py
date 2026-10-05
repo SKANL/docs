@@ -66,8 +66,9 @@ def main() -> int:
     executable = Path(__file__).resolve().parents[1] / "sidecar" / "docs-sidecar.exe"
     if not executable.is_file():
         raise SystemExit(f"packaged sidecar not found: {executable}")
-    with tempfile.TemporaryDirectory(prefix="docs-cross-surface-") as directory:
-        workspace = Path(directory)
+    # Windows releases the SQLite handle a moment after the sidecar tree is killed.
+    with tempfile.TemporaryDirectory(prefix="docs-cross-surface-", ignore_cleanup_errors=True) as directory:
+        workspace = Path(directory) / "workspace"  # created by the sidecar, never pre-made
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
@@ -87,8 +88,8 @@ def main() -> int:
             health = api_json(base, "/health")
             if not health.get("ready"):
                 raise AssertionError(f"packaged API did not become healthy: {health}")
-            workspace_id = str(api_json(base, "/v1/workspaces")["items"][0]["id"])
-            imported = api_json(base, "/v1/documents/import", "POST", {
+            workspace_id = str(api_json(base, "/v2/workspaces")["items"][0]["id"])
+            imported = api_json(base, "/v2/documents/import", "POST", {
                 "workspace_id": workspace_id,
                 "filename": "cross-surface.md",
                 "content_base64": "I2Ny b3NzLXN1cmZhY2UKCkEgcmVhbCBjcm9zcy1zdXJmYWNlIGRvY3VtZW50Lg==".replace(" ", ""),
@@ -98,14 +99,14 @@ def main() -> int:
             })
             if imported.get("document_id") != "cross-surface":
                 raise AssertionError(f"API import failed: {imported}")
-            api_json(base, "/v1/documents/cross-surface/prepare", "POST", {"workspace_id": workspace_id})
-            queued = api_json(base, "/v1/runs", "POST", {"workspace_id": workspace_id, "document_id": "cross-surface", "pipeline_id": "document", "format": "docx"})
+            api_json(base, "/v2/documents/cross-surface/prepare?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id})
+            queued = api_json(base, "/v2/runs?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id, "document_id": "cross-surface", "pipeline_id": "document", "format": "docx"})
             run_id = str(queued["id"])
-            current = api_json(base, "/v1/runs/" + run_id)
+            current = api_json(base, "/v2/runs/" + run_id + "?workspace_id=" + workspace_id)
             deadline = time.monotonic() + 120
             while current.get("status") not in {"succeeded", "failed", "cancelled", "expired"} and time.monotonic() < deadline:
                 time.sleep(0.5)
-                current = api_json(base, "/v1/runs/" + run_id)
+                current = api_json(base, "/v2/runs/" + run_id + "?workspace_id=" + workspace_id)
             if current.get("status") != "succeeded":
                 raise AssertionError(f"API run failed: {current}")
             cli_document = json.loads(run_cli_json(workspace, "doc", "show", "cross-surface"))
