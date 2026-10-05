@@ -50,6 +50,7 @@ from .pipeline_routes import PipelineRoutes, output_format
 from .quality_routes import QualityRoutes
 from .section_routes import SectionRoutes
 from .template_routes import TemplateRoutes
+from .tool_routes import ToolRoutes
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
@@ -66,7 +67,9 @@ _LOG = logging.getLogger("docs.api.application")
 # First two path segments whose sub-routes are matched dynamically.
 _DYNAMIC_ROOTS = tuple(
     ["v2", root]
-    for root in ("runs", "documents", "workspaces", "plugins", "artifacts", "revisions", "baselines", "templates")
+    for root in (
+        "runs", "documents", "workspaces", "plugins", "artifacts", "revisions", "baselines", "templates", "issue-codes",
+    )
 )
 
 
@@ -184,9 +187,16 @@ class X20Application:
             workspace_root=self._authoring_workspace_root,
             services_for=self._workspace_services_for,
         )
+        self._tools = ToolRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+            quality=self._quality,
+            import_service=self.import_service,
+        )
         self._operation_routes: dict[str, Any] = {
             "authoring": self._authoring, "sections": self._sections, "pipeline": self._pipeline,
             "quality": self._quality, "delivery": self._delivery, "templates": self._templates_routes,
+            "tools": self._tools,
         }
         # SSE progress stream bounds: a stream never holds a worker thread longer
         # than `progress_max_seconds`; the client reconnects until terminal.
@@ -217,6 +227,9 @@ class X20Application:
             ("POST", "/v2/documents"),
             ("POST", "/v2/templates"),
             ("POST", "/v2/runs"),
+            ("GET", "/v2/diagnostics"),
+            ("GET", "/v2/template-catalog"),
+            ("POST", "/v2/translations"),
         }
         self._validate_initial_route_collisions()
         self._register_owned_route("GET", "/v2/capabilities", lambda _: Response.json(build_capability_catalog()))
@@ -239,6 +252,9 @@ class X20Application:
         self._register_owned_route("POST", "/v2/documents", self._create_document)
         self._register_owned_route("POST", "/v2/templates", self._templates_routes.create_template)
         self._register_owned_route("POST", "/v2/runs", self._create_run)
+        self._register_owned_route("GET", "/v2/diagnostics", self._tools.diagnostics)
+        self._register_owned_route("GET", "/v2/template-catalog", self._tools.template_catalog)
+        self._register_owned_route("POST", "/v2/translations", self._tools.translate)
 
     def dispatch(self, request: Request) -> Response:
         with self.observability.span("docs.api.request", {"method": request.method.upper()}):

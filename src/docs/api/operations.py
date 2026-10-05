@@ -24,7 +24,7 @@ class Operation:
     request: type[dto.AuthoringDTO] | None
     response: type[dto.AuthoringDTO]
     success_status: int = 200
-    routes: str = "authoring"  # key of the handler object ("authoring", "sections", "pipeline", "quality" or "delivery")
+    routes: str = "authoring"  # key of the handler object ("authoring", "sections", "pipeline", "quality", "delivery", "templates" or "tools")
 
     def request_ref(self) -> dict[str, str] | None:
         return _ref(self.request) if self.request else None
@@ -122,6 +122,45 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation(("apply-corrections",), "POST", f"{_DOC}/corrections/apply", "documents:write",
               "Apply pending section corrections", "apply_corrections", dto.WorkspaceScopedRequest,
               dto.CorrectionsResponse, routes="quality"),
+    Operation(("collect-sources",), "POST", f"{_DOC}/collect-sources", "documents:write",
+              "Inventory the declared sources and write the source manifest", "collect_sources",
+              dto.WorkspaceScopedRequest, dto.ToolFileResponse, routes="tools"),
+    Operation(("collect-issues",), "POST", f"{_DOC}/collect-issues", "documents:write",
+              "Collect GitHub issues as evidence; repo_root is limited to the workspace or the configured "
+              "evidence root, and a missing `gh` is a degraded result", "collect_issues",
+              dto.CollectRepoRequest, dto.ToolFileResponse, routes="tools"),
+    Operation(("collect-code-evidence",), "POST", f"{_DOC}/collect-code-evidence", "documents:write",
+              "Collect code evidence for the ledger; repo_root is limited to the workspace or the configured "
+              "evidence root", "collect_code_evidence", dto.CollectRepoRequest, dto.ToolFileResponse,
+              routes="tools"),
+    Operation(("build-rules",), "POST", f"{_DOC}/build-rules", "documents:write",
+              "Build the normative rules manifest", "build_rules", dto.WorkspaceScopedRequest,
+              dto.ToolFileResponse, routes="tools"),
+    Operation(("build-ledger",), "POST", f"{_DOC}/build-ledger", "documents:write",
+              "Write the fact ledger", "build_ledger", dto.WorkspaceScopedRequest, dto.ToolFileResponse,
+              routes="tools"),
+    Operation(("review-rules",), "POST", f"{_DOC}/review-rules", "documents:read",
+              "Check the rules manifest against the template (read-only)", "review_rules",
+              dto.RulesReviewRequest, dto.RulesReviewResponse, routes="tools"),
+    Operation(("build-docx",), "POST", f"{_DOC}/build-docx", "documents:write",
+              "Assemble the document DOCX (output stays inside the workspace; a missing toolchain is a "
+              "result with built=false)", "build_docx", dto.DocxBuildRequest, dto.DocxBuildResponse, routes="tools"),
+    Operation(("format-audit-docx",), "POST", f"{_DOC}/format-audit-docx", "documents:read",
+              "Audit a DOCX's format against the template contract (read-only; strict turns warnings into errors)",
+              "format_audit_docx", dto.FormatAuditRequest, dto.FormatAuditResponse, routes="tools"),
+    Operation(("translate",), "POST", "/v2/translations", "documents:write",
+              "Translate a workspace PDF artifact or an uploaded PDF (synchronous, can take minutes; "
+              "a missing backend or a PDF without a text layer is a structured result)",
+              "translate", dto.TranslateRequest, dto.TranslateResponse, routes="tools"),
+    Operation(("doctor",), "GET", "/v2/diagnostics", "documents:read",
+              "Workspace readiness checks and capability report (an absent tool shows as unavailable)",
+              "diagnostics", None, dto.DiagnosticsResponse, routes="tools"),
+    Operation(("explain",), "GET", "/v2/issue-codes/{code}", "documents:read",
+              "Explain one review issue code from the catalogue", "explain_issue_code", None,
+              dto.IssueCodeResponse, routes="tools"),
+    Operation((), "GET", "/v2/template-catalog", "documents:read",
+              "List the built-in templates (what `template list --available` prints) and whether each is "
+              "installed in the workspace", "template_catalog", None, dto.TemplateCatalogResponse, routes="tools"),
 )
 
 # Shared with the existing classification route, which keeps its own handler

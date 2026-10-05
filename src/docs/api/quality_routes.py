@@ -201,27 +201,35 @@ class QualityRoutes(RouteSupport):
         return Response.json(dto.ArtifactDiffResponse(**result).model_dump())
 
     # -- qa-docx / corrections -------------------------------------------------
-    def qa_docx(self, request: Request, document_id: str) -> Response:
-        data = self._body(request, dto.QaDocxRequest)
-        root, deps = self._open(request, document_id, data.workspace_id)
-        root_path = Path(root).resolve()
-        resolved = self._resolve(deps, document_id)
-        if data.artifact_id:
-            artifact, payload = self._owned_artifact(request, data.artifact_id, data.workspace_id)
+    def docx_input(
+        self, request: Request, root_path: Path, deps: Any, resolved: Any, document_id: str,
+        artifact_id: str | None, body_workspace: str | None,
+    ) -> Path:
+        """The DOCX a tool works on: a workspace artifact of this document, else its built draft."""
+        if artifact_id:
+            artifact, payload = self._owned_artifact(request, artifact_id, body_workspace)
             if payload.get("document_id") not in (None, document_id):
                 raise APIError("not_found", "Artifact not found", 404)
             docx = self._file(root_path, artifact, document_id)
             if docx.suffix.lower() != ".docx":
                 raise APIError("invalid_artifact", "Artifact is not a .docx", 400)
-        else:
-            name = deps.docx._draft_docx_name(resolved.doc_id, resolved.config)
-            docx = (Path(resolved.config["paths"]["output_draft_dir"]) / name).resolve()
-            try:
-                docx.relative_to(root_path)
-            except ValueError as exc:
-                raise APIError("artifact_outside_workspace", "Built DOCX is outside the workspace", 400) from exc
-            if not docx.is_file():
-                raise APIError("docx_unavailable", "The document has no built DOCX; build it first", 409)
+            return docx
+        name = deps.docx._draft_docx_name(resolved.doc_id, resolved.config)
+        docx = (Path(resolved.config["paths"]["output_draft_dir"]) / name).resolve()
+        try:
+            docx.relative_to(root_path)
+        except ValueError as exc:
+            raise APIError("artifact_outside_workspace", "Built DOCX is outside the workspace", 400) from exc
+        if not docx.is_file():
+            raise APIError("docx_unavailable", "The document has no built DOCX; build it first", 409)
+        return docx
+
+    def qa_docx(self, request: Request, document_id: str) -> Response:
+        data = self._body(request, dto.QaDocxRequest)
+        root, deps = self._open(request, document_id, data.workspace_id)
+        root_path = Path(root).resolve()
+        resolved = self._resolve(deps, document_id)
+        docx = self.docx_input(request, root_path, deps, resolved, document_id, data.artifact_id, data.workspace_id)
         out: Path | None = None
         message: str | None = None
         try:

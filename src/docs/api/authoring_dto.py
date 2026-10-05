@@ -417,3 +417,111 @@ class DocumentImportResponse(AuthoringDTO):
     size: int
     mime_type: str
     deduplicated: bool
+
+
+# -- specialist tools (S6.2) ---------------------------------------------------------
+class CollectRepoRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    repo_root: str | None = None  # only the workspace or the document's configured evidence root is accepted
+
+
+class ToolFileResponse(AuthoringDTO):
+    """A tool that writes one workspace file; `degraded` means it could not run and says why."""
+
+    document_id: str
+    path: str | None  # workspace-relative
+    degraded: bool = False
+    message: str | None = None
+
+
+class RulesReviewRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    strict: bool = False
+
+
+class RulesReviewResponse(AuthoringDTO):
+    document_id: str
+    strict: bool
+    passed: bool
+    issues: list[dict[str, Any]]
+
+
+class DocxBuildRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    output: str | None = None  # workspace-relative .docx path; defaults to the draft directory
+
+
+class DocxBuildResponse(AuthoringDTO):
+    document_id: str
+    built: bool
+    docx: str | None
+    message: str | None = None
+
+
+class FormatAuditRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    artifact_id: str | None = None  # defaults to the document's built draft
+    strict: bool = False
+
+
+class FormatAuditResponse(AuthoringDTO):
+    document_id: str
+    docx: str
+    strict: bool
+    passed: bool
+    issues: list[dict[str, Any]]
+    report: str  # the Markdown the CLI prints
+
+
+class TranslateRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    artifact_id: str | None = None  # a workspace PDF artifact; exactly one of artifact_id or an upload
+    filename: str | None = None
+    content_base64: str | None = None
+    to: str
+    source_lang: str = "auto"
+    output: str | None = None  # workspace-relative .pdf under artifacts/translations
+
+
+class TranslateResponse(AuthoringDTO):
+    status: Literal["translated", "unavailable", "untranslatable"]
+    source: str | None = None
+    output: str | None = None  # workspace-relative
+    pending: str | None = None  # workspace-relative `.pending.json` of blocks still to translate
+    report: dict[str, Any] | None = None
+    line: str | None = None
+    message: str | None = None
+
+
+class DiagnosticCheck(AuthoringDTO):
+    name: str
+    status: Literal["ok", "warn", "error", "unavailable"]
+    required: bool
+    detail: str
+    version: str | None = None
+
+
+class DiagnosticsResponse(AuthoringDTO):
+    document_id: str
+    passed: bool
+    strict: bool
+    checks: list[DiagnosticCheck]
+    capabilities: dict[str, Any]
+    capability_diagnostics: dict[str, Any]
+
+
+class IssueCodeResponse(AuthoringDTO):
+    code: str
+    family: str
+    family_description: str
+    meaning: str
+    fix: str
+
+
+class TemplateCatalogItem(AuthoringDTO):
+    name: str
+    installed: bool  # a copy already exists in the workspace templates directory
+
+
+class TemplateCatalogResponse(AuthoringDTO):
+    items: list[TemplateCatalogItem]

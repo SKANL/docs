@@ -158,6 +158,14 @@ _EXCLUDED_CLI_COMMANDS: dict[str, str] = {
         "Bootstraps the process current directory (writes docs.config.json and registers it as the local "
         "workspace); over HTTP a workspace is created with POST /v2/workspaces."
     ),
+    "guide": (
+        "Prints the packaged agent contract (docs/data/AGENTS.md) to stdout so a terminal-driven AI agent can "
+        "bootstrap itself; the Review Studio is the guided surface and has no agent-instruction action."
+    ),
+    "stamp": (
+        "Prints a bare local timestamp for stamps an agent writes by hand; over HTTP the server stamps "
+        "sections itself, with its own clock, through POST /v2/documents/{document_id}/sections/{section_id}/stamp."
+    ),
 }
 
 
