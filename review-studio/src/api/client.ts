@@ -1,3 +1,4 @@
+import { createAuthoringApi, type AuthoringApi } from "./domains/authoring";
 import type {
   Artifact,
   Baseline,
@@ -90,7 +91,9 @@ function withSignal(signal: AbortSignal | undefined, timeoutMs: number): { signa
 async function errorFromResponse(response: Response): Promise<ApiError> {
   let payload: unknown;
   try { payload = await response.clone().json(); } catch { payload = await response.text().catch(() => undefined); }
-  const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const raw = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  // The server wraps failures as { error: { code, message, details } }.
+  const body = raw.error && typeof raw.error === "object" ? raw.error as Record<string, unknown> : raw;
   const message = typeof body.message === "string" ? body.message : typeof payload === "string" && payload ? payload : response.statusText || "Request failed";
   return new ApiError(message, response.status, typeof body.code === "string" ? body.code : "api_error", body.details, response.headers.get("x-request-id") ?? undefined);
 }
@@ -181,6 +184,8 @@ function normalizeGraphQuery(payload: unknown): GraphQueryResult {
 
 export class ReviewApiClient {
   readonly baseUrl: string;
+  /** Source, asset, classification and context operations. */
+  readonly authoring: AuthoringApi = createAuthoringApi((path, init) => this.scopedRequest(path, init));
   private readonly requestFetch: typeof globalThis.fetch;
   private readonly timeoutMs: number;
   private readonly accessToken?: string;

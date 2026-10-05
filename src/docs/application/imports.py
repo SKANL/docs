@@ -32,6 +32,15 @@ class SourceImportService:
         *,
         document_id: str | None = None,
     ) -> dict[str, Any]:
+        safe_name, content = self.decode_upload(filename, content_base64)
+        return self.import_bytes(workspace_root, safe_name, content, document_id=document_id)
+
+    def decode_upload(self, filename: str, content_base64: str) -> tuple[str, bytes]:
+        """Validate a JSON upload and return its safe name and bytes.
+
+        One place owns the filename, base64, emptiness and size rules, so every
+        route that accepts `{filename, content_base64}` applies the same cap.
+        """
         safe_name = self._filename(filename)
         try:
             content = base64.b64decode(content_base64, validate=True)
@@ -39,7 +48,9 @@ class SourceImportService:
             raise ImportError("invalid_base64") from exc
         if not content:
             raise ImportError("empty_source")
-        return self.import_bytes(workspace_root, safe_name, content, document_id=document_id)
+        if len(content) > self.max_bytes:
+            raise ImportError("source_too_large")
+        return safe_name, content
 
     def import_bytes(
         self,

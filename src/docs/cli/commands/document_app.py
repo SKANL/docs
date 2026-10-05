@@ -19,6 +19,10 @@ from typing import Any
 
 import typer
 
+from docs.application.classification_queue import (
+    ClassificationQueueError,
+    review_classification_queue,
+)
 from docs.application.document_pipeline import (
     _current_input_identities,
     _resolve_publish_inputs,
@@ -471,26 +475,10 @@ def classify(
     """Inspect or confirm source roles in the real ingest classification queue."""
     deps = ctx.obj["deps"]
     resolved = deps.resolve_context(ctx.obj.get("doc", ""))
-    queue_path = deps.workspace.doc_root(resolved.doc_id) / "inbox" / "_classification-queue.json"
-    if not queue_path.is_file():
-        raise typer.BadParameter("classification queue is unavailable; run document ingest first")
-    queue = json.loads(queue_path.read_text(encoding="utf-8"))
-    keyed_entries = queue.get("entries") if isinstance(queue, Mapping) else None
-    if isinstance(keyed_entries, Mapping):
-        entries = list(keyed_entries.values())
-    else:
-        entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
-    if relative_path is not None or role is not None:
-        if not relative_path or role not in {"evidence", "example", "normative"}:
-            raise typer.BadParameter("--file and --role are required; role must be evidence, example, or normative")
-        if isinstance(keyed_entries, Mapping):
-            entry = keyed_entries.get(relative_path)
-        else:
-            entry = next((item for item in entries if str(item.get("relative_path")) == relative_path), None)
-        if not isinstance(entry, dict):
-            raise typer.BadParameter("source is not present in the classification queue")
-        entry["confirmed_role"] = role
-        queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        entries = review_classification_queue(deps.workspace.doc_root(resolved.doc_id), relative_path, role)
+    except ClassificationQueueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     result = {"document_id": resolved.doc_id, "items": entries}
     typer.echo(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":") if json_output else None))
 

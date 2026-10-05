@@ -24,14 +24,14 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs stamp` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
 | `docs stamp-section` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
 | `docs translate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs asset add` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
-| `docs asset list` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
-| `docs asset rm` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
-| `docs context elicit` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
-| `docs context ingest` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
-| `docs context rm` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs asset add` | `POST /v2/documents/{document_id}/assets` | available | Not exposed yet (API only) | S2 | `documents:write` |
+| `docs asset list` | `GET /v2/documents/{document_id}/assets` | available | Not exposed yet (API only) | S2 | `documents:read` |
+| `docs asset rm` | `DELETE /v2/documents/{document_id}/assets/{asset_name}` | available | Not exposed yet (API only) | S2 | `documents:write` |
+| `docs context elicit` | `POST /v2/documents/{document_id}/context/requests` | available | Not exposed yet (API only) | S2 | `documents:write` |
+| `docs context ingest` | `POST /v2/documents/{document_id}/context/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
+| `docs context rm` | `DELETE /v2/documents/{document_id}/context/{topic_id}` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs context set` | `POST /v2/documents/{document_id}/context` | available | Planned shared web+desktop action; no S0.1 UI | S2 | `documents:write` |
-| `docs context show` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs context show` | `GET /v2/documents/{document_id}/context/{topic_id}` | available | Not exposed yet (API only) | S2 | `documents:read` |
 | `docs context status` | `GET /v2/documents/{document_id}/context` | available | Planned shared web+desktop action; no S0.1 UI | S2 | `documents:read` |
 | `docs doc current` | `GET /v2/current-document` | available | Workspace page (`#workspace`): active document | S1 | `documents:read` |
 | `docs doc delete` | `DELETE /v2/documents/{document_id}` | available | Workspace page (`#workspace`): delete confirmation | S1 | `documents:write` |
@@ -45,11 +45,11 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs doc use` | `POST /v2/documents/{document_id}/use` | available | Workspace page (`#workspace`): select document | S1 | `documents:write` |
 | `docs document baseline` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
 | `docs document build` | `POST /v2/documents/{document_id}/build` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
-| `docs document classify` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs document classify` | `POST /v2/documents/{document_id}/classification` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs document diff` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
 | `docs document evidence` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
 | `docs document import` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs document ingest` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs document ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs document inspect` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
 | `docs document package` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
 | `docs document passport` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
@@ -65,7 +65,7 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs run retry` | `POST /v2/runs/{run_id}/retry` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:write` |
 | `docs run show` | `GET /v2/runs/{run_id}` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
 | `docs run watch` | — | planned | Planned shared web+desktop action; no S0.1 UI | S3 | — |
-| `docs source ingest` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
+| `docs source ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs template create` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs template init` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs template list` | `GET /v2/templates` | available | Planned shared web+desktop action; no S0.1 UI | S6 | `documents:read` |
