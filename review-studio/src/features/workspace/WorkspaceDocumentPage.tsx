@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import type { DocumentRecord, Template, Workspace, WorkspaceMigration, WorkspaceStatus, ReviewApi } from "../../api/models";
-import { formatApiError } from "../../api/client";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../../components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import type { DocumentRecord, Template, Workspace, WorkspaceMigration, WorkspaceStatus, ReviewApi } from "@/api/models";
+import { formatApiError } from "@/api/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
+import { PageHeader } from "@/components/shared/PageHeader";
+import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { WorkspaceFormDialog } from "./WorkspaceFormDialog";
 import { WorkspaceMigrationDialog } from "./WorkspaceMigrationDialog";
 import { DocumentCreateDialog } from "../documents/DocumentCreateDialog";
 import { DocumentStatusPanel } from "../documents/DocumentStatusPanel";
-import "./workspace.css";
 
 type Props = { api: ReviewApi };
 type BusyAction = "load" | "select" | "workspace-save" | "workspace-delete" | "migration-inspect" | "migration-apply" | "document-create" | "document-use" | "document-rename" | "document-delete" | null;
@@ -232,34 +235,37 @@ export function WorkspaceDocumentPage({ api }: Props) {
   }
 
   const isBusy = busy !== null;
-  return <div className="ws-page" aria-busy={busy === "load"}>
-    <header className="ws-page-header"><div><p className="ws-kicker">Workspace setup</p><h1>Workspace and document control</h1><p className="ws-lede">Choose where you work, then open or create a document. The service owns all lifecycle rules.</p></div><Button type="button" variant="outline" onClick={() => void refresh(selectedId)} disabled={isBusy}>Refresh</Button></header>
-    {isDesktopRuntime() ? <p className="ws-platform-note" role="status">Desktop storage is prepared in app data before the local service starts. This screen uses the same workspace and document operations as the browser.</p> : <p className="ws-platform-note" role="status">Workspace storage is managed by the connected Review API. Your browser remembers the selected workspace on this device.</p>}
-    {error && <div className="ws-page-alert" role="alert"><span>{error}</span><Button type="button" variant="outline" onClick={() => void refresh(selectedId)} disabled={isBusy}>Try again</Button></div>}
-    {notice && <p className="ws-page-notice" role="status">{notice}</p>}
-    {busy === "load" && <div className="ws-loading" role="status">Loading workspace and document data…</div>}
-    <section className="ws-context-section" aria-labelledby="workspace-heading">
-      <div className="ws-section-heading"><div><p className="ws-kicker">Operating context</p><h2 id="workspace-heading">Workspace</h2></div>{selectedWorkspace && <span className="ws-active-marker">{workspaceStatus?.active ? "Active on service" : "Selected on this device"}</span>}</div>
-        {workspaces.length > 0 ? <>
+  const section = "grid gap-4 border-t pt-5";
+  const kicker = "text-xs font-semibold tracking-wider text-primary uppercase";
+  const banner = "flex items-center justify-between gap-4 rounded-md px-4 py-3 text-sm";
+  return <div className="grid gap-6" aria-busy={busy === "load"}>
+    <PageHeader eyebrow="Workspace setup" title="Workspace and document control" description="Choose where you work, then open or create a document. The service owns all lifecycle rules." actions={<Button type="button" variant="outline" onClick={() => void refresh(selectedId)} disabled={isBusy}>Refresh</Button>} />
+    {isDesktopRuntime() ? <p className={cn(banner, "bg-muted text-muted-foreground")} role="status">Desktop storage is prepared in app data before the local service starts. This screen uses the same workspace and document operations as the browser.</p> : <p className={cn(banner, "bg-muted text-muted-foreground")} role="status">Workspace storage is managed by the connected Review API. Your browser remembers the selected workspace on this device.</p>}
+    {error && <div className={cn(banner, "border border-destructive/40 bg-destructive/10 text-destructive")} role="alert"><span>{error}</span><Button type="button" variant="outline" onClick={() => void refresh(selectedId)} disabled={isBusy}>Try again</Button></div>}
+    {notice && <p className={cn(banner, "bg-success/10 text-success")} role="status">{notice}</p>}
+    {busy === "load" && <div className="grid gap-2" role="status"><Skeleton className="h-4 w-1/3" /><span className="sr-only">Loading workspace and document data…</span></div>}
+    <section className={section} aria-labelledby="workspace-heading">
+      <div className="flex items-center justify-between gap-4"><div><p className={kicker}>Operating context</p><h2 id="workspace-heading" className="text-xl font-semibold">Workspace</h2></div>{selectedWorkspace && <span className="text-sm text-muted-foreground">{workspaceStatus?.active ? "Active on service" : "Selected on this device"}</span>}</div>
+      {workspaces.length > 0 ? <>
         <WorkspaceSwitcher workspaces={workspaces} selectedId={selectedId} busy={isBusy} canCreate={Boolean(api.createWorkspace)} canSelect={Boolean(api.selectWorkspace)} onSelect={id => void selectWorkspace(id)} onCreate={() => setWorkspaceForm("create")} />
-        {selectedWorkspace && <div className="ws-workspace-meta"><div><span className="ws-status-label">Storage location</span><code>{selectedWorkspace.root}</code></div><div className="ws-management-actions">
+        {selectedWorkspace && <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="grid min-w-0 gap-1"><span className="text-xs font-medium text-muted-foreground">Storage location</span><code className="text-sm break-all text-muted-foreground">{selectedWorkspace.root}</code></div><div className="flex flex-wrap gap-1.5 sm:justify-end">
           <Button type="button" variant="ghost" onClick={() => setWorkspaceForm("rename")} disabled={isBusy || !api.renameWorkspace}>Rename workspace</Button>
           <Button type="button" variant="outline" onClick={() => { setMigrationReport(null); setMigratedName(""); setMigrationOpen(true); }} disabled={isBusy || !api.migrateWorkspace}>Review migration</Button>
           <Button type="button" variant="destructive" onClick={() => setWorkspaceDeleteOpen(true)} disabled={isBusy || !api.deleteWorkspace}>Delete workspace</Button>
         </div></div>}
-      </> : busy !== "load" && <div className="ws-empty-workspace"><h3>No workspace yet</h3><p>Create one to initialize its storage and start a document. In desktop mode, the local service stores managed workspaces under the app-data workspace.</p><Button type="button" onClick={() => setWorkspaceForm("create")} disabled={!api.createWorkspace}>Create workspace</Button></div>}
+      </> : busy !== "load" && <div className="max-w-2xl rounded-lg bg-muted p-5"><h3 className="font-semibold">No workspace yet</h3><p className="mt-1 mb-3 text-sm leading-relaxed text-muted-foreground">Create one to initialize its storage and start a document. In desktop mode, the local service stores managed workspaces under the app-data workspace.</p><Button type="button" onClick={() => setWorkspaceForm("create")} disabled={!api.createWorkspace}>Create workspace</Button></div>}
     </section>
 
-    <section className="ws-context-section" aria-labelledby="documents-heading">
-      <div className="ws-section-heading"><div><p className="ws-kicker">Current project</p><h2 id="documents-heading">Documents</h2></div><Button type="button" onClick={() => setDocumentCreateOpen(true)} disabled={!selectedWorkspace || isBusy || !api.createDocument}>Create document</Button></div>
-      {!selectedWorkspace ? <p className="ws-muted">Select or create a workspace before managing documents.</p> : <>
+    <section className={section} aria-labelledby="documents-heading">
+      <div className="flex items-center justify-between gap-4"><div><p className={kicker}>Current project</p><h2 id="documents-heading" className="text-xl font-semibold">Documents</h2></div><Button type="button" onClick={() => setDocumentCreateOpen(true)} disabled={!selectedWorkspace || isBusy || !api.createDocument}>Create document</Button></div>
+      {!selectedWorkspace ? <p className="text-sm text-muted-foreground">Select or create a workspace before managing documents.</p> : <>
         <DocumentStatusPanel document={activeDocument} status={documentStatus} loading={busy === "select" || busy === "load"} error={documentStatusError || undefined} onRetry={() => void retryDocumentStatus()} />
-        {documents.length ? <ul className="ws-document-list" aria-label="Workspace documents">{documents.map(item => <li key={item.id} className={item.id === currentDocument?.current_document_id ? "is-current" : ""}>
-          <div className="ws-document-copy"><strong>{item.title || item.id}</strong><span>{item.id}{item.template ? ` · ${item.template}` : ""}</span></div>
-          <div className="ws-document-actions"><Button type="button" variant={item.id === currentDocument?.current_document_id ? "secondary" : "ghost"} onClick={() => void selectDocument(item.id)} disabled={isBusy || !api.useDocument}>{item.id === currentDocument?.current_document_id ? "Current" : `Use ${item.id}`}</Button>
+        {documents.length ? <ul className="grid gap-1" aria-label="Workspace documents">{documents.map(item => <li key={item.id} className={cn("flex flex-col gap-3 rounded-md border-b px-2 py-3 sm:flex-row sm:items-center sm:justify-between", item.id === currentDocument?.current_document_id && "border-transparent bg-muted")}>
+          <div className="grid min-w-0 gap-1"><strong>{item.title || item.id}</strong><span className="text-sm break-words text-muted-foreground">{item.id}{item.template ? ` · ${item.template}` : ""}</span></div>
+          <div className="flex flex-wrap gap-1.5 sm:justify-end"><Button type="button" variant={item.id === currentDocument?.current_document_id ? "secondary" : "ghost"} onClick={() => void selectDocument(item.id)} disabled={isBusy || !api.useDocument}>{item.id === currentDocument?.current_document_id ? "Current" : `Use ${item.id}`}</Button>
             <Button type="button" variant="ghost" aria-label={`Rename ${item.id}`} onClick={() => { setRenamingDocument(item); setRenamedId(item.id); }} disabled={isBusy || !api.renameDocument}>Rename</Button>
             <Button type="button" variant="ghost" aria-label={`Delete ${item.id}`} onClick={() => setDeletingDocument(item)} disabled={isBusy || !api.deleteDocument}>Delete</Button></div>
-        </li>)}</ul> : <p className="ws-empty-documents" role="status">No documents yet. Create a document to begin.</p>}
+        </li>)}</ul> : <p className="py-3 text-sm text-muted-foreground" role="status">No documents yet. Create a document to begin.</p>}
       </>}
     </section>
 
@@ -267,11 +273,11 @@ export function WorkspaceDocumentPage({ api }: Props) {
     <WorkspaceMigrationDialog workspace={selectedWorkspace ?? { id: "", name: "", root: "" }} open={migrationOpen && Boolean(selectedWorkspace)} pending={busy === "migration-inspect" || busy === "migration-apply"} report={migrationReport} error={error || undefined} migratedName={migratedName} onOpenChange={setMigrationOpen} onInspect={() => void inspectMigration()} onMigrate={() => void applyMigration()} />
     <DocumentCreateDialog open={documentCreateOpen} pending={busy === "document-create"} templates={templates} error={error || undefined} onOpenChange={open => { if (!open) { setDocumentCreateOpen(false); setError(""); } }} onSubmit={input => void createDocument(input)} />
     <Dialog open={Boolean(renamingDocument)} onOpenChange={open => { if (!open) setRenamingDocument(null); }}>
-      <DialogContent aria-describedby="document-rename-description"><DialogHeader><DialogTitle>Rename document</DialogTitle><DialogDescription id="document-rename-description">The service updates the document identifier and its managed files.</DialogDescription></DialogHeader>
-        <form onSubmit={event => void saveDocumentName(event)}><label className="field-label" htmlFor="document-new-id">New document ID</label><Input id="document-new-id" required value={renamedId} onChange={event => setRenamedId(event.target.value)} />{error && <p className="inline-error" role="alert">{error}</p>}<DialogFooter><Button type="button" variant="ghost" onClick={() => setRenamingDocument(null)} disabled={busy === "document-rename"}>Cancel</Button><Button type="submit" disabled={busy === "document-rename" || !renamedId.trim()}>Save name</Button></DialogFooter></form>
+      <DialogContent showCloseButton={false} aria-describedby="document-rename-description"><DialogHeader><DialogTitle>Rename document</DialogTitle><DialogDescription id="document-rename-description">The service updates the document identifier and its managed files.</DialogDescription></DialogHeader>
+        <form onSubmit={event => void saveDocumentName(event)} className="grid gap-4"><div className="grid gap-2"><Label htmlFor="document-new-id">New document ID</Label><Input id="document-new-id" required value={renamedId} onChange={event => setRenamedId(event.target.value)} /></div>{error && <p className="text-sm text-destructive" role="alert">{error}</p>}<DialogFooter><Button type="button" variant="ghost" onClick={() => setRenamingDocument(null)} disabled={busy === "document-rename"}>Cancel</Button><Button type="submit" disabled={busy === "document-rename" || !renamedId.trim()}>Save name</Button></DialogFooter></form>
       </DialogContent>
     </Dialog>
-    <AlertDialog open={workspaceDeleteOpen} onOpenChange={setWorkspaceDeleteOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete workspace</AlertDialogTitle><AlertDialogDescription>This removes the workspace from the registry. Its files are not deleted. You cannot undo this registry change.</AlertDialogDescription></AlertDialogHeader>{error && <p className="inline-error" role="alert">{error}</p>}<AlertDialogFooter><AlertDialogCancel asChild><Button type="button" variant="ghost" disabled={busy === "workspace-delete"}>Cancel</Button></AlertDialogCancel><AlertDialogAction asChild><Button type="button" variant="destructive" disabled={busy === "workspace-delete"} onClick={event => { event.preventDefault(); void deleteWorkspace(); }}>Delete workspace</Button></AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    <AlertDialog open={Boolean(deletingDocument)} onOpenChange={open => { if (!open) setDeletingDocument(null); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete document</AlertDialogTitle><AlertDialogDescription>This permanently removes {deletingDocument?.id ?? "the document"} and its managed files from the selected workspace.</AlertDialogDescription></AlertDialogHeader>{error && <p className="inline-error" role="alert">{error}</p>}<AlertDialogFooter><AlertDialogCancel asChild><Button type="button" variant="ghost" disabled={busy === "document-delete"}>Cancel</Button></AlertDialogCancel><AlertDialogAction asChild><Button type="button" variant="destructive" disabled={busy === "document-delete"} onClick={event => { event.preventDefault(); void deleteDocument(); }}>Delete document</Button></AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    <ConfirmActionDialog open={workspaceDeleteOpen} onOpenChange={setWorkspaceDeleteOpen} title="Delete workspace" description="This removes the workspace from the registry. Its files are not deleted. You cannot undo this registry change." confirmLabel="Delete workspace" pending={busy === "workspace-delete"} error={error || undefined} onConfirm={() => void deleteWorkspace()} />
+    <ConfirmActionDialog open={Boolean(deletingDocument)} onOpenChange={open => { if (!open) setDeletingDocument(null); }} title="Delete document" description={`This permanently removes ${deletingDocument?.id ?? "the document"} and its managed files from the selected workspace.`} confirmLabel="Delete document" pending={busy === "document-delete"} error={error || undefined} onConfirm={() => void deleteDocument()} />
   </div>;
 }
