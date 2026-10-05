@@ -88,6 +88,7 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "workspace status": "GET /v2/workspaces/{workspace_id}/status",
     "workspace migrate": "POST /v2/workspaces/{workspace_id}/migrate",
     "workspace rename": "PATCH /v2/workspaces/{workspace_id}",
+    "workspace delete": "DELETE /v2/workspaces/{workspace_id}",
     "doc list": "GET /v2/documents",
     "doc new": "POST /v2/documents",
     "doc current": "GET /v2/current-document",
