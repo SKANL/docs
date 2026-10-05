@@ -5,7 +5,6 @@ import json
 import re
 from pathlib import Path
 
-import pytest
 from typer.main import get_command
 
 from docs.api import openapi
