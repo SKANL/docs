@@ -2,6 +2,7 @@
 // attach, and exercise the shared Review Studio workspace/document journey on a
 // fresh install. Build the exe first with `npm run build:runtime-check`.
 import { spawn, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { existsSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
@@ -11,6 +12,8 @@ const desktop = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const exe = process.argv.slice(2).find(a => !a.startsWith("--")) ?? join(desktop, "src-tauri", "target", "release", "docs-desktop.exe");
 const reviewStudioDir = join(desktop, "..", "review-studio");
 const port = process.env.DESKTOP_RUNTIME_CDP_PORT ?? "9333";
+// Evidence goes to the OS temp dir, never into the checkout.
+const screenshotPath = process.env.DESKTOP_RUNTIME_SCREENSHOT ?? join(tmpdir(), "desktop-runtime.png");
 // The check creates and deletes its own document in the app-data workspace. Refuse
 // to run against an existing install so it can never touch a user's real data.
 const appData = join(process.env.APPDATA ?? "", "com.docs.reviewstudio");
@@ -69,11 +72,12 @@ try {
   await page.getByRole("alertdialog", { name: "Delete document" }).getByRole("button", { name: "Delete document" }).click();
   await list.getByText("Tauri runtime document").waitFor({ state: "detached", timeout: 60000 });
   log("document deleted after confirmation");
-  await page.screenshot({ path: process.env.DESKTOP_RUNTIME_SCREENSHOT ?? "desktop-runtime.png" });
+  await page.screenshot({ path: screenshotPath });
+  log("screenshot", screenshotPath);
   log("PASS");
   await browser.close();
 } catch (error) {
   console.error("[desktop-runtime] FAIL", String(error).slice(0, 600));
-  try { const pg = (await chromium.connectOverCDP(`http://127.0.0.1:${port}`)).contexts()[0].pages()[0]; console.error("[desktop-runtime] body:", (await pg.innerText("body")).slice(0, 1500)); await pg.screenshot({ path: (process.env.DESKTOP_RUNTIME_SCREENSHOT ?? "desktop-runtime.png").replace(".png", "-fail.png") }); } catch {}
+  try { const pg = (await chromium.connectOverCDP(`http://127.0.0.1:${port}`)).contexts()[0].pages()[0]; console.error("[desktop-runtime] body:", (await pg.innerText("body")).slice(0, 1500)); await pg.screenshot({ path: (screenshotPath).replace(".png", "-fail.png") }); } catch {}
   process.exitCode = 1;
 } finally { kill(); }
