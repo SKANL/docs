@@ -5,10 +5,10 @@ test("follows the seeded run to its evidence, inspects an artifact, and promotes
   await page.goto("/#/review/evidence");
   await expect(page.getByRole("heading", { name: "Review", exact: true })).toBeVisible();
 
-  // The fixture seeds one completed browser-e2e run; pick it from the run list.
+  // Specs share one fixture, so later specs add runs; pick a run that succeeded and therefore has artifacts.
   const runs = page.getByRole("region", { name: "Runs with evidence" });
   await expect(runs).toBeVisible();
-  await runs.getByRole("link").first().click();
+  await runs.getByRole("listitem").filter({ hasText: "succeeded" }).first().getByRole("link").click();
   await expect(page.getByRole("heading", { name: /^Evidence for / })).toBeVisible();
   const digest = page.getByRole("region", { name: "Evidence digest" });
   await expect(digest).toContainText(/[0-9a-f]{64}/);
