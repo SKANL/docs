@@ -37,10 +37,7 @@ test("authors the seeded document through the real sidecar", async ({ page }) =>
   await expect(page.getByRole("button", { name: /^Remove e2e-cover/ })).toHaveCount(0);
 });
 
-// Blocked by a server contract gap, not by the UI: GET /sections reports each section id as the file stem
-// ("020-introduccion") while save/build/review-section/stamp only accept the template id ("introduccion").
-// Un-fixme once the sections listing carries the template section id.
-test.fixme("edits and saves a section through the real sidecar", async ({ page }) => {
+test("edits and saves a section through the real sidecar", async ({ page }) => {
   await page.goto("/#/authoring/sections");
   await page.getByRole("button", { name: /introduccion/ }).click();
   await page.getByRole("textbox", { name: "Section body" }).fill("Edited through the authoring workspace.");
