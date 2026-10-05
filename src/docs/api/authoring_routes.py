@@ -50,6 +50,19 @@ def _safe_segment(value: str, code: str) -> str:
     return value
 
 
+_IMPORT_CODES = frozenset(
+    {"invalid_base64", "empty_source", "source_too_large", "invalid_filename", "invalid_document_id"}
+)
+
+
+def _import_error(exc: ImportError) -> APIError:
+    """A stable code for an upload failure; free-text exception detail never becomes the code."""
+    code = str(exc)
+    if code in _IMPORT_CODES:
+        return APIError(code, code, 400)
+    return APIError("invalid_source", "The source could not be imported", 400)
+
+
 def _jsonable(value: Any) -> Any:
     return json.loads(json.dumps(value, default=str))
 
@@ -120,12 +133,17 @@ class AuthoringRoutes(RouteSupport):
         try:
             stored = self._import.import_base64(root, data.filename, data.content_base64, document_id=document_id)
         except ImportError as exc:
-            raise APIError(str(exc), str(exc), 400) from exc
+            raise _import_error(exc) from exc
         except OSError as exc:
             raise APIError("upload_failed", "Could not store the source", 500) from exc
+        stored_path = Path(stored["path"]).resolve()
+        try:
+            relative = stored_path.relative_to(Path(root).resolve()).as_posix()
+        except ValueError:  # stored outside the resolved root (link/junction): report the canonical inbox path
+            relative = f"documents/{stored['document_id']}/inbox/{stored_path.name}"
         return Response.json(dto.DocumentImportResponse(
             document_id=document_id, filename=stored["filename"],
-            path=Path(stored["path"]).resolve().relative_to(Path(root).resolve()).as_posix(),
+            path=relative,
             sha256=stored["sha256"], size=stored["size"], mime_type=stored["mime_type"],
             deduplicated=stored["deduplicated"],
         ).model_dump(), 201)
@@ -148,7 +166,7 @@ class AuthoringRoutes(RouteSupport):
         try:
             filename, content = self._import.decode_upload(data.filename, data.content_base64)
         except ImportError as exc:
-            raise APIError(str(exc), str(exc), 400) from exc
+            raise _import_error(exc) from exc
         if data.name:
             _safe_segment(data.name, "invalid_filename")
         staging = Path(root) / ".docs" / "staging" / uuid4().hex
@@ -169,8 +187,10 @@ class AuthoringRoutes(RouteSupport):
     def remove_asset(self, request: Request, document_id: str, asset_name: str) -> Response:
         _, deps = self._open(request, document_id)
         _safe_segment(asset_name, "invalid_filename")
+        # Without an explicit kind an asset of ANY configured kind is removable.
+        kinds = [str(request.query["kind"])] if "kind" in request.query else list(deps.assets.asset_kinds)
         try:
-            present = {n.casefold() for n in deps.assets.list_assets(document_id, str(request.query.get("kind", "docx")))}
+            present = {n.casefold() for kind in kinds for n in deps.assets.list_assets(document_id, kind)}
         except ValueError as exc:
             raise APIError("invalid_asset_kind", str(exc), 400) from exc
         if asset_name.casefold() not in present and Path(asset_name).stem.casefold() not in present:
@@ -191,7 +211,7 @@ class AuthoringRoutes(RouteSupport):
         try:  # validate every upload before writing any of them
             decoded = [self._import.decode_upload(f.filename, f.content_base64) for f in data.files]
         except ImportError as exc:
-            raise APIError(str(exc), str(exc), 400) from exc
+            raise _import_error(exc) from exc
         uploaded: list[dto.UploadedSource] = []
         created: list[Path] = []  # files this request wrote, removed again if a later upload fails
         try:
@@ -206,8 +226,9 @@ class AuthoringRoutes(RouteSupport):
         except (ImportError, OSError) as exc:
             for path in created:
                 path.unlink(missing_ok=True)
-            code = str(exc) if isinstance(exc, ImportError) else "upload_failed"
-            raise APIError(code, str(exc), 400 if isinstance(exc, ImportError) else 500) from exc
+            if isinstance(exc, ImportError):
+                raise _import_error(exc) from exc
+            raise APIError("upload_failed", "Could not store the source", 500) from exc
         try:
             report = deps.create_source_pipeline().ingest(
                 document_id, deps.workspace.doc_root(document_id), resolved.config,

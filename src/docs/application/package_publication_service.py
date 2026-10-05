@@ -18,6 +18,10 @@ from docs.domain.artifacts import BuildManifest
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 
 
+class PublishPolicyDeniedError(PackagePublicationError):
+    """The pipeline policy forbids publishing (the service's own verdict)."""
+
+
 @dataclass(frozen=True)
 class PublicationResult:
     """The artifact and manifest paths atomically published for release."""
@@ -147,7 +151,7 @@ class PackagePublicationService:
     ) -> PreparedPublication:
         """Capture and validate publish evidence before resolving current build inputs."""
         if not PipelinePolicy(policy).can_publish():
-            raise PackagePublicationError("publish requires --policy strict or --policy release")
+            raise PublishPolicyDeniedError("publish requires --policy strict or --policy release")
         document_root = source.parent.parent.parent
         manifest_path = source.with_suffix(source.suffix + ".manifest.json")
         if source.parent.name != "current" or source.parent.parent.name != "output":

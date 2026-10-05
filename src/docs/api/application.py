@@ -1190,7 +1190,7 @@ class X20Application:
         # Ownership is checked here, before any frame is produced.
         run = self._owned_run(run_id, request)
         headers = {"content-type": "text/event-stream", "cache-control": "no-cache"}
-        if request.query.get("once"):
+        if str(request.query.get("once", "")).strip().lower() in {"1", "true", "yes", "on"}:
             return Response(200, self._progress_frame(run), headers)
         return Response(200, b"", headers, self._progress_stream(run))
 

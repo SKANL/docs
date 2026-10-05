@@ -3,6 +3,7 @@
 import base64
 import json
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -331,3 +332,43 @@ def test_a_slow_factory_for_one_root_does_not_block_another(tmp_path, stores):
     finally:
         release.set()
         slow.join(5)
+
+
+def test_remove_asset_without_kind_finds_non_docx_assets(api):
+    deps = api.app._workspace_services_for(str(api.ws_root.resolve()))
+    deps.assets.asset_kinds = {"docx": (".docx",), "image": (".png",)}
+    (api.doc_root / "assets").mkdir(exist_ok=True)
+    (api.doc_root / "assets" / "logo.png").write_bytes(b"png")
+    response = api("DELETE", "/v2/documents/doc/assets/logo.png")
+    assert response.status == 200, response.body
+    assert not (api.doc_root / "assets" / "logo.png").exists()
+
+
+def test_import_error_code_is_stable_and_not_the_exception_text(api, monkeypatch):
+    service = api.app._authoring._import
+
+    def odd(*args, **kwargs):
+        raise ImportError("disk quota /tmp/secret path exceeded")
+
+    monkeypatch.setattr(service, "import_base64", odd)
+    response = api("POST", "/v2/documents/doc/imports", {"filename": "a.md", "content_base64": b64(b"# A\n")})
+    error = body(response)["error"]
+    assert response.status == 400 and error["code"] == "invalid_source"
+    assert "secret" not in error["message"]
+
+
+def test_import_with_a_path_outside_the_root_is_not_a_500(api, monkeypatch, tmp_path):
+    service = api.app._authoring._import
+    real = service.import_base64
+
+    def elsewhere(*args, **kwargs):
+        stored = real(*args, **kwargs)
+        moved = tmp_path / "elsewhere" / Path(stored["path"]).name
+        moved.parent.mkdir(exist_ok=True)
+        moved.write_bytes(Path(stored["path"]).read_bytes())
+        return {**stored, "path": str(moved)}
+
+    monkeypatch.setattr(service, "import_base64", elsewhere)
+    response = api("POST", "/v2/documents/doc/imports", {"filename": "a.md", "content_base64": b64(b"# A\n")})
+    assert response.status == 201, response.body
+    assert body(response)["path"] == f"documents/doc/inbox/{Path(body(response)['path']).name}"

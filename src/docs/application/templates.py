@@ -10,6 +10,7 @@ import re
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.template_skeleton import build_template_skeleton
@@ -62,10 +63,20 @@ class TemplateService:
 
     def _write(self, name: str, text: str, *, overwrite: bool) -> Path:
         path = self.path(name)
-        if path.exists() and not overwrite:
-            raise TemplateError("template_exists", f"Ya existe `{path}`. Usa --force para sobrescribir.")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        if not overwrite:
+            try:
+                with path.open("x", encoding="utf-8") as handle:  # the filesystem decides existence
+                    handle.write(text)
+            except FileExistsError as exc:
+                raise TemplateError("template_exists", f"Ya existe `{path}`. Usa --force para sobrescribir.") from exc
+            return path
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(text, encoding="utf-8")
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
         return path
 
     def use(self, name: str, *, force: bool = False) -> Path:

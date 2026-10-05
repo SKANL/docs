@@ -50,3 +50,34 @@ def test_validate_turns_unreadable_input_into_issues(tmp_path):
     with pytest.raises(TemplateError) as exc:
         service.validate("ghost")
     assert exc.value.code == "template_not_found"
+
+
+def test_write_without_overwrite_is_exclusive_even_if_the_file_appears_after_a_check(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from docs.application.templates import TemplateError, TemplateService
+
+    service = TemplateService(tmp_path)
+    target = service.path("racy")
+    target.write_text("PRECIOUS", encoding="utf-8")
+    real_exists = Path.exists
+    # A competing writer created the file after any existence check would have run.
+    monkeypatch.setattr(Path, "exists", lambda self: False if self == target else real_exists(self))
+
+    with pytest.raises(TemplateError) as raised:
+        service.create("racy")
+
+    assert raised.value.code == "template_exists"
+    assert target.read_text(encoding="utf-8") == "PRECIOUS"
+
+
+def test_overwrite_replaces_atomically_and_leaves_no_temporary_file(tmp_path):
+    from docs.application.templates import TemplateService
+
+    service = TemplateService(tmp_path)
+    service.path("t").write_text("OLD", encoding="utf-8")
+
+    service.create("t", overwrite=True)
+
+    assert service.path("t").read_text(encoding="utf-8") != "OLD"
+    assert [p.name for p in tmp_path.iterdir()] == ["t.json"]

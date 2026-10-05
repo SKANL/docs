@@ -17,8 +17,9 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
-from docs.application.package_publication_service import PackagePublicationError
-from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.application.package_publication_service import PackagePublicationError, PublishPolicyDeniedError
+from docs.domain.pipeline_policy import PipelineMode
+from docs.domain.ports.document_repository import DocumentNotFoundError
 
 from . import authoring_dto as dto
 from .authoring_routes import RouteSupport, _jsonable, _safe_segment
@@ -106,18 +107,16 @@ class DeliveryRoutes(RouteSupport):
         service = deps.package_publications
         try:
             prepared = service.preflight_publish(source, destination, policy=policy)
+        except PublishPolicyDeniedError as exc:
+            raise APIError("publish_policy_denied", self._clean(str(exc), ws), 422) from exc
         except PackagePublicationError as exc:
-            denied = not PipelinePolicy(policy).can_publish()
-            raise APIError(
-                "publish_policy_denied" if denied else "publish_rejected", self._clean(str(exc), ws),
-                422 if denied else 409,
-            ) from exc
+            raise APIError("publish_rejected", self._clean(str(exc), ws), 409) from exc
         try:
             resolved, config, renderer = _resolve_publish_inputs(deps, doc_root, fmt)
             current = _current_input_identities(
                 resolved=resolved, config=config, renderer=renderer, root=doc_root, output_format=fmt,
             )
-        except Exception as exc:  # any resolution failure means the inputs cannot be proven current
+        except (DocumentNotFoundError, ValueError, KeyError, OSError, RuntimeError) as exc:  # inputs cannot be proven current
             raise APIError(
                 "publish_inputs_unresolvable", self._clean(f"publish requires resolvable current inputs: {exc}", ws), 409,
             ) from exc
@@ -145,8 +144,6 @@ class DeliveryRoutes(RouteSupport):
         store = self._publications()
         if store is None:
             return
-        if any(dict(item).get("id") == record_id for item in store.list()):
-            return
         principal = request.principal
         record: dict[str, Any] = {
             "id": record_id, "run_id": prepared.manifest.provenance_run or "", "document_id": document_id,
@@ -157,5 +154,5 @@ class DeliveryRoutes(RouteSupport):
         }
         if principal is not None and principal.tenant_id and principal.organization_id:
             record.update(tenant_id=principal.tenant_id, organization_id=principal.organization_id)
-        store.put(record)
+        store.put_if_absent(record)  # atomic: a racing identical publish keeps the first record
 

@@ -481,6 +481,7 @@ class TranslateRequest(AuthoringDTO):
     to: str
     source_lang: str = "auto"
     output: str | None = None  # workspace-relative .pdf under artifacts/translations
+    overwrite: bool = False  # an existing output is refused (409) unless true
 
 
 class TranslateResponse(AuthoringDTO):

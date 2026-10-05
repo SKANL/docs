@@ -9,10 +9,10 @@ synchronously and return the paths of what they wrote, not a UI-inferred status.
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from docs.application.authoring_clock import authoring_timestamp
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.review import ReviewDimension, ReviewResult
 
@@ -113,6 +113,8 @@ class SectionRoutes(RouteSupport):
             )
         except FileNotFoundError as exc:
             raise APIError("section_not_found", str(exc), 404) from exc
+        except (ValueError, KeyError, OSError) as exc:
+            raise APIError("review_failed", str(exc), 400) from exc
         return self._review_response(document_id, section_id, result)
 
     def review_document(self, request: Request, document_id: str) -> Response:
@@ -120,10 +122,15 @@ class SectionRoutes(RouteSupport):
         deps, resolved = self._open_resolved(request, document_id, data.workspace_id)
         normative = resolve_normative_settings(resolved.config)
         manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
-        result = deps.review.review_document(
-            resolved.doc_id, resolved.template, strict=data.strict,
-            manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
-        )
+        try:
+            result = deps.review.review_document(
+                resolved.doc_id, resolved.template, strict=data.strict,
+                manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
+            )
+        except FileNotFoundError as exc:
+            raise APIError("document_not_found", str(exc), 404) from exc
+        except (ValueError, KeyError, OSError) as exc:
+            raise APIError("review_failed", str(exc), 400) from exc
         if data.dimensions:
             result = result.filter_dimensions({ReviewDimension(d) for d in data.dimensions})
         return self._review_response(document_id, None, result)
@@ -131,13 +138,15 @@ class SectionRoutes(RouteSupport):
     def stamp_section(self, request: Request, document_id: str, section_id: str) -> Response:
         data = self._body(request, dto.StampRequest)
         deps, resolved = self._open_resolved(request, document_id, data.workspace_id, section_id)
-        now = datetime.now().isoformat(timespec="seconds")  # same clock the CLI stamps with
+        now = authoring_timestamp()
         try:
             path = deps.review.stamp_section(
                 resolved.doc_id, resolved.template, section_id, authored_by=data.by, model=data.model, now=now,
             )
         except FileNotFoundError as exc:
             raise APIError("section_not_found", str(exc), 404) from exc
+        except (ValueError, KeyError, OSError) as exc:
+            raise APIError("stamp_failed", str(exc), 400) from exc
         return Response.json(dto.StampResponse(
             document_id=document_id, section_id=section_id, path=_relative(deps, document_id, path),
             authored_by=data.by, model=data.model, stamped_at=now,
@@ -152,7 +161,7 @@ class SectionRoutes(RouteSupport):
         deps, resolved = self._open_resolved(request, document_id, data.workspace_id)
         normative = resolve_normative_settings(resolved.config)
         manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
-        now = datetime.now().isoformat(timespec="seconds")
+        now = authoring_timestamp()
         common = {
             "strict": data.strict, "manifest_exists": manifest_exists, "manifest_size": manifest_size,
             "normative": normative, "now": now,

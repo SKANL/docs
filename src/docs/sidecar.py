@@ -439,6 +439,10 @@ class _WorkspacePublicationStore:
         run_id = str(value.get("run_id", ""))
         self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put(value)
 
+    def put_if_absent(self, value: dict[str, Any]) -> bool:
+        run_id = str(value.get("run_id", ""))
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put_if_absent(value)
+
     def list(self) -> list[dict[str, Any]]:
         return self._list_runs(self.parent.run_store.list())
 
@@ -778,6 +782,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         return {"document_id": document_id, "topic": topic, "field": field, "path": str(path)}
 
     def revise_document(document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        from .application.authoring_clock import authoring_timestamp
         from .composition import compose_application
         from .domain.normative import resolve_normative_settings
         from .domain.workspace import Workspace
@@ -797,7 +802,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         strict = bool(payload.get("strict", False))
         normative = resolve_normative_settings(config_values)
         manifest_exists, manifest_size = deps.rules_manifest_state(config_values)
-        now = datetime.now(UTC).isoformat()
+        now = authoring_timestamp()
         target_kind = deps.revision.resolve_target(resolved.template, target_id)
         if target_kind == "topic":
             result = deps.revision.revise_topic(

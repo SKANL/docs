@@ -40,6 +40,12 @@ class MemPublications:
     def put(self, item):
         self.items[item["id"]] = item
 
+    def put_if_absent(self, item):
+        if item["id"] in self.items:
+            return False
+        self.items[item["id"]] = item
+        return True
+
     def list(self):
         return list(self.items.values())
 
@@ -245,3 +251,69 @@ def test_openapi_and_catalogue_declare_the_delivery_commands_and_the_two_publish
     assert "queue" in queued and "synchronous" in direct
     for name in ("PackageRequest", "PackageResponse", "PublishRequest", "PublicationResponse"):
         assert name in document["components"]["schemas"]
+
+
+# -- H1: service verdicts, narrowed handlers, race-free record ------------------------
+def test_policy_denial_comes_from_the_services_verdict_not_the_policy_string(api, monkeypatch):
+    from docs.application.package_publication_service import PackagePublicationError, PackagePublicationService
+
+    seed_release(api)
+
+    def other_rejection(self, *args, **kwargs):
+        raise PackagePublicationError("publish requires an artifact with its matching manifest")
+
+    monkeypatch.setattr(PackagePublicationService, "preflight_publish", other_rejection)
+    response = publish(api, policy="draft")  # a draft policy, but the service said something else
+    assert response.status == 409 and body(response)["error"]["code"] == "publish_rejected"
+
+
+def test_policy_denial_is_422_when_the_service_denies(api, monkeypatch):
+    from docs.application.package_publication_service import PackagePublicationService, PublishPolicyDeniedError
+
+    seed_release(api)
+
+    def denied(self, *args, **kwargs):
+        raise PublishPolicyDeniedError("nope")
+
+    monkeypatch.setattr(PackagePublicationService, "preflight_publish", denied)
+    response = publish(api, policy="release")
+    assert response.status == 422 and body(response)["error"]["code"] == "publish_policy_denied"
+
+
+def test_unresolvable_inputs_are_409_but_programming_errors_are_not_swallowed(api, monkeypatch):
+    seed_release(api)
+
+    def failing(exc):
+        def raiser(**kwargs):
+            raise exc
+
+        return raiser
+
+    monkeypatch.setattr("docs.api.delivery_routes._current_input_identities", failing(ValueError("bad inputs")))
+    assert publish(api).status == 409
+    monkeypatch.setattr("docs.api.delivery_routes._current_input_identities", failing(AttributeError("bug")))
+    assert publish(api).status == 500
+
+
+def test_concurrent_identical_publishes_never_rewrite_the_record(api):
+    class RacyPublications(MemPublications):
+        def list(self):  # the existence pre-check always loses the race
+            return []
+
+        def put_if_absent(self, item):
+            if item["id"] in self.items:
+                return False
+            self.items[item["id"]] = item
+            return True
+
+        def put(self, item):  # an unconditional write is the bug
+            raise AssertionError("record must be written with put_if_absent")
+
+    store = RacyPublications()
+    api.app.publication_store = store
+    seed_release(api)
+    first = publish(api, destination="v1/doc.docx")
+    assert first.status == 201, first.body
+    published_at = next(iter(store.items.values()))["published_at"]
+    assert publish(api, destination="v1/doc.docx").status == 201
+    assert next(iter(store.items.values()))["published_at"] == published_at
