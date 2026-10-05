@@ -1,0 +1,607 @@
+{
+ "apply-corrections": {
+  "ui": "/review/qa › Apply corrections",
+  "api": [
+   "tests/unit/api/test_quality_routes.py::test_apply_corrections_calls_the_canonical_service"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › applies corrections only after confirmation"
+  ]
+ },
+ "asset add": {
+  "ui": "/authoring/assets › Add asset",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_asset_add_list_remove_roundtrip"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringClient.test.ts › adds an asset as snake_case JSON and omits an empty name",
+   "review-studio/e2e/authoring.spec.ts › authors the seeded document through the real sidecar"
+  ]
+ },
+ "asset list": {
+  "ui": "/authoring/assets › Asset list",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_asset_add_list_remove_roundtrip"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringClient.test.ts › lists assets with the workspace scope and optional kind",
+   "review-studio/src/test/authoringIntake.test.tsx › removes an asset only after confirmation and shows server errors"
+  ]
+ },
+ "asset rm": {
+  "ui": "/authoring/assets › Remove asset",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_remove_asset_honours_the_kind_parameter"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringIntake.test.tsx › removes an asset only after confirmation and shows server errors",
+   "review-studio/src/test/authoringIntake.test.tsx › cancels removal and returns focus to the trigger"
+  ]
+ },
+ "build-docx": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_build_docx_defaults_to_the_draft_dir_and_accepts_a_workspace_output"
+  ]
+ },
+ "build-ledger": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_build_ledger_writes_the_ledger_under_the_workspace"
+  ]
+ },
+ "build-rules": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_build_rules_then_review_rules_are_structured"
+  ]
+ },
+ "build-section": {
+  "ui": "/authoring/sections › Build section",
+  "api": [
+   "tests/unit/api/test_section_routes.py::test_build_section_writes_scaffold_and_returns_relative_path"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringSections.test.tsx › builds a section and packs context for a target"
+  ]
+ },
+ "collect-code-evidence": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_collect_code_evidence_defaults_to_the_workspace_and_rejects_other_roots"
+  ]
+ },
+ "collect-issues": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_collect_issues_passes_the_workspace_root_as_default_repo_root"
+  ]
+ },
+ "collect-sources": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_collect_sources_writes_the_manifest"
+  ]
+ },
+ "context elicit": {
+  "ui": "/authoring/context › Write questionnaire",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_context_elicit_ingest_show_and_remove"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringClient.test.ts › elicits, ingests, shows and removes context topics"
+  ]
+ },
+ "context ingest": {
+  "ui": "/authoring/context › Ingest answers",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_context_elicit_ingest_show_and_remove"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringClient.test.ts › elicits, ingests, shows and removes context topics"
+  ]
+ },
+ "context rm": {
+  "ui": "/authoring/context › Remove topic",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_remove_context_topic_without_saved_content_is_idempotent_like_the_cli"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringClient.test.ts › elicits, ingests, shows and removes context topics"
+  ]
+ },
+ "context set": {
+  "ui": "/authoring/context › Set context value",
+  "api": [],
+  "proof": [
+   "review-studio/src/test/authoringIntake.test.tsx › sets a context value for a topic",
+   "review-studio/e2e/authoring.spec.ts › authors the seeded document through the real sidecar"
+  ]
+ },
+ "context show": {
+  "ui": "/authoring/context › View topic",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_context_elicit_ingest_show_and_remove"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringClient.test.ts › elicits, ingests, shows and removes context topics"
+  ]
+ },
+ "context status": {
+  "ui": "/authoring/context › Topic list",
+  "api": [
+   "tests/unit/test_sidecar.py::test_api_context_reads_compose_each_requested_workspace_without_leakage"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringIntake.test.tsx › sets a context value for a topic",
+   "review-studio/e2e/authoring.spec.ts › authors the seeded document through the real sidecar"
+  ]
+ },
+ "doc current": {
+  "ui": "/configure/workspaces › Active document",
+  "api": [
+   "tests/unit/api/test_application.py::test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion",
+   "review-studio/e2e/review-studio.spec.ts › manages documents through the shared lifecycle UI"
+  ]
+ },
+ "doc delete": {
+  "ui": "/configure/workspaces › Delete document",
+  "api": [
+   "tests/unit/api/test_application.py::test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion",
+   "review-studio/e2e/review-studio.spec.ts › manages documents through the shared lifecycle UI"
+  ]
+ },
+ "doc list": {
+  "ui": "/configure/workspaces › Document list",
+  "api": [
+   "tests/unit/api/test_application.py::test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion",
+   "review-studio/e2e/review-studio.spec.ts › manages documents through the shared lifecycle UI"
+  ]
+ },
+ "doc new": {
+  "ui": "/configure/workspaces › Create document",
+  "api": [
+   "tests/unit/api/test_application.py::test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion",
+   "review-studio/e2e/review-studio.spec.ts › manages documents through the shared lifecycle UI"
+  ]
+ },
+ "doc rename": {
+  "ui": "/configure/workspaces › Rename document",
+  "api": [
+   "tests/unit/api/test_application.py::test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion",
+   "review-studio/e2e/review-studio.spec.ts › manages documents through the shared lifecycle UI"
+  ]
+ },
+ "doc revise": {
+  "ui": "/authoring/revisions › Revise document",
+  "api": [
+   "tests/unit/api/test_section_routes.py::test_revision_uses_the_canonical_flow_and_records_a_diff"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringSections.test.tsx › revises a target and shows the produced diff summary"
+  ]
+ },
+ "doc show": {
+  "pending": "unassigned",
+  "api": [
+   "tests/unit/api/test_application.py::test_v2_workspace_contract_has_no_server_active_selection_or_fallback"
+  ]
+ },
+ "doc status": {
+  "pending": "unassigned",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_summary_equals_what_the_cli_service_reports"
+  ]
+ },
+ "doc use": {
+  "ui": "/configure/workspaces › Use document",
+  "api": [
+   "tests/unit/api/test_application.py::test_document_lifecycle_routes_use_canonical_service_and_persist_active_selection"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion",
+   "review-studio/e2e/review-studio.spec.ts › manages documents through the shared lifecycle UI"
+  ]
+ },
+ "doctor": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_diagnostics_return_structured_checks"
+  ]
+ },
+ "document baseline": {
+  "ui": "/review/evidence › Promote baseline",
+  "api": [
+   "tests/unit/api/test_quality_routes.py::test_baseline_promotion_snapshots_the_run_previews_into_the_workspace"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › confirms with the chosen name and shows the promoted pages",
+   "review-studio/e2e/review.spec.ts › follows the seeded run to its evidence, inspects an artifact, and promotes (or honestly refuses) a baseline"
+  ]
+ },
+ "document build": {
+  "ui": "/pipeline › Build",
+  "api": [
+   "tests/unit/api/test_openapi.py::test_document_actions_document_workspace_format_and_policy_contract"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › launches build through the document action and opens the resulting run"
+  ]
+ },
+ "document classify": {
+  "ui": "/authoring/classification › Confirm role",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_classification_lists_pending_and_confirms_through_the_shared_service"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringIntake.test.tsx › confirms the role of a pending source",
+   "review-studio/src/test/authoringIntake.test.tsx › explains that nothing is pending when the queue is unavailable"
+  ]
+ },
+ "document diff": {
+  "ui": "/review/diff › Compare",
+  "api": [
+   "tests/unit/api/test_quality_routes.py::test_diff_compares_two_artifacts_by_identity_and_text"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › compares the two chosen artifacts"
+  ]
+ },
+ "document evidence": {
+  "ui": "/review/evidence › Run evidence",
+  "api": [
+   "tests/unit/api/test_quality_routes.py::test_evidence_bundle_carries_immutable_references_not_file_contents"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › shows digests, the passport summary and artifacts without raw JSON",
+   "review-studio/e2e/review.spec.ts › follows the seeded run to its evidence, inspects an artifact, and promotes (or honestly refuses) a baseline"
+  ]
+ },
+ "document import": {
+  "pending": "unassigned",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_import_stores_a_hash_prefixed_copy_and_is_idempotent"
+  ]
+ },
+ "document ingest": {
+  "ui": "/authoring/sources › Ingest sources",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_source_ingest_uploads_and_ingests_markdown"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringIntake.test.tsx › uploads a file as base64 and renders each ingest stage"
+  ]
+ },
+ "document inspect": {
+  "ui": "/review/artifacts › Inspect artifact",
+  "api": [
+   "tests/unit/api/test_quality_routes.py::test_inspect_returns_the_structured_artifact_report"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › inspects an artifact into a structured report"
+  ]
+ },
+ "document package": {
+  "pending": "S5.2",
+  "api": [
+   "tests/unit/api/test_delivery_routes.py::test_package_writes_a_workspace_owned_archive_and_reports_its_digest"
+  ]
+ },
+ "document passport": {
+  "ui": "/review/evidence › Passport summary",
+  "api": [
+   "tests/unit/api/test_application.py::test_endpoints_return_resources_and_cancel"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › shows digests, the passport summary and artifacts without raw JSON"
+  ]
+ },
+ "document plan": {
+  "ui": "/pipeline › Plan stages",
+  "api": [
+   "tests/unit/api/test_pipeline_routes.py::test_plan_returns_the_resolved_pipeline_the_cli_prints"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › renders the server plan: stages and the inputs it needs"
+  ]
+ },
+ "document prepare": {
+  "ui": "/pipeline › Prepare",
+  "api": [
+   "tests/unit/api/test_openapi.py::test_document_actions_document_workspace_format_and_policy_contract"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › prepare is synchronous: it reports success and stays on the page"
+  ]
+ },
+ "document publish": {
+  "pending": "S5.2",
+  "api": [
+   "tests/unit/api/test_delivery_routes.py::test_publish_to_a_permitted_destination_returns_immutable_release_evidence"
+  ]
+ },
+ "document release": {
+  "pending": "S5.2",
+  "api": [
+   "tests/unit/api/test_pipeline_routes.py::test_run_enqueues_and_returns_a_run_reference"
+  ]
+ },
+ "document run": {
+  "ui": "/pipeline › Run pipeline",
+  "api": [
+   "tests/unit/api/test_pipeline_routes.py::test_run_enqueues_and_returns_a_run_reference"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › re-plans when the format changes and launches with the chosen format and policy, then opens the run",
+   "review-studio/e2e/pipeline.spec.ts › lists the seeded run, opens its receipt, and watches a new html run to the end"
+  ]
+ },
+ "document status": {
+  "ui": "/configure/workspaces › Document status panel",
+  "api": [
+   "tests/unit/api/test_application.py::test_v2_workspace_contract_has_no_server_active_selection_or_fallback"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › offers an explicit retry when document status loading fails"
+  ]
+ },
+ "document verify": {
+  "ui": "/pipeline › Verify",
+  "api": [
+   "tests/unit/api/test_openapi.py::test_document_actions_document_workspace_format_and_policy_contract"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › does not render actions whose capability is unavailable"
+  ]
+ },
+ "explain": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_issue_code_explains_a_known_code_and_404s_an_unknown_one"
+  ]
+ },
+ "format-audit-docx": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_format_audit_surfaces_strict_failure_and_non_strict_pass"
+  ]
+ },
+ "pack-context": {
+  "ui": "/authoring/sections › Pack context",
+  "api": [
+   "tests/unit/api/test_section_routes.py::test_pack_context_single_all_and_document"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringSections.test.tsx › builds a section and packs context for a target"
+  ]
+ },
+ "qa-docx": {
+  "ui": "/review/qa › Run DOCX QA",
+  "api": [
+   "tests/unit/api/test_quality_routes.py::test_qa_docx_runs_the_canonical_service_on_a_workspace_artifact"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › runs qa with the strict toggle and shows the verdict",
+   "review-studio/src/test/reviewFeature.test.tsx › surfaces a degraded result with its reason on its own line"
+  ]
+ },
+ "review-document": {
+  "ui": "/authoring/sections › Review document",
+  "api": [
+   "tests/unit/api/test_section_routes.py::test_review_document_filters_dimensions"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringSections.test.tsx › renders review findings as a list and jumps to the section to fix",
+   "review-studio/e2e/authoring.spec.ts › authors the seeded document through the real sidecar"
+  ]
+ },
+ "review-rules": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_build_rules_then_review_rules_are_structured"
+  ]
+ },
+ "review-section": {
+  "ui": "/authoring/sections › Review section",
+  "api": [
+   "tests/unit/api/test_section_routes.py::test_review_section_returns_structured_findings"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringSections.test.tsx › renders review findings as a list and jumps to the section to fix"
+  ]
+ },
+ "run cancel": {
+  "ui": "/pipeline/runs/:runId › Cancel run",
+  "api": [
+   "tests/unit/api/test_application.py::test_cancel_is_terminal_idempotent_and_queue_aware"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › confirms before cancelling, and keeps running on Cancel"
+  ]
+ },
+ "run list": {
+  "ui": "/pipeline › Run history",
+  "api": [
+   "tests/unit/api/test_application.py::test_list_runs_returns_records_from_injected_store"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › lists runs as a table linking to each detail",
+   "review-studio/e2e/pipeline.spec.ts › lists the seeded run, opens its receipt, and watches a new html run to the end"
+  ]
+ },
+ "run retry": {
+  "ui": "/pipeline/runs/:runId › Retry run",
+  "api": [
+   "tests/unit/api/test_pipeline_routes.py::test_created_runs_can_be_cancelled_and_retried"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › retries a failed run and follows the new run"
+  ]
+ },
+ "run show": {
+  "ui": "/pipeline/runs/:runId › Run summary",
+  "api": [
+   "tests/unit/api/test_application.py::test_endpoints_return_resources_and_cancel"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › summarises the run without raw JSON and shows live progress",
+   "review-studio/e2e/pipeline.spec.ts › lists the seeded run, opens its receipt, and watches a new html run to the end"
+  ]
+ },
+ "run watch": {
+  "ui": "/pipeline/runs/:runId › Live progress",
+  "api": [
+   "tests/unit/api/test_application.py::test_run_progress_is_exposed_as_sse"
+  ],
+  "proof": [
+   "review-studio/src/test/pipelineFeature.test.tsx › stops at the terminal event and shows the receipt with a way on",
+   "review-studio/src/test/pipelineFeature.test.tsx › reconnects with backoff after the server closes a non-terminal stream, then stops at terminal"
+  ]
+ },
+ "source ingest": {
+  "ui": "/authoring/sources › Ingest sources",
+  "api": [
+   "tests/unit/api/test_authoring_routes.py::test_source_ingest_uploads_and_ingests_markdown"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringIntake.test.tsx › uploads a file as base64 and renders each ingest stage"
+  ]
+ },
+ "stamp-section": {
+  "ui": "/authoring/sections › Stamp section",
+  "api": [
+   "tests/unit/api/test_section_routes.py::test_stamp_section_records_provenance_from_the_request"
+  ],
+  "proof": [
+   "review-studio/src/test/authoringSections.test.tsx › stamps a section after asking who authored it"
+  ]
+ },
+ "template create": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_create_writes_a_skeleton_and_conflicts_on_repeat"
+  ]
+ },
+ "template init": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_create_writes_a_skeleton_and_conflicts_on_repeat"
+  ]
+ },
+ "template list": {
+  "ui": "/configure/workspaces › Create document template choice",
+  "api": [
+   "tests/unit/test_sidecar.py::test_sidecar_templates_endpoint_reads_workspace_manifests"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates and selects a document, then supports rename and confirmed deletion"
+  ]
+ },
+ "template show": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_show_returns_the_resolved_template_and_404_when_missing"
+  ]
+ },
+ "template use": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_use_copies_a_missing_builtin_and_rejects_unknown_ones"
+  ]
+ },
+ "template validate": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_template_routes.py::test_validate_reports_structured_issues_for_an_invalid_template"
+  ]
+ },
+ "translate": {
+  "pending": "S6.3",
+  "api": [
+   "tests/unit/api/test_tool_routes.py::test_translate_a_workspace_artifact"
+  ]
+ },
+ "workspace create": {
+  "ui": "/configure/workspaces › Create workspace",
+  "api": [
+   "tests/unit/api/test_application.py::test_workspace_creation_allocates_under_managed_root_and_rejects_client_root"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › creates a workspace and makes it the selected context"
+  ]
+ },
+ "workspace delete": {
+  "ui": "/configure/workspaces › Delete workspace",
+  "api": [
+   "tests/unit/api/test_application.py::test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › confirms workspace deletion and recovers after a transient delete error",
+   "review-studio/e2e/review-studio.spec.ts › recovers from workspace rename errors and confirms workspace deletion"
+  ]
+ },
+ "workspace list": {
+  "ui": "/configure/workspaces › Workspace switcher",
+  "api": [
+   "tests/unit/api/test_application.py::test_v2_workspace_contract_has_no_server_active_selection_or_fallback"
+  ],
+  "proof": [
+   "review-studio/e2e/review-studio.spec.ts › renders real workspace, run, artifact, and provenance data"
+  ]
+ },
+ "workspace migrate": {
+  "ui": "/configure/workspaces › Migrate workspace",
+  "api": [
+   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_status_and_migrate"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › allows migration review to be cancelled and recovers from server errors",
+   "review-studio/e2e/review-studio.spec.ts › selects a workspace and inspects migration through the shared lifecycle UI"
+  ]
+ },
+ "workspace rename": {
+  "ui": "/configure/workspaces › Rename workspace",
+  "api": [
+   "tests/unit/api/test_application.py::test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › renames a workspace and recovers after a transient rename error",
+   "review-studio/e2e/review-studio.spec.ts › recovers from workspace rename errors and confirms workspace deletion"
+  ]
+ },
+ "workspace status": {
+  "ui": "/configure/workspaces › Inspect workspace",
+  "api": [
+   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_status_and_migrate"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › allows migration review to be cancelled and recovers from server errors",
+   "review-studio/e2e/review-studio.spec.ts › selects a workspace and inspects migration through the shared lifecycle UI"
+  ]
+ },
+ "workspace use": {
+  "ui": "/configure/workspaces › Select workspace",
+  "api": [
+   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_status_and_migrate"
+  ],
+  "proof": [
+   "review-studio/src/test/workspaceJourneys.test.tsx › explains that workspace selection is unavailable when the API has no selection capability",
+   "review-studio/e2e/review-studio.spec.ts › selects a workspace and inspects migration through the shared lifecycle UI"
+  ]
+ }
+}
