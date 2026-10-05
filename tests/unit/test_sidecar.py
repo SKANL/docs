@@ -557,3 +557,20 @@ def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace
     assert evidence.artifact().list_for_run("second-run") == [artifact]
     assert evidence.finding().list_for_run("second-run")[0]["id"] == "finding-1"
     assert evidence.publication().list_for_workspace(second["id"]) == [{"id": "publication-1", "run_id": "second-run"}]
+
+
+def test_build_application_degrades_for_an_existing_workspace_without_marker(tmp_path: Path) -> None:
+    root = tmp_path / "legacy"  # tmp_path itself is pre-marked by the autouse fixture
+    (root / "documents").mkdir(parents=True)
+    application = build_application(SidecarConfig(workspace=root))
+    assert application.application is None
+    assert application.workspace_error == "workspace_marker_missing"
+    assert not (root / "workspace.json").exists()
+
+
+def test_build_application_boots_a_fresh_workspace_and_writes_the_marker(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    application = build_application(SidecarConfig(workspace=root))
+    assert application.application is not None
+    assert application.workspace_error is None
+    assert (root / "workspace.json").is_file()

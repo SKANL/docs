@@ -654,7 +654,16 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             workspace_error="workspace_not_configured",
         )
     registry = WorkspaceRegistry(config.workspace / ".docs" / "workspaces.json")
-    configured_workspace = registry.ensure("Local workspace", config.workspace)
+    try:
+        configured_workspace = registry.ensure("Local workspace", config.workspace)
+    except WorkspaceRegistryError as exc:
+        # An unusable workspace degrades /health instead of killing the process.
+        return _HealthApplication(
+            None,
+            urlsplit(config.health_url).path,
+            config.protocol,
+            workspace_error=exc.code,
+        )
     _seed_builtin_templates(config.workspace)
     # Plugin discovery is optional and declarative: manifests are inspected
     # without importing or executing plugin code. The core remains fully
