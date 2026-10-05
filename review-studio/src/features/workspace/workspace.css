@@ -1,0 +1,89 @@
+.ui-button { display: inline-flex; min-height: 2.45rem; align-items: center; justify-content: center; gap: .45rem; border: 1px solid transparent; border-radius: .55rem; padding: .55rem .88rem; color: white; background: #315d52; font: inherit; font-size: .9rem; font-weight: 600; line-height: 1.2; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease; }
+.ui-button:hover:not(:disabled) { background: #264b42; }
+.ui-button:active:not(:disabled) { transform: translateY(1px); }
+.ui-button:disabled { cursor: not-allowed; opacity: .55; }
+.ui-button-secondary { background: #e8eeeb; color: #213c34; }
+.ui-button-secondary:hover:not(:disabled) { background: #d9e3de; }
+.ui-button-outline { border-color: #cbd5d0; background: transparent; color: #253d35; }
+.ui-button-outline:hover:not(:disabled) { background: #edf2ef; }
+.ui-button-ghost { background: transparent; color: #315d52; }
+.ui-button-ghost:hover:not(:disabled) { background: #edf2ef; }
+.ui-button-destructive { background: #a53d3d; color: white; }
+.ui-button-destructive:hover:not(:disabled) { background: #872e31; }
+.ui-button-sm { min-height: 2rem; padding: .38rem .65rem; font-size: .82rem; }
+.ui-input, .ui-select-trigger { width: 100%; min-height: 2.65rem; border: 1px solid #cbd5d0; border-radius: .5rem; padding: .6rem .75rem; background: #fff; color: #243b33; font: inherit; font-size: .94rem; }
+.ui-input:focus, .ui-select-trigger:focus-visible { outline: 3px solid #6a9d89; outline-offset: 2px; }
+.ui-select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: .65rem; text-align: left; cursor: pointer; }
+.ui-select-content { z-index: 60; min-width: var(--radix-select-trigger-width); max-height: var(--radix-select-content-available-height); overflow: auto; border: 1px solid #d4ddd8; border-radius: .55rem; background: #fff; padding: .3rem; box-shadow: 0 14px 38px rgb(27 45 37 / 18%); }
+.ui-select-item { position: relative; display: flex; min-height: 2.25rem; align-items: center; border-radius: .35rem; padding: .4rem .6rem; font-size: .9rem; cursor: pointer; outline: none; }
+.ui-select-item[data-highlighted] { background: #edf2ef; }
+.ui-select-item[data-state="checked"] { color: #245b4b; font-weight: 650; }
+.ui-dialog-overlay { position: fixed; z-index: 50; inset: 0; background: rgb(18 30 25 / 42%); animation: ui-fade-in 140ms ease-out; }
+.ui-dialog-content { position: fixed; z-index: 51; top: 50%; left: 50%; width: min(32rem, calc(100vw - 2rem)); max-height: min(90dvh, 48rem); overflow-y: auto; transform: translate(-50%, -50%); border: 1px solid #d8e0dc; border-radius: .85rem; background: #fff; padding: 1.5rem; color: #243b33; box-shadow: 0 26px 80px rgb(27 45 37 / 24%); animation: ui-dialog-in 160ms ease-out; }
+.ui-dialog-header { margin-bottom: 1rem; }
+.ui-dialog-header h2 { margin: 0; font-size: 1.25rem; letter-spacing: -.02em; }
+.ui-dialog-header p { margin: .45rem 0 0; color: #62716a; line-height: 1.5; }
+.ui-dialog-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .55rem; margin-top: 1.35rem; }
+.ws-page { display: grid; gap: 1.25rem; max-width: 72rem; margin: 0 auto; padding: clamp(1rem, 3vw, 2.5rem); color: #243b33; }
+.ws-page-header, .ws-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; }
+.ws-page-header h1 { margin: .2rem 0 .55rem; font-size: clamp(1.8rem, 3vw, 2.5rem); line-height: 1.1; letter-spacing: -.04em; text-wrap: balance; }
+.ws-lede { max-width: 44rem; margin: 0; color: #62716a; line-height: 1.6; }
+.ws-kicker { margin: 0 0 .35rem; color: #4f7969; font-size: .75rem; font-weight: 700; letter-spacing: .075em; text-transform: uppercase; }
+.ws-platform-note, .ws-page-notice, .ws-page-alert { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0; border-radius: .55rem; padding: .8rem 1rem; background: #edf3ef; color: #355747; line-height: 1.5; }
+.ws-page-alert { border: 1px solid #e7b8b5; background: #fff2f0; color: #7d2e2c; }
+.ws-page-notice { background: #e9f4ec; }
+.ws-context-section { border-top: 1px solid #dce4df; padding-top: 1.25rem; }
+.ws-section-heading { align-items: center; margin-bottom: 1rem; }
+.ws-section-heading h2 { margin: 0; font-size: 1.3rem; letter-spacing: -.02em; }
+.ws-active-marker { color: #517160; font-size: .82rem; }
+.workspace-switcher-row { display: grid; gap: .45rem; max-width: 43rem; }
+.field-label { display: block; margin: .85rem 0 .4rem; color: #394e45; font-size: .88rem; font-weight: 600; }
+.workspace-switcher-controls { display: grid; grid-template-columns: minmax(12rem, 1fr) auto; gap: .65rem; }
+.ws-workspace-meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-top: 1rem; }
+.ws-workspace-meta > div:first-child { display: grid; gap: .35rem; min-width: 0; }
+.ws-status-label { color: #6a7972; font-size: .78rem; font-weight: 650; }
+.ws-workspace-meta code { overflow-wrap: anywhere; color: #475d53; font-size: .83rem; }
+.ws-management-actions, .ws-document-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .35rem; }
+.ws-empty-workspace { max-width: 42rem; border-radius: .7rem; padding: 1.2rem; background: #f0f4f1; }
+.ws-empty-workspace h3 { margin: 0 0 .4rem; }
+.ws-empty-workspace p, .ws-muted { color: #65756d; line-height: 1.55; }
+.ws-status-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; border-radius: .7rem; background: #f0f4f1; padding: 1rem 1.15rem; }
+.ws-status-panel h2 { margin: 0; font-size: 1.2rem; }
+.ws-status-panel .ws-muted { margin: .35rem 0 0; font-size: .88rem; }
+.ws-status-detail { display: grid; gap: .25rem; text-align: right; }
+.ws-status-detail strong { color: #315d52; }
+.ws-blockers { grid-column: 1 / -1; display: grid; gap: .35rem; }
+.ws-blockers ul, .ws-migration-report ul { margin: 0; padding-left: 1.2rem; color: #7a3935; }
+.ws-document-list { display: grid; gap: .4rem; margin: .9rem 0 0; padding: 0; list-style: none; }
+.ws-document-list li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-bottom: 1px solid #e2e8e4; padding: .75rem .35rem; }
+.ws-document-list li.is-current { border-radius: .45rem; border-bottom-color: transparent; background: #f3f6f3; }
+.ws-document-copy { display: grid; gap: .25rem; min-width: 0; }
+.ws-document-copy span { color: #687970; font-size: .82rem; overflow-wrap: anywhere; }
+.ws-empty-documents { padding: .9rem 0; color: #687970; }
+.ws-migration-report { display: grid; gap: .55rem; border-radius: .55rem; background: #f1f5f2; padding: .85rem; }
+.ws-migration-report p { display: flex; justify-content: space-between; gap: 1rem; margin: 0; }
+.ws-migration-report p span { color: #65756d; }
+.ws-success { border-radius: .45rem; background: #e9f4ec; padding: .7rem; color: #315d52; }
+.inline-error { margin: .65rem 0 0; color: #9b3434; font-size: .9rem; }
+.ws-loading { min-height: 2rem; color: #62716a; }
+.ws-skeleton { display: block; width: 48%; height: 1.1rem; border-radius: .3rem; background: linear-gradient(90deg, #e2e9e4, #f1f4f1, #e2e9e4); background-size: 200% 100%; animation: ws-shimmer 1.2s ease-in-out infinite; }
+.ws-skeleton-short { width: 25%; }
+@keyframes ui-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-dialog-in { from { opacity: 0; margin-top: .4rem; } to { opacity: 1; margin-top: 0; } }
+@keyframes ws-shimmer { to { background-position: -200% 0; } }
+@media (max-width: 720px) {
+  .ws-page-header, .ws-workspace-meta { align-items: stretch; flex-direction: column; }
+  .ws-page-header { align-items: flex-start; }
+  .ws-management-actions { justify-content: flex-start; }
+  .ws-document-list li { align-items: flex-start; flex-direction: column; }
+  .ws-document-actions { justify-content: flex-start; width: 100%; }
+}
+@media (max-width: 480px) {
+  .workspace-switcher-controls { grid-template-columns: 1fr; }
+  .ws-status-panel { grid-template-columns: 1fr; }
+  .ws-status-detail { text-align: left; }
+  .ui-dialog-content { padding: 1.15rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-button, .ui-dialog-overlay, .ui-dialog-content, .ws-skeleton { animation: none; transition: none; }
+}

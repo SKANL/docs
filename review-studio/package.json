@@ -12,6 +12,9 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@radix-ui/react-alert-dialog": "^1.1.23",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-select": "^2.3.7",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-updater": "^2.12.0",
     "clsx": "^2.1.1",

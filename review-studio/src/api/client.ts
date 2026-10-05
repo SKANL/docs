@@ -250,7 +250,7 @@ export class ReviewApiClient {
     if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
     return await response.json() as { ready:boolean; protocol?:string; version?:string };
   }
-  listDocuments(params?: ListParams) { return this.list<DocumentRecord>("documents", params).then(result => result.items); }
+  listDocuments(workspaceId?: string) { return this.list<DocumentRecord>("documents", { workspaceId }).then(result => result.items); }
   getDocument(id:string) { return this.scopedRequest<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
   listDocumentRuns(id:string) { return this.scopedRequest<{items:Record<string, unknown>[]}>("documents/" + encodeURIComponent(id) + "/runs").then(result => result.items.map(normalizeRun)); }
   listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
@@ -308,15 +308,26 @@ export class ReviewApiClient {
     await this.selectWorkspace(workspace.id);
     return workspace;
   }
-  renameWorkspace(id:string,name:string) { return this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) }); }
+  async renameWorkspace(id:string,name:string) {
+    const workspace = await this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) });
+    this.workspaces = this.workspaces.map(item => item.id === id ? workspace : item);
+    return workspace;
+  }
   async deleteWorkspace(id:string) {
     const result = await this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" });
+    this.workspaces = this.workspaces.filter(item => item.id !== id);
     if (this.selectedWorkspaceId === id) {
       this.selectedWorkspaceId = undefined;
       try { globalThis.localStorage?.removeItem("docs.review.workspace"); } catch { /* offline/browser storage unavailable */ }
     }
     return result;
   }
+  getWorkspaceStatus(id:string) { return this.request<import("./models").WorkspaceStatus>("workspaces/"+encodeURIComponent(id)+"/status"); }
+  migrateWorkspace(id:string,input:{apply:boolean}) { return this.request<import("./models").WorkspaceMigration>("workspaces/"+encodeURIComponent(id)+"/migrate", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
+  getCurrentDocument(workspaceId:string) { return this.request<import("./models").CurrentDocument>("current-document?workspace_id="+encodeURIComponent(workspaceId)); }
+  useDocument(id:string,workspaceId:string) { return this.scopedRequest<import("./models").DocumentSummary>("documents/"+encodeURIComponent(id)+"/use", { method:"POST" }, workspaceId); }
+  renameDocument(id:string,newId:string,workspaceId:string) { return this.scopedRequest<import("./models").DocumentSummary>("documents/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({new_id:newId}) }, workspaceId); }
+  deleteDocument(id:string,workspaceId:string) { return this.scopedRequest<{deleted:string;current_document_id:string|null}>("documents/"+encodeURIComponent(id), { method:"DELETE" }, workspaceId); }
   getDocumentStatus(documentId:string,workspaceId?:string) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/status", {}, workspaceId); }
   getDocumentContext(documentId:string) { return this.scopedRequest<{document_id:string;topics:DocumentContextTopic[]}>("documents/"+encodeURIComponent(documentId)+"/context"); }
   getDocumentClassification(documentId:string) { return this.scopedRequest<{document_id:string;items:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/classification"); }
@@ -332,8 +343,8 @@ export class ReviewApiClient {
   retryRun(id:string) { return this.scopedRequest<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
   documentAction(documentId:string, action:"prepare"|"build"|"verify"|"publish", workspaceId:string, format="docx") { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/"+action, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspaceId, policy: action === "publish" ? "release" : undefined, format}) }, workspaceId); }
   async selectWorkspace(id:string): Promise<Workspace> {
-    const workspace = this.workspaces.find(item => item.id === id);
-    if (!workspace) throw new ApiConfigurationError("Workspace must be loaded before it can be selected.");
+    const workspace = await this.request<Workspace>("workspaces/"+encodeURIComponent(id)+"/use", { method:"POST" });
+    this.workspaces = [...this.workspaces.filter(item => item.id !== id), workspace];
     this.selectedWorkspaceId = id;
     try { globalThis.localStorage?.setItem("docs.review.workspace", id); } catch { /* offline/browser storage unavailable */ }
     return workspace;

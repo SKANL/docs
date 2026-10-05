@@ -5,7 +5,7 @@ export default defineConfig({
   timeout: 30_000,
   use: { baseURL: "http://127.0.0.1:5173", ...devices["Desktop Chrome"] },
   webServer: [
-    { command: "node e2e/api-fixture.mjs", url: "http://127.0.0.1:4175/v1/runs", reuseExistingServer: true },
+    { command: "node e2e/api-fixture.mjs", url: "http://127.0.0.1:4175/v2/workspaces", reuseExistingServer: true },
     { command: "npm run dev -- --host 127.0.0.1", url: "http://127.0.0.1:5173", reuseExistingServer: true, env: { VITE_DOCS_API_BASE_URL: "http://127.0.0.1:4175/v1" } },
   ],
 });
