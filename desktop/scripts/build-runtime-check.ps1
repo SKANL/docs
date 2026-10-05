@@ -26,7 +26,7 @@ Push-Location $desktop
 try {
     # A relative frontendDist is required: an absolute `C:/...` value is parsed
     # as a URL and the webview loads file:// instead of the embedded assets.
-    npx tauri build --no-bundle --config src-tauri/tauri.runtime-check.conf.json
+    npm run tauri -- build --no-bundle --config src-tauri/tauri.runtime-check.conf.json
     if ($LASTEXITCODE -ne 0) { throw "Tauri build failed (exit code $LASTEXITCODE)." }
 } finally {
     Pop-Location
