@@ -23,6 +23,21 @@ Run `npm run sync:review-studio` to refresh the local frontend bundle, or run
 artifacts. `npm run test:shell` checks that the placeholder is absent and that
 the packaging configuration is wired to the Review Studio build.
 
+## Real desktop runtime check
+
+`npm run build:runtime-check` builds `review-studio/dist` (API base
+`http://127.0.0.1:8765/v1`), the frozen sidecar if it is missing, and a release
+Tauri binary that embeds `review-studio/dist` directly through
+`src-tauri/tauri.runtime-check.conf.json`. It never writes `desktop/src/`.
+
+`npm run check:runtime` then launches that binary on a fresh install, attaches
+to its WebView2 over CDP (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`), waits for the
+supervised sidecar to become healthy, and drives the shared workspace/document
+journey: create a document, cancel a deletion, confirm it. It refuses to run if
+`%APPDATA%/com.docs.reviewstudio` already exists, so it cannot touch a real
+user's data; set `DESKTOP_RUNTIME_ALLOW_EXISTING_APPDATA=1` to override on a
+disposable machine.
+
 ## Real installer and PDF journeys
 
 `npm run build:windows` produces the MSI and NSIS installers. Without

@@ -1,0 +1,1 @@
+{ "build": { "frontendDist": "../../review-studio/dist", "beforeBuildCommand": "" } }
