@@ -155,4 +155,3 @@ class DeliveryRoutes(RouteSupport):
         if principal is not None and principal.tenant_id and principal.organization_id:
             record.update(tenant_id=principal.tenant_id, organization_id=principal.organization_id)
         store.put_if_absent(record)  # atomic: a racing identical publish keeps the first record
-

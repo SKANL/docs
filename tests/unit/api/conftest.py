@@ -70,5 +70,3 @@ def api(tmp_path, stores):
     call.app, call.wid, call.ws_root = application, wid, ws_root
     call.doc_root = ws_root / "documents" / "doc"
     return call
-
-
