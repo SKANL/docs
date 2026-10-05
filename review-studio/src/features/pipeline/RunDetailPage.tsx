@@ -73,8 +73,7 @@ export function RunDetailPage() {
     {done && <section aria-label="Run receipt" className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
       <h2 className="text-lg font-semibold">Receipt</h2>
       <p>Final status: <b>{status}</b></p>
-      {/* ponytail: the review area is a placeholder until S4.2; this link already targets its real route. */}
-      <Button asChild variant="link" className="h-auto w-fit p-0"><Link to="/review">Review findings and artifacts</Link></Button>
+      <Button asChild variant="link" className="h-auto w-fit p-0"><Link to={`/review/evidence/${encodeURIComponent(runId)}`}>Review evidence for this run</Link></Button>
     </section>}
     {retry.isError && <ErrorState title="Could not retry the run" message={errorText(retry.error, "retry")} onRetry={() => retry.mutate(undefined)} retrying={retry.isPending} />}
     <ConfirmActionDialog open={confirmCancel} onOpenChange={setConfirmCancel} title="Cancel this run?" description="The run stops at its next safe point. Work already written to the workspace stays."

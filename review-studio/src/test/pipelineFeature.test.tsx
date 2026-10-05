@@ -182,7 +182,7 @@ describe("run detail", () => {
     act(() => streams[0].end());
     const receipt = await screen.findByRole("region", { name: "Run receipt" });
     expect(receipt.textContent).toContain("succeeded");
-    expect(within(receipt).getByRole("link", { name: "Review findings and artifacts" }).getAttribute("href")).toContain("/review");
+    expect(within(receipt).getByRole("link", { name: "Review evidence for this run" }).getAttribute("href")).toContain("/review/evidence/run-1");
     expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
     expect(streams).toHaveLength(1);
   });
