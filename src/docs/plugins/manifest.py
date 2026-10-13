@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+
+from docs.domain.identity import canonical_json
 
 SCHEMA = "docs.plugin/v1"
 ALLOWED_CAPABILITIES = frozenset({"render", "ingest", "transform"})
@@ -41,7 +42,7 @@ class PluginManifest:
 
 def _canonical(value: Any) -> bytes:
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return canonical_json(value, strict=True).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ManifestError("manifest contains non-canonical JSON data") from exc
 

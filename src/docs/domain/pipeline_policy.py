@@ -1,9 +1,10 @@
 """Pure execution policies for draft, strict, and release pipelines."""
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from enum import StrEnum
+
+from docs.domain.identity import canonical_json
 
 
 class PipelineMode(StrEnum):
@@ -35,7 +36,7 @@ class PipelinePolicy:
         return {"mode": self.mode.value, "warning_codes": list(self.warning_codes)}
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return canonical_json(self.to_dict(), strict=True)
 
     def severity(self, code: str, severity: str) -> str:
         if severity == "warning" and self.mode is PipelineMode.release and code in _DEGRADABLE_WARNING_CODES:

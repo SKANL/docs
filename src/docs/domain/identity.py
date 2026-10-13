@@ -4,13 +4,32 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 
-def canonical_json(value: Any) -> str:
-    """Serialize values with the v2 canonical JSON contract."""
-    return json.dumps(value, default=str, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+def _thaw_mapping(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return dict(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+def canonical_json(value: Any, *, strict: bool = False) -> str:
+    """Serialize values with the v2 canonical JSON contract.
+
+    Lenient (default): anything unserializable becomes `str(value)`.
+    `strict=True`: only JSON values and read-only mappings are accepted; anything else raises
+    `TypeError`, and NaN/Infinity raise `ValueError`.
+    """
+    return json.dumps(
+        value,
+        default=_thaw_mapping if strict else str,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=not strict,
+    )
 
 
 def sha256_bytes(value: bytes) -> str:
