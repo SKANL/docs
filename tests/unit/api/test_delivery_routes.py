@@ -176,6 +176,9 @@ def test_publish_to_a_permitted_destination_returns_immutable_release_evidence(a
     listed = body(api("GET", "/v2/publications"))["items"]
     assert [item["id"] for item in listed] == [data["id"]]
     assert listed[0]["status"] == "passed" and listed[0]["document_id"] == "doc"
+    # the history carries what the publish response reported, so the Delivery table has no blanks to guess
+    assert listed[0]["policy"] == data["policy"] == "release"
+    assert listed[0]["warnings"] == data["warnings"]
 
 
 @pytest.mark.parametrize("destination", ["../escape.docx", "/abs/escape.docx", "a/../../escape.docx", "", "C:/escape.docx"])
