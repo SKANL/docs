@@ -11,8 +11,15 @@ export function Sidebar() {
   return <aside className="flex shrink-0 flex-col gap-6 bg-sidebar px-3 py-5 text-sidebar-foreground md:w-60">
     <nav aria-label="Task areas">
       <ul className="flex gap-1 overflow-x-auto md:flex-col">
-        {areas.map(({ id, label, path, icon: Icon }) => <li key={id}>
+        {areas.filter(area => !area.secondary).map(({ id, label, path, icon: Icon }) => <li key={id}>
           <NavLink to={path} end={path === "/"} className={link}><Icon aria-hidden="true" className="size-4" />{label}</NavLink>
+        </li>)}
+      </ul>
+    </nav>
+    <nav aria-label="Specialist tools">
+      <ul className="flex flex-col gap-1">
+        {areas.filter(area => area.secondary).map(({ id, label, path, icon: Icon }) => <li key={id}>
+          <NavLink to={path} className={link}><Icon aria-hidden="true" className="size-4" />{label}</NavLink>
         </li>)}
       </ul>
     </nav>

@@ -14,6 +14,7 @@ import { WorkspaceFormDialog } from "./WorkspaceFormDialog";
 import { WorkspaceMigrationDialog } from "./WorkspaceMigrationDialog";
 import { DocumentCreateDialog } from "../documents/DocumentCreateDialog";
 import { DocumentStatusPanel } from "../documents/DocumentStatusPanel";
+import { DocumentDetailPanel } from "@/features/documents/DocumentDetailPanel";
 
 type Props = { api: ReviewApi };
 type BusyAction = "load" | "select" | "workspace-save" | "workspace-delete" | "migration-inspect" | "migration-apply" | "document-create" | "document-use" | "document-rename" | "document-delete" | null;
@@ -259,6 +260,7 @@ export function WorkspaceDocumentPage({ api }: Props) {
     <section className={section} aria-labelledby="documents-heading">
       <div className="flex items-center justify-between gap-4"><div><p className={kicker}>Current project</p><h2 id="documents-heading" className="text-xl font-semibold">Documents</h2></div><Button type="button" onClick={() => setDocumentCreateOpen(true)} disabled={!selectedWorkspace || isBusy || !api.createDocument}>Create document</Button></div>
       {!selectedWorkspace ? <p className="text-sm text-muted-foreground">Select or create a workspace before managing documents.</p> : <>
+        {currentDocument?.current_document_id && <DocumentDetailPanel documentId={currentDocument.current_document_id} />}
         <DocumentStatusPanel document={activeDocument} status={documentStatus} loading={busy === "select" || busy === "load"} error={documentStatusError || undefined} onRetry={() => void retryDocumentStatus()} />
         {documents.length ? <ul className="grid gap-1" aria-label="Workspace documents">{documents.map(item => <li key={item.id} className={cn("flex flex-col gap-3 rounded-md border-b px-2 py-3 sm:flex-row sm:items-center sm:justify-between", item.id === currentDocument?.current_document_id && "border-transparent bg-muted")}>
           <div className="grid min-w-0 gap-1"><strong>{item.title || item.id}</strong><span className="text-sm break-words text-muted-foreground">{item.id}{item.template ? ` · ${item.template}` : ""}</span></div>

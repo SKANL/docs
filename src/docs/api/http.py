@@ -7,6 +7,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -120,6 +121,8 @@ def error_response(error: Exception) -> Response:
         {"error": {"code": "internal_error", "message": "Internal server error", "details": {}}}, 500
     )
 
+
+_log = logging.getLogger("docs.api")
 
 _CURSOR_SECRET = b"docs-api-cursor-v1"
 
@@ -339,6 +342,9 @@ class Router:
                         self.idempotency.release_reservation(idem_key)
                     return self._cors(response, origin)
                 except Exception as exc:
+                    if not isinstance(exc, (APIError, AuthError)) or getattr(exc, "status", 500) >= 500:
+                        # The client only sees a masked 500; keep the cause diagnosable.
+                        _log.exception("unhandled error dispatching %s %s", request.method, request.path)
                     return self._cors(error_response(exc), origin)
         if methods:
             return self._cors(

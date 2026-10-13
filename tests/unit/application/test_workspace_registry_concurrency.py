@@ -2,6 +2,8 @@
 
 import threading
 
+import pytest
+
 from docs.application.workspaces import WorkspaceRegistry
 
 
@@ -34,3 +36,17 @@ def test_concurrent_instances_on_one_registry_file_never_fail(tmp_path):
             thread.join()
     assert errors == []
     assert WorkspaceRegistry(path).get(workspace["id"])["name"] == "Concurrent 149"
+
+
+def test_a_failed_write_leaves_no_temporary_file(tmp_path, monkeypatch):
+    path = tmp_path / ".docs" / "workspaces.json"
+    registry = WorkspaceRegistry(path)
+    registry.create("Original", tmp_path / "ws")
+
+    def explode(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("docs.application.workspaces.json.dumps", explode)
+    with pytest.raises(OSError, match="disk full"):
+        registry.create("Second", tmp_path / "ws2")
+    assert sorted(p.name for p in path.parent.iterdir()) == ["workspaces.json"]

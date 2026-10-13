@@ -13,6 +13,8 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     ...client.pipeline,
     ...client.quality,
     ...client.delivery,
+    ...client.templates,
+    ...client.tools,
     health: () => client.health(),
     getCapabilities: () => client.getCapabilities(),
     listRuns: () => client.listRuns(),

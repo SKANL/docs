@@ -148,3 +148,32 @@ def test_authenticated_route_populates_principal_context():
         auth=lambda token: Principal("user-1", frozenset({"read"})) if token == "good" else None,
     )(lambda request: Response.json({"subject": require_scopes(request.principal, "admin").subject}))
     assert router.dispatch(Request("GET", "/admin", {"Authorization": "Bearer good"})).status == 403
+
+
+def test_unexpected_errors_stay_masked_for_clients_but_log_their_traceback(caplog):
+    router = Router()
+
+    @router.route("GET", "/v2/boom")
+    def boom(request: Request) -> Response:
+        raise PermissionError("registry file is locked")
+
+    with caplog.at_level("ERROR", logger="docs.api"):
+        response = router.dispatch(Request("GET", "/v2/boom"))
+
+    assert response.status == 500
+    assert b"registry file is locked" not in response.body
+    record = next(r for r in caplog.records if r.name == "docs.api")
+    assert record.exc_info is not None and record.exc_info[0] is PermissionError
+    assert "/v2/boom" in record.getMessage()
+
+
+def test_typed_client_errors_are_not_logged_as_failures(caplog):
+    router = Router()
+
+    @router.route("GET", "/v2/missing")
+    def missing(request: Request) -> Response:
+        raise APIError("not_found", "Missing", 404)
+
+    with caplog.at_level("ERROR", logger="docs.api"):
+        assert router.dispatch(Request("GET", "/v2/missing")).status == 404
+    assert not [r for r in caplog.records if r.name == "docs.api"]
