@@ -34,7 +34,7 @@ from docs.application.visual_baseline import VisualBaselineError, VisualBaseline
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli.commands.source_app import run_source_command
 from docs.domain.artifacts import BuildManifest
-from docs.domain.identity import sha256_file
+from docs.domain.identity import pretty_json, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
@@ -553,7 +553,7 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -754,7 +754,7 @@ def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -773,7 +773,7 @@ def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -796,7 +796,7 @@ def plan(
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -905,7 +905,7 @@ def diff(
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 

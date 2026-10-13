@@ -14,6 +14,7 @@ from typing import Any
 
 from docs.application.context import ContextService
 from docs.application.review import ReviewService
+from docs.domain.identity import pretty_json
 from docs.domain.models.template import Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.ports.evidence_repository import EvidenceRepository
@@ -202,5 +203,5 @@ class RevisionService:
             }
         )
         log_path.write_text(
-            json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+            pretty_json(state), encoding="utf-8"
         )

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile, ZipFile
 
-from docs.domain.identity import sha256_bytes
+from docs.domain.identity import pretty_json, sha256_bytes
 
 
 @dataclass(frozen=True)
@@ -189,7 +189,7 @@ class DocxImportService:
                 "unsupported": list(report.unsupported),
             }
             (temp / "import-report.json").write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+                pretty_json(payload) + "\n", encoding="utf-8", newline="\n"
             )
             backup = output.with_name(output.name + ".previous")
             if backup.exists():

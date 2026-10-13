@@ -12,18 +12,27 @@ _CATALOG_NAME = "figure-catalog.json"
 _BINDINGS_NAME = "figure-bindings.json"
 
 
-def _read_json_fail_open(path: Path) -> dict[str, Any]:
+def read_json_fail_open(path: Path, *, warn: bool = False) -> dict[str, Any] | None:
+    """The JSON object at `path`: `{}` when the file is absent, `None` when it is unreadable or
+    not an object (with `warn`, a Spanish WARN on stderr says why and that the file is kept).
+
+    Fail open on shape too, not just syntax: a syntactically-valid but non-object top level
+    (e.g. a JSON array) must never reach `.get()` and crash the build -- these files are
+    hand-authored with no schema-enforcing CLI (ADR-4/ADR-6: a bound label NEVER crashes the build).
+    """
     if not path.exists():
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    # Fail open on shape too, not just syntax: a syntactically-valid but
-    # non-object top level (e.g. a JSON array) must never reach `.get()` and
-    # crash the build -- these files are hand-authored with no schema-enforcing
-    # CLI (ADR-4/ADR-6: a bound label NEVER crashes the build).
-    return data if isinstance(data, dict) else {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        if warn:
+            print(f"WARN: no se pudo leer {path.name}: {exc}; se preserva el archivo existente.", file=sys.stderr)
+        return None
+    if not isinstance(data, dict):
+        if warn:
+            print(f"WARN: {path.name} debe contener un objeto; se preserva el archivo existente.", file=sys.stderr)
+        return None
+    return data
 
 
 def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[str, BoundFigure]:
@@ -44,7 +53,7 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
     sections_dir = Path(sections_dir)
     assets_dir = Path(assets_dir)
 
-    bindings = _read_json_fail_open(sections_dir / _BINDINGS_NAME).get("bindings", {})
+    bindings = (read_json_fail_open(sections_dir / _BINDINGS_NAME) or {}).get("bindings", {})
     if not isinstance(bindings, dict):
         print(
             f"WARN: 'bindings' en {_BINDINGS_NAME} no es un objeto label->id del catálogo; "
@@ -57,7 +66,7 @@ def build_bound_figures_resolver(sections_dir: Path, assets_dir: Path) -> dict[s
 
     # Only well-shaped rows (a dict with a string `id`) enter the lookup; a
     # non-list `figures` value or non-dict rows fail open (never crash).
-    figures = _read_json_fail_open(sections_dir / _CATALOG_NAME).get("figures", [])
+    figures = (read_json_fail_open(sections_dir / _CATALOG_NAME) or {}).get("figures", [])
     catalog_by_id = {
         row["id"]: row
         for row in (figures if isinstance(figures, list) else [])

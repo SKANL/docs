@@ -1,10 +1,11 @@
 # src/docs/domain/sections.py
 from __future__ import annotations
 
-import json as _json
 import re
 from pathlib import Path
 from typing import Any
+
+from docs.domain.identity import pretty_json
 
 _LEADING_ORDER_RE = re.compile(r"^\d+-")
 
@@ -14,7 +15,7 @@ def infer_section_id_from_path(path: Path) -> str:
 
 
 def with_frontmatter(body: str, metadata: dict[str, Any]) -> str:
-    return "---\n" + _json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n---\n" + body
+    return "---\n" + pretty_json(metadata) + "\n---\n" + body
 
 
 def default_section_metadata(section_id: str, title: str) -> dict[str, Any]:

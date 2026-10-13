@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from docs.domain.identity import sha256_bytes, sha256_file
+from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
 
 from .api.application import X20Application
 from .api.http import Response, Router
@@ -28,6 +28,7 @@ from .api.server import GracefulHTTPServer, TransportConfig, create_server, serv
 from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .composition import compose_application
 from .domain.runtime_records import Artifact, Passport, Run
+from .infrastructure.atomic_write import atomic_write_text
 from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
@@ -214,9 +215,7 @@ class _WorkspaceJsonCollectionStore:
             record["promotion"] = dict(metadata)
         target = root / "baselines" / "active.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(target)
+        atomic_write_text(target, pretty_json(record) + "\n")
         return record
 
 

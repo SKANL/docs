@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from docs.domain.context import TopicStatus
+from docs.domain.identity import pretty_json
 from docs.domain.models.template import ContextSchema, Topic
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_format import validate_workspace_marker
@@ -70,7 +70,7 @@ class JsonContextRepository:
         index = {"schema": 1, "topics": topic_entries, "by_section": by_section}
         json_path = context_dir / "index.json"
         json_path.write_text(
-            json.dumps(index, ensure_ascii=False, indent=2, sort_keys=True),
+            pretty_json(index),
             encoding="utf-8",
         )
 

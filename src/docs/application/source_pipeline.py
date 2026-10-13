@@ -10,6 +10,7 @@ from typing import Any
 
 from docs.application.semantic_graph import SemanticGraphProjector
 from docs.domain.docx_structure import structure_parts
+from docs.domain.identity import pretty_json
 from docs.domain.paths import is_within
 from docs.domain.ports.atomic_file_port import AtomicFilePort
 from docs.domain.ports.markdown_normalizer_port import MarkdownNormalizerPort
@@ -414,7 +415,7 @@ class SourcePipeline:
         with self.file_writer.scratch_dir(destination.parent) as scratch:
             candidate = scratch / destination.name
             candidate.write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                pretty_json(payload) + "\n",
                 encoding="utf-8",
             )
             self.file_writer.atomic_finalize(candidate, destination)

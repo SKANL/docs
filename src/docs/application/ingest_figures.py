@@ -13,10 +13,7 @@ missing rasterizer costs you a figure, never the ingest run.
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import sys
-import tempfile
 from dataclasses import replace as _dataclass_replace
 from pathlib import Path
 from typing import Any
@@ -148,15 +145,7 @@ class FigureIngestPipeline:
         # `atomic_ingest_write.py` convention already used by ingest
         # adapters) -- a failure mid-copy never leaves a partial file at the
         # deterministic `name` path a later idempotency check could accept.
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(dir=assets_dir, prefix=".asset-tmp-")
-        try:
-            os.close(fd)
-            shutil.copyfile(src, tmp_name)
-            os.replace(tmp_name, assets_dir / name)
-        except BaseException:
-            Path(tmp_name).unlink(missing_ok=True)
-            raise
+        self.writer.write_bytes(assets_dir / name, src.read_bytes())
 
     def _read_current_confirmed_placements(self, inbox_dir: Path) -> dict[str, str]:
         queue_path = inbox_dir / PLACEMENT_QUEUE_NAME
@@ -331,7 +320,7 @@ class FigureIngestPipeline:
         png_path = assets_dir / "figures" / f"{stem}.png"
         try:
             normalized = normalize_svg(raw.decode("utf-8", errors="replace"))
-            self._write_atomic_text(svg_path, normalized)
+            self.writer.write_text(svg_path, normalized)
             self.svg_rasterizer.rasterize(svg_path, png_path)
         except Exception as exc:
             print(
@@ -445,16 +434,3 @@ class FigureIngestPipeline:
                     )
                 )
         return figures
-
-    def _write_atomic_text(self, path: Path, text: str) -> None:
-        # Temp-then-atomic-rename, same convention as `_copy_asset` above --
-        # a failing/interrupted write never leaves a partial `.svg` at `path`.
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".asset-tmp-")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(text)
-            os.replace(tmp_name, path)
-        except BaseException:
-            Path(tmp_name).unlink(missing_ok=True)
-            raise

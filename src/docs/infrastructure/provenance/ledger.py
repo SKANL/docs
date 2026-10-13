@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import stat
-import tempfile
 import threading
 import time
 from collections.abc import Iterable, Iterator, Mapping
@@ -17,6 +16,7 @@ from typing import Any
 
 from docs.domain.identity import canonical_json
 from docs.domain.paths import require_within
+from docs.infrastructure.atomic_write import atomic_write_text
 
 _PROCESS_LOCK = threading.Lock()
 
@@ -164,17 +164,7 @@ class ProvenanceLedger:
         return json.loads(self._log_path.read_text(encoding="utf-8"))
 
     def _write_payload(self, payload: dict[str, dict[str, dict[str, Any]]]) -> None:
-        self._log_path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(prefix=".provenance-v2-", suffix=".tmp", dir=self._log_path.parent)
-        temporary_path = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(canonical_json(payload))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, self._log_path)
-        finally:
-            temporary_path.unlink(missing_ok=True)
+        atomic_write_text(self._log_path, canonical_json(payload), fsync=True)
 
     @contextmanager
     def _lock(self) -> Iterator[None]:

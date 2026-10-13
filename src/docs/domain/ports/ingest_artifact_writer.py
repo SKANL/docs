@@ -15,3 +15,11 @@ class IngestArtifactWriter(Protocol):
         manifest, and later the classification/placement queues -- shares
         this one seam)."""
         ...
+
+    def write_text(self, path: Path, text: str) -> None:
+        """Write UTF-8 `text` to `path` with the same atomicity as `write_json`."""
+        ...
+
+    def write_bytes(self, path: Path, data: bytes) -> None:
+        """Write `data` to `path` with the same atomicity as `write_json`."""
+        ...

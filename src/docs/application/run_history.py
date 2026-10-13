@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from docs.domain.identity import pretty_json
 from docs.domain.workspace import Workspace
 
 
@@ -28,7 +29,7 @@ class RunRecorderService:
             **payload,
         }
         path = runs_dir / f"{timestamp.replace(':', '-')}-{command}.json"
-        path.write_text(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        path.write_text(pretty_json(record), encoding="utf-8")
         return path
 
     def _runs_dir(self, doc_id: str, config: dict[str, Any]) -> Path:

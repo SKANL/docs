@@ -32,6 +32,11 @@ def canonical_json(value: Any, *, strict: bool = False) -> str:
     )
 
 
+def pretty_json(value: Any) -> str:
+    """Human-readable, key-sorted JSON (2-space indent) for artifacts people open and diff."""
+    return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+
+
 def sha256_bytes(value: bytes) -> str:
     """Return the SHA-256 digest of raw bytes."""
     return hashlib.sha256(value).hexdigest()

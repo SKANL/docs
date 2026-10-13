@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.application.figure_resolver import read_json_fail_open
 from docs.application.inline_json_writer import InlineJsonWriter
 from docs.domain import figure_binding, figure_catalog
 from docs.domain.figure_catalog import FigureEntry
 from docs.domain.ingest_naming import sha256_hex
+from docs.domain.ports.atomic_file_port import AtomicFilePort
 from docs.domain.ports.image_metadata_port import ImageMetadataPort
 from docs.domain.ports.ingest_artifact_writer import IngestArtifactWriter
 from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
@@ -39,7 +39,7 @@ _METADATA_FIELDS = (
 
 
 def _read_specs_fail_open(path: Path) -> list[Any]:
-    """Same fail-open shape as `figure_resolver._read_json_fail_open`, but
+    """Same fail-open shape as `figure_resolver.read_json_fail_open`, but
     for `visual-specs.json`'s top-level JSON ARRAY (document-visuals spec:
     "a list of entries"), never crashing the build on an absent/malformed/
     wrong-shaped hand-authored file."""
@@ -82,18 +82,10 @@ def _read_specs_fail_open(path: Path) -> list[Any]:
 
 
 def _read_json_fail_open(path: Path) -> dict[str, Any] | None:
-    """Same fail-open shape as `figure_resolver._read_json_fail_open`, for
-    the object-shaped `figure-catalog.json`/`figure-bindings.json`."""
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        print(f"WARN: no se pudo leer {path.name}: {exc}; se preserva el archivo existente.", file=sys.stderr)
-        return None
-    if not isinstance(data, dict):
-        print(f"WARN: {path.name} debe contener un objeto; se preserva el archivo existente.", file=sys.stderr)
-        return None
+    """`read_json_fail_open` plus the shape of the object-shaped `figure-catalog.json`/`figure-bindings.json`."""
+    data = read_json_fail_open(path, warn=True)
+    if data is None or not path.exists():
+        return data
     if path.name == _CATALOG_NAME and not isinstance(data.get("figures"), list):
         print(f"WARN: {path.name} tiene una forma inválida; se preserva el archivo existente.", file=sys.stderr)
         return None
@@ -178,50 +170,24 @@ def _chart_data_fallback(spec: VisualSpec) -> str:
     return "; ".join(rows)
 
 
-def _atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Temp-then-atomic-rename, same convention as
-    `infrastructure/ingest/filesystem_ingest_artifact_writer.py` and
-    `infrastructure/ingest/atomic_ingest_write.py` -- a failing/interrupted
-    write never leaves a partial `.svg` at `path`."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".visual-tmp-")
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
-        os.replace(tmp_name, path)
-    except BaseException:
-        Path(tmp_name).unlink(missing_ok=True)
-        raise
-
-
-def _publish_pair(svg_path: Path, png_path: Path, svg_bytes: bytes, png_bytes: bytes) -> None:
+def _publish_pair(writer: IngestArtifactWriter, svg_path: Path, png_path: Path, svg_bytes: bytes, png_bytes: bytes) -> None:
     """Publish an SVG/PNG pair as one transaction.
 
-    Both outputs are staged before either final path is changed. Existing
-    outputs are moved aside while the pair is published and restored if any
-    publication step fails, so a failed second rename cannot leave a
-    mismatched or orphaned pair.
+    Each output is written atomically through `writer`. Existing outputs are remembered and
+    restored if any publication step fails, so a failed second write cannot leave a mismatched
+    or orphaned pair.
     """
-    parent = svg_path.parent
-    parent.mkdir(parents=True, exist_ok=True)
-    backup_paths: dict[Path, Path] = {}
-    with tempfile.TemporaryDirectory(dir=parent.parent, prefix=".visual-publish-") as temp_dir:
-        temp_root = Path(temp_dir)
-        try:
-            for final_path in (svg_path, png_path):
-                if final_path.exists():
-                    backup_path = temp_root / final_path.name
-                    os.replace(final_path, backup_path)
-                    backup_paths[final_path] = backup_path
-
-            _atomic_write_bytes(svg_path, svg_bytes)
-            _atomic_write_bytes(png_path, png_bytes)
-        except BaseException:
-            for final_path in (svg_path, png_path):
-                final_path.unlink(missing_ok=True)
-            for final_path, backup_path in backup_paths.items():
-                os.replace(backup_path, final_path)
-            raise
+    previous = {path: path.read_bytes() if path.exists() else None for path in (svg_path, png_path)}
+    try:
+        writer.write_bytes(svg_path, svg_bytes)
+        writer.write_bytes(png_path, png_bytes)
+    except BaseException:
+        for path, content in previous.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                writer.write_bytes(path, content)
+        raise
 
 
 @dataclass(frozen=True)
@@ -259,11 +225,14 @@ class GenerateVisualsService:
         svg_rasterizer: SvgRasterizerPort,
         image_metadata: ImageMetadataPort,
         writer: IngestArtifactWriter | None = None,
+        *,
+        file_writer: AtomicFilePort,
     ) -> None:
         self.visual_renderers = dict(visual_renderers)
         self.svg_rasterizer = svg_rasterizer
         self.image_metadata = image_metadata
         self.writer: IngestArtifactWriter = writer or InlineJsonWriter()
+        self.file_writer = file_writer
 
     def generate(self, sections_dir: Path, assets_dir: Path) -> GenerateVisualsResult:
         sections_dir = Path(sections_dir)
@@ -406,7 +375,7 @@ class GenerateVisualsService:
 
         try:
             figures_dir.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(dir=figures_dir.parent, prefix=".visual-") as temp_dir:
+            with self.file_writer.scratch_dir(figures_dir.parent) as temp_dir:
                 temp_svg_path = Path(temp_dir) / f"{stem}.svg"
                 temp_png_path = Path(temp_dir) / f"{stem}.png"
                 temp_svg_path.write_bytes(final_svg_bytes)
@@ -420,7 +389,7 @@ class GenerateVisualsService:
             # Publish only after rendering, metadata inspection, and complete
             # PNG reads succeed. Pair publication rolls back if either output
             # fails, so failed reruns touch no final pair.
-            _publish_pair(svg_path, png_path, final_svg_bytes, png_bytes)
+            _publish_pair(self.writer, svg_path, png_path, final_svg_bytes, png_bytes)
         except Exception as exc:
             print(
                 f"WARN: no se pudo completar el visual '{spec.label}': {exc}; se omite.",

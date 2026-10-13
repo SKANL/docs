@@ -1,9 +1,9 @@
 # src/docs/infrastructure/ingest/md_normalize_adapter.py
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from docs.domain.identity import pretty_json
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.markdown_text import split_frontmatter
 from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
@@ -48,7 +48,7 @@ class MdNormalizeAdapter:
             # already falls back to returning the untouched raw text in
             # `body` for that case, so there is nothing left to normalize.
             return body
-        canonical = json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2)
+        canonical = pretty_json(metadata)
         return f"---\n{canonical}\n---\n{body}"
 
     def normalize(self, source: str) -> str:

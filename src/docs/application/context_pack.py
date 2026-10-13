@@ -1,13 +1,13 @@
 # src/docs/application/context_pack.py
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 from docs.application.evidence import EvidenceService
 from docs.application.review import ReviewService
+from docs.domain.identity import pretty_json
 from docs.domain.markdown_text import keyword_set, matches_keywords, strip_frontmatter_and_markdown
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.normative import NormativeSettings
@@ -65,7 +65,7 @@ class ContextPackService:
             "## Contrato de sección",
             "",
             "```json",
-            json.dumps(contract.model_dump(), ensure_ascii=False, indent=2, sort_keys=True),
+            pretty_json(contract.model_dump()),
             "```",
             "",
             "## Checklist de contenido obligatorio",

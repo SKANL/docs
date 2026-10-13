@@ -7,6 +7,7 @@ from typing import Any
 import typer
 
 from docs.application.source_pipeline import SourcePipeline
+from docs.domain.identity import pretty_json
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 
@@ -51,7 +52,7 @@ def run_source_command(ctx: typer.Context, command: str, json_output: bool) -> N
             else []
         )
     output = json.dumps(report, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    typer.echo(output if json_output else json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    typer.echo(output if json_output else pretty_json(report))
     if not report["succeeded"]:
         raise typer.Exit(code=1)
 

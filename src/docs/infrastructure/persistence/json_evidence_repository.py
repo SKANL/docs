@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from docs.domain.identity import sha256_bytes, sha256_file
+from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
 
 _TRACEABILITY_SUFFIXES = {".md", ".json"}
 
@@ -69,5 +69,5 @@ class JsonEvidenceRepository:
         next_payload["generated_at"] = datetime.now().isoformat(timespec="seconds")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps(next_payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+            pretty_json(next_payload), encoding="utf-8"
         )

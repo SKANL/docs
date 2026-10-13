@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import os
 import stat
-import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
 from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.runtime_records import Blob
+from docs.infrastructure.atomic_write import atomic_write_bytes
 
 _JSON = dict[str, Any]
 
@@ -170,25 +170,6 @@ class FilesystemBlobStore:
 
     @staticmethod
     def _atomic_write(path: Path, content: bytes) -> None:
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-        if path.is_symlink() or temporary.is_symlink() or path.parent.is_symlink():
+        if path.is_symlink() or path.parent.is_symlink():
             raise ValueError("blob path cannot be written through a symlink")
-        try:
-            with temporary.open("xb") as stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            temporary.replace(path)
-            try:
-                directory_fd = os.open(path.parent, os.O_RDONLY)
-            except OSError:
-                pass
-            else:
-                try:
-                    os.fsync(directory_fd)
-                except OSError:
-                    pass
-                finally:
-                    os.close(directory_fd)
-        finally:
-            temporary.unlink(missing_ok=True)
+        atomic_write_bytes(path, content, fsync=True)

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.corrections import parse_simple_yaml
+from docs.domain.identity import pretty_json
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.section_repository import SectionRepository
@@ -70,5 +71,5 @@ class CorrectionsService:
             applied_ids.add(correction_id)
             count += 1
 
-        applied_path.write_text(json.dumps(applied_state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        applied_path.write_text(pretty_json(applied_state), encoding="utf-8")
         return count

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ from docs.application.workspace_migration import (
     WorkspaceMigrationPublisher,
 )
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.domain.identity import pretty_json
 
 workspace_app = typer.Typer(help="Manage persistent Doc Harness workspaces.")
 
@@ -145,7 +145,7 @@ def migrate_workspace(
     else:
         payload = _migration_payload(report)
     if as_json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+        print(pretty_json(payload))
     else:
         _print_migration_report(payload)
     if not report.ready:
