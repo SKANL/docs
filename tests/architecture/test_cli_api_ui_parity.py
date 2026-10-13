@@ -83,7 +83,9 @@ def test_capability_catalog_http_route_returns_the_declared_catalog():
     assert b'"groups"' in response.body
 
 
+# `document classify` left this list in S2.1: the CLI and the API now share
+# `review_classification_queue`, so the equivalence is no longer partial.
 def test_partial_cli_equivalents_are_not_advertised_as_available():
     by_command = {item["cli_command"]: item for item in _capabilities()}
-    for command in ("doc status", "document run", "document publish", "document classify"):
+    for command in ("doc status", "document run", "document publish"):
         assert by_command[command]["status"] == "planned", command

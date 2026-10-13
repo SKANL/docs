@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from .document_dto import document_openapi_schemas
+from .operations import OPERATIONS, available_cli_routes, component_schemas
 from .workspace_dto import workspace_openapi_schemas
 
 
@@ -107,6 +108,7 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "run cancel": "POST /v2/runs/{run_id}/cancel",
     "run retry": "POST /v2/runs/{run_id}/retry",
     "template list": "GET /v2/templates",
+    **available_cli_routes(),
 }
 
 
@@ -405,6 +407,14 @@ def build_openapi_document() -> dict[str, Any]:
     paths["/v2/runs/{run_id}/previews/{name}"] = {"get": _operation("Get run preview", {"description": "PNG preview image", "content": {"image/png": {"schema": {"type": "string", "format": "binary"}}}}, scopes=("artifacts:read",))}
     paths["/v2/runs/{run_id}/graph"]["get"]["operationId"] = "get_run_graph"
     paths["/v2/runs/{run_id}/graph"]["get"]["summary"] = "Get run graph"
+    for operation in OPERATIONS:
+        paths.setdefault(operation.path, {})[operation.method.lower()] = _operation(
+            operation.summary,
+            _json_response(operation.response_ref()),
+            request=operation.request_ref(),
+            scopes=(operation.scope,),
+            success_status=operation.success_status,
+        )
     paged_paths = {"/v2/documents", "/v2/findings", "/v2/artifacts", "/v2/templates", "/v2/revisions", "/v2/publications", "/v2/runs", "/v2/runs/{run_id}/artifacts", "/v2/runs/{run_id}/findings", "/v2/artifacts/{artifact_id}/previews", "/v2/baselines", "/v2/plugins"}
     workspace_scoped = {
         "/v2/documents", "/v2/current-document", "/v2/documents/{document_id}", "/v2/documents/{document_id}/use", "/v2/documents/{document_id}/status",
@@ -420,10 +430,10 @@ def build_openapi_document() -> dict[str, Any]:
         "/v2/runs/{run_id}/previews/{name}", "/v2/artifacts/{artifact_id}",
         "/v2/artifacts/{artifact_id}/previews", "/v2/revisions/{revision_id}",
         "/v2/baselines", "/v2/baselines/{baseline_id}",
-    }
+    } | {operation.path for operation in OPERATIONS}
     for path, item in paths.items():
         parameters = []
-        for segment in ("document_id", "run_id", "artifact_id", "revision_id", "baseline_id", "plugin_id", "workspace_id"):
+        for segment in ("document_id", "run_id", "artifact_id", "revision_id", "baseline_id", "plugin_id", "workspace_id", "asset_name", "topic_id"):
             if "{" + segment + "}" in path:
                 parameters.append(_parameter(segment))
         parameters.extend(item.get("parameters", ()))
@@ -442,6 +452,7 @@ def build_openapi_document() -> dict[str, Any]:
     schemas = _schemas()
     schemas.update(workspace_openapi_schemas())
     schemas.update(document_openapi_schemas())
+    schemas.update(component_schemas())
     return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": schemas}}
 
 

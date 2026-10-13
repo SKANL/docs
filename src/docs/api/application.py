@@ -31,6 +31,7 @@ from docs.domain.runtime_records import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
+from .authoring_routes import AuthoringRoutes
 from .document_dto import (
     DocumentCreateRequest,
     DocumentCurrentResponse,
@@ -41,6 +42,7 @@ from .document_dto import (
 from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_capability_catalog, build_openapi_document, canonical_json
+from .operations import match_operation
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
@@ -109,6 +111,7 @@ class X20Application:
         document_context_reader: Any = None,
         document_context_writer: Any = None,
         classification_service: Any = None,
+        workspace_services_factory: Callable[[str], Any] | None = None,
         workspace_scoped_auth: bool = False,
     ) -> None:
         self.run_store = run_store
@@ -147,6 +150,13 @@ class X20Application:
         self.document_context_reader = document_context_reader
         self.document_context_writer = document_context_writer
         self.classification_service = classification_service
+        self.workspace_services_factory = workspace_services_factory
+        self._workspace_services: dict[str, Any] = {}
+        self._authoring = AuthoringRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+            import_service=self.import_service,
+        )
         self.workspace_scoped_auth = workspace_scoped_auth
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
@@ -303,6 +313,9 @@ class X20Application:
         }
         if (method, path) in static_scopes:
             return static_scopes[(method, path)]
+        matched = match_operation(method, path)
+        if matched is not None:
+            return matched[0].scope
         parts = path.strip("/").split("/")
         if any(not part for part in parts):
             return None
@@ -396,6 +409,8 @@ class X20Application:
             or parts[:2] not in (["v2", "runs"], ["v2", "documents"], ["v2", "workspaces"], ["v2", "plugins"], ["v2", "artifacts"], ["v2", "revisions"], ["v2", "baselines"])
         ):
             return False
+        if match_operation(method, path) is not None:
+            return True
         if parts[:2] == ["v2", "documents"]:
             return (
                 (len(parts) == 3 and method == "GET")
@@ -436,6 +451,11 @@ class X20Application:
         ):
             return None
         resource_id = parts[2]
+        matched = match_operation(method, path)
+        if matched is not None:
+            operation, params = matched
+            handler = getattr(self._authoring, operation.handler)
+            return lambda request: handler(request, **params)
         if parts[:2] == ["v2", "documents"]:
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._document(resource_id, request)
@@ -692,6 +712,28 @@ class X20Application:
                 raise APIError("document_lifecycle_unavailable", str(exc), 503) from exc
             self._document_services[workspace_root] = service
             return service
+
+    def _authoring_workspace_root(self, request: Request, body_workspace_id: str | None) -> str:
+        workspace_id = request.query.get("workspace_id") or body_workspace_id
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        workspace = self._resolve_workspace(str(workspace_id))
+        return str(Path(str(workspace["root"])).expanduser().resolve())
+
+    def _workspace_services_for(self, workspace_root: str) -> Any:
+        """Composed application services for one workspace, memoized per root."""
+        if self.workspace_services_factory is None:
+            raise APIError("authoring_unavailable", "Authoring services are not configured", 501)
+        with self._document_service_lock:
+            cached = self._workspace_services.get(workspace_root)
+            if cached is not None:
+                return cached
+            try:
+                services = self.workspace_services_factory(workspace_root)
+            except (OSError, ValueError, KeyError) as exc:
+                raise APIError("authoring_unavailable", str(exc), 503) from exc
+            self._workspace_services[workspace_root] = services
+            return services
 
     @staticmethod
     def _document_summary(service: DocumentService, document_id: str) -> dict[str, Any]:
@@ -1196,7 +1238,7 @@ class X20Application:
         summary = self._document_summary(service, document_id) if document_id else None
         return Response.json(DocumentCurrentResponse(
             current_document_id=document_id,
-            document=summary,
+            document=DocumentSummaryDTO.model_validate(summary) if summary else None,
         ).model_dump())
 
     def _findings(self, request: Request) -> Response:
@@ -1414,6 +1456,8 @@ class X20Application:
         return Response.json(_dict(result), 201)
 
     def _document_classification(self, document_id: str, request: Request) -> Response:
+        if self.classification_service is None and self.workspace_services_factory is not None:
+            return self._authoring.classification(request, document_id)
         if self.classification_service is None:
             raise APIError("classification_unavailable", "Classification is not configured", 501)
         try:

@@ -302,7 +302,7 @@ def test_sidecar_wsgi_routes_document_use_with_workspace_query(tmp_path: Path) -
             method="POST",
         )
         try:
-            response = urllib.request.urlopen(request, timeout=3)
+            response = urllib.request.urlopen(request, timeout=30)  # hang guard; first request composes the workspace services
         except urllib.error.HTTPError as error:
             response = error
         with response:
@@ -328,6 +328,64 @@ def test_sidecar_wsgi_routes_document_use_with_workspace_query(tmp_path: Path) -
         assert status == 200, selected
         assert selected["id"] == "wsgi-lifecycle"
         assert selected["active"] is True
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
+def test_sidecar_wsgi_authoring_routes_use_real_composition(tmp_path: Path) -> None:
+    import base64
+
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    server = build_server(config)
+    application = server._docs_application.application
+    workspace_id = application.workspace_registry.list()[0]["id"]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+
+    def call(method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}{path}",
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=5)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    scope = f"workspace_id={workspace_id}"
+    try:
+        status, _ = call("POST", "/v2/documents", {
+            "workspace_id": workspace_id, "document_id": "authoring", "template": "documento-generico", "title": "A",
+        })
+        assert status == 201
+
+        status, added = call("POST", f"/v2/documents/authoring/assets?{scope}", {
+            "filename": "cover.docx", "content_base64": base64.b64encode(b"PKcover").decode(),
+        })
+        assert status == 201, added
+        status, listed = call("GET", f"/v2/documents/authoring/assets?{scope}")
+        assert listed["items"] == [{"name": "cover"}]
+
+        status, ingested = call("POST", f"/v2/documents/authoring/ingest?{scope}", {"files": [
+            {"filename": "n.md", "content_base64": base64.b64encode(b"# Hola\n\nTexto.\n").decode()},
+        ]})
+        assert status == 200, ingested
+        assert ingested["stages"][0]["name"] == "ingest-sources"
+
+        status, queue = call("GET", f"/v2/documents/authoring/classification?{scope}")
+        assert status in {200, 404}, queue
+
+        status, elicited = call("POST", f"/v2/documents/authoring/context/requests?{scope}", {"topic": "tema"})
+        assert status == 200, elicited
+        status, _missing = call("GET", f"/v2/documents/ghost/assets?{scope}")
+        assert status == 404
+        status, removed = call("DELETE", f"/v2/documents/authoring/assets/cover?{scope}")
+        assert status == 200 and removed["removed"] == "cover"
     finally:
         server.shutdown()
         thread.join(timeout=2)
@@ -499,3 +557,20 @@ def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace
     assert evidence.artifact().list_for_run("second-run") == [artifact]
     assert evidence.finding().list_for_run("second-run")[0]["id"] == "finding-1"
     assert evidence.publication().list_for_workspace(second["id"]) == [{"id": "publication-1", "run_id": "second-run"}]
+
+
+def test_build_application_degrades_for_an_existing_workspace_without_marker(tmp_path: Path) -> None:
+    root = tmp_path / "legacy"  # tmp_path itself is pre-marked by the autouse fixture
+    (root / "documents").mkdir(parents=True)
+    application = build_application(SidecarConfig(workspace=root))
+    assert application.application is None
+    assert application.workspace_error == "workspace_marker_missing"
+    assert not (root / "workspace.json").exists()
+
+
+def test_build_application_boots_a_fresh_workspace_and_writes_the_marker(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    application = build_application(SidecarConfig(workspace=root))
+    assert application.application is not None
+    assert application.workspace_error is None
+    assert (root / "workspace.json").is_file()

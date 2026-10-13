@@ -654,7 +654,16 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             workspace_error="workspace_not_configured",
         )
     registry = WorkspaceRegistry(config.workspace / ".docs" / "workspaces.json")
-    configured_workspace = registry.ensure("Local workspace", config.workspace)
+    try:
+        configured_workspace = registry.ensure("Local workspace", config.workspace)
+    except WorkspaceRegistryError as exc:
+        # An unusable workspace degrades /health instead of killing the process.
+        return _HealthApplication(
+            None,
+            urlsplit(config.health_url).path,
+            config.protocol,
+            workspace_error=exc.code,
+        )
     _seed_builtin_templates(config.workspace)
     # Plugin discovery is optional and declarative: manifests are inspected
     # without importing or executing plugin code. The core remains fully
@@ -675,12 +684,15 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     findings_store = evidence_stores.finding()
     publication_store = evidence_stores.publication()
 
-    def document_service_factory(workspace_root: str) -> Any:
+    def workspace_services_factory(workspace_root: str) -> Any:
+        """The composed application the CLI uses, for one workspace root."""
         from .composition import compose_application
         from .domain.workspace import Workspace
 
-        deps = compose_application(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
-        return deps.documents
+        return compose_application(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
+
+    def document_service_factory(workspace_root: str) -> Any:
+        return workspace_services_factory(workspace_root).documents
 
     def document_action(workspace_root: str, document_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         from .composition import compose_application
@@ -817,28 +829,6 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             )
         return result.to_dict()
 
-    def document_classification(document_id: str, payload: dict[str, Any] | None) -> dict[str, Any]:
-        """Expose the real ingest classification queue to every client surface."""
-        active = registry.active()
-        if active is None:
-            raise RuntimeError("workspace_not_configured")
-        queue_path = Path(str(active["root"])) / "documents" / document_id / "inbox" / "_classification-queue.json"
-        if not queue_path.is_file():
-            raise FileNotFoundError("classification queue is not available; run import or prepare first")
-        queue = json.loads(queue_path.read_text(encoding="utf-8"))
-        entries = queue if isinstance(queue, list) else queue.get("items", queue.get("sources", []))
-        if payload is not None:
-            relative_path = str(payload.get("relative_path", ""))
-            role = str(payload.get("confirmed_role", ""))
-            if not relative_path or role not in {"evidence", "example", "normative"}:
-                raise ValueError("relative_path and confirmed_role (evidence, example, or normative) are required")
-            matched = next((entry for entry in entries if str(entry.get("relative_path")) == relative_path), None)
-            if matched is None:
-                raise ValueError("classification source was not found")
-            matched["confirmed_role"] = role
-            queue_path.write_text(json.dumps(queue, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return {"document_id": document_id, "items": entries}
-
     def read_document_context(document_id: str, workspace_root: str | None = None) -> dict[str, Any]:
         if workspace_root is not None:
             root = workspace_root
@@ -872,7 +862,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         document_context_reader=read_document_context,
         document_context_writer=set_document_context,
         revision_service=revise_document,
-        classification_service=document_classification,
+        workspace_services_factory=workspace_services_factory,
         router=Router(
             cors_origins=config.cors_origins,
             max_body_size=config.max_body_bytes,
