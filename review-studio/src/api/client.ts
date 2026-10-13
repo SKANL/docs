@@ -403,7 +403,7 @@ export class ReviewApiClient {
       const request = withSignal(signal, this.timeoutMs);
       try {
         const workspaceId = await this.workspaceId();
-        const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress?workspace_id=${encodeURIComponent(workspaceId)}`), { signal: request.signal, headers: { Accept: "text/event-stream" } });
+        const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress?workspace_id=${encodeURIComponent(workspaceId)}`), { signal: request.signal, headers: { Accept: "text/event-stream", ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}) } });
         if (!response.ok) throw await errorFromResponse(response);
         if (!response.body) throw new ApiError("Progress stream has no body", 502, "empty_stream");
         await yieldSse(response.body, event => {

@@ -74,6 +74,13 @@ describe("streamProgress terminal event", () => {
     expect(events.map(e => e.type)).toEqual(["build", "terminal"]);
   });
 
+  it("sends the Bearer token on the progress stream like every other request", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => sse("event: terminal\ndata: {\"run\":{\"id\":\"r1\",\"status\":\"succeeded\"}}\n\n"));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", accessToken: "token-123", fetch: fetcher });
+    await client.streamProgress("r1", () => {});
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Accept: "text/event-stream", Authorization: "Bearer token-123" } });
+  });
+
   it("recognises a terminal event even when the run status is not in the known list", async () => {
     const { client, fetcher } = setup(() => sse("event: terminal\ndata: {\"run\":{\"id\":\"r1\",\"status\":\"timed_out\"}}\n\n"));
     await client.streamProgress("r1", () => {});
