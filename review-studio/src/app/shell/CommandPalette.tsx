@@ -21,7 +21,7 @@ export function CommandPalette({ open, onOpenChange }: Props) {
         {areas.map(({ id, label, path }) => <CommandItem key={id} value={label} onSelect={() => go(path)}>{label}</CommandItem>)}
       </CommandGroup>
       {capabilities.some(item => item.enabled) && <CommandGroup heading="Capabilities">
-        {capabilities.filter(item => item.enabled).map(item => <CommandItem key={item.id} value={item.cli_command} onSelect={() => go(areaPathForSlice(item.slice))}>{item.cli_command}</CommandItem>)}
+        {capabilities.filter(item => item.enabled).map(item => <CommandItem key={item.id} value={item.cli_command ?? item.id} onSelect={() => go(areaPathForSlice(item.slice))}>{item.cli_command ?? item.id}</CommandItem>)}
       </CommandGroup>}
     </CommandList>
   </CommandDialog>;
