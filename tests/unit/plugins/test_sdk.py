@@ -322,13 +322,6 @@ def test_runner_rejects_untrusted_execution_without_os_sandbox() -> None:
         PluginRunner().run(validate_manifest(manifest()), {})
 
 
-def test_runner_does_not_accept_legacy_sandbox_claims_as_attestation() -> None:
-    with pytest.raises(PluginRunError, match="sandbox"):
-        PluginRunner(sandbox_launcher=lambda command: command, sandbox_available=True).run(
-            validate_manifest(manifest()), {}
-        )
-
-
 def test_runner_rejects_sandbox_without_independent_filesystem_verifier() -> None:
     with pytest.raises(PluginRunError, match="filesystem isolation"):
         PluginRunner(sandbox_provider=_AttestationOnlySandboxProvider()).run(

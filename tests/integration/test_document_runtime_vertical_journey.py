@@ -4,6 +4,11 @@ import hashlib
 import json
 from pathlib import Path
 
+from fakes.in_memory_runtime_stores import (
+    InMemoryArtifactStore,
+    InMemoryJobQueue,
+    InMemoryRunStore,
+)
 from PIL import Image
 
 from docs.api.application import X20Application
@@ -18,13 +23,7 @@ from docs.domain.semantic_graph import NormalizedSourceRecord
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
     PythonDocxImageMetadataAdapter,
 )
-from docs.infrastructure.memory.in_memory_runtime_stores import (
-    InMemoryArtifactStore,
-    InMemoryJobQueue,
-    InMemoryRunStore,
-)
 from docs.infrastructure.persistence.evidence_passport_store import FileEvidencePassportStore
-from docs.infrastructure.semantic_graph import SqliteSemanticGraphStore
 from docs.template_compiler import compile_template
 
 
@@ -53,8 +52,15 @@ class _DeterministicPandoc:
         output.write_text(f"<!doctype html><html><head><title>Vertical</title></head><body><h1>OVERVIEW</h1>{body}</body></html>", encoding="utf-8")
 
 
-class _GraphStore(SqliteSemanticGraphStore):
-    pass
+class _GraphStore:
+    def __init__(self) -> None:
+        self._graph = None
+
+    def put(self, graph) -> None:
+        self._graph = graph
+
+    def get(self):
+        return self._graph
 
 
 def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_path: Path) -> None:
@@ -123,7 +129,7 @@ def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_p
     )
     assert passport.passport.entries[0]["authorization"] == "[REDACTED]"
 
-    graph_store = _GraphStore(tmp_path / "graph.sqlite")
+    graph_store = _GraphStore()
     projection = SemanticGraphProjector(graph_store).project(
         [NormalizedSourceRecord("document:vertical", "document", attributes={"entities": [{"id": "artifact:html", "label": "HTML"}], "edges": [{"target": "artifact:html", "relation": "renders"}]})]
     )

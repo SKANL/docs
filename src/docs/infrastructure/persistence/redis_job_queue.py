@@ -49,10 +49,6 @@ class RedisJobQueue:
         return f"{self.key}:claimed:expiry"
 
     @property
-    def _quarantine_key(self) -> str:
-        return f"{self.key}:quarantine"
-
-    @property
     def _cancelled_key(self) -> str:
         return f"{self.key}:cancelled"
 
@@ -105,21 +101,6 @@ class RedisJobQueue:
     def _require_eval_capability(self) -> None:
         if not hasattr(self._client, "eval"):
             raise RuntimeError("Redis client lacks required eval capability; refusing unsafe compatibility path")
-
-    def _reclaim_expired(self) -> None:
-        client = self._client
-        if client is None:
-            return
-        now = self._clock()
-        expired = client.zrangebyscore(self._claimed_expiry_key, float("-inf"), now)
-        for raw_job_id in expired:
-            job_id = raw_job_id.decode("utf-8") if isinstance(raw_job_id, bytes) else raw_job_id
-            payload = client.hget(self._claimed_payload_key, job_id)
-            if payload is not None:
-                client.rpush(self.key, payload)
-            client.hdel(self._claimed_payload_key, job_id)
-            client.hdel(self._claimed_owner_key, job_id)
-            client.zrem(self._claimed_expiry_key, job_id)
 
     def ack(self, job_id: str, worker_id: str) -> bool:
         if self._client is None:

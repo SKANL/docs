@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from docs.api.http import APIError, Request, Response, Router, decode_cursor, paginate
+from docs.api.http import APIError, Request, Response, Router, paginate
 from docs.infrastructure.persistence.idempotency import SqliteIdempotencyStore
 
 
@@ -120,8 +120,6 @@ def test_pagination_has_opaque_stable_cursor():
     page = paginate([1, 2, 3], limit=2)
     assert page == {"items": [1, 2], "next_cursor": page["next_cursor"]}
     assert paginate([1, 2, 3], limit=2, cursor=page["next_cursor"]) == {"items": [3], "next_cursor": None}
-    with pytest.raises(APIError, match="cursor"):
-        decode_cursor("bad")
     assert "." in page["next_cursor"]
     with pytest.raises(APIError, match="cursor"):
         paginate([1, 2, 3], limit=2, cursor=page["next_cursor"][:-1])

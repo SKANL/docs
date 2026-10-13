@@ -40,7 +40,7 @@ class Workspace:
 
 
 def _canonical_parent(documents_dir: Path, templates_dir: Path) -> Path:
-    """Compatibility for canonical sibling layouts while callers migrate.
+    """Return the shared parent of the canonical sibling layout.
 
     Inferring a generic common ancestor would accidentally authorize split
     roots.  Only the canonical sibling shape has an unambiguous root.

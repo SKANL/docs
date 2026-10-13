@@ -161,8 +161,6 @@ class WorkerService:
             return None
         return await self._execute_async(job)
 
-    # Convenient entry-point aliases used by adapters.
-    run = run_sync
     run_once = run_sync
 
     def _execute(self, job: Job) -> WorkerResult:
