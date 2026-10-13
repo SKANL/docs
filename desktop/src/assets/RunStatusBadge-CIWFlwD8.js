@@ -1,0 +1,1 @@
+import{j as r}from"./react-Dr4p0F8r.js";import{B as d}from"./index-B2MBmQxn.js";const n=e=>e==="succeeded"||e==="completed"?"default":e==="failed"||e==="expired"?"destructive":e==="cancelled"?"outline":"secondary";function c({status:e}){return r.jsx(d,{variant:n(e),children:e})}export{c as R};
