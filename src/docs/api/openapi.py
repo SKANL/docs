@@ -104,6 +104,7 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "document build": "POST /v2/documents/{document_id}/build",
     "document verify": "POST /v2/documents/{document_id}/verify",
     "run list": "GET /v2/runs",
+    "run watch": "GET /v2/runs/{run_id}/progress",
     "run show": "GET /v2/runs/{run_id}",
     "run cancel": "POST /v2/runs/{run_id}/cancel",
     "run retry": "POST /v2/runs/{run_id}/retry",

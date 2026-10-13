@@ -7,7 +7,8 @@ import json
 import logging
 import mimetypes
 import threading
-from collections.abc import Callable, Iterable, Mapping
+import time
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -43,6 +44,7 @@ from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_capability_catalog, build_openapi_document, canonical_json
 from .operations import match_operation
+from .pipeline_routes import PipelineRoutes, output_format
 from .section_routes import SectionRoutes
 from .workspace_dto import (
     WorkspaceCreateRequest,
@@ -62,18 +64,7 @@ def _dict(value: Any) -> Any:
     return value.to_dict() if hasattr(value, "to_dict") else dict(value) if isinstance(value, Mapping) else value
 
 
-_SUPPORTED_OUTPUT_FORMATS = frozenset({"docx", "pdf", "html"})
-
-
-def _output_format(value: object) -> str:
-    format_name = str(value or "docx").strip().lower()
-    if format_name not in _SUPPORTED_OUTPUT_FORMATS:
-        raise APIError(
-            "invalid_output_format",
-            f"format must be one of: {', '.join(sorted(_SUPPORTED_OUTPUT_FORMATS))}",
-            400,
-        )
-    return format_name
+_output_format = output_format
 
 
 class X20Application:
@@ -163,7 +154,19 @@ class X20Application:
             workspace_root=self._authoring_workspace_root,
             services_for=self._workspace_services_for,
         )
-        self._operation_routes: dict[str, Any] = {"authoring": self._authoring, "sections": self._sections}
+        self._pipeline = PipelineRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+            enqueue=self._enqueue_pipeline_run,
+        )
+        self._operation_routes: dict[str, Any] = {
+            "authoring": self._authoring, "sections": self._sections, "pipeline": self._pipeline,
+        }
+        # SSE progress stream bounds: a stream never holds a worker thread longer
+        # than `progress_max_seconds`; the client reconnects until terminal.
+        self.progress_poll_interval = 0.5
+        self.progress_heartbeat_seconds = 15.0
+        self.progress_max_seconds = 300.0
         self.workspace_scoped_auth = workspace_scoped_auth
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
@@ -599,6 +602,26 @@ class X20Application:
         self.queue.enqueue(run_id, dict(data))
         return Response.json(run.to_dict(), 201)
 
+    def _enqueue_run(self, run_id: str, payload: dict[str, Any]) -> Run:
+        """The one place a durable run is stored and queued for the worker."""
+        run = Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat())
+        self.run_store.put(run)
+        self.queue.enqueue(run_id, payload)
+        return run
+
+    def _enqueue_pipeline_run(self, request: Request, payload: dict[str, Any]) -> Run:
+        run_id = str(uuid4())
+        payload = {**payload, "run_id": run_id}
+        if request.principal is not None:
+            if request.principal.tenant_id is None or request.principal.organization_id is None:
+                raise AuthError("missing_tenant_identity", "Tenant and organization identity are required", 403)
+            payload.update(
+                owner_subject=request.principal.subject,
+                tenant_id=request.principal.tenant_id,
+                organization_id=request.principal.organization_id,
+            )
+        return self._enqueue_run(run_id, payload)
+
     def _workspaces(self, request: Request) -> Response:
         del request
         if self.workspace_registry is None:
@@ -822,10 +845,7 @@ class X20Application:
                     "policy": "release" if action == "publish" else str(data.get("policy", "release")),
                     "format": _output_format(data.get("format", "docx")),
                 }
-                run = Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat())
-                self.run_store.put(run)
-                self.queue.enqueue(run_id, payload)
-                return Response.json(run.to_dict(), 202)
+                return Response.json(self._enqueue_run(run_id, payload).to_dict(), 202)
             if self.document_action is None:
                 raise APIError("document_action_unavailable", "Document actions are not configured", 501)
             result = self.document_action(workspace["root"], document_id, action, data)
@@ -1026,7 +1046,10 @@ class X20Application:
             items = [item for item in items if self._is_owned(item, request.principal)]
         # workspace_id is resolved from the nested run payload above; do not
         # reinterpret it as a top-level record field in the generic filter.
-        item_filters = {key: value for key, value in request.query.items() if key != "workspace_id"}
+        item_filters = {key: value for key, value in request.query.items() if key not in {"workspace_id", "document_id"}}
+        document_id = request.query.get("document_id")
+        if document_id:
+            items = [item for item in items if _dict(item).get("payload", {}).get("document_id") == document_id]
         return self._page(self._filter(items, item_filters), request, "runs")
 
     def _owned_run(self, run_id: str, request: Request) -> Run:
@@ -1103,8 +1126,10 @@ class X20Application:
         self._owned_run(run_id, request)
         return self._page(self.artifact_store.list_for_run(run_id), request, "artifacts")
 
-    def _progress(self, run_id: str, request: Request) -> Response:
-        run = self._owned_run(run_id, request)
+    _TERMINAL_RUN_STATES = frozenset({"succeeded", "completed", "failed", "cancelled", "expired"})
+
+    @staticmethod
+    def _progress_frame(run: Run) -> bytes:
         payload = dict(run.payload) if isinstance(run.payload, Mapping) else {}
         progress = payload.get("progress")
         checkpoint: Mapping[Any, Any] = progress if isinstance(progress, Mapping) else {}
@@ -1114,11 +1139,39 @@ class X20Application:
             "message": f"{checkpoint.get('stage', run.status)}: {checkpoint.get('percent', 0)}%",
             "run": run.to_dict(),
         }
-        return Response(
-            200,
-            encode_sse_event("progress", event, event_id=run.id).encode(),
-            {"content-type": "text/event-stream", "cache-control": "no-cache"},
-        )
+        return encode_sse_event("progress", event, event_id=run.id).encode()
+
+    def _progress(self, run_id: str, request: Request) -> Response:
+        # Ownership is checked here, before any frame is produced.
+        run = self._owned_run(run_id, request)
+        headers = {"content-type": "text/event-stream", "cache-control": "no-cache"}
+        if request.query.get("once"):
+            return Response(200, self._progress_frame(run), headers)
+        return Response(200, b"", headers, self._progress_stream(run))
+
+    def _progress_stream(self, run: Run) -> Iterator[bytes]:
+        """Emit a frame on each change until terminal, then a `terminal` event and close."""
+        deadline = time.monotonic() + self.progress_max_seconds
+        last_beat = time.monotonic()
+        previous: tuple[str, Any] | None = None
+        current: Run | None = run
+        while current is not None:
+            state = (current.status, dict(current.payload).get("progress") if isinstance(current.payload, Mapping) else None)
+            if state != previous:
+                previous = state
+                last_beat = time.monotonic()
+                yield self._progress_frame(current)
+            if current.status in self._TERMINAL_RUN_STATES:
+                yield encode_sse_event("terminal", {"run": current.to_dict()}, event_id=current.id).encode()
+                return
+            now = time.monotonic()
+            if now >= deadline:
+                return
+            if now - last_beat >= self.progress_heartbeat_seconds:
+                last_beat = now
+                yield b": keepalive\n\n"
+            time.sleep(self.progress_poll_interval)
+            current = self.run_store.get(run.id)
 
     def _graph(self, request: Request) -> Response:
         """Expose deterministic read-only graph queries without mutating the graph."""

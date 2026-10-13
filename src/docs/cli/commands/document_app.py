@@ -27,6 +27,7 @@ from docs.application.document_pipeline import (
     _current_input_identities,
     _resolve_publish_inputs,
 )
+from docs.application.pipeline_plan import describe_pipeline
 from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineRequest
 from docs.application.provenance import ProvenanceLedger
@@ -790,16 +791,9 @@ def plan(
         output_format, document=ctx.obj.get("doc", ""), pipeline_id=pipeline_id
     )
     try:
-        registered = service.registry.resolve(pipeline_id)
+        payload = describe_pipeline(service, pipeline_id)
     except KeyError as exc:
         raise typer.BadParameter(str(exc)) from exc
-    definition = registered.definition
-    payload = {
-        "pipeline_id": pipeline_id,
-        "stages": list(definition.plan()),
-        "external_artifacts": sorted(definition.external_artifacts),
-        "contracts": [contract.to_dict() for contract in definition.artifacts],
-    }
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if json_output

@@ -617,3 +617,45 @@ def test_build_application_boots_a_fresh_workspace_and_writes_the_marker(tmp_pat
     assert application.application is not None
     assert application.workspace_error is None
     assert (root / "workspace.json").is_file()
+
+
+def test_sidecar_run_is_queued_and_watched_over_a_real_sse_stream(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    server = build_server(config)
+    workspace_id = server._docs_application.application.workspace_registry.list()[0]["id"]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    scope = f"workspace_id={workspace_id}"
+
+    def post(path: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"{base}{path}", data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    try:
+        status, _ = post("/v2/documents", {
+            "workspace_id": workspace_id, "document_id": "watched", "template": "documento-generico", "title": "W",
+        })
+        assert status == 201
+        status, plan = post(f"/v2/documents/watched/plan?{scope}", {})
+        assert status == 200 and plan["stages"], plan
+        status, created = post(f"/v2/documents/watched/run?{scope}", {})
+        assert status == 202 and created["links"]["progress"] == f"/v2/runs/{created['id']}/progress", created
+        # The worker process drives the run to a terminal state (a failure is terminal too); the
+        # stream must end by itself with a `terminal` event rather than hang the connection.
+        stream = urllib.request.urlopen(f"{base}{created['links']['progress']}?{scope}", timeout=120)  # hang guard
+        with stream:
+            assert stream.headers["Content-Type"].startswith("text/event-stream")
+            text = stream.read().decode("utf-8")
+        assert "event: progress" in text and text.rstrip().rsplit("event: ", 1)[1].startswith("terminal")
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)

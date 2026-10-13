@@ -84,6 +84,7 @@ class Response:
     status: int
     body: bytes
     headers: Mapping[str, str]
+    stream: Iterable[bytes] | None = None  # set for SSE: sent instead of `body`
 
     @classmethod
     def json(cls, value: Any, status: int = 200, headers: Mapping[str, str] | None = None) -> Response:
@@ -169,9 +170,9 @@ def paginate(
     if not 1 <= limit <= max_limit:
         raise APIError("invalid_pagination", f"limit must be between 1 and {max_limit}")
     values = list(items)
-    binding = hashlib.sha256(
-        json.dumps([resource, sorted((query or {}).items())], separators=(",", ":"), sort_keys=True).encode()
-    ).hexdigest()
+    # The cursor names a position, not part of the query it pages through.
+    bound = sorted((k, v) for k, v in (query or {}).items() if k != "cursor")
+    binding = hashlib.sha256(json.dumps([resource, bound], separators=(",", ":"), sort_keys=True).encode()).hexdigest()
     start = 0
     if cursor:
         data = _decode(cursor)
@@ -378,7 +379,7 @@ class Router:
             h["access-control-allow-origin"] = origin
         else:
             h.pop("access-control-allow-origin", None)
-        return Response(response.status, response.body, h)
+        return Response(response.status, response.body, h, response.stream)
 
     def __call__(self, environ, start_response):
         raw_length = environ.get("CONTENT_LENGTH")
@@ -409,7 +410,7 @@ class Router:
             )
             response = self.dispatch(request)
         start_response(f"{response.status} {_REASON.get(response.status, '')}", list(response.headers.items()))
-        return [response.body]
+        return [response.body] if response.stream is None else response.stream
 
 
 class _NullLock:
