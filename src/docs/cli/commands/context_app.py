@@ -43,7 +43,6 @@ def context_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--js
 def context_elicit(
     ctx: typer.Context,
     topic: str = typer.Option("", "--topic"),
-    requests: bool = typer.Option(False, "--requests", help="(mode) el cuestionario es el único modo disponible."),
 ) -> None:
     """Escribe el cuestionario `_requests.md` con los campos de contexto que faltan.
 

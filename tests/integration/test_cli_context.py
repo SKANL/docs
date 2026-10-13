@@ -61,6 +61,11 @@ def test_context_elicit_writes_questionnaire(ws):
     assert result.output.strip().splitlines()[0].endswith("_requests.md")
 
 
+def test_context_elicit_has_no_requests_flag(ws):
+    result = runner.invoke(app, ["context", "elicit", "--requests"])
+    assert result.exit_code == 2
+
+
 def test_context_ingest_reports_topics(ws):
     runner.invoke(app, ["context", "elicit"])
     # ingest with an unfilled questionnaire writes nothing
