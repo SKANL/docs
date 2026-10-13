@@ -20,7 +20,7 @@ contract now lives in `openspec/specs/`.
   see the project's dependencies, which is how `mypy` once reported ~19
   phantom `import-not-found` errors and `coverage` failed collection
   outright. Both are green; CI keeps them that way.
-- Coverage: `uv run pytest --cov=src` (96%; CI floor is 93%).
+- Coverage: `uv run pytest --cov=src` (89% as of 2026-10-05; the CI floor is `--cov-fail-under=86` in `.github/workflows/quality.yml`).
 
 ## Layout
 
@@ -322,7 +322,7 @@ real enforcement rather than a green vacuum.
 
 | Job | Guards | Cost |
 |---|---|---|
-| `check` | ruff, mypy, the suite, a 93% coverage floor | ~1 min |
+| `check` | ruff, mypy, the suite, an 86% coverage floor | ~1 min |
 | `architecture` | the hexagonal layering rule, against a real GitNexus index | ~1.5 min |
 | `toolchains` | every optional-toolchain path, with LibreOffice/Java/mmdc/resvg installed | ~4 min |
 
