@@ -27,16 +27,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from docs.domain.translation_sidecars import translation_sidecars
 from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
 
 ENGINE_ID = "agent-slot-v1"
 
-_PENDING_SUFFIX = ".pending.json"
-
-
 def pending_path_for(out_path: Path) -> Path:
     """The slot file that accompanies `out_path`."""
-    return out_path.with_suffix(out_path.suffix + _PENDING_SUFFIX)
+    return translation_sidecars(out_path)[1]
 
 
 class PendingSlotTranslator:

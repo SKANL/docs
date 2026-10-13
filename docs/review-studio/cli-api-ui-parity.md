@@ -5,25 +5,25 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | CLI command | API operation | API status | UI surface/action | Owning slice | Required scopes |
 | --- | --- | --- | --- | --- | --- |
 | `docs apply-corrections` | `POST /v2/documents/{document_id}/corrections/apply` | available | Not exposed yet (API only) | S4 | `documents:write` |
-| `docs build-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs build-ledger` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs build-rules` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
+| `docs build-docx` | `POST /v2/documents/{document_id}/build-docx` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs build-ledger` | `POST /v2/documents/{document_id}/build-ledger` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs build-rules` | `POST /v2/documents/{document_id}/build-rules` | available | Not exposed yet (API only) | S6 | `documents:write` |
 | `docs build-section` | `POST /v2/documents/{document_id}/sections/{section_id}/build` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs collect-code-evidence` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs collect-issues` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs collect-sources` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs doctor` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
-| `docs explain` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
-| `docs format-audit-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs guide` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
+| `docs collect-code-evidence` | `POST /v2/documents/{document_id}/collect-code-evidence` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs collect-issues` | `POST /v2/documents/{document_id}/collect-issues` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs collect-sources` | `POST /v2/documents/{document_id}/collect-sources` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs doctor` | `GET /v2/diagnostics` | available | Not exposed yet (API only) | S0 | `documents:read` |
+| `docs explain` | `GET /v2/issue-codes/{code}` | available | Not exposed yet (API only) | S0 | `documents:read` |
+| `docs format-audit-docx` | `POST /v2/documents/{document_id}/format-audit-docx` | available | Not exposed yet (API only) | S6 | `documents:read` |
+| `docs guide` | — | excluded | Excluded (CLI only): Prints the packaged agent contract (docs/data/AGENTS.md) to stdout so a terminal-driven AI agent can bootstrap itself; the Review Studio is the guided surface and has no agent-instruction action. | S0 | — |
 | `docs pack-context` | `POST /v2/documents/{document_id}/context-pack` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs qa-docx` | `POST /v2/documents/{document_id}/qa-docx` | available | Not exposed yet (API only) | S4 | `documents:write` |
 | `docs review-document` | `POST /v2/documents/{document_id}/review` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs review-rules` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
+| `docs review-rules` | `POST /v2/documents/{document_id}/review-rules` | available | Not exposed yet (API only) | S6 | `documents:read` |
 | `docs review-section` | `POST /v2/documents/{document_id}/sections/{section_id}/review` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs stamp` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
+| `docs stamp` | — | excluded | Excluded (CLI only): Prints a bare local timestamp for stamps an agent writes by hand; over HTTP the server stamps sections itself, with its own clock, through POST /v2/documents/{document_id}/sections/{section_id}/stamp. | S0 | — |
 | `docs stamp-section` | `POST /v2/documents/{document_id}/sections/{section_id}/stamp` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs translate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
+| `docs translate` | `POST /v2/translations` | available | Not exposed yet (API only) | S6 | `documents:write` |
 | `docs asset add` | `POST /v2/documents/{document_id}/assets` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs asset list` | `GET /v2/documents/{document_id}/assets` | available | Not exposed yet (API only) | S2 | `documents:read` |
 | `docs asset rm` | `DELETE /v2/documents/{document_id}/assets/{asset_name}` | available | Not exposed yet (API only) | S2 | `documents:write` |

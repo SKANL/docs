@@ -289,6 +289,10 @@ ISSUE_CODES: dict[str, IssueCode] = {
         meaning="Un campo del template no respeta el tipo o la forma que el esquema exige.",
         fix="Corregí el campo según el mensaje de validación que acompaña al hallazgo.",
     ),
+    "template.json.invalid": IssueCode(
+        meaning="El archivo de la plantilla no es JSON válido o su raíz no es un objeto, así que no se pudo validar.",
+        fix="Corregí la sintaxis del archivo `templates/<nombre>.json` (o el borrador enviado) hasta que sea un objeto JSON y repetí `template validate`.",
+    ),
     "template.unknown_key": IssueCode(
         meaning="Una clave del template se parece mucho a un campo real pero no es ninguno, en un contrato de sección o en un bloque de configuración (`format`, `paths`, `output`...).",
         fix="Corregí la clave al nombre que el hallazgo sugiere. Mientras no coincida, el arnés la ignora: la regla o el valor que declaraste no se aplica. Si quedó de una versión anterior y la querés conservar como nota, prefijala con `_`.",

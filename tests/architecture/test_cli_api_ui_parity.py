@@ -86,9 +86,10 @@ def test_capability_catalog_http_route_returns_the_declared_catalog():
 # `document classify` left the partial-equivalent guard in S2.1, `document publish` in S5.1
 # and `doc status` in S6.1: each now runs the same canonical service as its CLI command
 # (`doc status` through `build_document_summary`), so none is partial any more.
+# S6.2 closed the last `planned` rows: `guide` and `stamp` are terminal-only agent helpers, excluded with a reason.
 def test_excluded_commands_carry_a_reason_and_no_route():
     excluded = [item for item in _capabilities() if item["status"] == "excluded"]
-    assert {item["cli_command"] for item in excluded} == {"doc init"}
+    assert {item["cli_command"] for item in excluded} == {"doc init", "guide", "stamp"}
     for item in excluded:
         assert item["route"] is None and item["scopes"] == [], item
         assert item["reason"].strip(), item

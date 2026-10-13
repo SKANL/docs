@@ -7,6 +7,7 @@ from pathlib import Path
 
 import typer
 
+from docs.application.document_tools import run_diagnostics
 from docs.cli._shared import _ctx, emit_result
 from docs.domain.issue_codes import ISSUE_CODES, explain_code
 from docs.domain.review import ReviewDimension, ReviewResult
@@ -48,23 +49,7 @@ def doctor(ctx: typer.Context, strict: bool = typer.Option(False, "--strict"), a
     """Check workspace readiness and native v2 capabilities."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    result = deps.doctor.run_doctor(resolved.doc_id, resolved.config, strict=strict)
-    output = resolved.config.get("output", {})
-    output_format = output.get("format", "docx") if isinstance(output, dict) else "docx"
-    try:
-        renderer = deps.resolve_renderer(resolved.config)
-    except (AttributeError, TypeError, ValueError):
-        renderer = None
-    registry = deps.create_capability_registry(
-        renderer,
-        str(output_format),
-        deps.workspace.doc_root(resolved.doc_id),
-        resolved.config.get("paths", {}),
-    )
-    result.capabilities = registry.report()
-    result.capability_diagnostics = registry.diagnostics()
-    result.capabilities = dict(sorted(result.capabilities.items()))
-    result.capability_diagnostics = dict(sorted(result.capability_diagnostics.items()))
+    result = run_diagnostics(deps, resolved, strict=strict)
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 2)
 

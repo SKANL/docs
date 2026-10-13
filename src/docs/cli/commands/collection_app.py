@@ -11,8 +11,8 @@ from pathlib import Path
 
 import typer
 
+from docs.application.document_tools import check_rules, write_fact_ledger
 from docs.cli._shared import _ctx, emit_result
-from docs.domain.rules import review_rules as domain_review_rules
 
 collection_app = typer.Typer()
 
@@ -40,8 +40,7 @@ def review_rules(ctx: typer.Context, strict: bool = typer.Option(False, "--stric
     Sale con código 1 si falta o no cumple. `--strict` endurece el criterio."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    manifest_exists, manifest_size = deps.rules_manifest_state(resolved.config)
-    result = domain_review_rules(resolved.template, manifest_exists, manifest_size, strict=strict)
+    result = check_rules(deps, resolved, strict=strict)
     emit_result(result, as_json)
     raise typer.Exit(code=0 if result.passed else 1)
 
@@ -70,8 +69,4 @@ def build_ledger(ctx: typer.Context) -> None:
     """Escribe el ledger de hechos: contexto confirmado más la evidencia ya recolectada."""
     deps, doc = _ctx(ctx)
     resolved = deps.resolve_context(doc)
-    path = Path(resolved.config["paths"]["fact_ledger"])
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = deps.context.confirmed_lines(resolved.doc_id, resolved.template)
-    path.write_text(deps.evidence.render_fact_ledger(resolved.config, lines), encoding="utf-8")
-    print(path)
+    print(write_fact_ledger(deps, resolved))

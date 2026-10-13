@@ -14,12 +14,9 @@ import typer
 
 from docs.application.translate import UntranslatablePdfError
 from docs.cli._shared import _ctx
-from docs.infrastructure.translate.pending_slot_translator import pending_path_for
+from docs.domain.translation_sidecars import translation_sidecars
 
 translate_app = typer.Typer()
-
-_MEMORY_DIRNAME = "translations"
-
 
 @translate_app.command("translate")
 def translate(
@@ -45,8 +42,7 @@ def translate(
         raise typer.Exit(code=1)
 
     destination = Path(output) if output else source.with_name(f"{source.stem}.{to}.pdf")
-    memory_dir = destination.parent / _MEMORY_DIRNAME
-    pending_file = pending_path_for(destination)
+    memory_dir, pending_file = translation_sidecars(destination)
 
     service, translator = deps.build_translate_service(memory_dir, pending_file)
     if service is None:
