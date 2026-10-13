@@ -54,7 +54,7 @@ def required_scope(method: str, path: str) -> str | None:
             return "workspaces:write"
         if len(parts) == 4 and parts[3] == "status" and method == "GET":
             return "workspaces:read"
-        if len(parts) == 4 and parts[3] in {"use", "migrate"} and method == "POST":
+        if len(parts) == 4 and parts[3] == "use" and method == "POST":
             return "workspaces:write"
     if parts[:2] == ["v2", "documents"] and len(parts) in {3, 4, 5}:
         if len(parts) == 3 and method == "GET":

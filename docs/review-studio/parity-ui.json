@@ -648,16 +648,6 @@
    "review-studio/e2e/review-studio.spec.ts › renders real workspace, run, artifact, and provenance data"
   ]
  },
- "workspace migrate": {
-  "ui": "/configure/workspaces › Migrate workspace",
-  "api": [
-   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_status_and_migrate"
-  ],
-  "proof": [
-   "review-studio/src/test/workspaceJourneys.test.tsx › allows migration review to be cancelled and recovers from server errors",
-   "review-studio/e2e/review-studio.spec.ts › selects a workspace and inspects migration through the shared lifecycle UI"
-  ]
- },
  "workspace rename": {
   "ui": "/configure/workspaces › Rename workspace",
   "api": [
@@ -671,21 +661,20 @@
  "workspace status": {
   "ui": "/configure/workspaces › Inspect workspace",
   "api": [
-   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_status_and_migrate"
+   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_and_status"
   ],
   "proof": [
-   "review-studio/src/test/workspaceJourneys.test.tsx › allows migration review to be cancelled and recovers from server errors",
-   "review-studio/e2e/review-studio.spec.ts › selects a workspace and inspects migration through the shared lifecycle UI"
+   "review-studio/e2e/review-studio.spec.ts › selects a workspace through the shared lifecycle UI"
   ]
  },
  "workspace use": {
   "ui": "/configure/workspaces › Select workspace",
   "api": [
-   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_status_and_migrate"
+   "tests/unit/api/test_application.py::test_workspace_lifecycle_use_and_status"
   ],
   "proof": [
    "review-studio/src/test/workspaceJourneys.test.tsx › explains that workspace selection is unavailable when the API has no selection capability",
-   "review-studio/e2e/review-studio.spec.ts › selects a workspace and inspects migration through the shared lifecycle UI"
+   "review-studio/e2e/review-studio.spec.ts › selects a workspace through the shared lifecycle UI"
   ]
  }
 }

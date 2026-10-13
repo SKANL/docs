@@ -111,7 +111,7 @@ def _validated_workspace(root: Path, documents_dir: Path, templates_dir: Path) -
 def build_workspace() -> Workspace:
     """Resolve and validate workspace roots before exposing them to services.
 
-    Bootstrap and migration commands establish canonical state through their
+    Bootstrap commands establish canonical state through their
     dedicated flows. All ordinary config, environment, default, and selected
     workspace resolution paths are read-only and reject an unmarked root before
     any service can construct adapters or create state.

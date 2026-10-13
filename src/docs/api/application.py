@@ -356,8 +356,6 @@ class ApiApplication:
             return lambda request: workspaces.use(workspace_id, request)
         if len(parts) == 4 and parts[3] == "status" and method == "GET":
             return lambda request: workspaces.status(workspace_id, request)
-        if len(parts) == 4 and parts[3] == "migrate" and method == "POST":
-            return lambda request: workspaces.migrate(workspace_id, request)
         return None
 
     def _run_handler(self, method: str, parts: list[str]) -> Any:

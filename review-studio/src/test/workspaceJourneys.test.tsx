@@ -17,7 +17,6 @@ function makeApi(overrides: Partial<ReviewApi> = {}): ReviewApi {
     createWorkspace: async input => ({ ...workspace, name: input.name }),
     renameWorkspace: async (_id, name) => ({ ...workspace, name }), deleteWorkspace: async id => ({ deleted: id }),
     getWorkspaceStatus: async id => ({ workspace: { ...workspace, id }, active: id === workspace.id }),
-    migrateWorkspace: async id => ({ source_workspace_id: id, detected_format: "legacy", ready: true, published: false, errors: [] }),
     listDocuments: async () => [document], getCurrentDocument: async () => ({ current_document_id: null, document: null }),
     useDocument: async id => ({ ...document, id, active: true }),
     createDocument: async input => ({ id: input.documentId, title: input.title, template: input.template, active: true }),
@@ -99,35 +98,6 @@ describe("workspace and document journeys", () => {
     expect(await screen.findByText("Workspace deleted.")).toBeTruthy();
   });
 
-  it("allows migration review to be cancelled and recovers from server errors", async () => {
-    let failedApply = false;
-    const migrateWorkspace = vi.fn(async (_id: string, input: { apply: boolean }) => {
-      if (!input.apply) return { source_workspace_id: workspace.id, detected_format: "legacy", ready: true, published: false, errors: [] };
-      if (!failedApply) { failedApply = true; throw new Error("Migration service is temporarily unavailable"); }
-      return { source_workspace_id: workspace.id, detected_format: "legacy", ready: true, published: true, workspace: { ...workspace, id: "workspace-migrated", name: "Research migrated" }, errors: [] };
-    });
-    window.location.hash = "#/configure/workspaces";
-    render(<App api={makeApi({ migrateWorkspace })} />);
-
-    await screen.findByRole("heading", { name: "Workspace and document control" });
-    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
-    fireEvent.click(await screen.findByRole("button", { name: "Review migration" }));
-    const dialog = await screen.findByRole("dialog", { name: "Migrate workspace" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Migrate workspace" })).toBeNull());
-
-    fireEvent.click(screen.getByRole("button", { name: "Review migration" }));
-    const reopened = await screen.findByRole("dialog", { name: "Migrate workspace" });
-    fireEvent.click(within(reopened).getByRole("button", { name: "Inspect workspace" }));
-    await waitFor(() => expect(migrateWorkspace).toHaveBeenCalledWith(workspace.id, { apply: false }));
-    await screen.findByText("Ready");
-    fireEvent.click(within(reopened).getByRole("button", { name: "Migrate workspace" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("Migration service is temporarily unavailable");
-    fireEvent.click(within(reopened).getByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(migrateWorkspace).toHaveBeenLastCalledWith(workspace.id, { apply: true }));
-    expect(await screen.findByText(/workspace migrated/i)).toBeTruthy();
-  });
-
   it("creates and selects a document, then supports rename and confirmed deletion", async () => {
     const docs = [document];
     let currentId: string | null = null;
@@ -189,31 +159,6 @@ describe("workspace and document journeys", () => {
 
     expect(await screen.findByText(/created, but selection is unavailable/)).toBeTruthy();
     expect(screen.queryByText("Document Created only created and selected.")).toBeNull();
-  });
-
-  it("blocks repeating migration when apply returns no resulting workspace", async () => {
-    const migrateWorkspace = vi.fn(async (_id: string, input: { apply: boolean }) => ({
-      source_workspace_id: workspace.id,
-      detected_format: "legacy",
-      ready: true,
-      published: input.apply,
-      errors: [],
-    }));
-    window.location.hash = "#/configure/workspaces";
-    render(<App api={makeApi({ migrateWorkspace })} />);
-
-    await screen.findByRole("heading", { name: "Workspace and document control" });
-    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
-    fireEvent.click(screen.getByRole("button", { name: "Review migration" }));
-    const dialog = await screen.findByRole("dialog", { name: "Migrate workspace" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Inspect workspace" }));
-    await screen.findByText("Ready");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Migrate workspace" }));
-
-    expect(await within(dialog).findByText(/did not include the resulting workspace/)).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: "Inspect workspace" }).hasAttribute("disabled")).toBe(false);
-    expect(within(dialog).getByRole("button", { name: "Try again" }).hasAttribute("disabled")).toBe(true);
-    expect(migrateWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it("allows closing pending creation dialogs and prevents a duplicate submission", async () => {

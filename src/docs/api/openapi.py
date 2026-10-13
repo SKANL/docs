@@ -92,7 +92,6 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "workspace create": "POST /v2/workspaces",
     "workspace use": "POST /v2/workspaces/{workspace_id}/use",
     "workspace status": "GET /v2/workspaces/{workspace_id}/status",
-    "workspace migrate": "POST /v2/workspaces/{workspace_id}/migrate",
     "workspace rename": "PATCH /v2/workspaces/{workspace_id}",
     "workspace delete": "DELETE /v2/workspaces/{workspace_id}",
     "doc list": "GET /v2/documents",
@@ -272,9 +271,6 @@ def _declared_paths() -> dict[str, Any]:
         },
         "/v2/workspaces/{workspace_id}/status": {
             "get": _operation("Get workspace status", _json_response(_ref("workspace_status")), scopes=("workspaces:read",)),
-        },
-        "/v2/workspaces/{workspace_id}/migrate": {
-            "post": _operation("Migrate workspace", _json_response(_ref("workspace_migration")), request=_ref("workspace_migrate_request"), scopes=("workspaces:write",)),
         },
         "/v2/documents": {"get": _operation("List documents", _page("document_summary"), scopes=("documents:read",)), "post": _operation("Create document", _json_response(_ref("document_summary")), request=_ref("document_create_request"), scopes=("documents:write",), success_status=201)},
         "/v2/current-document": {

@@ -89,7 +89,6 @@ describe("ReviewApiClient", () => {
       if (url.pathname === "/v2/workspaces" && init?.method === undefined) return jsonResponse({ items: [workspace] });
       if (url.pathname.endsWith("/use") && url.pathname.startsWith("/v2/workspaces/")) return jsonResponse(workspace);
       if (url.pathname.endsWith("/status") && url.pathname.startsWith("/v2/workspaces/")) return jsonResponse({ workspace, active: true });
-      if (url.pathname.endsWith("/migrate")) return jsonResponse({ source_workspace_id: workspace.id, detected_format: "legacy", ready: true, published: false, errors: [] });
       if (url.pathname === "/v2/documents") return jsonResponse({ items: [summary] });
       if (url.pathname === "/v2/current-document") return jsonResponse({ current_document_id: summary.id, document: summary });
       if (url.pathname.endsWith("/use") && url.pathname.startsWith("/v2/documents/")) return jsonResponse(summary);
@@ -103,7 +102,6 @@ describe("ReviewApiClient", () => {
     await client.workspaces.listWorkspaces();
     await client.workspaces.selectWorkspace(workspace.id);
     await client.workspaces.getWorkspaceStatus(workspace.id);
-    await client.workspaces.migrateWorkspace(workspace.id, { apply: false });
     await client.workspaces.listDocuments(workspace.id);
     await client.workspaces.getCurrentDocument(workspace.id);
     await client.workspaces.useDocument(summary.id, workspace.id);
@@ -115,7 +113,6 @@ describe("ReviewApiClient", () => {
       "/v2/workspaces",
       "/v2/workspaces/workspace-1/use",
       "/v2/workspaces/workspace-1/status",
-      "/v2/workspaces/workspace-1/migrate",
       "/v2/documents?workspace_id=workspace-1",
       "/v2/current-document?workspace_id=workspace-1",
       "/v2/documents/field-notes/use?workspace_id=workspace-1",
@@ -123,9 +120,8 @@ describe("ReviewApiClient", () => {
       "/v2/documents/field-notes?workspace_id=workspace-1",
       "/v2/documents/field-notes/status?workspace_id=workspace-1",
     ]);
-    expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({ apply: false });
-    expect(JSON.parse(String(calls[7]?.init?.body))).toEqual({ new_id: "field-notes-renamed" });
-    expect(calls[8]?.init?.method).toBe("DELETE");
+    expect(JSON.parse(String(calls[6]?.init?.body))).toEqual({ new_id: "field-notes-renamed" });
+    expect(calls[7]?.init?.method).toBe("DELETE");
     expect(localStorage.getItem("docs.review.workspace")).toBe(workspace.id);
   });
   it("retries transient startup connection failures before surfacing an error", async () => {

@@ -3,7 +3,6 @@ import { docPath, jsonInit, listPage, toPage, type Transport } from "../http";
 
 export type Workspace = { id: string; name: string; root: string };
 export type WorkspaceStatus = { workspace: Workspace; active: boolean };
-export type WorkspaceMigration = { source_workspace_id: string; detected_format: string; ready: boolean; published: boolean; workspace?: Workspace | null; errors: string[] };
 export type DocumentRecord = { id: string; title?: string; template?: string; lifecycle?: string; path?: string; active?: boolean; created_at?: string };
 export type CurrentDocument = { current_document_id: string | null; document: DocumentRecord | null };
 export type DocumentCreateInput = { workspaceId: string; documentId: string; template: string; title?: string };
@@ -15,7 +14,6 @@ export interface WorkspacesApi {
   renameWorkspace(id: string, name: string): Promise<Workspace>;
   deleteWorkspace(id: string): Promise<Record<string, unknown>>;
   getWorkspaceStatus(id: string): Promise<WorkspaceStatus>;
-  migrateWorkspace(id: string, input: { apply: boolean }): Promise<WorkspaceMigration>;
   selectWorkspace(id: string): Promise<Workspace>;
   listDocuments(workspaceId?: string): Promise<DocumentRecord[]>;
   getDocument(id: string): Promise<Record<string, unknown>>;
@@ -50,7 +48,6 @@ export function createWorkspacesApi(t: Transport): WorkspacesApi {
       return result;
     },
     getWorkspaceStatus: id => t.request(`${workspacePath(id)}/status`),
-    migrateWorkspace: (id, input) => t.request(`${workspacePath(id)}/migrate`, jsonInit("POST", input)),
     async selectWorkspace(id) {
       const workspace = await t.request<Workspace>(`${workspacePath(id)}/use`, jsonInit("POST"));
       t.session.select(id);

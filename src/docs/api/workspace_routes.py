@@ -1,4 +1,4 @@
-"""HTTP handlers for the workspace registry: list, create, rename, delete, select, status, migrate."""
+"""HTTP handlers for the workspace registry: list, create, rename, delete, select, status."""
 
 from __future__ import annotations
 
@@ -14,18 +14,11 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from docs.application.workspace_migration import (
-    WorkspaceMigrationError,
-    WorkspaceMigrationInspector,
-    WorkspaceMigrationPublisher,
-)
 from docs.application.workspaces import WorkspaceRegistryError
 
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
-    WorkspaceMigrateRequest,
-    WorkspaceMigrationResponse,
     WorkspacePage,
     WorkspaceRenameRequest,
     WorkspaceResponse,
@@ -123,39 +116,5 @@ class WorkspaceRoutes:
         response = WorkspaceStatusResponse(
             workspace=WorkspaceResponse.model_validate(item),
             active=active is not None and active["id"] == workspace_id,
-        )
-        return Response.json(response.model_dump(mode="json"))
-
-    def migrate(self, workspace_id: str, request: Request) -> Response:
-        item = self._host.resolve_workspace(workspace_id)
-        try:
-            data = WorkspaceMigrateRequest.model_validate(request.json(object_only=True) if request.body else {})
-        except ValidationError as exc:
-            raise APIError("invalid_request", "Request body does not match workspace contract", 400) from exc
-        if self._host.managed_workspace_root is None:
-            raise APIError("workspace_root_not_configured", "Managed workspace root is not configured", 503)
-        destination = self._host.managed_workspace_root / uuid4().hex
-        report = WorkspaceMigrationInspector().inspect(item["root"], destination=destination)
-        if data.apply and not report.ready:
-            raise APIError("migration_source_not_ready", "Workspace migration source is not ready", 409)
-        published_workspace = None
-        if data.apply:
-            self._host.managed_workspace_root.mkdir(parents=True, exist_ok=True)
-            try:
-                publication = WorkspaceMigrationPublisher().publish(item["root"], destination)
-                assert self._host.workspace_registry is not None
-                name = f"{item['name'][:48]} migrated {uuid4().hex[:8]}"
-                published_workspace = WorkspaceResponse.model_validate(
-                    self._host.workspace_registry.create(name, publication.destination)
-                )
-            except WorkspaceMigrationError as exc:
-                raise APIError(exc.code, exc.code, 409) from exc
-        response = WorkspaceMigrationResponse(
-            source_workspace_id=workspace_id,
-            detected_format=report.detected_format,
-            ready=report.ready,
-            published=data.apply,
-            workspace=published_workspace,
-            errors=[error.code for error in report.errors],
         )
         return Response.json(response.model_dump(mode="json"))
