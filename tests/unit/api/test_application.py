@@ -621,6 +621,14 @@ def test_post_run_rejects_authenticated_principal_without_tenant_identity():
     assert body(response)["error"]["code"] == "missing_tenant_identity"
 
 
+def test_resource_without_tenant_metadata_is_not_owned():
+    application = app()
+    principal = Principal("user-1", frozenset(), tenant_id="tenant-a", organization_id="org-a")
+
+    assert application.is_owned({"id": "r1"}, principal) is False
+    assert application.is_owned({"tenant_id": "tenant-a", "organization_id": "org-a"}, principal) is True
+
+
 def test_post_run_rejects_foreign_document_reference():
     application = app()
     application.documents = (

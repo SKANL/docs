@@ -75,7 +75,6 @@ class ApiApplication:
         document_context_writer: Any = None,
         classification_service: Any = None,
         workspace_services_factory: Callable[[str], Any] | None = None,
-        workspace_scoped_auth: bool = False,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -121,7 +120,6 @@ class ApiApplication:
         self.progress_poll_interval = 0.5
         self.progress_heartbeat_seconds = 15.0
         self.progress_max_seconds = 300.0
-        self.workspace_scoped_auth = workspace_scoped_auth
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._build_route_groups()
@@ -504,13 +502,6 @@ class ApiApplication:
     def is_owned(self, resource: Any, principal: Any) -> bool:
         data = as_dict(resource)
         ownership = data.get("payload", data) if isinstance(data, Mapping) else {}
-        if self.workspace_scoped_auth and isinstance(ownership, Mapping) and (
-            "tenant_id" not in ownership and "organization_id" not in ownership
-        ):
-            # Self-hosted deployments have one configured workspace boundary;
-            # legacy manifests created before tenant metadata existed remain
-            # owned by that authenticated workspace, not anonymous globally.
-            return principal.tenant_id is not None and principal.organization_id is not None
         return not (
             not isinstance(ownership, Mapping)
             or principal.tenant_id is None
