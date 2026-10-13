@@ -1,0 +1,1 @@
+async function t(n){const r=await new Promise((o,a)=>{const e=new FileReader;e.onload=()=>o(String(e.result)),e.onerror=()=>a(e.error??new Error("Could not read the file")),e.readAsDataURL(n)});return r.slice(r.indexOf(",")+1)}export{t as f};
