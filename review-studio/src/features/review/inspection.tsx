@@ -2,7 +2,7 @@ import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import type { Artifact } from "@/api/models";
 import type { ArtifactReport } from "@/api/domains/review";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,9 +18,8 @@ export const reportRows = (report: ArtifactReport): Array<[string, React.ReactNo
 export function InspectionPanel({ workspaceId, artifactId }: { workspaceId: string | null; artifactId: string }) {
   const api = useApi();
   const report = useQuery({ queryKey: reviewKeys.inspect(workspaceId, artifactId), queryFn: () => api.inspectArtifact!(artifactId) });
-  if (report.isPending) return <Skeleton className="h-16 w-full" />;
-  if (report.isError) return <ErrorState title="Could not inspect the artifact" message={formatApiError(report.error)} onRetry={() => void report.refetch()} />;
-  return <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(report.data)} /></section>;
+  return <QueryBoundary query={report} title="Could not inspect the artifact" skeleton="h-16 w-full">{data =>
+    <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(data)} /></section>}</QueryBoundary>;
 }
 
 /** Page previews for an artifact. Every failure path says what is missing instead of leaving a blank box. */

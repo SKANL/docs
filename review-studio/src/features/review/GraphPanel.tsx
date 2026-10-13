@@ -5,12 +5,12 @@ import { useApi } from "@/app/providers";
 import type { GraphQuery, GraphQueryResult } from "@/api/models";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { scalarRows } from "@/components/shared/Facts";
@@ -53,9 +53,9 @@ export function GraphPanel({ workspaceId }: { workspaceId: string | null }) {
   return <div className="grid gap-6">
     <section aria-label="Graph overview" className="grid gap-2">
       <h2 className="text-xl font-semibold">Graph</h2>
-      {graph.isPending ? <Skeleton className="h-16 w-full" /> : graph.isError ? <ErrorState title="Could not load the graph" message={formatApiError(graph.error)} onRetry={() => void graph.refetch()} />
-        : graph.data.nodes.length === 0 ? <EmptyState title="The semantic graph is empty" description="Claims, sources, and artifacts are linked here once a run has produced evidence. Run the pipeline, then come back." />
-        : <p className="text-sm">{graph.data.nodes.length} nodes and {graph.data.edges.length} links connect claims, sources, sections, and artifacts.</p>}
+      <QueryBoundary query={graph} title="Could not load the graph" skeleton="h-16 w-full">{data => data.nodes.length === 0
+        ? <EmptyState title="The semantic graph is empty" description="Claims, sources, and artifacts are linked here once a run has produced evidence. Run the pipeline, then come back." />
+        : <p className="text-sm">{data.nodes.length} nodes and {data.edges.length} links connect claims, sources, sections, and artifacts.</p>}</QueryBoundary>
     </section>
     <section aria-label="Graph queries" className="grid gap-3 rounded-lg border bg-card p-4">
       <h3 className="text-lg font-semibold">Read-only queries</h3>

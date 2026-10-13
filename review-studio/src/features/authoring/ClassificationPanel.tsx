@@ -1,11 +1,9 @@
-import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActionError, useAction } from "@/lib/actions";
@@ -47,8 +45,7 @@ export function ClassificationPanel({ documentId }: { documentId: string }) {
   const queue = useClassification(documentId);
   return <div className="grid gap-4">
     <h2 className="text-xl font-semibold">Classification</h2>
-    {queue.isPending ? <Skeleton className="h-24 w-full" /> : queue.isError ? <ErrorState message={formatApiError(queue.error)} onRetry={() => void queue.refetch()} />
-      : queue.data.length === 0 ? <EmptyState title="No classification pending" description="Ingest sources first. Classification appears here when a source needs a confirmed role." />
-      : <ul className="grid gap-3" aria-label="Classification queue">{queue.data.map(item => <QueueRow key={String(item.relative_path)} documentId={documentId} item={item} canConfirm={can("document.classify")} />)}</ul>}
+    <QueryBoundary query={queue}>{items => items.length === 0 ? <EmptyState title="No classification pending" description="Ingest sources first. Classification appears here when a source needs a confirmed role." />
+      : <ul className="grid gap-3" aria-label="Classification queue">{items.map(item => <QueueRow key={String(item.relative_path)} documentId={documentId} item={item} canConfirm={can("document.classify")} />)}</ul>}</QueryBoundary>
   </div>;
 }

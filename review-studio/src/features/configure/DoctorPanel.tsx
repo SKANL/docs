@@ -3,12 +3,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { StructureView } from "@/components/shared/StructureView";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Unavailable } from "@/components/shared/Unavailable";
@@ -59,13 +59,11 @@ export function DoctorPanel() {
         <div className="flex items-center gap-2"><Switch id="doctor-strict" checked={strict} onCheckedChange={setStrict} /><Label htmlFor="doctor-strict">Strict</Label></div>
       </div>
       {!can("doctor") || !api.getDiagnostics ? <Unavailable>Diagnostics are not available on this server.</Unavailable>
-        : diagnostics.isPending ? <Skeleton className="h-24 w-full" />
-        : diagnostics.isError ? <ErrorState title="Could not run the diagnostics" message={formatApiError(diagnostics.error)} onRetry={() => void diagnostics.refetch()} />
-        : <>
-          <p className="flex items-center gap-2 text-sm"><Badge variant={diagnostics.data.passed ? "secondary" : "destructive"}>{diagnostics.data.passed ? "Passed" : "Needs attention"}</Badge><span className="text-muted-foreground">Checked for {diagnostics.data.document_id}{diagnostics.data.strict ? " (strict)" : ""}</span></p>
+        : <QueryBoundary query={diagnostics} title="Could not run the diagnostics">{report => <>
+          <p className="flex items-center gap-2 text-sm"><Badge variant={report.passed ? "secondary" : "destructive"}>{report.passed ? "Passed" : "Needs attention"}</Badge><span className="text-muted-foreground">Checked for {report.document_id}{report.strict ? " (strict)" : ""}</span></p>
           <Table aria-label="Diagnostic checks">
             <TableHeader><TableRow><TableHead>Check</TableHead><TableHead>Status</TableHead><TableHead>Required</TableHead><TableHead>Version</TableHead><TableHead>Detail</TableHead></TableRow></TableHeader>
-            <TableBody>{diagnostics.data.checks.map(check => <TableRow key={check.name}>
+            <TableBody>{report.checks.map(check => <TableRow key={check.name}>
               <TableCell className="font-medium">{check.name}</TableCell>
               <TableCell><Badge variant={statusVariant[check.status] ?? "outline"}>{check.status}</Badge></TableCell>
               <TableCell>{check.required ? "yes" : "no"}</TableCell><TableCell>{check.version ?? "-"}</TableCell><TableCell className="break-words">{check.detail}</TableCell>
@@ -76,7 +74,7 @@ export function DoctorPanel() {
             <p className="text-sm text-muted-foreground">These features run in a reduced mode. The reason is shown as reported.</p>
             <StructureView value={Object.fromEntries(degraded)} />
           </section>}
-        </>}
+        </>}</QueryBoundary>}
     </section>
     {can("explain") && api.explainIssueCode && <IssueCodeLookup />}
   </div>;

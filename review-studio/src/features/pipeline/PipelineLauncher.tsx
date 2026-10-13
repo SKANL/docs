@@ -1,14 +1,12 @@
-import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ActionError, useAction } from "@/lib/actions";
 import { useCapability } from "@/lib/capability-registry";
 import { type ActiveContext } from "@/app/active-context";
@@ -63,14 +61,12 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
       <Choice label="Output format" value={format} options={formats} onChange={next => setFormat(next as OutputFormat)} />
       <Choice label="Policy" value={policy} options={policies} onChange={next => setPolicy(next as RunPolicy)} />
     </div>
-    {can("document.plan") && api.planPipeline && (plan.isPending ? <Skeleton className="h-16 w-full" /> : plan.isError
-      ? <ErrorState title="Could not plan the pipeline" message={formatApiError(plan.error)} onRetry={() => void plan.refetch()} />
-      : <div className="grid gap-2 text-sm">
-        <p className="font-medium">Plan for {plan.data.document_id} ({plan.data.pipeline_id})</p>
-        <ol aria-label="Pipeline stages" className="flex flex-wrap gap-2">{plan.data.stages.map(stage => <li key={stage} className="rounded-md border px-2 py-1">{stage}</li>)}</ol>
-        {plan.data.external_artifacts.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="text-muted-foreground">Needs these inputs:</span>
-          <ul className="flex flex-wrap gap-2">{plan.data.external_artifacts.map(name => <li key={name} className="rounded-md bg-muted px-2 py-0.5">{name}</li>)}</ul></div>}
-      </div>)}
+    {can("document.plan") && api.planPipeline && <QueryBoundary query={plan} title="Could not plan the pipeline" skeleton="h-16 w-full">{data => <div className="grid gap-2 text-sm">
+        <p className="font-medium">Plan for {data.document_id} ({data.pipeline_id})</p>
+        <ol aria-label="Pipeline stages" className="flex flex-wrap gap-2">{data.stages.map(stage => <li key={stage} className="rounded-md border px-2 py-1">{stage}</li>)}</ol>
+        {data.external_artifacts.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="text-muted-foreground">Needs these inputs:</span>
+          <ul className="flex flex-wrap gap-2">{data.external_artifacts.map(name => <li key={name} className="rounded-md bg-muted px-2 py-0.5">{name}</li>)}</ul></div>}
+      </div>}</QueryBoundary>}
     <div className="flex flex-wrap items-center gap-2">
       {can("document.run") && api.runDocument && <Button type="button" disabled={busy} onClick={() => run.mutate(undefined)}>Run pipeline</Button>}
       {api.documentAction && stageActions.filter(([, , capability]) => can(capability)).map(([kind, label]) =>

@@ -1,15 +1,13 @@
-import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 import { Facts } from "@/components/shared/Facts";
@@ -31,17 +29,9 @@ export function FindingDetail({ finding }: { finding: FindingRow }) {
 
 const severities = ["all", "critical", "high", "medium", "low"];
 
-export function FindingsPanel({ workspaceId, selectedId }: { workspaceId: string | null; selectedId?: string }) {
-  const api = useApi();
+function FindingsTable({ all, selectedId }: { all: FindingRow[]; selectedId?: string }) {
   const [filter, setFilter] = useState("");
   const [severity, setSeverity] = useState("all");
-  const findings = useQuery({
-    queryKey: reviewKeys.findings(workspaceId),
-    queryFn: async () => (await api.listFindings()).map(item => toFindingRow(item as unknown as Record<string, unknown>)),
-  });
-  if (findings.isPending) return <Skeleton className="h-24 w-full" />;
-  if (findings.isError) return <ErrorState title="Could not load findings" message={formatApiError(findings.error)} onRetry={() => void findings.refetch()} />;
-  const all = findings.data;
   if (all.length === 0) return <EmptyState title="No findings" description="Findings appear here after a run is verified. A clean workspace has none." />;
   const needle = filter.trim().toLowerCase();
   const rows = all.filter(item => (severity === "all" || item.severity === severity) && (!needle || `${item.id} ${item.message} ${item.location} ${item.severity}`.toLowerCase().includes(needle)));
@@ -68,4 +58,10 @@ export function FindingsPanel({ workspaceId, selectedId }: { workspaceId: string
     {rows.length === 0 && <p className="text-sm text-muted-foreground" role="status">No finding matches this filter.</p>}
     {selected ? <FindingDetail finding={selected} /> : selectedId && <p className="text-sm text-muted-foreground" role="status">Finding {selectedId} is not in this workspace.</p>}
   </div>;
+}
+
+export function FindingsPanel({ workspaceId, selectedId }: { workspaceId: string | null; selectedId?: string }) {
+  const api = useApi();
+  const findings = useQuery({ queryKey: reviewKeys.findings(workspaceId), queryFn: async () => (await api.listFindings()).map(toFindingRow) });
+  return <QueryBoundary query={findings} title="Could not load findings">{all => <FindingsTable all={all} selectedId={selectedId} />}</QueryBoundary>;
 }

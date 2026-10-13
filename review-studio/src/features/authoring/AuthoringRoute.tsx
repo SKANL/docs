@@ -1,10 +1,9 @@
-import { formatApiError } from "@/api/errors";
+import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssetsPanel } from "./AssetsPanel";
 import { ClassificationPanel } from "./ClassificationPanel";
@@ -12,7 +11,7 @@ import { ContextPanel } from "./ContextPanel";
 import { RevisionsPanel } from "./RevisionsPanel";
 import { SectionsPanel } from "./SectionsPanel";
 import { SourcesPanel } from "./SourcesPanel";
-import { useActiveContext } from "@/app/active-context";
+import { useActiveContext, type ActiveContext } from "@/app/active-context";
 import { useClassification, useContextStatus, useSections } from "./data";
 
 const tabs = [["sources", "Sources"], ["classification", "Classification"], ["assets", "Assets"], ["context", "Context"], ["sections", "Sections"], ["revisions", "Revisions"]] as const;
@@ -33,14 +32,10 @@ function NextAction({ documentId }: { documentId: string }) {
   return <p role="status" className="text-sm">Next: <Button asChild variant="link" className="h-auto p-0"><Link to={`/authoring/${hint[1]}`}>{hint[0]}</Link></Button></p>;
 }
 
-export function AuthoringRoute() {
+function AuthoringView({ header, context }: { header: ReactNode; context: ActiveContext }) {
   const { tab = "sources" } = useParams();
   const navigate = useNavigate();
-  const active = useActiveContext();
-  const header = <PageHeader eyebrow="Task area" title="Authoring" description="Sources, classification, assets, context, sections, and revisions for the current document." />;
-  if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
-  const { workspaceName, documentId, documentTitle } = active.data;
+  const { workspaceName, documentId, documentTitle } = context;
   if (!documentId) return <div className="grid gap-6">{header}
     <EmptyState title="Select a document first" description={workspaceName ? `Workspace ${workspaceName} has no current document. Choose or create one to start authoring.` : "No workspace is selected yet. Create a workspace and a document to start authoring."}>
       <Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button>
@@ -62,4 +57,10 @@ export function AuthoringRoute() {
       <TabsContent value="revisions"><RevisionsPanel documentId={documentId} /></TabsContent>
     </Tabs>
   </div>;
+}
+
+export function AuthoringRoute() {
+  const active = useActiveContext();
+  const header = <PageHeader eyebrow="Task area" title="Authoring" description="Sources, classification, assets, context, sections, and revisions for the current document." />;
+  return <QueryBoundary query={active} header={header}>{context => <AuthoringView header={header} context={context} />}</QueryBoundary>;
 }

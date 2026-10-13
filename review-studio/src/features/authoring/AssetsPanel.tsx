@@ -4,11 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ActionError, useAction } from "@/lib/actions";
 import { Unavailable } from "@/components/shared/Unavailable";
@@ -38,12 +37,11 @@ export function AssetsPanel({ documentId }: { documentId: string }) {
       <div className="grid gap-1"><Label htmlFor="asset-kind">Filter by kind</Label><Input id="asset-kind" value={kindDraft} onChange={event => setKindDraft(event.target.value)} placeholder="e.g. images" /></div>
       <Button type="submit" variant="outline">Apply filter</Button>
     </form>}
-    {list.isPending ? (can("asset.list") ? <Skeleton className="h-24 w-full" /> : <Unavailable>Listing assets is not available on this server.</Unavailable>)
-      : list.isError ? <ErrorState message={formatApiError(list.error)} onRetry={() => void list.refetch()} />
-      : list.data.items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} />
+    {!(can("asset.list") && api.listAssets) ? <Unavailable>Listing assets is not available on this server.</Unavailable>
+      : <QueryBoundary query={list}>{({ items }) => items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} />
       : <Table aria-label="Document assets"><TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="w-24"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
-        <TableBody>{list.data.items.map(item => <TableRow key={item.name}><TableCell>{item.name}</TableCell>
-          <TableCell>{can("asset.rm") && <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${item.name}`} onClick={() => { remove.reset(); setRemoving(item.name); }}>Remove</Button>}</TableCell></TableRow>)}</TableBody></Table>}
+        <TableBody>{items.map(item => <TableRow key={item.name}><TableCell>{item.name}</TableCell>
+          <TableCell>{can("asset.rm") && <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${item.name}`} onClick={() => { remove.reset(); setRemoving(item.name); }}>Remove</Button>}</TableCell></TableRow>)}</TableBody></Table>}</QueryBoundary>}
     {can("asset.add") && api.addAsset ? <form className="grid max-w-xl gap-3" onSubmit={event => { event.preventDefault(); if (file) add.mutate(undefined); }}>
       <div className="grid gap-1"><Label htmlFor="asset-file">Asset file</Label><Input id="asset-file" type="file" onChange={event => setFile(event.target.files?.[0] ?? null)} /></div>
       <div className="grid gap-1"><Label htmlFor="asset-name">Asset name (optional)</Label><Input id="asset-name" value={name} onChange={event => setName(event.target.value)} /></div>

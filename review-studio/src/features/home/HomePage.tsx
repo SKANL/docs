@@ -1,32 +1,27 @@
 import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useActiveContext } from "@/app/active-context";
+import { useActiveContext, type ActiveContext } from "@/app/active-context";
 import { RunStatusBadge } from "@/components/shared/StatusBadge";
 
 const none = <p className="text-sm text-muted-foreground">Nothing reported yet.</p>;
 
-/** Only server data and its presence; readiness and blockers are shown exactly as the server reports them. */
-export function HomePage() {
+function HomeView({ header, context }: { header: ReactNode; context: ActiveContext }) {
   const api = useApi();
-  const active = useActiveContext();
-  const documentId = active.data?.documentId ?? null;
-  const workspaceId = active.data?.workspaceId ?? null;
+  const { documentId, workspaceId } = context;
   const key = ["home", workspaceId, documentId];
   const status = useQuery({ queryKey: [...key, "status"], queryFn: () => api.getDocumentStatus!(documentId!, workspaceId ?? undefined), enabled: !!documentId && !!api.getDocumentStatus });
   const sources = useQuery({ queryKey: [...key, "sources"], queryFn: () => api.listSources!(documentId!), enabled: !!documentId && !!api.listSources });
   const runs = useQuery({ queryKey: [...key, "runs"], queryFn: () => api.listRunPage!({ documentId: documentId!, limit: 5 }), enabled: !!documentId && !!api.listRunPage });
   const findings = useQuery({ queryKey: [...key, "findings"], queryFn: () => api.listFindings(), enabled: !!documentId });
-
-  const header = <PageHeader eyebrow="Task area" title="Home" description="Current document readiness, blockers, recent runs, and the next safe action." />;
-  if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
 
   const blockers = Array.isArray(status.data?.publication_blockers) ? status.data.publication_blockers : [];
   const recent = runs.data?.items ?? [];
@@ -47,8 +42,8 @@ export function HomePage() {
     {header}
     <section aria-label="Document readiness" className="grid gap-2 rounded-lg border bg-card p-4">
       {documentId ? <>
-        <h2 className="text-xl font-semibold">{active.data!.documentTitle || documentId}</h2>
-        <p className="text-sm text-muted-foreground">{active.data!.workspaceName} · {documentId}</p>
+        <h2 className="text-xl font-semibold">{context.documentTitle || documentId}</h2>
+        <p className="text-sm text-muted-foreground">{context.workspaceName} · {documentId}</p>
         {status.isError ? <p role="alert" className="text-sm text-destructive">{formatApiError(status.error)}</p>
           : status.data ? <Badge variant="outline" className={status.data.succeeded === true ? "w-fit border-success/40 text-success" : "w-fit border-warning/50 text-warning"}>{status.data.succeeded === true ? "Ready" : "Needs attention"}</Badge>
           : <Skeleton className="h-5 w-24" />}
@@ -69,4 +64,11 @@ export function HomePage() {
     </section>
     {next && <section aria-label="Next safe action"><Button asChild><Link to={next[0]}>{next[1]}</Link></Button></section>}
   </div>;
+}
+
+/** Only server data and its presence; readiness and blockers are shown exactly as the server reports them. */
+export function HomePage() {
+  const active = useActiveContext();
+  const header = <PageHeader eyebrow="Task area" title="Home" description="Current document readiness, blockers, recent runs, and the next safe action." />;
+  return <QueryBoundary query={active} header={header}>{context => <HomeView header={header} context={context} />}</QueryBoundary>;
 }

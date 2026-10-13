@@ -1,13 +1,11 @@
-import { formatApiError } from "@/api/errors";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useActiveContext } from "@/app/active-context";
+import { useActiveContext, type ActiveContext } from "@/app/active-context";
 import { useCapability } from "@/lib/capability-registry";
 import { Facts } from "@/components/shared/Facts";
 import type { PublicationResult } from "@/api/domains/delivery";
@@ -30,16 +28,12 @@ function PublicationResultPanel({ result }: { result: PublicationResult }) {
   </section>;
 }
 
-export function DeliveryRoute() {
+function DeliveryView({ header, context }: { header: ReactNode; context: ActiveContext }) {
   const api = useApi();
   const can = useCapability();
-  const active = useActiveContext();
   const [dialog, setDialog] = useState<"package" | "publish" | null>(null);
   const [published, setPublished] = useState<PublicationResult | null>(null);
-  const header = <PageHeader eyebrow="Task area" title="Delivery" description="Package the build, publish a verified artifact, start a release, and review what was published." />;
-  if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
-  const { workspaceId, workspaceName, documentId, documentTitle } = active.data;
+  const { workspaceId, workspaceName, documentId, documentTitle } = context;
   if (!documentId) return <div className="grid gap-6">{header}
     <EmptyState title="Select a document first" description="Delivery acts on the current document. Choose or create one before packaging or publishing.">
       <Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button>
@@ -61,4 +55,10 @@ export function DeliveryRoute() {
     <PackageDialog open={dialog === "package"} workspaceId={workspaceId} documentId={documentId} onOpenChange={open => setDialog(open ? "package" : null)} />
     <PublishDialog open={dialog === "publish"} workspaceId={workspaceId} documentId={documentId} onOpenChange={open => setDialog(open ? "publish" : null)} onPublished={setPublished} />
   </div>;
+}
+
+export function DeliveryRoute() {
+  const active = useActiveContext();
+  const header = <PageHeader eyebrow="Task area" title="Delivery" description="Package the build, publish a verified artifact, start a release, and review what was published." />;
+  return <QueryBoundary query={active} header={header}>{context => <DeliveryView header={header} context={context} />}</QueryBoundary>;
 }
