@@ -6,7 +6,7 @@ EXTRACTED `references` edge, which is what lets `graphify explain <symbol>`
 answer "why does this function exist" with the requirement behind it. The
 bridge works. What it had to work with did not: of its 2405 edges, **25**
 came from `openspec/specs/` — the CURRENT contract — while 1577 came from
-`plans/` and 746 from `openspec/changes/archive/`. The "why" layer was 97%
+the (since removed) migration plans and 746 from `openspec/changes/archive/`. The "why" layer was 97%
 archaeology, because the standing specs named almost no code. Five of the
 twelve named none at all.
 

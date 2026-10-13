@@ -158,9 +158,9 @@ describe("ReviewApiClient", () => {
     expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v2/graph?query=findings_affected_by_revision&id=rev+1&workspace_id=workspace-1");
   });
 
-  it("maps the production X20 run envelope to a run record", async () => {
+  it("maps the production runtime run envelope to a run record", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{
-      schema: "docs.x20/v1",
+      schema: "docs.runtime/v1",
       id: "run-real",
       status: "succeeded",
       created_at: "2026-09-21T12:00:00Z",

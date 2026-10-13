@@ -229,13 +229,6 @@ three share; never re-declare an artifact filename or extension set locally.
 - `openspec/changes/archive/2026-07-06-universal-doc-harness/` — full audit
   trail of the founding refactor (proposal/design/tasks/state +
   archive-report.md with the PR ledger).
-- `plans/` (19 md, ~1 MB) and `specs/` (2 design docs at the repo root) are
-  **HISTORICAL, not planning sources**: the playbook and design docs of a
-  finished migration whose code shape two later SDD changes refactored past.
-  See the status note at the end of `plans/roadmap.md`. The spec→code bridge
-  excludes `plans/` for this reason.
-- `RESUME.md` — session-resume prompt and tool authority hierarchy
-  (OpenSpec > Gentle AI/SDD > superpowers > engram/codegraph/context7/rtk).
 - `.atl/skill-registry.md` — skill index for sub-agent launches.
 
 ## Knowledge graphs — three indexes, one routing rule
@@ -266,11 +259,8 @@ Answers a "why" → graphify.**
   (AST only, no LLM). Doc/spec layer needs the agent pass: `/graphify --update`.
   `.graphifyignore` scopes what the doc layer reads, mirroring the bridge's
   provenance tiers: `openspec/specs` + `AGENTS.md`/`CLAUDE.md` (contract) and
-  `openspec/changes/archive` (rationale) are IN; `plans/`, `specs/` and the
-  tooling docs under `.superpowers/`/`.atl/` are OUT. Unscoped, 74% of the
-  2.6 MB markdown corpus is a finished migration's playbook and 20% is
-  tooling documentation — an extraction pass would spend ~94% of its budget
-  on material that says nothing about the harness as it is today.
+  `openspec/changes/archive` (rationale) are IN; tooling docs under `.atl/`
+  are OUT.
 
 ### Spec-to-code bridge
 
@@ -281,12 +271,9 @@ backticks inside a spec becomes an EXTRACTED `references` edge, so
 function, not just its callers. No LLM, no inferred edges.
 
 Every edge carries a `provenance` tier: `contract` (`openspec/specs/`,
-`AGENTS.md`, `CLAUDE.md`) or `rationale` (`openspec/changes/archive/`,
-`specs/`). `plans/` emits nothing — measured before that rule existed, it
-supplied 1577 of 2405 edges against 25 from the standing contract, so the
-"why" layer was 97% archaeology and answered from a superseded slice plan 63
-times out of 64. `tests/architecture/test_spec_symbol_references.py` keeps
-the contract side honest by requiring every capability spec to name at least
+`AGENTS.md`, `CLAUDE.md`) or `rationale` (`openspec/changes/archive/`). Any other markdown emits
+nothing. `tests/architecture/test_spec_symbol_references.py` keeps the
+contract side honest by requiring every capability spec to name at least
 three real symbols.
 
     graphify update . && uv run python tools/spec_code_bridge.py
