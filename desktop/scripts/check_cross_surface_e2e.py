@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
-import socket
 import subprocess
-import tempfile
-import time
-import urllib.request
 from pathlib import Path
 
-from process_cleanup import terminate_process_tree
+from sidecar_harness import API, call, running_sidecar
 
 
 def run_cli_json(workspace: Path, *args: str) -> str:
@@ -50,73 +45,40 @@ def assert_same_persisted_records(
 
 
 def api_json(base: str, path: str, method: str = "GET", payload: object | None = None) -> dict[str, object]:
-    body = None if payload is None else json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        base + path,
-        data=body,
-        method=method,
-        headers={"Content-Type": "application/json"} if body is not None else {},
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read())
+    status, body = call(base, path, method, payload)
+    if status >= 400:
+        raise AssertionError(f"{method} {path} failed: {status} {body}")
+    return body
 
 
 def main() -> int:
     """Run a real packaged API -> CLI persistence journey in one workspace."""
-    executable = Path(__file__).resolve().parents[1] / "sidecar" / "docs-sidecar.exe"
-    if not executable.is_file():
-        raise SystemExit(f"packaged sidecar not found: {executable}")
-    # Windows releases the SQLite handle a moment after the sidecar tree is killed.
-    with tempfile.TemporaryDirectory(prefix="docs-cross-surface-", ignore_cleanup_errors=True) as directory:
-        workspace = Path(directory) / "workspace"  # created by the sidecar, never pre-made
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        base = f"http://127.0.0.1:{port}"
-        process = subprocess.Popen(
-            [os.fspath(executable), "--workspace", os.fspath(workspace), "--health-url", base + "/health"],
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        try:
-            deadline = time.monotonic() + 20
-            while time.monotonic() < deadline:
-                try:
-                    if api_json(base, "/health").get("ready"):
-                        break
-                except OSError:
-                    time.sleep(0.25)
-            health = api_json(base, "/health")
-            if not health.get("ready"):
-                raise AssertionError(f"packaged API did not become healthy: {health}")
-            workspace_id = str(api_json(base, "/v2/workspaces")["items"][0]["id"])
-            imported = api_json(base, "/v2/documents/import", "POST", {
-                "workspace_id": workspace_id,
-                "filename": "cross-surface.md",
-                "content_base64": "I2Ny b3NzLXN1cmZhY2UKCkEgcmVhbCBjcm9zcy1zdXJmYWNlIGRvY3VtZW50Lg==".replace(" ", ""),
-                "document_id": "cross-surface",
-                "template": "documento-generico",
-                "title": "Cross Surface",
-            })
-            if imported.get("document_id") != "cross-surface":
-                raise AssertionError(f"API import failed: {imported}")
-            api_json(base, "/v2/documents/cross-surface/prepare?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id})
-            queued = api_json(base, "/v2/runs?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id, "document_id": "cross-surface", "pipeline_id": "document", "format": "docx"})
-            run_id = str(queued["id"])
-            current = api_json(base, "/v2/runs/" + run_id + "?workspace_id=" + workspace_id)
-            deadline = time.monotonic() + 120
-            while current.get("status") not in {"succeeded", "failed", "cancelled", "expired"} and time.monotonic() < deadline:
-                time.sleep(0.5)
-                current = api_json(base, "/v2/runs/" + run_id + "?workspace_id=" + workspace_id)
-            if current.get("status") != "succeeded":
-                raise AssertionError(f"API run failed: {current}")
-            cli_document = json.loads(run_cli_json(workspace, "doc", "show", "cross-surface"))
-            cli_runs = json.loads(run_cli_json(workspace, "run", "list"))
-            cli_run = next(item for item in cli_runs if item["id"] == run_id)
-            api_document = json.loads((workspace / "documents" / "cross-surface" / "document.json").read_text(encoding="utf-8"))
-            assert_same_persisted_records({"id": "cross-surface", **api_document}, cli_document, current, cli_run)
-            print("cross-surface packaged API -> CLI journey passed")
-        finally:
-            terminate_process_tree(process)
+    with running_sidecar("docs-cross-surface-") as sidecar:
+        base, workspace = sidecar.base, sidecar.workspace
+        workspace_id = str(api_json(base, f"{API}/workspaces")["items"][0]["id"])
+        scope = "?workspace_id=" + workspace_id
+        imported = api_json(base, f"{API}/documents/import", "POST", {
+            "workspace_id": workspace_id,
+            "filename": "cross-surface.md",
+            "content_base64": "I2Ny b3NzLXN1cmZhY2UKCkEgcmVhbCBjcm9zcy1zdXJmYWNlIGRvY3VtZW50Lg==".replace(" ", ""),
+            "document_id": "cross-surface",
+            "template": "documento-generico",
+            "title": "Cross Surface",
+        })
+        if imported.get("document_id") != "cross-surface":
+            raise AssertionError(f"API import failed: {imported}")
+        api_json(base, f"{API}/documents/cross-surface/prepare{scope}", "POST", {"workspace_id": workspace_id})
+        queued = api_json(base, f"{API}/runs{scope}", "POST", {"workspace_id": workspace_id, "document_id": "cross-surface", "pipeline_id": "document", "format": "docx"})
+        run_id = str(queued["id"])
+        current = sidecar.wait_run(run_id, workspace_id, 120)
+        if current.get("status") != "succeeded":
+            raise AssertionError(f"API run failed: {current}")
+        cli_document = json.loads(run_cli_json(workspace, "doc", "show", "cross-surface"))
+        cli_runs = json.loads(run_cli_json(workspace, "run", "list"))
+        cli_run = next(item for item in cli_runs if item["id"] == run_id)
+        api_document = json.loads((workspace / "documents" / "cross-surface" / "document.json").read_text(encoding="utf-8"))
+        assert_same_persisted_records({"id": "cross-surface", **api_document}, cli_document, current, cli_run)
+        print("cross-surface packaged API -> CLI journey passed")
     return 0
 
 

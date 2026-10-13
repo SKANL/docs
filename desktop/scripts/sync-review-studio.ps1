@@ -1,8 +1,7 @@
-$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$reviewStudio = Join-Path $repoRoot 'review-studio'
-$desktopSrc = Join-Path $repoRoot 'desktop/src'
+$reviewStudio = Join-Path $root 'review-studio'
+$desktopSrc = Join-Path $desktop 'src'
 $dist = Join-Path $reviewStudio 'dist'
 
 if (-not (Test-Path (Join-Path $reviewStudio 'package.json') -PathType Leaf)) {
@@ -11,14 +10,14 @@ if (-not (Test-Path (Join-Path $reviewStudio 'package.json') -PathType Leaf)) {
 
 Push-Location $reviewStudio
 try {
-    $env:VITE_DOCS_API_BASE_URL = 'http://127.0.0.1:8765/v1'
+    $env:VITE_DOCS_API_BASE_URL = $ApiBaseUrl
     if (Test-Path 'package-lock.json' -PathType Leaf) {
-        npm ci
+        Invoke-Npm @('ci')
     } else {
         Write-Warning 'review-studio/package-lock.json is absent; using npm install.'
-        npm install
+        Invoke-Npm @('install')
     }
-    npm run build
+    Invoke-Npm @('run', 'build')
 } finally {
     Pop-Location
 }

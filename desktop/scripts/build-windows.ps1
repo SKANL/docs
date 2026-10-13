@@ -1,6 +1,5 @@
-$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-$desktop = Split-Path -Parent $PSScriptRoot
 $sidecarDir = Join-Path $desktop 'sidecar'
 $configuredSidecar = $env:DOCS_SIDECAR_EXECUTABLE
 $tauriConfigOverride = $null
@@ -16,7 +15,7 @@ if (-not $env:TAURI_SIGNING_PRIVATE_KEY -and $env:TAURI_SIGNING_PRIVATE_KEY_PATH
 
 Push-Location $desktop
 try {
-    npm run sync:review-studio
+    Invoke-Npm @('run', 'sync:review-studio')
 
     if ($configuredSidecar) {
         if (-not (Test-Path $configuredSidecar -PathType Leaf)) {
@@ -28,7 +27,7 @@ try {
         powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-sidecar.ps1')
     }
 
-    npm run check:sidecar
+    Invoke-Npm @('run', 'check:sidecar')
     $packaged = @(
         (Join-Path $sidecarDir 'docs-sidecar.exe'),
         (Join-Path $sidecarDir 'sidecar.exe')
@@ -46,9 +45,9 @@ try {
         # Release/CI builds still require the private key and produce updater artifacts.
         $tauriConfigOverride = Join-Path $desktop 'src-tauri\build-local.json'
         Set-Content -LiteralPath $tauriConfigOverride -Value '{"bundle":{"createUpdaterArtifacts":false}}' -Encoding utf8
-        npm run tauri -- build --config src-tauri/build-local.json
+        Invoke-Npm @('run', 'tauri', '--', 'build', '--config', 'src-tauri/build-local.json')
     } else {
-        npm run tauri build
+        Invoke-Npm @('run', 'tauri', 'build')
     }
 } finally {
     if ($tauriConfigOverride -and (Test-Path $tauriConfigOverride -PathType Leaf)) {

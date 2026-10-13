@@ -12,7 +12,7 @@ def test_tauri_sidecar_packaging_contract_is_linux_checkable_without_installer()
     resources = config["bundle"]["resources"]
     assert "../sidecar/*" in resources
 
-    rust = (root / "desktop/src-tauri/src/lib.rs").read_text(encoding="utf-8")
+    rust = "".join(path.read_text(encoding="utf-8") for path in sorted((root / "desktop/src-tauri/src").glob("*.rs")))
     assert "resource_dir()" in rust
     assert 'resource_dir.join("sidecar").join(name)' in rust
     assert 'resource_dir.join(name)' in rust

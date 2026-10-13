@@ -26,7 +26,7 @@ the packaging configuration is wired to the Review Studio build.
 ## Real desktop runtime check
 
 `npm run build:runtime-check` builds `review-studio/dist` (API base
-`http://127.0.0.1:8765/v1`), the frozen sidecar if it is missing, and a release
+`http://127.0.0.1:8765/v2`), the frozen sidecar if it is missing, and a release
 Tauri binary that embeds `review-studio/dist` directly through
 `src-tauri/tauri.runtime-check.conf.json`. It never writes `desktop/src/`.
 

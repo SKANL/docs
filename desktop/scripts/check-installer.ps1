@@ -1,7 +1,6 @@
-$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-$root = Split-Path -Parent $PSScriptRoot
-$bundle = Join-Path $root 'src-tauri/target/release/bundle'
+$bundle = Join-Path $desktop 'src-tauri/target/release/bundle'
 $msi = Get-ChildItem (Join-Path $bundle 'msi') -Filter '*.msi' -File | Select-Object -First 1
 $nsis = Get-ChildItem (Join-Path $bundle 'nsis') -Filter '*-setup.exe' -File | Select-Object -First 1
 
@@ -34,7 +33,7 @@ if ($sevenZip) {
 
 # Exercise a clean NSIS installation and verify that the bundled one-file
 # sidecar really starts without Python or repository-relative resources.
-Get-Process docs-desktop,docs-sidecar -ErrorAction SilentlyContinue | Stop-Process -Force
+Stop-Sidecar @('docs-desktop', 'docs-sidecar')
 $install = Join-Path $env:TEMP ('docs-install-check-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $install | Out-Null
 Start-Process -FilePath $nsis -ArgumentList @('/S',('/D=' + $install)) -Wait
@@ -42,7 +41,7 @@ $app = Join-Path $install 'docs-desktop.exe'
 if (!(Test-Path -LiteralPath $app -PathType Leaf)) {
     throw "Clean install is missing the desktop executable: $app"
 }
-$desktop = Start-Process -FilePath $app -PassThru
+$null = Start-Process -FilePath $app -PassThru
 $healthy = $false
 try {
     for ($i = 0; $i -lt 60; $i++) {
@@ -61,7 +60,7 @@ try {
     $installedSidecar = $sidecars | Where-Object { $_.Path -like "$install\*" }
     if (!$installedSidecar) { throw 'Healthy sidecar is not running from the clean installation.' }
 } finally {
-    Get-Process docs-desktop,docs-sidecar -ErrorAction SilentlyContinue | Stop-Process -Force
+    Stop-Sidecar @('docs-desktop', 'docs-sidecar')
 }
 
 Write-Output 'installer artifacts and packaged sidecar resource passed'

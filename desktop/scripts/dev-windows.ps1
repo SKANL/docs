@@ -1,13 +1,12 @@
-$ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
-Push-Location $root
+. (Join-Path $PSScriptRoot 'common.ps1')
+Push-Location $desktop
 try {
-    $sidecar = Join-Path $root 'sidecar/docs-sidecar.exe'
+    $sidecar = Join-Path $desktop 'sidecar/docs-sidecar.exe'
     if (-not (Test-Path $sidecar -PathType Leaf)) {
-        npm run build:sidecar
+        Invoke-Npm @('run', 'build:sidecar')
     }
     $env:DOCS_SIDECAR_EXECUTABLE = (Resolve-Path $sidecar).Path
-    $env:VITE_DOCS_API_BASE_URL = 'http://127.0.0.1:8765/v1'
+    $env:VITE_DOCS_API_BASE_URL = $ApiBaseUrl
     npm run tauri dev
 } finally {
     Remove-Item Env:DOCS_SIDECAR_EXECUTABLE -ErrorAction SilentlyContinue
