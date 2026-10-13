@@ -10,6 +10,7 @@ from docs.api.auth import Principal
 from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
+from docs.api.route_policy import required_scope
 from docs.composition import compose_application, open_workspace_registry
 from docs.domain.runtime_records import Artifact, Graph, Passport, Run
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
@@ -499,7 +500,7 @@ def test_document_section_routes_list_get_and_reject_traversal(tmp_path):
     listed = application.dispatch(Request("GET", f"/v2/documents/d1/sections?workspace_id={workspace_id}"))
     fetched = application.dispatch(Request("GET", f"/v2/documents/d1/sections/intro?workspace_id={workspace_id}"))
     with pytest.raises(APIError, match="Invalid section identifier"):
-        application._document_section("d1", "../document", Request("GET", f"/v2/documents/d1/sections/../document?workspace_id={workspace_id}"))
+        application.document_routes.section("d1", "../document", Request("GET", f"/v2/documents/d1/sections/../document?workspace_id={workspace_id}"))
 
     assert body(listed)["items"] == [{"id": "intro", "filename": "intro.md", "body": "Original"}]
     assert body(fetched)["body"] == "Original"
@@ -526,7 +527,7 @@ def test_put_document_section_uses_configured_revision_service(tmp_path):
 @pytest.mark.parametrize(("path", "status", "code"), [("/v2/documents", 400, "workspace_required"), ("/v2/documents?workspace_id=w1", 503, "workspace_not_configured"), ("/v2/documents?owner=ada&limit=1", 400, "workspace_required"), ("/v2/documents?limit=nope", 400, "workspace_required")])
 def test_document_collection_fails_closed_without_workspace_registry(path, status, code):
     with pytest.raises(APIError) as error:
-        app()._documents(Request("GET", path))
+        app().document_routes.list(Request("GET", path))
     assert (error.value.status, error.value.code) == (status, code)
 
 
@@ -1160,13 +1161,13 @@ def test_application_bearer_challenge_is_returned_for_missing_credentials():
     ],
 )
 def test_application_scope_policy_covers_owned_routes(method, path, scope):
-    assert ApiApplication._required_scope(method, path) == scope
+    assert required_scope(method, path) == scope
 
 
 def test_application_scope_policy_does_not_overmatch_dynamic_routes():
-    assert ApiApplication._required_scope("GET", "/v2/runs/r1/unknown") is None
-    assert ApiApplication._required_scope("GET", "/v2/documents/d1/revisions") is None
-    assert ApiApplication._required_scope("GET", "/v2/openapi.json") is None
+    assert required_scope("GET", "/v2/runs/r1/unknown") is None
+    assert required_scope("GET", "/v2/documents/d1/revisions") is None
+    assert required_scope("GET", "/v2/openapi.json") is None
     assert app().dispatch(Request("GET", "/v2/runs//passport")).status == 404
 
 

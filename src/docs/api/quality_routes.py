@@ -23,6 +23,7 @@ from . import authoring_dto as dto
 from .auth import require_scopes
 from .authoring_routes import RouteSupport, _safe_segment
 from .http import APIError, Request, Response
+from .record_access import store_items
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -66,7 +67,7 @@ class QualityRoutes(RouteSupport):
         payload = _dict(run).get("payload", {}) if run is not None else {}
         if run is None or payload.get("workspace_id") != self._workspace_id(request, body_workspace):
             raise APIError("not_found", "Run not found", 404)
-        self._host._require_owned(run, request, "Run")
+        self._host.require_owned(run, request, "Run")
         return run
 
     def _owned_artifact(self, request: Request, artifact_id: str, body_workspace: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -120,7 +121,7 @@ class QualityRoutes(RouteSupport):
         if passport is None:
             raise APIError("not_found", "Passport not found", 404)
         records = sorted(
-            (_dict(item) for item in self._host._store_items(self._host.artifact_store, "list_for_run", run_id)),
+            (_dict(item) for item in store_items(self._host.artifact_store, "list_for_run", run_id)),
             key=lambda item: str(item["id"]),
         )
         refs = [
@@ -128,7 +129,7 @@ class QualityRoutes(RouteSupport):
             for a in records
         ]
         findings = sorted(
-            (_dict(item) for item in self._host._store_items(self._host.findings_store, "list_for_run", run_id)),
+            (_dict(item) for item in store_items(self._host.findings_store, "list_for_run", run_id)),
             key=lambda item: str(item.get("id", "")),
         )
         previews = [a["id"] for a in records if _is_png(a)]
@@ -148,7 +149,7 @@ class QualityRoutes(RouteSupport):
         run = self._owned_run(request, data.run_id, data.workspace_id)
         name = _safe_segment(data.name or data.run_id, "invalid_baseline_name")
         document_id = _dict(run).get("payload", {}).get("document_id")
-        records = (_dict(a) for a in self._host._store_items(self._host.artifact_store, "list_for_run", data.run_id))
+        records = (_dict(a) for a in store_items(self._host.artifact_store, "list_for_run", data.run_id))
         located = [self._locate(root, a, document_id) for a in records if _is_png(a)]
         sources = {path.parent for path in located if path is not None}
         if not sources:

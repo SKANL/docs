@@ -9,6 +9,7 @@ from typer.main import get_command
 
 from docs.api import openapi
 from docs.api.application import ApiApplication
+from docs.api.route_policy import required_scope
 from docs.cli.main import app as cli_app
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -119,7 +120,7 @@ def test_available_capabilities_have_real_registered_routes_and_matching_scopes(
         assert capability["scopes"] == paths[path][method.lower()].get("x-rbac-scopes", []), capability
         actual = re.sub(r"\{[^}]+\}", "sample", path)
         assert (method, path) in application._registered_route_keys() or application._dynamic_handler(method, actual) is not None, capability
-        assert application._required_scope(method, actual) in capability["scopes"], capability
+        assert required_scope(method, actual) in capability["scopes"], capability
 
 
 def test_capability_catalog_http_route_returns_the_declared_catalog():
