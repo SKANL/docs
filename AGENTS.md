@@ -325,7 +325,7 @@ leaving the rest of the structure unchanged:
   "cover": {
     "mode": "generated",
     "variant": "academic",
-    "slots": {
+    "content": {
       "institution": "{{project.institution}}",
       "title": "{{title}}",
       "author": "{{project.author}}",

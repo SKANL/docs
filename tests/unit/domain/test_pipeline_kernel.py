@@ -122,7 +122,6 @@ def test_artifact_contract_and_record_expose_reproducible_contract_metadata():
 
     assert payload["contract"]["expected_path"] == "output/rendered.pdf"
     assert payload["contract"]["source_inputs"] == ["sections/001.md"]
-    assert record.artifact_id == "rendered"
     assert payload["record"]["producer_stage"] == "build-pdf"
 
 

@@ -12,7 +12,6 @@ from docs.domain.artifacts import RenderProfile, VerificationReport
 from docs.domain.ports.qa_render_port import QaRenderPort
 from docs.domain.qa import ensure_child_path, render_qa_report
 from docs.domain.review import Issue, ReviewDimension, ReviewResult
-from docs.domain.visual_baseline import compare_preview_baseline
 
 
 class QaService:
@@ -100,26 +99,6 @@ class QaService:
 
         audit = self.format_audit_service.audit_format(docx_path, config, strict=strict)
         document_audits = self.port.run_documents_audits(config, docx_path, output_dir, strict)
-        # Keep the compatibility/manual path for callers that intentionally omit the
-        # shared verifier.  When it is composed, baseline comparison belongs to
-        # RenderVerificationAdapter so every format follows the same contract.
-        if baseline_dir is not None and render_verification is None:
-            for finding in compare_preview_baseline(
-                previews_dir,
-                baseline_dir,
-                minimum_similarity=minimum_similarity,
-                strict=strict,
-            ):
-                audit.issues.append(
-                    Issue(
-                        finding.severity,
-                        finding.message,
-                        code=finding.code,
-                        dimension=ReviewDimension.VISUAL,
-                        page=finding.page,
-                        stage_originator="visual-baseline",
-                    )
-                )
         if render_error is not None:
             audit.issues.append(Issue(
                 "error" if strict else "warning", f"DOCX render unavailable: {render_error}",

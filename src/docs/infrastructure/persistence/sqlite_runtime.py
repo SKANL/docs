@@ -130,15 +130,11 @@ class SqliteFindingStore(_SqliteStore):
 
     @classmethod
     def _finding(cls, value: str) -> dict[str, Any]:
-        # Read old raw finding rows for compatibility, while all new rows use
-        # the same versioned envelope as the other runtime projections.
         decoded = json.loads(value)
         if not isinstance(decoded, dict):
             raise ValueError("stored finding payload must be a JSON object")
         if decoded.get("schema") == SCHEMA and isinstance(decoded.get("finding"), dict):
             return dict(decoded["finding"])
-        if "id" in decoded and "run_id" in decoded:
-            return decoded
         raise ValueError("unsupported stored finding payload schema")
 
     def list(self) -> _builtins.list[dict[str, Any]]:
