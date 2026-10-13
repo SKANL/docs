@@ -2,7 +2,7 @@ import json
 import shutil
 from pathlib import Path
 
-from docs.cli.commands.document_app import (
+from docs.cli.commands.document_batch import (
     _batch_journal_path,
     _record_batch_outputs,
     _recover_batch_transaction,
