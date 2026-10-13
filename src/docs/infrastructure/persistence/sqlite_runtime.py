@@ -381,11 +381,3 @@ class SqliteLeaseStore(_SqliteStore):
             cursor = connection.execute("DELETE FROM x20_leases WHERE resource = ? AND owner = ?", (resource, owner))
         return cursor.rowcount == 1
 
-
-# Compatibility aliases retain the historical all-caps SQLite spelling.
-SQLiteRunStore = SqliteRunStore
-SQLitePassportStore = SqlitePassportStore
-SQLiteArtifactStore = SqliteArtifactStore
-SQLiteGraphStore = SqliteGraphStore
-SQLiteJobQueue = SqliteJobQueue
-SQLiteLeaseStore = SqliteLeaseStore

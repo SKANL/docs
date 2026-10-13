@@ -148,18 +148,6 @@ def _decode(cursor: str, secret: bytes = _CURSOR_SECRET) -> dict[str, Any]:
         raise APIError("invalid_cursor", "cursor is invalid") from exc
 
 
-def encode_cursor(offset: int) -> str:
-    return _cursor({"offset": offset})
-
-
-def decode_cursor(cursor: str) -> int:
-    data = _decode(cursor)
-    offset = data.get("offset")
-    if not isinstance(offset, int) or offset < 0:
-        raise APIError("invalid_cursor", "cursor is invalid")
-    return offset
-
-
 def paginate(
     items: Iterable[Any],
     *,
@@ -265,8 +253,6 @@ class Router:
         cors_origins: Iterable[str] | None = None,
         cors_origin: str | None = None,
         max_body_size: int = 1_048_576,
-        rate_limiter: Any = None,
-        rate_limit_key: Callable[[Request], str] | None = None,
         idempotency_persistence: Any = None,
         idempotency_store: IdempotencyStore | None = None,
     ) -> None:
@@ -275,8 +261,6 @@ class Router:
         self.cors_origins = {origin.rstrip("/") for origin in (cors_origins or ([cors_origin] if cors_origin else [])) if origin}
         self.idempotency = idempotency_store or IdempotencyStore(persistence=idempotency_persistence)
         self.max_body_size = max_body_size
-        self.rate_limiter = rate_limiter
-        self.rate_limit_key = rate_limit_key or (lambda request: request.headers.get("X-Principal", "anonymous"))
 
     def route(self, method: str, path: str, *, auth: TokenValidator | None = None, scopes: Any = None):
         def decorator(handler):
@@ -296,19 +280,6 @@ class Router:
             )
         if request.method.upper() == "OPTIONS":
             return self._cors(Response(204, b"", {}), origin)
-        if self.rate_limiter is not None:
-            result = self.rate_limiter.allow(self.rate_limit_key(request))
-            if not result.allowed:
-                from .enterprise import normalize_error
-
-                error = APIError(
-                    "rate_limited",
-                    "Rate limit exceeded",
-                    429,
-                    details={"remaining": result.remaining, "retry_after": result.retry_after},
-                    headers={"retry-after": str(max(1, int(result.retry_after + 0.999)))}
-                )
-                return self._cors(Response.json(normalize_error(error), error.status, error.headers), origin)
         methods = [m for m, p, _, _ in self._routes if p == request.route_path]
         for method, path, handler, validator in self._routes:
             if method == request.method.upper() and path == request.route_path:

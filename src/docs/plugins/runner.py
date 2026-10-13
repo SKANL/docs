@@ -9,7 +9,7 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,8 +127,6 @@ class PluginRunner:
         trusted_builtin_tokens: Iterable[str] = (),
         trusted_credentials: Mapping[str, str] | None = None,
         sandbox_provider: PlatformSandboxProvider | None = None,
-        sandbox_launcher: Callable[[tuple[str, ...]], tuple[str, ...]] | None = None,
-        sandbox_available: bool = False,
         max_scratch_bytes: int = 64 * 1024 * 1024,
         max_scratch_files: int = 1_000,
     ) -> None:
@@ -146,9 +144,7 @@ class PluginRunner:
         self.trusted_builtin_ids = frozenset(trusted_builtin_ids)
         self.trusted_builtin_tokens = frozenset(trusted_builtin_tokens)
         self.trusted_credentials = dict(trusted_credentials or {})
-        # Deprecated constructor knobs are accepted for callers, but deliberately not
-        # security inputs. Only a provider-issued platform attestation counts.
-        del sandbox_launcher, sandbox_available
+        # Only a provider-issued platform attestation counts as a sandbox.
         self.sandbox_provider = sandbox_provider
         self.max_scratch_bytes = max_scratch_bytes
         self.max_scratch_files = max_scratch_files

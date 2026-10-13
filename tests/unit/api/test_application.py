@@ -7,7 +7,6 @@ import pytest
 
 from docs.api.application import X20Application
 from docs.api.auth import Principal
-from docs.api.enterprise import TokenBucketRateLimiter
 from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
@@ -1085,22 +1084,6 @@ def test_concurrent_cancellation_is_atomic_and_cancels_once():
         thread.join()
     assert [response.status for response in responses] == [200, 200]
     assert application.queue.cancel_calls == ["r1"]
-
-
-def test_router_rate_limit_returns_retry_metadata():
-    router = Router(
-        rate_limiter=TokenBucketRateLimiter(rate=1, capacity=1),
-        rate_limit_key=lambda request: request.headers.get("X-Tenant", "anonymous"),
-    )
-    router.route("GET", "/limited")(lambda request: Response.json({"ok": True}))
-
-    assert router.dispatch(Request("GET", "/limited", {"X-Tenant": "tenant-1"})).status == 200
-    response = router.dispatch(Request("GET", "/limited", {"X-Tenant": "tenant-1"}))
-
-    assert response.status == 429
-    assert response.headers["retry-after"]
-    assert body(response)["error"]["code"] == "rate_limited"
-    assert body(response)["error"]["details"]["remaining"] == 0
 
 
 def test_router_enforces_optional_oidc_scope_policy():
