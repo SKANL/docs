@@ -20,7 +20,7 @@ export interface PublicationRecord {
 
 const text = (value: unknown) => typeof value === "string" && value ? value : undefined;
 
-export function toPublicationRecord(raw: Record<string, unknown>): PublicationRecord {
+function toPublicationRecord(raw: Record<string, unknown>): PublicationRecord {
   return {
     id: String(raw.id ?? ""), documentId: text(raw.document_id), destination: text(raw.destination) ?? text(raw.artifact) ?? "",
     artifactSha256: text(raw.artifact_sha256) ?? "", runId: text(raw.run_id) ?? text(raw.provenance_run), publishedAt: text(raw.published_at),

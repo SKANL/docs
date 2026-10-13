@@ -6,7 +6,6 @@ export type WorkspaceStatus = { workspace: Workspace; active: boolean };
 export type WorkspaceMigration = { source_workspace_id: string; detected_format: string; ready: boolean; published: boolean; workspace?: Workspace | null; errors: string[] };
 export type DocumentRecord = { id: string; title?: string; template?: string; lifecycle?: string; path?: string; active?: boolean; created_at?: string };
 export type CurrentDocument = { current_document_id: string | null; document: DocumentRecord | null };
-export type ImportResult = { id: string; document_id: string; filename: string; path: string; mime_type: string; size: number; sha256: string; deduplicated?: boolean };
 export type DocumentCreateInput = { workspaceId: string; documentId: string; template: string; title?: string };
 export type DocumentDeleted = { deleted: string; current_document_id: string | null };
 
@@ -26,7 +25,6 @@ export interface WorkspacesApi {
   deleteDocument(id: string, workspaceId: string): Promise<DocumentDeleted>;
   getDocumentStatus(documentId: string, workspaceId?: string): Promise<Record<string, unknown>>;
   createDocument(input: DocumentCreateInput): Promise<Record<string, unknown>>;
-  importDocument(file: File, workspace: Workspace, options?: { documentId?: string; template?: string; title?: string }): Promise<ImportResult>;
 }
 
 export function createWorkspacesApi(t: Transport): WorkspacesApi {
@@ -66,11 +64,6 @@ export function createWorkspacesApi(t: Transport): WorkspacesApi {
     deleteDocument: (id, workspaceId) => t.scoped(docPath(id), jsonInit("DELETE"), workspaceId),
     getDocumentStatus: (id, workspaceId) => t.scoped(`${docPath(id)}/status`, {}, workspaceId),
     createDocument: input => t.scoped("documents", jsonInit("POST", { workspace_id: input.workspaceId, document_id: input.documentId, template: input.template, title: input.title ?? "" }), input.workspaceId),
-    async importDocument(file, workspace, options = {}) {
-      const query = new URLSearchParams({ workspace_id: workspace.id, template: options.template ?? "documento-generico", title: options.title ?? file.name });
-      if (options.documentId) query.set("document_id", options.documentId);
-      return t.scoped<ImportResult>(`documents/import/raw?${query}`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-Docs-Filename": file.name }, body: new Uint8Array(await file.arrayBuffer()) }, workspace.id);
-    },
   };
   return api;
 }

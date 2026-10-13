@@ -7,7 +7,7 @@ export const deliveryKeys = {
 };
 
 /** First 12 characters of a digest; the full value is one click away on the copy button. */
-export const shortDigest = (value: string) => value ? `${value.slice(0, 12)}…` : "-";
+const shortDigest = (value: string) => value ? `${value.slice(0, 12)}…` : "-";
 
 export function CopyDigest({ value, label = "digest" }: { value: string; label?: string }) {
   if (!value) return <span>-</span>;

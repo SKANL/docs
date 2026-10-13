@@ -14,7 +14,7 @@ import { Facts } from "@/components/shared/Facts";
 import { SeverityBadge, reviewKeys, toFindingRow, type FindingRow } from "./data";
 
 /** Where a finding came from and where to go next: its run's evidence, and the section to fix. */
-export function FindingDetail({ finding }: { finding: FindingRow }) {
+function FindingDetail({ finding }: { finding: FindingRow }) {
   return <section aria-label="Finding detail" className="grid gap-3 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-semibold">{finding.id}</h2><SeverityBadge severity={finding.severity} />{finding.status && <Badge variant="outline">{finding.status}</Badge>}</div>
     <p>{finding.message}</p>

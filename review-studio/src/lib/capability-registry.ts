@@ -11,7 +11,7 @@ function flattenCapabilities(catalog: CapabilityCatalog): CapabilityAction[] {
   }));
 }
 
-export async function loadCapabilityActions(api: ReviewApi): Promise<CapabilityAction[]> {
+async function loadCapabilityActions(api: ReviewApi): Promise<CapabilityAction[]> {
   if (!api.getCapabilities) return [];
   return flattenCapabilities(await api.getCapabilities());
 }

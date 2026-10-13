@@ -15,7 +15,7 @@ import { ActionError, useAction } from "@/lib/actions";
 import { useCapability } from "@/lib/capability-registry";
 import { authoringKeys, useSections } from "./data";
 
-export function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; onOpenSection(id: string): void }) {
+function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; onOpenSection(id: string): void }) {
   const where = (finding: ReviewFinding) => [finding.section && `section ${finding.section}`, finding.file, finding.page != null && `page ${finding.page}`].filter(Boolean).join(" · ");
   return <section aria-label="Review findings" className="grid gap-3 rounded-lg border bg-card p-4">
     <div className="flex items-center gap-2"><h3 className="font-semibold">Review findings</h3><Badge variant={result.passed ? "secondary" : "destructive"}>{result.passed ? "Passed" : "Needs attention"}</Badge>
