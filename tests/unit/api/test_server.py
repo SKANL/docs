@@ -12,8 +12,8 @@ from urllib.request import urlopen
 import pytest
 
 from docs.api.server import (
-    TransportConfig,
     ApiTransport,
+    TransportConfig,
     _compose_application,
     create_app,
     create_server,

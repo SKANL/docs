@@ -6,13 +6,13 @@ from .http import APIError, IdempotencyStore, Request, Response, Router, paginat
 
 __all__ = [
     "APIError",
+    "ApiApplication",
     "AuthError",
     "IdempotencyStore",
     "Principal",
     "Request",
     "Response",
     "Router",
-    "ApiApplication",
     "bearer_auth",
     "paginate",
     "require_scopes",

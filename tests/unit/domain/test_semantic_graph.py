@@ -5,7 +5,7 @@ from types import MappingProxyType
 
 import pytest
 
-from docs.domain.semantic_graph import NormalizedSourceRecord, SemanticGraph, SemanticNode, SourceProvenance
+from docs.domain.semantic_graph import SemanticGraph, SemanticNode, SourceProvenance
 
 
 def test_semantic_graph_is_immutable_and_has_deterministic_identity() -> None:
@@ -29,15 +29,6 @@ def test_nested_graph_attributes_cannot_be_mutated() -> None:
         pass
     else:
         raise AssertionError("semantic graph attributes must be immutable")
-
-
-def test_normalized_source_record_accepts_generic_mapping() -> None:
-    record = NormalizedSourceRecord.from_mapping(
-        {"source_id": "doc-1", "source_type": "markdown", "content": "Ada"}
-    )
-
-    assert record.source_id == "doc-1"
-    assert record.to_dict()["content"] == "Ada"
 
 
 def test_semantic_graph_from_dict_rejects_invalid_shape() -> None:

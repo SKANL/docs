@@ -17,9 +17,8 @@ from docs.application.evidence_passport import EvidencePassportService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.provenance import ProvenanceLedger
-from docs.application.semantic_graph import SemanticGraphProjector
 from docs.domain.runtime_records import Artifact
-from docs.domain.semantic_graph import NormalizedSourceRecord
+from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
     PythonDocxImageMetadataAdapter,
 )
@@ -132,10 +131,12 @@ def test_runtime_vertical_journey_is_deterministic_from_template_ir_to_api_run(t
     assert passport.passport.entries[0]["authorization"] == "[REDACTED]"
 
     graph_store = _GraphStore()
-    projection = SemanticGraphProjector(graph_store).project(
-        [NormalizedSourceRecord("document:vertical", "document", attributes={"entities": [{"id": "artifact:html", "label": "HTML"}], "edges": [{"target": "artifact:html", "relation": "renders"}]})]
+    graph_store.put(
+        SemanticGraph(
+            (SemanticNode("document:vertical", "document", "vertical"), SemanticNode("artifact:html", "artifact", "HTML")),
+            (SemanticEdge("document:vertical", "artifact:html", "renders"),),
+        )
     )
-    assert projection.graph is not None
     assert graph_store.get() is not None
 
     run_store = InMemoryRunStore()

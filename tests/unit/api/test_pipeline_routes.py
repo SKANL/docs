@@ -7,7 +7,7 @@ import pytest
 
 from docs.api.auth import Principal
 from docs.api.openapi import build_capability_catalog, build_openapi_document
-from docs.api.server import TransportConfig, ApiTransport
+from docs.api.server import ApiTransport, TransportConfig
 from docs.domain.runtime_records import Run
 
 NEW_COMMANDS = {
