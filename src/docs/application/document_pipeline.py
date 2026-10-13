@@ -237,38 +237,6 @@ def _build_inputs(root: Path) -> tuple[Path, ...]:
     )
 
 
-def _manifest_for(
-    *,
-    resolved: Any,
-    config: dict[str, Any],
-    renderer: Any,
-    root: Path,
-    artifact: Path,
-    destination: Path,
-    output_format: str,
-    run_id: str,
-    verification: dict[str, Any] | None = None,
-) -> BuildManifest:
-    """Native seam for callers that construct a v2 manifest directly."""
-    service = BuildManifestService(
-        input_identities=_current_input_identities,
-        build_inputs=_build_inputs,
-        artifact_hash=sha256_file,
-        write_text=_write_manifest_text,
-    )
-    return service.create_manifest(
-        resolved=resolved,
-        config=config,
-        renderer=renderer,
-        root=root,
-        artifact=artifact,
-        destination=destination,
-        output_format=output_format,
-        run_id=run_id,
-        verification=verification,
-    )
-
-
 def _current_input_identities(
     *, resolved: Any, config: dict[str, Any], renderer: Any, root: Path, output_format: str
 ) -> dict[str, Any]:

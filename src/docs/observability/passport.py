@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
-from typing import Any
 
 from docs.domain.runtime_records import Passport
 
@@ -23,8 +21,3 @@ def passport_metrics(passport: Passport) -> dict[str, int]:
     for status, count in sorted(statuses.items()):
         metrics[f"passport.entries.{status}"] = count
     return metrics
-
-
-def passport_metric_attributes(entry: Mapping[str, Any]) -> dict[str, str]:
-    """Return the small bounded attribute subset useful for a single entry."""
-    return {key: value for key in ("kind", "status") if isinstance(value := entry.get(key), str)}
