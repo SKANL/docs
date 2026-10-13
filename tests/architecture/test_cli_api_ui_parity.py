@@ -71,7 +71,7 @@ def _capabilities():
 
 PLATFORM_READS = {
     "findings.list", "artifacts.list", "artifacts.show", "baselines.list", "graph.read",
-    "plugins.list", "plugins.show", "publications.list", "revisions.list",
+    "plugins.list", "plugins.show", "publications.list", "revisions.list", "sources.list",
 }
 
 

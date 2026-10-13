@@ -130,6 +130,7 @@ _PLATFORM_READS: dict[str, tuple[str, str]] = {
     "plugins.show": ("GET /v2/plugins/{plugin_id}", "S6"),
     "publications.list": ("GET /v2/publications", "S5"),
     "revisions.list": ("GET /v2/revisions", "S2"),
+    "sources.list": ("GET /v2/documents/{document_id}/sources", "S2"),
 }
 
 

@@ -19,7 +19,7 @@ export function HomePage() {
   const workspaceId = active.data?.workspaceId ?? null;
   const key = ["home", workspaceId, documentId];
   const status = useQuery({ queryKey: [...key, "status"], queryFn: () => api.getDocumentStatus!(documentId!, workspaceId ?? undefined), enabled: !!documentId && !!api.getDocumentStatus });
-  const sources = useQuery({ queryKey: [...key, "sources"], queryFn: () => api.getDocumentClassification!(documentId!), enabled: !!documentId && !!api.getDocumentClassification });
+  const sources = useQuery({ queryKey: [...key, "sources"], queryFn: () => api.listSources!(documentId!), enabled: !!documentId && !!api.listSources });
   const runs = useQuery({ queryKey: [...key, "runs"], queryFn: () => api.listRunPage!({ documentId: documentId!, limit: 5 }), enabled: !!documentId && !!api.listRunPage });
   const findings = useQuery({ queryKey: [...key, "findings"], queryFn: () => api.listFindings(), enabled: !!documentId });
 
@@ -30,7 +30,8 @@ export function HomePage() {
   const blockers = Array.isArray(status.data?.publication_blockers) ? status.data.publication_blockers : [];
   const recent = runs.data?.items ?? [];
   const failing = (findings.data ?? []).filter(item => item.status === "failed").length;
-  // "source" is not an asset kind (the server rejects it); ingested sources are the classification items.
+  // "source" is not an asset kind (the server rejects it); the server's source inventory covers inbox files
+  // and ingested outputs, so a source that was just added counts before it is ingested.
   // A failed or still-loading query is unknown, never evidence: suggest no step inferred from it.
   const unknown = [sources, runs, findings].some(query => query.isError || (query.isPending && query.fetchStatus !== "idle"));
   const next: [string, string] | null =

@@ -11,7 +11,7 @@ afterEach(() => { cleanup(); window.location.hash = ""; });
 const open = (api: ReviewApi) => { window.location.hash = "#/"; return render(<App api={api} />); };
 const homeApi = (over: Record<string, unknown> = {}) => makeApi({
   getDocumentStatus: async () => ({ succeeded: true, publication_blockers: [] }),
-  getDocumentClassification: async (documentId: string) => ({ document_id: documentId, items: [{ relative_path: "a.md" }] }),
+  listSources: async (documentId: string) => ({ document_id: documentId, items: [{ name: "a.md", path: "inbox/a.md", state: "ingested" }] }),
   listRunPage: async () => page([run({ id: "run-9", status: "succeeded" })]),
   ...over,
 } as never);
@@ -25,13 +25,21 @@ describe("Home", () => {
     expect(link.getAttribute("href")).toBe("#/pipeline/runs/run-9");
     expect(within(screen.getByRole("region", { name: "Next safe action" })).getAllByRole("link")).toHaveLength(1);
   });
+  it("counts a source that is in the inbox but not ingested yet", async () => {
+    open(homeApi({
+      listSources: async (d: string) => ({ document_id: d, items: [{ name: "brief.docx", path: "inbox/brief.docx", state: "inbox" }] }),
+      getDocumentClassification: async (d: string) => ({ document_id: d, items: [] }),
+    }));
+    await screen.findByRole("link", { name: "run-9" });
+    expect(screen.queryByRole("link", { name: /Add sources/ })).toBeNull();
+  });
   it("asks for a document when none is selected", async () => {
     open(homeApi({ getCurrentDocument: async () => ({ current_document_id: null, document: null }) }));
     const next = await screen.findByRole("link", { name: /Create a document/ });
     expect(next.getAttribute("href")).toBe("#/configure/workspaces");
   });
   it("points at sources, then pipeline, then review", async () => {
-    const { unmount } = open(homeApi({ getDocumentClassification: async (d: string) => ({ document_id: d, items: [] }) }));
+    const { unmount } = open(homeApi({ listSources: async (d: string) => ({ document_id: d, items: [] }) }));
     expect((await screen.findByRole("link", { name: /Add sources/ })).getAttribute("href")).toBe("#/authoring/sources");
     unmount();
     const second = open(homeApi({ listRunPage: async () => page([]) }));
@@ -44,7 +52,7 @@ describe("Home", () => {
 
 describe("Home with unknown data", () => {
   it.each([
-    ["sources", { getDocumentClassification: async () => { throw new Error("sources down"); } }],
+    ["sources", { listSources: async () => { throw new Error("sources down"); } }],
     ["runs", { listRunPage: async () => { throw new Error("runs down"); } }],
     ["findings", { listFindings: async () => { throw new Error("findings down"); } }],
   ])("shows an error with retry and no next action when %s fails", async (_name, over) => {
@@ -56,7 +64,7 @@ describe("Home with unknown data", () => {
     expect(screen.queryByRole("link", { name: /Add sources/ })).toBeNull();
   });
   it("shows no next action while data is still loading", async () => {
-    open(homeApi({ getDocumentClassification: () => new Promise(() => {}) }));
+    open(homeApi({ listSources: () => new Promise(() => {}) }));
     await screen.findByRole("link", { name: "run-9" });
     expect(screen.queryByRole("region", { name: "Next safe action" })).toBeNull();
   });
