@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.domain.paths import PathEscapeError, confine
+
 from .manifest import (
     ManifestError,
     PluginManifest,
@@ -129,15 +131,17 @@ class PluginPackageInstaller:
                 seen: set[str] = set()
                 for member in archive.infolist():
                     name = member.filename.replace("\\", "/")
-                    target = Path(name)
-                    if not name or target.is_absolute() or ".." in target.parts or name in seen:
+                    try:
+                        output = confine(destination, name)
+                    except PathEscapeError as exc:
+                        raise ManifestError("plugin package contains an unsafe or duplicate path") from exc
+                    if name in seen:
                         raise ManifestError("plugin package contains an unsafe or duplicate path")
                     seen.add(name)
                     if member.is_dir():
                         continue
                     if (member.external_attr >> 16) & 0o170000 == 0o120000:
                         raise ManifestError("plugin package must not contain symlinks")
-                    output = destination / target
                     output.parent.mkdir(parents=True, exist_ok=True)
                     output.write_bytes(archive.read(member))
         except zipfile.BadZipFile as exc:

@@ -10,6 +10,7 @@ from typing import Any
 
 from docs.application.semantic_graph import SemanticGraphProjector
 from docs.domain.docx_structure import structure_parts
+from docs.domain.paths import is_within
 from docs.domain.ports.atomic_file_port import AtomicFilePort
 from docs.domain.ports.markdown_normalizer_port import MarkdownNormalizerPort
 
@@ -399,22 +400,14 @@ class SourcePipeline:
             resolved_path = path.resolve(strict=True)
         except OSError:
             return False
-        try:
-            resolved_path.relative_to(root.resolve(strict=False))
-        except ValueError:
+        if not is_within(resolved_path, root):
             return False
         allowed_roots = cls._output_roots(paths) or (
             root / "sections",
             root / "assets",
             root / "runs",
         )
-        for allowed_root in allowed_roots:
-            try:
-                resolved_path.relative_to(allowed_root.resolve(strict=False))
-            except ValueError:
-                continue
-            return True
-        return False
+        return any(is_within(resolved_path, allowed_root) for allowed_root in allowed_roots)
 
     def _atomic_json(self, destination: Path, payload: dict[str, Any]) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)

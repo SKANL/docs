@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from docs.domain.paths import is_within
 from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord
 from docs.domain.ports.atomic_file_port import AtomicFilePort
 
@@ -35,7 +36,7 @@ class StageArtifactStore:
         self._reject_symlinked_path(target, "artifact path")
         target.parent.mkdir(parents=True, exist_ok=True)
         self._reject_symlinked_path(target, "artifact path")
-        if not target.resolve(strict=False).is_relative_to(self._root.resolve(strict=False)):
+        if not is_within(target, self._root):
             raise ValueError(f"artifact path must remain within the store root: {relative_path!r}")
         with self._file_writer.scratch_dir(target.parent) as scratch:
             candidate = scratch / target.name

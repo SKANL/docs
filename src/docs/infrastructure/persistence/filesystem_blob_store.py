@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.runtime_records import Blob
 
 _JSON = dict[str, Any]
@@ -102,16 +103,16 @@ class FilesystemBlobStore:
         root = self.root.resolve()
         for path in (content_path, metadata_path, self._manifest_path(key)):
             try:
-                path.resolve(strict=False).relative_to(root)
-            except ValueError as exc:
+                require_within(path, root)
+            except PathEscapeError as exc:
                 raise ValueError("blob path must stay inside blob root (symlink or traversal detected)") from exc
         return content_path, metadata_path
 
     def _assert_safe_path(self, path: Path) -> None:
         root = self.root.resolve(strict=False)
         try:
-            path.resolve(strict=False).relative_to(root)
-        except ValueError as exc:
+            require_within(path, root)
+        except PathEscapeError as exc:
             raise ValueError("blob path must stay inside blob root (symlink or traversal detected)") from exc
         current = path
         while current != current.parent:
@@ -162,8 +163,8 @@ class FilesystemBlobStore:
         safe_key = key.replace("/", "\\")
         directory = self.root / ".generations" / safe_key / generation
         try:
-            directory.resolve(strict=False).relative_to(self.root.resolve())
-        except ValueError as exc:
+            require_within(directory, self.root)
+        except PathEscapeError as exc:
             raise ValueError("blob generation path must stay inside blob root (symlink or traversal detected)") from exc
         return directory
 

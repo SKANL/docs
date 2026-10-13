@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.domain.paths import require_within
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 TransformCallable = Callable[[Path], None]
@@ -394,7 +395,7 @@ class AtomicTransform:
                 raise ValueError("symlinked recovery root")
             resolved_backup = backup_dir.resolve(strict=False)
             resolved_journal_root = journal_root.resolve(strict=False)
-            resolved_backup.relative_to(resolved_journal_root)
+            require_within(resolved_backup, resolved_journal_root)
             if resolved_backup == resolved_journal_root or resolved_backup.parent != resolved_journal_root:
                 raise ValueError("backup root is not a dedicated child directory")
         except ValueError as exc:
@@ -407,8 +408,8 @@ class AtomicTransform:
             try:
                 if AtomicTransform._has_symlinked_ancestor(target) or AtomicTransform._has_symlinked_ancestor(backup):
                     raise ValueError("symlinked recovery path")
-                target.resolve(strict=False).relative_to(destination.parent.resolve(strict=False))
-                backup.resolve(strict=False).relative_to(backup_dir.resolve(strict=False))
+                require_within(target, destination.parent)
+                require_within(backup, backup_dir)
                 if target.resolve(strict=False) != destination.resolve(strict=False):
                     raise ValueError("journal target binding mismatch")
                 expected_parent = raw_entry.get("parent_identity")

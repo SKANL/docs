@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from docs.composition import ApplicationComposition
+from docs.domain.paths import PathEscapeError, confine
 from docs.domain.ports.job_queue import JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.run_store import PassportStore, RunStore
@@ -292,12 +293,7 @@ def _paths(payload: Mapping[str, Any], field_name: str, workspace_root: Path) ->
 
 
 def _workspace_path(value: str, field_name: str, workspace_root: Path) -> Path:
-    candidate = Path(value)
-    if candidate.is_absolute():
-        raise ValueError(f"{field_name} paths must be relative to workspace_root")
-    resolved = (workspace_root / candidate).resolve()
     try:
-        resolved.relative_to(workspace_root)
-    except ValueError as exc:
+        return confine(workspace_root, value)
+    except PathEscapeError as exc:
         raise ValueError(f"{field_name} path escapes workspace_root") from exc
-    return resolved

@@ -13,11 +13,12 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any
 
 from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
 from docs.application.package_publication_service import PackagePublicationError, PublishPolicyDeniedError
+from docs.domain.paths import PathEscapeError, confine
 from docs.domain.pipeline_policy import PipelineMode
 from docs.domain.ports.document_repository import DocumentNotFoundError
 
@@ -80,13 +81,9 @@ class DeliveryRoutes(RouteSupport):
     @staticmethod
     def _destination(release: Path, requested: str) -> Path:
         """A path strictly inside `release`; anything absolute, drive-qualified or climbing is refused."""
-        parts = PureWindowsPath(requested)  # parses both `/` and `\` separators
-        if not requested.strip() or parts.anchor or parts.drive or ".." in parts.parts:
-            raise APIError("destination_not_permitted", "Destination must be a relative path inside output/release", 400)
-        candidate = (release / requested).resolve()
         try:
-            candidate.relative_to(release.resolve())
-        except ValueError as exc:
+            candidate = confine(release, requested)
+        except PathEscapeError as exc:
             raise APIError("destination_not_permitted", "Destination must be a relative path inside output/release", 400) from exc
         if candidate == release.resolve():
             raise APIError("destination_not_permitted", "Destination must name a file", 400)

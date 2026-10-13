@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
+from docs.domain.paths import PathEscapeError, require_within
 
 from . import authoring_dto as dto
 from .auth import require_scopes
@@ -93,8 +94,8 @@ class QualityRoutes(RouteSupport):
         for option in options:
             resolved = option.resolve()
             try:
-                resolved.relative_to(root)
-            except ValueError as exc:
+                require_within(resolved, root)
+            except PathEscapeError as exc:
                 raise APIError("artifact_outside_workspace", "Artifact is outside the workspace", 400) from exc
             if resolved.is_file():
                 return resolved
@@ -220,8 +221,8 @@ class QualityRoutes(RouteSupport):
             draft_dir = Path(deps.workspace.doc_root(document_id)) / draft_dir
         docx = (draft_dir / name).resolve()
         try:
-            docx.relative_to(root_path)
-        except ValueError as exc:
+            require_within(docx, root_path)
+        except PathEscapeError as exc:
             raise APIError("artifact_outside_workspace", "Built DOCX is outside the workspace", 400) from exc
         if not docx.is_file():
             raise APIError("docx_unavailable", "The document has no built DOCX; build it first", 409)

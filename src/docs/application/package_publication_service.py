@@ -15,6 +15,7 @@ from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.package_service import PackageFile, PackagePublicationError, PackageService
 from docs.application.provenance import ProvenanceLedger
 from docs.domain.artifacts import BuildManifest
+from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 
 
@@ -286,8 +287,8 @@ class PackagePublicationService:
         if any(candidate.is_symlink() for candidate in (path, *path.parents)):
             raise PackagePublicationError(f"publish refuses symlinked {label}: {path.name}")
         try:
-            path.resolve(strict=False).relative_to(root.resolve(strict=False))
-        except ValueError as exc:
+            require_within(path, root)
+        except PathEscapeError as exc:
             raise PackagePublicationError(f"publish {label} path escapes its intended root") from exc
 
     @staticmethod
@@ -297,8 +298,8 @@ class PackagePublicationService:
     @staticmethod
     def _read_snapshot(path: Path, document_root: Path) -> FileSnapshot:
         try:
-            path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
-        except (OSError, ValueError) as exc:
+            require_within(path, document_root, strict=True)
+        except (OSError, PathEscapeError) as exc:
             raise PackagePublicationError(f"package file escapes document root: {path.name}") from exc
         if any(candidate.is_symlink() for candidate in (path, *path.parents)):
             raise PackagePublicationError(f"package refuses symlinked path: {path.name}")
@@ -331,8 +332,8 @@ class PackagePublicationService:
     @staticmethod
     def _stream_identity(path: Path, document_root: Path) -> FileIdentity:
         try:
-            path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
-        except (OSError, ValueError) as exc:
+            require_within(path, document_root, strict=True)
+        except (OSError, PathEscapeError) as exc:
             raise PackagePublicationError(f"package file escapes document root: {path.name}") from exc
         if any(candidate.is_symlink() for candidate in (path, *path.parents)):
             raise PackagePublicationError(f"package refuses symlinked path: {path.name}")
