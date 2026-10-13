@@ -4,7 +4,7 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 
 | CLI command | API operation | API status | UI surface/action | Owning slice | Required scopes |
 | --- | --- | --- | --- | --- | --- |
-| `docs apply-corrections` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
+| `docs apply-corrections` | `POST /v2/documents/{document_id}/corrections/apply` | available | Not exposed yet (API only) | S4 | `documents:write` |
 | `docs build-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs build-ledger` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs build-rules` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
@@ -17,7 +17,7 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs format-audit-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs guide` | — | planned | Planned shared web+desktop action; no S0.1 UI | S0 | — |
 | `docs pack-context` | `POST /v2/documents/{document_id}/context-pack` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs qa-docx` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
+| `docs qa-docx` | `POST /v2/documents/{document_id}/qa-docx` | available | Not exposed yet (API only) | S4 | `documents:write` |
 | `docs review-document` | `POST /v2/documents/{document_id}/review` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs review-rules` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs review-section` | `POST /v2/documents/{document_id}/sections/{section_id}/review` | available | Not exposed yet (API only) | S2 | `documents:write` |
@@ -43,16 +43,16 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs doc show` | `GET /v2/documents/{document_id}` | available | Not exposed yet (API only) | S1 | `documents:read` |
 | `docs doc status` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
 | `docs doc use` | `POST /v2/documents/{document_id}/use` | available | Workspace page (`#workspace`): select document | S1 | `documents:write` |
-| `docs document baseline` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
+| `docs document baseline` | `POST /v2/baselines/promotions` | available | Not exposed yet (API only) | S4 | `baselines:write` |
 | `docs document build` | `POST /v2/documents/{document_id}/build` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs document classify` | `POST /v2/documents/{document_id}/classification` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs document diff` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
-| `docs document evidence` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
+| `docs document diff` | `POST /v2/artifacts/diff` | available | Not exposed yet (API only) | S4 | `artifacts:read` |
+| `docs document evidence` | `GET /v2/runs/{run_id}/evidence` | available | Not exposed yet (API only) | S4 | `passport:read` |
 | `docs document import` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs document ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs document inspect` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
+| `docs document inspect` | `GET /v2/artifacts/{artifact_id}/inspect` | available | Not exposed yet (API only) | S4 | `artifacts:read` |
 | `docs document package` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
-| `docs document passport` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
+| `docs document passport` | `GET /v2/runs/{run_id}/passport` | available | Not exposed yet (API only) | S4 | `passport:read` |
 | `docs document plan` | `POST /v2/documents/{document_id}/plan` | available | Not exposed yet (API only) | S3 | `documents:read` |
 | `docs document prepare` | `POST /v2/documents/{document_id}/prepare` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs document publish` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
