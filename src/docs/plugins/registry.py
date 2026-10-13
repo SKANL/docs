@@ -18,6 +18,7 @@ from docs.domain.paths import PathEscapeError, confine
 from .manifest import (
     ManifestError,
     PluginManifest,
+    make_sbom,
     manifest_hash,
     manifest_identity,
     plugin_identity,
@@ -79,7 +80,7 @@ def verify_sbom(raw_manifest: Mapping[str, Any], package_root: Path) -> dict[str
                 "digest": sha256_bytes(content),
             }
         )
-    verified = {"format": "docs.sbom/v1", "components": components, "digest": manifest_hash(components)}
+    verified = make_sbom(components)
     label = "verified" if declared and declared.get("digest") == verified["digest"] else (
         "declared-mismatch" if declared else "verified-only"
     )

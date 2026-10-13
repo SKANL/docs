@@ -163,6 +163,14 @@ def validate_manifest(raw: Mapping[str, Any]) -> PluginManifest:
     return PluginManifest(plugin_id, version, tuple(entrypoint), requested, api, tuple(formats_raw), permissions, network, deterministic, limits, signature, sbom, toolchain)
 
 
+SBOM_FORMAT = "docs.sbom/v1"
+
+
+def make_sbom(components: list[dict[str, Any]]) -> dict[str, Any]:
+    """The one SBOM envelope: format tag, components, and the digest that pins them."""
+    return {"format": SBOM_FORMAT, "components": components, "digest": manifest_hash(components)}
+
+
 def generate_sbom(manifest: PluginManifest, *, toolchain: Mapping[str, str] | None = None) -> dict[str, Any]:
     """Build deterministic metadata without importing or running plugin code."""
     declared = dict(manifest.toolchain)
@@ -173,4 +181,4 @@ def generate_sbom(manifest: PluginManifest, *, toolchain: Mapping[str, str] | No
         {"type": "entrypoint", "name": manifest.entrypoint[0], "version": declared.get("runtime", "unknown"), "digest": manifest_hash(list(manifest.entrypoint))},
     ]
     components.extend({"type": "toolchain", "name": key, "version": value, "digest": manifest_hash({key: value})} for key, value in sorted(declared.items()))
-    return {"format": "docs.sbom/v1", "components": components, "digest": manifest_hash(components)}
+    return make_sbom(components)
