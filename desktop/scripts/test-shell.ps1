@@ -1,6 +1,5 @@
-$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-$desktop = Split-Path -Parent $PSScriptRoot
 $index = Get-Content (Join-Path $desktop 'src/index.html') -Raw
 $sync = Get-Content (Join-Path $desktop 'scripts/sync-review-studio.ps1') -Raw
 $build = Get-Content (Join-Path $desktop 'scripts/build-windows.ps1') -Raw
@@ -13,10 +12,10 @@ if ($index -match 'Desktop shell ready|intentionally minimal placeholder') {
 if ($index -notmatch 'Review Studio') {
     throw 'desktop/src/index.html does not identify Review Studio.'
 }
-if ($sync -notmatch 'review-studio' -or $sync -notmatch 'npm ci' -or $sync -notmatch 'dist') {
+if ($sync -notmatch 'review-studio' -or $sync -notmatch "'ci'" -or $sync -notmatch 'dist') {
     throw 'sync-review-studio.ps1 is missing the deterministic build/copy contract.'
 }
-if ($build -notmatch 'sync:review-studio' -or $build -notmatch 'tauri build') {
+if ($build -notmatch 'sync:review-studio' -or $build -notmatch 'tauri.{0,12}build') {
     throw 'build-windows.ps1 does not run the frontend sync before Tauri.'
 }
 if ($build -notmatch 'check:sidecar' -or $sidecarCheck -notmatch 'resource_dir' -or $sidecarCheck -notmatch 'docs-sidecar/v1') {

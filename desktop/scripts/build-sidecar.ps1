@@ -1,14 +1,9 @@
-$ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'common.ps1')
 
-$desktop = Split-Path -Parent $PSScriptRoot
-$root = Split-Path -Parent $desktop
 $sidecarDir = Join-Path $desktop 'sidecar'
 $distDir = Join-Path $sidecarDir 'pyinstaller-dist'
 
-# A prior smoke test or desktop session may still hold a PyInstaller DLL.
-# Stop only the named Doc Harness sidecar before replacing the staged bundle.
-Get-Process -Name 'docs-sidecar' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 250
+Stop-Sidecar
 
 Push-Location $root
 try {

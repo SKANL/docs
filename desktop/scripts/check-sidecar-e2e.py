@@ -3,93 +3,39 @@
 from __future__ import annotations
 
 import base64
-import json
-import os
-import shutil
-import socket
-import subprocess
-import tempfile
-import time
-import urllib.request
-from pathlib import Path
 
-from process_cleanup import terminate_process_tree
-
-
-def call(base: str, path: str, method: str = "GET", payload: object | None = None) -> tuple[int, dict]:
-    body = None if payload is None else json.dumps(payload).encode()
-    request = urllib.request.Request(
-        base + path, data=body, method=method,
-        headers={"Content-Type": "application/json"} if body else {},
-    )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return response.status, json.loads(response.read())
+from sidecar_harness import API, running_sidecar
 
 
 def main() -> int:
-    desktop = Path(__file__).resolve().parents[1]
-    executable = Path(os.environ.get("DOCS_SIDECAR_EXECUTABLE", desktop / "sidecar" / "docs-sidecar.exe"))
-    if not executable.is_file():
-        raise SystemExit(f"packaged sidecar not found: {executable}")
-    root = Path(tempfile.mkdtemp(prefix="docs-sidecar-e2e-"))
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        base = f"http://127.0.0.1:{probe.getsockname()[1]}"
-    process = subprocess.Popen(
-        [os.fspath(executable), "--workspace", os.fspath(root / "workspace"), "--health-url", base + "/health"],
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    try:
-        deadline = time.monotonic() + 20
-        healthy = False
-        while time.monotonic() < deadline:
-            try:
-                if call(base, "/health")[1].get("ready"):
-                    healthy = True
-                    break
-            except OSError as error:
-                if process.poll() is not None:
-                    raise SystemExit(f"packaged sidecar exited with code {process.returncode}") from error
-                time.sleep(0.25)
-        if not healthy:
-            raise SystemExit("packaged sidecar did not become healthy within 20 seconds")
-        _, workspaces = call(base, "/v2/workspaces")
+    with running_sidecar("docs-sidecar-e2e-") as sidecar:
+        _, workspaces = sidecar.call(f"{API}/workspaces")
         workspace_id = workspaces["items"][0]["id"]
+        scope = "?workspace_id=" + workspace_id
         source = base64.b64encode(b"# Packaged E2E\n\nA real sidecar document.").decode()
-        status, imported = call(base, "/v2/documents/import", "POST", {
+        status, imported = sidecar.call(f"{API}/documents/import", "POST", {
             "workspace_id": workspace_id, "filename": "packaged.md",
             "content_base64": source, "document_id": "packaged-e2e",
             "template": "documento-generico", "title": "Packaged E2E",
         })
         if status != 201 or imported.get("document_id") != "packaged-e2e":
             raise SystemExit(f"import failed: {status} {imported}")
-        status, prepared = call(base, "/v2/documents/packaged-e2e/prepare?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id})
+        status, prepared = sidecar.call(f"{API}/documents/packaged-e2e/prepare{scope}", "POST", {"workspace_id": workspace_id})
         if status != 200 or prepared.get("succeeded") is False:
             raise SystemExit(f"prepare failed: {status} {prepared}")
-        _, run = call(base, "/v2/runs?workspace_id=" + workspace_id, "POST", {"workspace_id": workspace_id, "document_id": "packaged-e2e", "pipeline_id": "document", "format": "docx"})
+        _, run = sidecar.call(f"{API}/runs{scope}", "POST", {"workspace_id": workspace_id, "document_id": "packaged-e2e", "pipeline_id": "document", "format": "docx"})
         run_id = run["id"]
-        scope = "?workspace_id=" + workspace_id
-        deadline = time.monotonic() + 120
-        while time.monotonic() < deadline:
-            _, current = call(base, "/v2/runs/" + run_id + scope)
-            if current["status"] in {"succeeded", "failed", "cancelled", "expired"}:
-                break
-            time.sleep(0.5)
+        current = sidecar.wait_run(run_id, workspace_id, 120)
         if current["status"] != "succeeded":
             raise SystemExit(f"run failed: {current}")
-        if call(base, "/v2/runs/" + run_id + "/passport" + scope)[0] != 200:
+        if sidecar.call(f"{API}/runs/{run_id}/passport{scope}")[0] != 200:
             raise SystemExit("successful run did not produce a passport")
-        _, artifacts = call(base, "/v2/runs/" + run_id + "/artifacts" + scope)
-        if not artifacts.get("items"):
+        if not sidecar.call(f"{API}/runs/{run_id}/artifacts{scope}")[1].get("items"):
             raise SystemExit("successful run did not produce artifacts")
-        _, findings = call(base, "/v2/runs/" + run_id + "/findings" + scope)
-        if "items" not in findings:
+        if "items" not in sidecar.call(f"{API}/runs/{run_id}/findings{scope}")[1]:
             raise SystemExit("successful run did not expose findings")
         print("packaged sidecar end-to-end smoke test passed")
-        return 0
-    finally:
-        terminate_process_tree(process)
-        shutil.rmtree(root, ignore_errors=True)
+    return 0
 
 
 if __name__ == "__main__":
