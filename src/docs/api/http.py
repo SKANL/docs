@@ -97,6 +97,29 @@ class Response:
             {"content-type": "application/json; charset=utf-8", **(headers or {})},
         )
 
+    @classmethod
+    def error(
+        cls,
+        code: str,
+        message: str,
+        status: int,
+        headers: Mapping[str, str] | None = None,
+        details: Any = None,
+    ) -> Response:
+        """The one error envelope: `{"error": {"code", "message", "details"}}`."""
+        return cls.json(_error_body(code, message, details), status, headers)
+
+
+def _error_body(code: str, message: str, details: Any = None) -> dict[str, dict[str, Any]]:
+    return {"error": {"code": code, "message": message, "details": {} if details is None else details}}
+
+
+def normalize_error(error: Exception) -> dict[str, dict[str, Any]]:
+    """Convert known and unexpected exceptions to a stable, safe error payload."""
+    if isinstance(error, APIError):
+        return _error_body(error.code, error.message, error.details)
+    return _error_body("internal_error", "Internal server error")
+
 
 Handler = Callable[[Request], Response]
 
@@ -106,22 +129,12 @@ def error_response(error: Exception) -> Response:
         headers = dict(error.headers)
         if error.status == 401:
             headers.setdefault("WWW-Authenticate", 'Bearer realm="api"')
-        return Response.json(
-            {"error": {"code": error.code, "message": error.message, "details": {}}}, error.status, headers
-        )
+        return Response.error(error.code, error.message, error.status, headers)
     if isinstance(error, APIError):
-        from .enterprise import normalize_error
-
         if error.status >= 500:
-            return Response.json(
-                {"error": {"code": "internal_error", "message": "Internal server error", "details": {}}},
-                error.status,
-                error.headers,
-            )
+            return Response.error("internal_error", "Internal server error", error.status, error.headers)
         return Response.json(normalize_error(error), error.status, error.headers)
-    return Response.json(
-        {"error": {"code": "internal_error", "message": "Internal server error", "details": {}}}, 500
-    )
+    return Response.error("internal_error", "Internal server error", 500)
 
 
 _log = logging.getLogger("docs.api")
@@ -278,7 +291,7 @@ class Router:
         origin = next((v for k, v in request.headers.items() if k.lower() == "origin"), None)
         if origin and origin not in self.cors_origins:
             return self._cors(
-                Response.json({"error": {"code": "cors_denied", "message": "Origin is not allowed"}}, 403), origin
+                Response.error("cors_denied", "Origin is not allowed", 403), origin
             )
         if request.method.upper() == "OPTIONS":
             return self._cors(Response(204, b"", {}), origin)

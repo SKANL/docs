@@ -5,23 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .http import APIError
-
-
-def normalize_error(error: Exception) -> dict[str, dict[str, Any]]:
-    """Convert known and unexpected exceptions to a stable, safe error payload."""
-
-    if isinstance(error, APIError):
-        details = error.details if error.details is not None else {}
-        return {"error": {"code": error.code, "message": error.message, "details": details}}
-    return {
-        "error": {
-            "code": "internal_error",
-            "message": "Internal server error",
-            "details": {},
-        }
-    }
-
 
 def encode_sse_event(
     event: str | None,
