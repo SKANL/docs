@@ -555,7 +555,7 @@ class _HealthApplication:
         *,
         workspace_error: str | None = None,
         worker_runner: WorkerRunner | None = None,
-        worker_thread: threading.Thread | multiprocessing.Process | None = None,
+        worker_thread: threading.Thread | multiprocessing.process.BaseProcess | None = None,
     ) -> None:
         self.application = application
         self.health_path = health_path
@@ -877,8 +877,10 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     )
     # Heavy document work runs in a separate process. A Python thread would
     # share the GIL with HTML/PDF parsing and could make the API appear dead
-    # while the worker is healthy but busy.
-    process = multiprocessing.Process(
+    # while the worker is healthy but busy. Always spawn: a forked child (the
+    # POSIX default) inherits this process's open SQLite connections and fails
+    # with "disk I/O error" on its first write.
+    process = multiprocessing.get_context("spawn").Process(
         target=_worker_process_main,
         args=(config.workspace,),
         name="docs-worker",

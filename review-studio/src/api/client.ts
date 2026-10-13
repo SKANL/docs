@@ -443,5 +443,3 @@ export async function yieldSse(stream: ReadableStream<Uint8Array>, onEvent: (eve
     buffer += decoder.decode();
   } finally { reader.releaseLock(); }
 }
-
-

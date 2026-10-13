@@ -187,6 +187,26 @@ describe("run detail", () => {
     expect(streams).toHaveLength(1);
   });
 
+  it("reflects the terminal event status immediately, before the record refetch settles", async () => {
+    const { api, streams } = streamingApi({ getRun: async (id: string) => rawRun(id, "running") });
+    openPipeline("/pipeline/runs/run-1", api);
+    await waitFor(() => expect(streams).toHaveLength(1));
+    act(() => streams[0].emit({ type: "terminal", run: { id: "run-1", status: "failed" } }));
+    const receipt = await screen.findByRole("region", { name: "Run receipt" });
+    expect(receipt.textContent).toContain("failed");
+    expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
+  });
+
+  it("does not keep showing a running state after a terminal event that carries no status", async () => {
+    let status = "running";
+    const { api, streams } = streamingApi({ getRun: async (id: string) => rawRun(id, status) });
+    openPipeline("/pipeline/runs/run-1", api);
+    await waitFor(() => expect(streams).toHaveLength(1));
+    status = "succeeded";
+    act(() => streams[0].emit({ type: "terminal" }));
+    expect((await screen.findByRole("region", { name: "Run receipt" })).textContent).toContain("succeeded");
+  });
+
   it("confirms before cancelling, and keeps running on Cancel", async () => {
     const cancelRun = vi.fn(async () => ({}));
     const { api } = streamingApi({ cancelRun });

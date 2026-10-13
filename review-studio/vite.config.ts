@@ -5,6 +5,12 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      // React is ~45% of the initial bytes and changes far less often than app code: its own long-cached chunk keeps the entry chunk to app + router + query.
+      output: { manualChunks: id => (/node_modules[\/](react|react-dom|scheduler)[\/]/.test(id) ? "react" : undefined) },
+    },
+  },
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     exclude: ["e2e/**", "node_modules/**"],

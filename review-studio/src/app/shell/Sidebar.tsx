@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { areas, legacyScreens } from "@/app/areas";
+import { areas } from "@/app/areas";
 import { cn } from "@/lib/utils";
 
 const link = ({ isActive }: { isActive: boolean }) => cn(
@@ -21,12 +21,6 @@ export function Sidebar() {
         {areas.filter(area => area.secondary).map(({ id, label, path, icon: Icon }) => <li key={id}>
           <NavLink to={path} className={link}><Icon aria-hidden="true" className="size-4" />{label}</NavLink>
         </li>)}
-      </ul>
-    </nav>
-    <nav aria-label="Legacy screens" className="hidden md:block">
-      <p className="px-3 pb-2 text-[11px] font-semibold tracking-widest text-sidebar-foreground/60 uppercase">Legacy screens</p>
-      <ul className="flex flex-col gap-0.5">
-        {legacyScreens.map(([id, label]) => <li key={id}><NavLink to={`/legacy/${id}`} className={link}>{label}</NavLink></li>)}
       </ul>
     </nav>
   </aside>;

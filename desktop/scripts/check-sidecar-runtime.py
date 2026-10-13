@@ -20,7 +20,10 @@ def main() -> int:
     executable = desktop / "sidecar" / "docs-sidecar.exe"
     if not executable.is_file():
         raise SystemExit(f"packaged sidecar not found: {executable}")
-    workspace = Path(tempfile.mkdtemp(prefix="docs-sidecar-runtime-"))
+    # A not-yet-existing workspace, exactly as Tauri hands it over: the sidecar
+    # refuses to adopt an existing directory that lacks the canonical marker.
+    root = Path(tempfile.mkdtemp(prefix="docs-sidecar-runtime-"))
+    workspace = root / "workspace"
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = int(probe.getsockname()[1])
@@ -50,7 +53,7 @@ def main() -> int:
         return 0
     finally:
         terminate_process_tree(process)
-        shutil.rmtree(workspace, ignore_errors=True)
+        shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,8 @@ describe("application shell", () => {
     render(<App api={makeApi()} />);
     await userEvent.click(within(screen.getByRole("navigation", { name: "Task areas" })).getByRole("link", { name: "Pipeline" }));
     await waitFor(() => expect(document.activeElement?.id).toBe("main"));
-    expect(screen.getByRole("heading", { name: "Pipeline" })).toBeTruthy();
+    // Feature areas are lazy chunks: the heading arrives after the first import resolves.
+    expect(await screen.findByRole("heading", { name: "Pipeline" }, { timeout: 5000 })).toBeTruthy();
   });
 
   it("offers a skip link that targets and focuses the main region", async () => {
@@ -77,14 +78,6 @@ describe("routes", () => {
     expect(await screen.findByRole("heading", { name: "Workspace and document control" })).toBeTruthy();
     expect(window.location.hash).toBe("#/configure/workspaces");
   });
-
-  it("keeps other legacy screens reachable under /legacy/<id>", async () => {
-    window.location.hash = "#graph";
-    render(<App api={makeApi()} />);
-    await waitFor(() => expect(window.location.hash).toBe("#/legacy/graph"));
-    expect(await screen.findByRole("combobox", { name: "Query" })).toBeTruthy();
-  });
-
 });
 
 describe("design tokens", () => {

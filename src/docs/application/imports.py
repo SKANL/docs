@@ -94,7 +94,8 @@ class SourceImportService:
 
     @staticmethod
     def _filename(value: str) -> str:
-        if not isinstance(value, str) or not value or Path(value).name != value or value in {".", ".."}:
+        # Reject both separators on every OS: on POSIX "..\x" is a plain name to Path.
+        if not isinstance(value, str) or not value or "/" in value or "\\" in value or Path(value).name != value or value in {".", ".."}:
             raise ImportError("invalid_filename")
         if re.search(r"[\x00-\x1f]", value):
             raise ImportError("invalid_filename")

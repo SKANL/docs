@@ -1,32 +1,24 @@
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
-import { areas, legacyScreens, type Area } from "@/app/areas";
+import { lazy } from "react";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { areas } from "@/app/areas";
 import { AppShell } from "@/app/shell/AppShell";
 import { useApi } from "@/app/providers";
-import { LegacyRoute } from "@/app/legacy-pages";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { ConfigureLayout, configureSections } from "@/features/templates/ConfigureLayout";
-import { DoctorPanel } from "@/features/templates/DoctorPanel";
-import { PluginsPanel } from "@/features/templates/PluginsPanel";
-import { TemplateEditorPage } from "@/features/templates/TemplateEditorPage";
-import { ToolsRoute } from "@/features/tools/ToolsRoute";
-import { DeliveryRoute } from "@/features/delivery/DeliveryRoute";
-import { AuthoringRoute } from "@/features/authoring/AuthoringRoute";
-import { QualityRoute } from "@/features/quality/QualityRoute";
-import { PipelineRoute } from "@/features/pipeline/PipelineRoute";
-import { RunDetailPage } from "@/features/pipeline/RunDetailPage";
-import { WorkspaceDocumentPage } from "@/features/workspace/WorkspaceDocumentPage";
 
-/** An area with no feature yet. Honest by construction: no actions, only where it will arrive. */
-function AreaPlaceholder({ area }: { area: Area }) {
-  return <div className="grid gap-6">
-    <PageHeader eyebrow="Task area" title={area.label} description={area.summary} />
-    <EmptyState title="Not available yet" description={`This area is delivered in ${area.slice}. Until then, use the legacy screens in the sidebar.`}>
-      {area.id === "home" && <Button asChild variant="outline"><Link to="/legacy/overview">Open legacy overview</Link></Button>}
-    </EmptyState>
-  </div>;
-}
+// Each feature area is its own chunk so the entry bundle holds only the shell (budget: docs/review-studio/release-proof.md).
+const HomePage = lazy(() => import("@/features/home/HomePage").then(m => ({ default: m.HomePage })));
+const AuthoringRoute = lazy(() => import("@/features/authoring/AuthoringRoute").then(m => ({ default: m.AuthoringRoute })));
+const PipelineRoute = lazy(() => import("@/features/pipeline/PipelineRoute").then(m => ({ default: m.PipelineRoute })));
+const RunDetailPage = lazy(() => import("@/features/pipeline/RunDetailPage").then(m => ({ default: m.RunDetailPage })));
+const QualityRoute = lazy(() => import("@/features/quality/QualityRoute").then(m => ({ default: m.QualityRoute })));
+const DeliveryRoute = lazy(() => import("@/features/delivery/DeliveryRoute").then(m => ({ default: m.DeliveryRoute })));
+const ToolsRoute = lazy(() => import("@/features/tools/ToolsRoute").then(m => ({ default: m.ToolsRoute })));
+const WorkspaceDocumentPage = lazy(() => import("@/features/workspace/WorkspaceDocumentPage").then(m => ({ default: m.WorkspaceDocumentPage })));
+const TemplateEditorPage = lazy(() => import("@/features/templates/TemplateEditorPage").then(m => ({ default: m.TemplateEditorPage })));
+const DoctorPanel = lazy(() => import("@/features/templates/DoctorPanel").then(m => ({ default: m.DoctorPanel })));
+const PluginsPanel = lazy(() => import("@/features/templates/PluginsPanel").then(m => ({ default: m.PluginsPanel })));
 
 function ConfigureIndex() {
   const area = areas.find(item => item.id === "configure")!;
@@ -37,23 +29,17 @@ function ConfigureIndex() {
   </ConfigureLayout>;
 }
 
-function Workspaces() { return <WorkspaceDocumentPage api={useApi()} />; }
+const legacyHashes: Record<string, string> = {
+  overview: "/", workspace: "/configure/workspaces", runs: "/pipeline", findings: "/review/findings", artifacts: "/review/artifacts", passport: "/review/evidence",
+  graph: "/review/graph", baselines: "/review/baselines", revisions: "/authoring/revisions", templates: "/configure/templates", plugins: "/configure/plugins", publication: "/delivery",
+};
 
-function LegacyScreen() {
-  const { id = "overview" } = useParams();
-  const navigate = useNavigate();
-  const api = useApi();
-  // ponytail: legacy screens keep their light hard-coded palette inside a light surface until S7.2 retires them.
-  return <div className="legacy rounded-xl bg-[#f6f8fb] p-6 text-[#17233c] [color-scheme:light]">
-    <LegacyRoute route={id} api={api} go={next => navigate(next === "workspace" ? "/configure/workspaces" : `/legacy/${next}`)} />
-  </div>;
-}
+function Workspaces() { return <WorkspaceDocumentPage api={useApi()} />; }
 
 export function AppRoutes({ pollIntervalMs }: { pollIntervalMs?: number }) {
   return <Routes>
     <Route element={<AppShell pollIntervalMs={pollIntervalMs} />}>
-      <Route index element={<AreaPlaceholder area={areas[0]} />} />
-      {areas.filter(area => !["home", "configure", "authoring", "pipeline", "review", "delivery", "tools"].includes(area.id)).map(area => <Route key={area.id} path={area.id} element={<AreaPlaceholder area={area} />} />)}
+      <Route index element={<HomePage />} />
       <Route path="authoring/:tab?" element={<AuthoringRoute />} />
       <Route path="pipeline" element={<PipelineRoute />} />
       <Route path="pipeline/runs/:runId" element={<RunDetailPage />} />
@@ -65,10 +51,8 @@ export function AppRoutes({ pollIntervalMs }: { pollIntervalMs?: number }) {
       <Route path="configure/diagnostics" element={<ConfigureLayout title="Diagnostics" description="Environment checks for the current document and issue-code explanations."><DoctorPanel /></ConfigureLayout>} />
       <Route path="configure/plugins" element={<ConfigureLayout title="Plugins" description="The read-only plugin registry."><PluginsPanel /></ConfigureLayout>} />
       <Route path="tools" element={<ToolsRoute />} />
-      <Route path="legacy/:id" element={<LegacyScreen />} />
-      {/* Old hash URLs (#workspace, #runs, ...) keep working. */}
-      <Route path="workspace" element={<Navigate to="/configure/workspaces" replace />} />
-      {legacyScreens.map(([id]) => <Route key={id} path={id} element={<Navigate to={`/legacy/${id}`} replace />} />)}
+      {/* Old hash URLs (#runs, #findings, ...) keep working. */}
+      {Object.entries(legacyHashes).map(([from, to]) => <Route key={from} path={from} element={<Navigate to={to} replace />} />)}
       <Route path="*" element={<EmptyState title="Page not found" description="This address does not match any Review Studio page."><Button asChild variant="outline"><Link to="/">Go home</Link></Button></EmptyState>} />
     </Route>
   </Routes>;

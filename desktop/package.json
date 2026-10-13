@@ -18,7 +18,9 @@
     "build": "tauri build",
     "build:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
     "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-windows.ps1",
-    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1"
+    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-shell.ps1",
+    "build:runtime-check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-runtime-check.ps1",
+    "check:runtime": "node scripts/check-desktop-runtime.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
