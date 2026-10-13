@@ -27,6 +27,7 @@ from docs.domain.workspace import Workspace
 from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAssemblyAdapter
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
@@ -86,7 +87,10 @@ def test_chart_only_pipeline_e2e_docx_png_html_svg(tmp_path):
     (sections_dir / "visual-specs.json").write_text(json.dumps([_chart_spec("revenue")]), encoding="utf-8")
 
     generate_service = GenerateVisualsService(
-        {"chart": ChartSvgRenderer()}, _FakeSvgRasterizer(), image_metadata=PythonDocxImageMetadataAdapter()
+        {"chart": ChartSvgRenderer()},
+        _FakeSvgRasterizer(),
+        image_metadata=PythonDocxImageMetadataAdapter(),
+        file_writer=AtomicFileAdapter(),
     )
     result = generate_service.generate(sections_dir, assets_dir)
     assert result.generated == 1
@@ -141,7 +145,10 @@ def test_mermaid_and_chart_pipeline_e2e_byte_identical(tmp_path):
         (sections_dir / "visual-specs.json").write_text(json.dumps(specs), encoding="utf-8")
 
         generate_service = GenerateVisualsService(
-            renderers, ResvgRasterizerAdapter(tool_resolver), image_metadata=PythonDocxImageMetadataAdapter()
+            renderers,
+            ResvgRasterizerAdapter(tool_resolver),
+            image_metadata=PythonDocxImageMetadataAdapter(),
+            file_writer=AtomicFileAdapter(),
         )
         result = generate_service.generate(sections_dir, assets_dir)
         assert result.skipped == 0

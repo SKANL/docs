@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from docs.domain.identity import canonical_json
+
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
 
@@ -36,9 +38,7 @@ def _stable(value: Any) -> Any:
 
 def deterministic_json(value: Any) -> str:
     """Serialize supported domain values with a stable, compact JSON shape."""
-    if isinstance(value, StageResult):
-        return json.dumps(value.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return json.dumps(_stable(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return canonical_json(value.to_dict() if isinstance(value, StageResult) else _stable(value), strict=True)
 
 
 serialize = deterministic_json

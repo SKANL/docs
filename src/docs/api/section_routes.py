@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from docs.application.authoring_clock import authoring_timestamp
+from docs.domain.authoring_clock import authoring_timestamp
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.review import ReviewDimension, ReviewResult
 

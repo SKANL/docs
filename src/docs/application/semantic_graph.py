@@ -4,6 +4,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from docs.domain.identity import canonical_json
 from docs.domain.ports.semantic_graph import SemanticGraphStore
 from docs.domain.semantic_graph import (
     GraphConfidence,
@@ -12,7 +13,6 @@ from docs.domain.semantic_graph import (
     SemanticGraph,
     SemanticNode,
     SourceProvenance,
-    canonical_json,
 )
 
 
@@ -87,7 +87,7 @@ def _merge_nodes(nodes: Iterable[SemanticNode]) -> list[SemanticNode]:
                 -item.confidence.score,
                 -{"ambiguous": 0, "inferred": 1, "extracted": 2}[item.confidence.evidence],
                 item.label,
-                canonical_json(item.attributes),
+                canonical_json(item.attributes, strict=True),
                 item.kind,
             ),
         )
@@ -121,7 +121,7 @@ def _merge_edges(edges: Iterable[SemanticEdge]) -> list[SemanticEdge]:
             key=lambda item: (
                 -item.confidence.score,
                 -{"ambiguous": 0, "inferred": 1, "extracted": 2}[item.confidence.evidence],
-                canonical_json(item.confidence.to_dict()),
+                canonical_json(item.confidence.to_dict(), strict=True),
             ),
         )
         merged[key] = SemanticEdge(

@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from typing import Any
 
 from docs.domain.artifacts import ArtifactRef, ArtifactState
+from docs.domain.identity import canonical_json, sha256_bytes
 
 _SCHEMA = "docs.provenance/v1"
 
 
-def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
 def _sha256(value: object) -> str:
-    return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+    return sha256_bytes(canonical_json(value, strict=True).encode("utf-8"))
 
 
 def _artifact(value: dict[str, Any], state: ArtifactState) -> ArtifactRef:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import multiprocessing
@@ -17,9 +16,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic, TypeVar
 from urllib.parse import urlsplit
 from uuid import uuid4
+
+from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
 
 from .api.application import X20Application
 from .api.http import Response, Router
@@ -27,6 +28,7 @@ from .api.server import GracefulHTTPServer, TransportConfig, create_server, serv
 from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from .composition import compose_application
 from .domain.runtime_records import Artifact, Passport, Run
+from .infrastructure.atomic_write import atomic_write_text
 from .infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from .infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
@@ -43,20 +45,70 @@ from .workers.runner import WorkerRunner
 
 _LOG = logging.getLogger("docs.sidecar")
 
+_Store = TypeVar("_Store")
+
+
+class _WorkspaceRoots:
+    """Where workspaces live: the active root, a root by id, and every known root.
+
+    The one place that reads `registry.resolve(...)["root"]`; `fallback` is the sidecar's own
+    workspace, used when no registered workspace is active.
+    """
+
+    def __init__(self, registry: WorkspaceRegistry | None, fallback: Path | None) -> None:
+        self.registry = registry
+        self.fallback = fallback.resolve() if fallback is not None else None
+
+    def active_root(self) -> Path:
+        active = self.registry.active() if self.registry is not None else None
+        if active is not None:
+            return Path(str(active["root"])).resolve()
+        if self.fallback is None:
+            raise ValueError("no active workspace")
+        return self.fallback
+
+    def root_for(self, workspace_id: str | None = None) -> Path:
+        if workspace_id and self.registry is not None:
+            return Path(str(self.registry.resolve(workspace_id)["root"])).resolve()
+        return self.active_root()
+
+    def all_roots(self) -> list[Path]:
+        roots = [Path(str(item["root"])).resolve() for item in self.registry.list()] if self.registry is not None else []
+        if self.fallback is not None and self.fallback not in roots:
+            roots.append(self.fallback)
+        return roots
+
+
+class _PerRoot(Generic[_Store]):
+    """One lazily built store per workspace root, reused for every later lookup."""
+
+    def __init__(self, build: Callable[[Path], _Store]) -> None:
+        self._build = build
+        self._items: dict[str, _Store] = {}
+
+    def __call__(self, root: str | Path) -> _Store:
+        resolved = Path(root).expanduser().resolve()
+        key = str(resolved)
+        if key not in self._items:
+            self._items[key] = self._build(resolved)
+        return self._items[key]
+
+    def values(self) -> list[_Store]:
+        return list(self._items.values())
+
+
+def _state_path(root: Path) -> Path:
+    return root / ".docs" / "x20.sqlite3"
+
 
 class _FilesystemDocumentStore:
     """Read real document manifests for the local API; never synthesizes rows."""
 
     def __init__(self, workspace: Path, registry: WorkspaceRegistry | None = None) -> None:
-        self.root = workspace.resolve() / "documents"
-        self.registry = registry
+        self.roots = _WorkspaceRoots(registry, workspace)
 
     def _documents_root(self) -> Path:
-        if self.registry is not None:
-            active = self.registry.active()
-            if active is not None:
-                return Path(str(active["root"])).resolve() / "documents"
-        return self.root
+        return self.roots.active_root() / "documents"
 
     def list_for_workspace(self, workspace_root: str | Path) -> list[dict[str, Any]]:
         return self._list_from_root(Path(workspace_root).expanduser().resolve() / "documents")
@@ -95,23 +147,13 @@ class _FilesystemTemplateStore:
     """Expose the selected workspace's real template manifests to Review Studio."""
 
     def __init__(self, workspace: Path, registry: WorkspaceRegistry) -> None:
-        self.workspace = workspace.resolve()
-        self.registry = registry
-
-    def _root(self) -> Path:
-        active = self.registry.active()
-        return (Path(str(active["root"])) if active is not None else self.workspace).resolve() / "templates"
-
-    def _root_for(self, workspace_id: str | None = None) -> Path:
-        if workspace_id and self.registry is not None:
-            return Path(str(self.registry.resolve(workspace_id)["root"])).resolve() / "templates"
-        return self._root()
+        self.roots = _WorkspaceRoots(registry, workspace)
 
     def list(self) -> list[dict[str, Any]]:
-        return self._list_root(self._root())
+        return self._list_root(self.roots.active_root() / "templates")
 
     def list_for_workspace(self, workspace_id: str) -> builtin_list[dict[str, Any]]:
-        return self._list_root(self._root_for(workspace_id))
+        return self._list_root(self.roots.root_for(workspace_id) / "templates")
 
     @staticmethod
     def _list_root(root: Path) -> builtin_list[dict[str, Any]]:
@@ -137,27 +179,14 @@ class _WorkspaceJsonCollectionStore:
     """Read JSON-backed baseline/revision records without inventing rows."""
 
     def __init__(self, root: Path, kind: str, registry: WorkspaceRegistry | None = None) -> None:
-        self.root = root.resolve()
         self.kind = kind
-        self.registry = registry
-
-    def _active_root(self) -> Path:
-        if self.registry is not None:
-            active = self.registry.active()
-            if active is not None:
-                return Path(str(active["root"])).resolve()
-        return self.root
-
-    def _root_for(self, workspace_id: str | None = None) -> Path:
-        if workspace_id and self.registry is not None:
-            return Path(str(self.registry.resolve(workspace_id)["root"])).resolve()
-        return self._active_root()
+        self.roots = _WorkspaceRoots(registry, root)
 
     def list(self) -> list[dict[str, Any]]:
-        return self._list_root(self._active_root())
+        return self._list_root(self.roots.active_root())
 
     def list_for_workspace(self, workspace_id: str) -> builtin_list[dict[str, Any]]:
-        return self._list_root(self._root_for(workspace_id))
+        return self._list_root(self.roots.root_for(workspace_id))
 
     def _list_root(self, root: Path) -> builtin_list[dict[str, Any]]:
         if self.kind == "baselines":
@@ -187,13 +216,13 @@ class _WorkspaceJsonCollectionStore:
 
     def promote(self, baseline_id: str, metadata: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
         """Persist an explicit active-baseline pointer atomically."""
-        return self._promote_in_root(self._active_root(), baseline_id, metadata)
+        return self._promote_in_root(self.roots.active_root(), baseline_id, metadata)
 
     def promote_for_workspace(
         self, workspace_id: str, baseline_id: str, metadata: Mapping[str, Any] | None = None
     ) -> dict[str, Any] | None:
         """Promote a baseline without relying on process-global active state."""
-        return self._promote_in_root(self._root_for(workspace_id), baseline_id, metadata)
+        return self._promote_in_root(self.roots.root_for(workspace_id), baseline_id, metadata)
 
     def _promote_in_root(
         self, root: Path, baseline_id: str, metadata: Mapping[str, Any] | None = None
@@ -213,9 +242,7 @@ class _WorkspaceJsonCollectionStore:
             record["promotion"] = dict(metadata)
         target = root / "baselines" / "active.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(target)
+        atomic_write_text(target, pretty_json(record) + "\n")
         return record
 
 
@@ -223,9 +250,9 @@ class _WorkspaceRunStore:
     """Route durable run records to the SQLite database of their workspace."""
 
     def __init__(self, registry: WorkspaceRegistry, fallback_root: Path | None = None) -> None:
-        self.registry = registry
-        self.fallback_root = fallback_root.resolve() if fallback_root is not None else None
-        self._stores: dict[str, SqliteRunStore] = {}
+        self.roots = _WorkspaceRoots(registry, fallback_root)
+        self.fallback_root = self.roots.fallback
+        self._store = _PerRoot(lambda root: SqliteRunStore(_state_path(root)))
 
     @property
     def path(self) -> Path:
@@ -233,23 +260,13 @@ class _WorkspaceRunStore:
             raise AttributeError("workspace run store has no fallback path")
         return self.fallback_root / ".docs" / "x20.sqlite3"
 
-    def _store(self, root: str | Path) -> SqliteRunStore:
-        resolved = Path(root).expanduser().resolve()
-        key = str(resolved)
-        if key not in self._stores:
-            self._stores[key] = SqliteRunStore(resolved / ".docs" / "x20.sqlite3")
-        return self._stores[key]
-
     def _all(self) -> list[SqliteRunStore]:
-        roots = [Path(item["root"]).resolve() for item in self.registry.list()]
-        if self.fallback_root is not None and self.fallback_root not in roots:
-            roots.append(self.fallback_root)
-        return [self._store(root) for root in roots]
+        return [self._store(root) for root in self.roots.all_roots()]
 
     def put(self, run: Any) -> None:
         workspace_id = run.payload.get("workspace_id") if isinstance(run.payload, Mapping) else None
         if isinstance(workspace_id, str) and workspace_id:
-            self._store(self.registry.resolve(workspace_id)["root"]).put(run)
+            self._store(self.roots.root_for(workspace_id)).put(run)
         elif self.fallback_root is not None:
             self._store(self.fallback_root).put(run)
         else:
@@ -271,9 +288,9 @@ class _WorkspaceJobQueue:
     """Queue facade that claims work from every registered workspace."""
 
     def __init__(self, registry: WorkspaceRegistry, fallback_root: Path | None = None) -> None:
-        self.registry = registry
-        self.fallback_root = fallback_root.resolve() if fallback_root is not None else None
-        self._queues: dict[str, SqliteJobQueue] = {}
+        self.roots = _WorkspaceRoots(registry, fallback_root)
+        self.fallback_root = self.roots.fallback
+        self._queue = _PerRoot(lambda root: SqliteJobQueue(_state_path(root)))
 
     @property
     def path(self) -> Path:
@@ -281,69 +298,47 @@ class _WorkspaceJobQueue:
             raise AttributeError("workspace queue has no fallback path")
         return self.fallback_root / ".docs" / "x20.sqlite3"
 
-    def _queue(self, root: str | Path) -> SqliteJobQueue:
-        resolved = Path(root).expanduser().resolve()
-        key = str(resolved)
-        if key not in self._queues:
-            self._queues[key] = SqliteJobQueue(resolved / ".docs" / "x20.sqlite3")
-        return self._queues[key]
-
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         workspace_id = payload.get("workspace_id")
         if isinstance(workspace_id, str) and workspace_id:
-            self._queue(self.registry.resolve(workspace_id)["root"]).enqueue(job_id, payload)
+            self._queue(self.roots.root_for(workspace_id)).enqueue(job_id, payload)
         elif self.fallback_root is not None:
             self._queue(self.fallback_root).enqueue(job_id, payload)
         else:
             raise ValueError("workspace_id is required for queued runs")
 
     def claim(self, worker_id: str) -> Any:
-        roots = [item["root"] for item in self.registry.list()]
-        if self.fallback_root is not None and str(self.fallback_root) not in {
-            str(Path(root).resolve()) for root in roots
-        }:
-            roots.append(self.fallback_root)
-        for root in roots:
+        for root in self.roots.all_roots():
             job = self._queue(root).claim(worker_id)
             if job is not None:
                 return job
         return None
 
     def ack(self, job_id: str, worker_id: str) -> bool:
-        return any(queue.ack(job_id, worker_id) for queue in self._queues.values())
+        return any(queue.ack(job_id, worker_id) for queue in self._queue.values())
 
     def cancel(self, run_id: str) -> bool:
-        return any(queue.cancel(run_id) for queue in self._queues.values())
+        return any(queue.cancel(run_id) for queue in self._queue.values())
 
     def is_cancelled(self, run_id: str) -> bool:
-        return any(queue.is_cancelled(run_id) for queue in self._queues.values())
+        return any(queue.is_cancelled(run_id) for queue in self._queue.values())
 
 
 class _WorkspaceEvidenceStores:
     """Route passport, artifact, and finding projections by their run owner."""
 
     def __init__(self, registry: WorkspaceRegistry, run_store: _WorkspaceRunStore, fallback_root: Path) -> None:
-        self.registry = registry
+        self.roots = _WorkspaceRoots(registry, fallback_root)
         self.run_store = run_store
         self.fallback_root = fallback_root.resolve()
-        self._stores: dict[
-            str, tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]
-        ] = {}
-
-    def _stores_for_root(
-        self, root: str | Path
-    ) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore, SqlitePublicationStore]:
-        resolved = Path(root).expanduser().resolve()
-        key = str(resolved)
-        if key not in self._stores:
-            state = resolved / ".docs" / "x20.sqlite3"
-            self._stores[key] = (
-                SqlitePassportStore(state),
-                SqliteArtifactStore(state),
-                SqliteFindingStore(state),
-                SqlitePublicationStore(state),
+        self._stores_for_root = _PerRoot(
+            lambda root: (
+                SqlitePassportStore(_state_path(root)),
+                SqliteArtifactStore(_state_path(root)),
+                SqliteFindingStore(_state_path(root)),
+                SqlitePublicationStore(_state_path(root)),
             )
-        return self._stores[key]
+        )
 
     def _root_for_run(self, run_id: str) -> Path:
         run = self.run_store.get(run_id)
@@ -351,7 +346,7 @@ class _WorkspaceEvidenceStores:
             workspace_id = run.payload.get("workspace_id")
             if isinstance(workspace_id, str) and workspace_id:
                 try:
-                    return Path(str(self.registry.resolve(workspace_id)["root"])).resolve()
+                    return self.roots.root_for(workspace_id)
                 except Exception as exc:
                     _LOG.debug("workspace lookup failed for run %s: %s", run_id, exc)
         return self.fallback_root
@@ -465,17 +460,16 @@ class _WorkspacePublicationStore:
 
 class _WorkspaceGraphStore:
     def __init__(self, registry: WorkspaceRegistry, fallback_root: Path) -> None:
-        self.registry = registry
+        self.roots = _WorkspaceRoots(registry, fallback_root)
         self.fallback_root = fallback_root.resolve()
+        self._graph = _PerRoot(lambda root: SqliteGraphStore(_state_path(root)))
 
     @property
     def path(self) -> Path:
-        return self.fallback_root / ".docs" / "x20.sqlite3"
+        return _state_path(self.fallback_root)
 
     def _store(self, workspace_id: str | None = None) -> SqliteGraphStore:
-        selected = self.registry.resolve(workspace_id) if workspace_id else self.registry.active()
-        root = Path(str(selected["root"])).resolve() if selected is not None else self.fallback_root
-        return SqliteGraphStore(root / ".docs" / "x20.sqlite3")
+        return self._graph(self.roots.root_for(workspace_id))
 
     def for_workspace(self, workspace_id: str) -> _WorkspaceGraphView:
         return _WorkspaceGraphView(self, workspace_id)
@@ -782,8 +776,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         return {"document_id": document_id, "topic": topic, "field": field, "path": str(path)}
 
     def revise_document(document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        from .application.authoring_clock import authoring_timestamp
         from .composition import compose_application
+        from .domain.authoring_clock import authoring_timestamp
         from .domain.normative import resolve_normative_settings
         from .domain.workspace import Workspace
 
@@ -1113,12 +1107,12 @@ def _persist_worker_evidence(
                 )
             if candidate is not None and candidate.is_file():
                 materialized = True
-                digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                digest = sha256_file(candidate)
                 record["size_bytes"] = candidate.stat().st_size
             else:
                 materialized = False
                 encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-                digest = hashlib.sha256(encoded).hexdigest()
+                digest = sha256_bytes(encoded)
             artifact_store.put(
                 Artifact(
                     id=f"{result.run_id}-{stage.get('stage', 'stage')}-{index}",

@@ -1,9 +1,9 @@
 # src/docs/application/review.py
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
+from docs.domain.identity import sha256_bytes
 from docs.domain.models.template import SectionContract, Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.ports.section_repository import SectionRepository
@@ -160,7 +160,7 @@ class ReviewService:
             raise FileNotFoundError(f"No existe la sección a sellar: {path}")
 
         metadata, body = self.repository.read_section(doc_id, section.order, section.id)
-        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        body_hash = sha256_bytes(body.encode("utf-8"))
         new_metadata = apply_stamp(metadata, section.id, section.title, body, body_hash, authored_by, model, now)
         raw_text = with_frontmatter(body, new_metadata)
         self.repository.write_section(doc_id, section.order, section.id, raw_text)
@@ -181,7 +181,7 @@ class ReviewService:
         prompt_hash: str,
     ) -> Path:
         section = next(s for s in template.sections if s.id == section_id)
-        body_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        body_hash = sha256_bytes(body.encode("utf-8"))
         metadata = {
             "managed_by": "docs-harness",
             "authored_by": "harness-scaffold",

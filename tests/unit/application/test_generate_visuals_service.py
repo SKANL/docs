@@ -24,6 +24,7 @@ from docs.application.generate_visuals import (
 from docs.domain.ingest_naming import sha256_hex
 from docs.domain.ports.visual_renderer_port import VisualRendererPort, VisualSpec
 from docs.domain.svg_normalize import ensure_accessibility_metadata, normalize_svg
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 
 
 @dataclass
@@ -208,6 +209,7 @@ def _service(
         visual_renderers=cast(dict[str, VisualRendererPort], renderers),
         svg_rasterizer=rasterizer,
         image_metadata=FakeImageMetadata(dims),
+        file_writer=AtomicFileAdapter(),
     )
 
 
@@ -545,12 +547,16 @@ def test_write_failure_warns_and_skips_never_raises(tmp_path, capsys, monkeypatc
     # WARN+skip THAT visual, never abort the whole run -- generate() never
     # raises (review WARNING: the atomic write was outside the per-visual
     # try/except).
-    import docs.application.generate_visuals as gv
+    from docs.application.inline_json_writer import InlineJsonWriter
 
-    def _boom(*_args, **_kwargs):
-        raise OSError("disk full")
+    original_write = InlineJsonWriter.write_bytes
 
-    monkeypatch.setattr(gv, "_atomic_write_bytes", _boom)
+    def _boom(self, path, data):
+        if path.suffix in {".svg", ".png"}:
+            raise OSError("disk full")
+        original_write(self, path, data)
+
+    monkeypatch.setattr(InlineJsonWriter, "write_bytes", _boom)
     sections_dir = tmp_path / "sections"
     assets_dir = tmp_path / "assets"
     _write_specs(sections_dir, [{"label": "a", "type": "chart", "source": "s", "caption": "A"}])
@@ -653,7 +659,7 @@ def test_metadata_read_failure_cleans_both_outputs(tmp_path):
             raise OSError("unreadable PNG")
 
     service = GenerateVisualsService(
-        {"chart": FakeRenderer(type="chart")}, FakeRasterizer(), BrokenMetadata()
+        {"chart": FakeRenderer(type="chart")}, FakeRasterizer(), BrokenMetadata(), file_writer=AtomicFileAdapter()
     )
     service.generate(sections_dir, assets_dir)
     assert list((assets_dir / "figures").glob("*")) == []
@@ -679,7 +685,7 @@ def test_failed_rerun_preserves_existing_valid_outputs(tmp_path):
 
 
 def test_png_publish_failure_rolls_back_svg_and_preserves_existing_pair(tmp_path, monkeypatch):
-    import docs.application.generate_visuals as gv
+    from docs.application.inline_json_writer import InlineJsonWriter
 
     sections_dir = tmp_path / "sections"
     assets_dir = tmp_path / "assets"
@@ -690,14 +696,14 @@ def test_png_publish_failure_rolls_back_svg_and_preserves_existing_pair(tmp_path
 
     figures_dir = assets_dir / "figures"
     before = {path.name: path.read_bytes() for path in figures_dir.iterdir()}
-    original_atomic_write = gv._atomic_write_bytes
+    original_write = InlineJsonWriter.write_bytes
 
-    def fail_png_publish(path: Path, data: bytes) -> None:
+    def fail_png_publish(self, path: Path, data: bytes) -> None:
         if path.suffix == ".png":
             raise OSError("PNG publish failed")
-        original_atomic_write(path, data)
+        original_write(self, path, data)
 
-    monkeypatch.setattr(gv, "_atomic_write_bytes", fail_png_publish)
+    monkeypatch.setattr(InlineJsonWriter, "write_bytes", fail_png_publish)
 
     result = _service(
         {"chart": FakeRenderer(type="chart", svg="<svg><circle/></svg>")}, FakeRasterizer()

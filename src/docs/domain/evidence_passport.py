@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
 import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any, ClassVar
 
+from docs.domain.identity import canonical_json as identity_canonical_json
+from docs.domain.identity import sha256_bytes
 from docs.domain.runtime_records import Passport
 
 EVIDENCE_PASSPORT_SCHEMA = "docs.evidence-passport/v1"
@@ -48,13 +48,7 @@ _SENSITIVE_CONTENT = re.compile(
 
 def canonical_json(value: Any) -> bytes:
     """Encode supported JSON values as deterministic compact UTF-8 JSON."""
-    return json.dumps(
-        _json_value(value),
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-        allow_nan=False,
-    ).encode("utf-8")
+    return identity_canonical_json(_json_value(value), strict=True).encode("utf-8")
 
 
 def redact(value: Any, policy: RedactionPolicy = DEFAULT_REDACTION_POLICY) -> Any:
@@ -125,7 +119,7 @@ class EvidencePassport:
 
 def _digest(passport: Passport) -> str:
     payload = {"schema": EVIDENCE_PASSPORT_SCHEMA, "passport": passport.to_dict()}
-    return sha256(canonical_json(payload)).hexdigest()
+    return sha256_bytes(canonical_json(payload))
 
 
 def _json_value(value: Any) -> Any:

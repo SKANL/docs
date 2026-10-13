@@ -15,7 +15,7 @@ import re
 import shutil
 import zipfile
 from collections.abc import Callable
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -24,6 +24,7 @@ from docs.application.imports import ImportError, SourceImportService
 from docs.application.templates import TemplateService, builtin_names
 from docs.application.translate import UntranslatablePdfError
 from docs.domain.issue_codes import ISSUE_CODE_FAMILIES, ISSUE_CODES
+from docs.domain.paths import PathEscapeError, confine
 from docs.domain.tool_capability import ToolUnavailableError
 from docs.domain.translation_sidecars import translation_sidecars
 
@@ -79,14 +80,10 @@ class ToolRoutes(RouteSupport):
     @staticmethod
     def _confined(base: Path, requested: str, suffix: str) -> Path:
         """A path strictly inside `base` with the expected extension; anything else is refused."""
-        parts = PureWindowsPath(requested)  # parses both `/` and `\` separators
         message = f"Output must be a relative {suffix} path inside the workspace"
-        if not requested.strip() or parts.anchor or parts.drive or ".." in parts.parts or Path(requested).is_absolute():
-            raise APIError("output_not_permitted", message, 400)
-        candidate = (base / requested).resolve()
         try:
-            candidate.relative_to(base.resolve())
-        except ValueError as exc:
+            candidate = confine(base, requested)
+        except PathEscapeError as exc:
             raise APIError("output_not_permitted", message, 400) from exc
         if candidate.suffix.lower() != suffix:
             raise APIError("output_not_permitted", message, 400)

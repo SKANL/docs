@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import mimetypes
 import os
@@ -35,7 +34,7 @@ from docs.application.visual_baseline import VisualBaselineError, VisualBaseline
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli.commands.source_app import run_source_command
 from docs.domain.artifacts import BuildManifest
-from docs.domain.identity import sha256_file
+from docs.domain.identity import pretty_json, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
@@ -80,7 +79,7 @@ def _promote_release_candidate(
     if any(path.is_symlink() for path in (release_dir, *release_dir.parents)):
         raise RuntimeError("release directory must not be symlinked")
     candidate_identity = os.stat(candidate, follow_symlinks=False)
-    candidate_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    candidate_hash = sha256_file(candidate)
     with _package_lock(destination):
         parent_identity = _directory_identity(release_dir)
         _assert_directory_identity(release_dir, parent_identity, operation="release publication")
@@ -90,7 +89,7 @@ def _promote_release_candidate(
             candidate_identity.st_ino,
             candidate_identity.st_size,
             candidate_identity.st_mtime_ns,
-        ) or hashlib.sha256(candidate.read_bytes()).hexdigest() != candidate_hash:
+        ) or sha256_file(candidate) != candidate_hash:
             raise RuntimeError("release candidate changed before publication")
         with directory_handle_guard(release_dir):
             os.replace(candidate, destination)
@@ -554,7 +553,7 @@ def status(ctx: typer.Context, json_output: bool = typer.Option(False, "--json")
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -755,7 +754,7 @@ def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -774,7 +773,7 @@ def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -797,7 +796,7 @@ def plan(
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 
@@ -906,7 +905,7 @@ def diff(
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if json_output
-        else json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+        else pretty_json(payload)
     )
 
 

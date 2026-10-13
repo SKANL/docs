@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
+
+from docs.domain.identity import canonical_json, sha256_bytes
 
 SCHEMA = "docs.semantic-graph/v1"
 Evidence = Literal["extracted", "inferred", "ambiguous"]
@@ -27,11 +27,6 @@ def _thaw(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_thaw(item) for item in value]
     return value
-
-
-def canonical_json(value: Any) -> str:
-    """Serialize JSON data in one stable, hashable representation."""
-    return json.dumps(_thaw(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _required_text(value: Any, name: str) -> str:
@@ -153,7 +148,7 @@ class SemanticEdge:
 
     @property
     def id(self) -> str:
-        return hashlib.sha256(canonical_json(self._identity_dict()).encode()).hexdigest()
+        return sha256_bytes(canonical_json(self._identity_dict(), strict=True).encode())
 
     def _identity_dict(self) -> dict[str, Any]:
         return {
@@ -182,11 +177,11 @@ class SemanticGraph:
         return {"schema": self.schema, "nodes": [n.to_dict() for n in self.nodes], "edges": [e.to_dict() for e in self.edges]}
 
     def canonical_json(self) -> str:
-        return canonical_json(self.to_dict())
+        return canonical_json(self.to_dict(), strict=True)
 
     @property
     def graph_id(self) -> str:
-        return hashlib.sha256(self.canonical_json().encode()).hexdigest()
+        return sha256_bytes(self.canonical_json().encode())
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> SemanticGraph:

@@ -1,9 +1,10 @@
 # src/docs/application/inline_json_writer.py
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
+
+from docs.domain.identity import pretty_json
 
 
 class InlineJsonWriter:
@@ -20,8 +21,12 @@ class InlineJsonWriter:
     gap-report writer does not reach into another module's private class."""
 
     def write_json(self, path: Path, payload: dict[str, Any]) -> None:
+        self.write_text(path, pretty_json(payload))
+
+    def write_text(self, path: Path, text: str) -> None:
+        self.write_bytes(path, text.encode("utf-8"))
+
+    def write_bytes(self, path: Path, data: bytes) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        path.write_bytes(data)

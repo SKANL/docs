@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from hashlib import sha256
 from pathlib import Path
 
 from docs.domain.evidence_passport import EvidencePassport, canonical_json
+from docs.domain.identity import sha256_bytes
+from docs.infrastructure.atomic_write import fsync_directory
 
 
 class FileEvidencePassportStore:
@@ -28,7 +29,7 @@ class FileEvidencePassportStore:
                 if existing == passport:
                     return
                 raise ValueError(f"evidence passport for {passport.passport.run_id} is already finalized") from None
-            _fsync_directory(target.parent)
+            fsync_directory(target.parent)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -44,7 +45,7 @@ class FileEvidencePassportStore:
     def _path_for(self, run_id: str) -> Path:
         if type(run_id) is not str or not run_id:
             raise TypeError("run_id must be a non-empty string")
-        return self._root / f"{sha256(run_id.encode('utf-8')).hexdigest()}.json"
+        return self._root / f"{sha256_bytes(run_id.encode('utf-8'))}.json"
 
     def _write_temporary(self, payload: bytes) -> Path:
         descriptor, name = tempfile.mkstemp(dir=self._root, prefix=".evidence-passport-", suffix=".tmp")
@@ -53,17 +54,3 @@ class FileEvidencePassportStore:
             stream.flush()
             os.fsync(stream.fileno())
         return Path(name)
-
-
-def _fsync_directory(directory: Path) -> None:
-    """Durably publish the directory entry where supported by the platform."""
-    try:
-        descriptor = os.open(directory, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-

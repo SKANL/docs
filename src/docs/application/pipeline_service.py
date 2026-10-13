@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -13,6 +12,7 @@ from docs.application.pipeline_executor import PipelineReport, StageHandler, _Pi
 from docs.application.pipeline_registry import PipelinePlanner, PipelineRegistry
 from docs.application.provenance import ProvenanceLedger
 from docs.application.stage_artifact_store import StageArtifactStore
+from docs.domain.identity import sha256_bytes
 from docs.domain.pipeline_kernel import (
     ArtifactContract,
     ArtifactRecord,
@@ -492,7 +492,7 @@ class PipelineService:
         return ArtifactRecord(
             contract,
             str(artifact_path),
-            hashlib.sha256(content).hexdigest(),
+            sha256_bytes(content),
             producer_stage=stage,
         )
 
@@ -523,7 +523,7 @@ class PipelineService:
                     ArtifactRecord(
                         "publish-draft-complete",
                         str(destination),
-                        hashlib.sha256(content).hexdigest(),
+                        sha256_bytes(content),
                         producer_stage="publish-draft",
                     ),
                 )

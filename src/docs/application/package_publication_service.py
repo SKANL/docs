@@ -15,6 +15,8 @@ from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.package_service import PackageFile, PackagePublicationError, PackageService
 from docs.application.provenance import ProvenanceLedger
 from docs.domain.artifacts import BuildManifest
+from docs.domain.identity import sha256_bytes
+from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 
 
@@ -56,7 +58,7 @@ class FileSnapshot:
 
     @property
     def identity(self) -> FileIdentity:
-        return FileIdentity(self.mode, self.device, self.inode, hashlib.sha256(self.content).hexdigest())
+        return FileIdentity(self.mode, self.device, self.inode, sha256_bytes(self.content))
 
 
 @dataclass(frozen=True)
@@ -169,7 +171,7 @@ class PackagePublicationService:
             raise PackagePublicationError(f"publish requires a valid manifest: {exc}") from exc
         source_bytes = self._read_file(source, document_root)
         matching = [artifact for artifact in manifest.artifacts if artifact.path == str(source.resolve())]
-        if len(matching) != 1 or matching[0].sha256 != hashlib.sha256(source_bytes).hexdigest():
+        if len(matching) != 1 or matching[0].sha256 != sha256_bytes(source_bytes):
             raise PackagePublicationError("publish requires the manifest artifact hash to match the source")
         attestation = manifest.attestation()
         ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
@@ -217,7 +219,7 @@ class PackagePublicationService:
                 manifest.validate_for_publication()
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 raise PackagePublicationError(f"package requires a valid manifest for {artifact.name}: {exc}") from exc
-            digest = hashlib.sha256(artifact_snapshot.content).hexdigest()
+            digest = sha256_bytes(artifact_snapshot.content)
             matching = [entry for entry in manifest.artifacts if entry.path == str(artifact.resolve()) or (allow_staging and entry.sha256 == digest)]
             if len(matching) != 1 or matching[0].sha256 != digest:
                 raise PackagePublicationError(f"package requires the manifest artifact hash to match {artifact.name}")
@@ -286,8 +288,8 @@ class PackagePublicationService:
         if any(candidate.is_symlink() for candidate in (path, *path.parents)):
             raise PackagePublicationError(f"publish refuses symlinked {label}: {path.name}")
         try:
-            path.resolve(strict=False).relative_to(root.resolve(strict=False))
-        except ValueError as exc:
+            require_within(path, root)
+        except PathEscapeError as exc:
             raise PackagePublicationError(f"publish {label} path escapes its intended root") from exc
 
     @staticmethod
@@ -297,8 +299,8 @@ class PackagePublicationService:
     @staticmethod
     def _read_snapshot(path: Path, document_root: Path) -> FileSnapshot:
         try:
-            path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
-        except (OSError, ValueError) as exc:
+            require_within(path, document_root, strict=True)
+        except (OSError, PathEscapeError) as exc:
             raise PackagePublicationError(f"package file escapes document root: {path.name}") from exc
         if any(candidate.is_symlink() for candidate in (path, *path.parents)):
             raise PackagePublicationError(f"package refuses symlinked path: {path.name}")
@@ -331,8 +333,8 @@ class PackagePublicationService:
     @staticmethod
     def _stream_identity(path: Path, document_root: Path) -> FileIdentity:
         try:
-            path.resolve(strict=True).relative_to(document_root.resolve(strict=True))
-        except (OSError, ValueError) as exc:
+            require_within(path, document_root, strict=True)
+        except (OSError, PathEscapeError) as exc:
             raise PackagePublicationError(f"package file escapes document root: {path.name}") from exc
         if any(candidate.is_symlink() for candidate in (path, *path.parents)):
             raise PackagePublicationError(f"package refuses symlinked path: {path.name}")

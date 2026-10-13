@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from docs.domain.authoring_clock import authoring_timestamp
 from docs.domain.corrections import parse_simple_yaml
+from docs.domain.identity import pretty_json
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.section_repository import SectionRepository
@@ -64,11 +65,11 @@ class CorrectionsService:
                     "section_id": section_id,
                     "path": path.resolve().as_posix(),
                     "expected_hash": expected_hash,
-                    "applied_at": datetime.now().isoformat(timespec="seconds"),
+                    "applied_at": authoring_timestamp(),
                 }
             )
             applied_ids.add(correction_id)
             count += 1
 
-        applied_path.write_text(json.dumps(applied_state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        applied_path.write_text(pretty_json(applied_state), encoding="utf-8")
         return count

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+from docs.domain.paths import is_within
+
 CANONICAL_WORKSPACE_SCHEMA = "docs.workspace/v1"
 WORKSPACE_MARKER_FILENAME = "workspace.json"
 
@@ -69,7 +71,7 @@ def validate_workspace_layout(
     resolved_root = Path(root).expanduser().resolve()
     for candidate in (documents_dir, templates_dir):
         resolved = Path(candidate).expanduser().resolve()
-        if resolved == resolved_root or not resolved.is_relative_to(resolved_root):
+        if resolved == resolved_root or not is_within(resolved, resolved_root):
             raise WorkspaceFormatError("workspace_path_outside_root", resolved)
 
 

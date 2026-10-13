@@ -1,7 +1,7 @@
 import json
 
-from docs.api.enterprise import encode_sse_event, normalize_error
-from docs.api.http import APIError
+from docs.api.enterprise import encode_sse_event
+from docs.api.http import APIError, normalize_error
 
 
 def test_normalize_error_preserves_safe_details_and_hides_unexpected_message():

@@ -8,6 +8,8 @@ from os.path import abspath
 from pathlib import Path
 from typing import Any, Literal
 
+from docs.domain.paths import PathEscapeError, require_within
+
 BuildCallable = Callable[[str, dict[str, Any], Path], Path | None]
 ScratchFactory = Callable[[str, Path], Path]
 ArtifactValidator = Callable[[Path], tuple[bool, str]]
@@ -95,8 +97,8 @@ class ArtifactBuildService:
         if scratch_dir.is_symlink() or not scratch_dir.is_dir():
             raise ArtifactBuildError("unsafe", "artifact scratch directory is unsafe")
         try:
-            scratch_dir.resolve().relative_to(scratch_parent)
-        except ValueError as exc:
+            require_within(scratch_dir, scratch_parent)
+        except PathEscapeError as exc:
             raise ArtifactBuildError(
                 "unsafe", "artifact scratch directory is outside the configured scratch parent"
             ) from exc
@@ -104,8 +106,8 @@ class ArtifactBuildService:
     @staticmethod
     def _assert_artifact_in_scratch(artifact: Path, scratch_dir: Path) -> None:
         try:
-            artifact.resolve().relative_to(scratch_dir.resolve())
-        except ValueError as exc:
+            require_within(artifact, scratch_dir)
+        except PathEscapeError as exc:
             raise ArtifactBuildError(
                 "unsafe", "renderer wrote outside the v2 render scratch directory"
             ) from exc

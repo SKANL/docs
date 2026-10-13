@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import tempfile
 import zipfile
@@ -11,6 +10,8 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+from docs.domain.identity import sha256_file
 
 
 class PackagePublicationError(ValueError):
@@ -71,7 +72,7 @@ class PackageService:
         try:
             _write_deterministic_zip(scratch, files)
             self._normalize_docx_zip_timestamps(scratch)
-            expected_digest = hashlib.sha256(scratch.read_bytes()).digest()
+            expected_digest = sha256_file(scratch)
             self._assert_directory_identity(output.parent, parent_identity, operation="publication")
             _assert_output_unchanged(output, previous_identity, previous_content)
             with self._directory_guard(output.parent):
@@ -82,7 +83,7 @@ class PackageService:
             if (
                 not output.is_file()
                 or output.is_symlink()
-                or hashlib.sha256(output.read_bytes()).digest() != expected_digest
+                or sha256_file(output) != expected_digest
             ):
                 raise PackagePublicationError("package post-publication verification failed")
         except Exception:
@@ -152,7 +153,7 @@ def _rollback(
     parent_identity: tuple[int, int],
     previous_content: bytes | None,
     published_identity: os.stat_result,
-    expected_digest: bytes,
+    expected_digest: str,
     *,
     directory_guard: Callable[[Path], AbstractContextManager[None]],
     assert_directory_identity: DirectoryIdentityAssertion,
@@ -164,7 +165,7 @@ def _rollback(
         or current_identity is None
         or (current_identity.st_dev, current_identity.st_ino)
         != (published_identity.st_dev, published_identity.st_ino)
-        or hashlib.sha256(output.read_bytes()).digest() != expected_digest
+        or sha256_file(output) != expected_digest
     ):
         return
     if previous_content is None:

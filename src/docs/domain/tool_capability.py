@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from docs.domain.identity import canonical_json
 from docs.domain.ports.tool_capability_detector_port import ToolCapabilityDetectorPort
 
 if TYPE_CHECKING:
@@ -87,7 +87,7 @@ class CapabilityPolicyEvaluation:
         }
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return canonical_json(self.to_dict(), strict=True)
 
 
 @dataclass(frozen=True, slots=True)

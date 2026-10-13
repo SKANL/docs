@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import copy
-import json
 from typing import Any
+
+from docs.domain.identity import canonical_json
 
 from .document_dto import document_openapi_schemas
 from .operations import OPERATIONS, available_cli_routes, component_schemas
@@ -510,11 +511,6 @@ def build_openapi_document() -> dict[str, Any]:
     schemas.update(document_openapi_schemas())
     schemas.update(component_schemas())
     return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": schemas}}
-
-
-def canonical_json(value: Any) -> str:
-    """Serialize JSON canonically for stable hashes, snapshots, and transport."""
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 __all__ = ["build_openapi_document", "canonical_json"]

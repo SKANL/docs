@@ -21,16 +21,17 @@ DEFAULT_BODY_DOCX_NAME_FORMAT = "{doc_id}-body.docx"
 DEFAULT_HTML_NAME_FORMAT = "{doc_id}-draft.html"
 
 
+def _resolve(key: str, default_format: str, doc_id: str, config: dict[str, Any]) -> str:
+    return config.get("output", {}).get(key, default_format.format(doc_id=doc_id))
+
+
 def resolve_draft_docx_name(doc_id: str, config: dict[str, Any]) -> str:
-    default = DEFAULT_DRAFT_DOCX_NAME_FORMAT.format(doc_id=doc_id)
-    return config.get("output", {}).get("draft_name", default)
+    return _resolve("draft_name", DEFAULT_DRAFT_DOCX_NAME_FORMAT, doc_id, config)
 
 
 def resolve_body_docx_name(doc_id: str, config: dict[str, Any]) -> str:
-    default = DEFAULT_BODY_DOCX_NAME_FORMAT.format(doc_id=doc_id)
-    return config.get("output", {}).get("body_name", default)
+    return _resolve("body_name", DEFAULT_BODY_DOCX_NAME_FORMAT, doc_id, config)
 
 
 def resolve_html_name(doc_id: str, config: dict[str, Any]) -> str:
-    default = DEFAULT_HTML_NAME_FORMAT.format(doc_id=doc_id)
-    return config.get("output", {}).get("html_name", default)
+    return _resolve("html_name", DEFAULT_HTML_NAME_FORMAT, doc_id, config)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -15,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.domain.identity import sha256_file
+from docs.domain.paths import require_within
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 TransformCallable = Callable[[Path], None]
@@ -78,7 +79,7 @@ class AtomicTransform:
                 self._execute(spec, scratch, operation)
                 self._verify_outputs(spec, scratch)
                 expected_hashes = {
-                    relative: hashlib.sha256((scratch / relative).read_bytes()).hexdigest()
+                    relative: sha256_file(scratch / relative)
                     for relative in spec.expected_outputs
                 }
                 publication = self._publish(spec, scratch)
@@ -266,7 +267,7 @@ class AtomicTransform:
                 raise RuntimeError(f"publication destination must be a regular file: {destination}")
             identity = os.stat(destination, follow_symlinks=False)
             existing_identity = (identity.st_dev, identity.st_ino)
-            previous_sha256 = hashlib.sha256(destination.read_bytes()).hexdigest()
+            previous_sha256 = sha256_file(destination)
         staged = os.stat(scratch / relative, follow_symlinks=False)
         return {
             "staged_identity": (staged.st_dev, staged.st_ino),
@@ -275,7 +276,7 @@ class AtomicTransform:
             "existed": existed,
             "existing_identity": existing_identity,
             "previous_sha256": previous_sha256,
-            "expected_sha256": hashlib.sha256((scratch / relative).read_bytes()).hexdigest(),
+            "expected_sha256": sha256_file(scratch / relative),
             "parent_identity": AtomicTransform._directory_identity(destination.parent),
         }
 
@@ -394,7 +395,7 @@ class AtomicTransform:
                 raise ValueError("symlinked recovery root")
             resolved_backup = backup_dir.resolve(strict=False)
             resolved_journal_root = journal_root.resolve(strict=False)
-            resolved_backup.relative_to(resolved_journal_root)
+            require_within(resolved_backup, resolved_journal_root)
             if resolved_backup == resolved_journal_root or resolved_backup.parent != resolved_journal_root:
                 raise ValueError("backup root is not a dedicated child directory")
         except ValueError as exc:
@@ -407,8 +408,8 @@ class AtomicTransform:
             try:
                 if AtomicTransform._has_symlinked_ancestor(target) or AtomicTransform._has_symlinked_ancestor(backup):
                     raise ValueError("symlinked recovery path")
-                target.resolve(strict=False).relative_to(destination.parent.resolve(strict=False))
-                backup.resolve(strict=False).relative_to(backup_dir.resolve(strict=False))
+                require_within(target, destination.parent)
+                require_within(backup, backup_dir)
                 if target.resolve(strict=False) != destination.resolve(strict=False):
                     raise ValueError("journal target binding mismatch")
                 expected_parent = raw_entry.get("parent_identity")
@@ -521,7 +522,7 @@ class AtomicTransform:
         if destination.is_symlink() or not destination.is_file():
             raise RuntimeError(f"publication destination changed before replacement: {destination}")
         current = os.stat(destination, follow_symlinks=False)
-        if tuple(expected_identity) != (current.st_dev, current.st_ino) or hashlib.sha256(destination.read_bytes()).hexdigest() != expected_hash:
+        if tuple(expected_identity) != (current.st_dev, current.st_ino) or sha256_file(destination) != expected_hash:
             raise RuntimeError(f"publication destination changed before replacement: {destination}")
 
     @staticmethod
@@ -541,7 +542,7 @@ class AtomicTransform:
             raise RuntimeError(f"publication target changed before rollback: {target}")
         if not target.is_file() or target.is_symlink():
             raise RuntimeError(f"publication target changed before rollback: {target}")
-        actual = hashlib.sha256(target.read_bytes()).hexdigest()
+        actual = sha256_file(target)
         previous_hash = entry.get("previous_sha256")
         if bool(entry["existed"]) and isinstance(previous_hash, str) and actual == previous_hash:
             return False
@@ -587,7 +588,7 @@ class AtomicTransform:
             if AtomicTransform._has_symlinked_ancestor(destination) or not destination.is_file():
                 raise RuntimeError(f"post-publication verification failed for {destination}")
             expected = expected_hashes[relative]
-            actual = hashlib.sha256(destination.read_bytes()).hexdigest()
+            actual = sha256_file(destination)
             if actual != expected:
                 raise RuntimeError(f"post-publication verification failed for {destination}")
 

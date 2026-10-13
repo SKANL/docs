@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from docs.application.authoring_clock import authoring_timestamp
+from docs.domain.authoring_clock import authoring_timestamp
 
 
 def test_authoring_timestamp_uses_the_cli_second_precision_format() -> None:

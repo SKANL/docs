@@ -23,6 +23,7 @@ from docs.domain.semantic_graph import NormalizedSourceRecord
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
     PythonDocxImageMetadataAdapter,
 )
+from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.persistence.evidence_passport_store import FileEvidencePassportStore
 from docs.template_compiler import compile_template
 
@@ -87,6 +88,7 @@ def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_p
         {"flow": _DeterministicRenderer()},
         _DeterministicRasterizer(),
         image_metadata=PythonDocxImageMetadataAdapter(),
+        file_writer=AtomicFileAdapter(),
     ).generate(sections, assets)
     assert generated.generated_labels == ("flow",)
     binding = json.loads((sections / "figure-bindings.json").read_text(encoding="utf-8"))

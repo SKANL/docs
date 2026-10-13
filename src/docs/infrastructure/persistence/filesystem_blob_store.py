@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import os
 import stat
-import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
+from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.runtime_records import Blob
+from docs.infrastructure.atomic_write import atomic_write_bytes
 
 _JSON = dict[str, Any]
 
@@ -102,16 +103,16 @@ class FilesystemBlobStore:
         root = self.root.resolve()
         for path in (content_path, metadata_path, self._manifest_path(key)):
             try:
-                path.resolve(strict=False).relative_to(root)
-            except ValueError as exc:
+                require_within(path, root)
+            except PathEscapeError as exc:
                 raise ValueError("blob path must stay inside blob root (symlink or traversal detected)") from exc
         return content_path, metadata_path
 
     def _assert_safe_path(self, path: Path) -> None:
         root = self.root.resolve(strict=False)
         try:
-            path.resolve(strict=False).relative_to(root)
-        except ValueError as exc:
+            require_within(path, root)
+        except PathEscapeError as exc:
             raise ValueError("blob path must stay inside blob root (symlink or traversal detected)") from exc
         current = path
         while current != current.parent:
@@ -162,32 +163,13 @@ class FilesystemBlobStore:
         safe_key = key.replace("/", "\\")
         directory = self.root / ".generations" / safe_key / generation
         try:
-            directory.resolve(strict=False).relative_to(self.root.resolve())
-        except ValueError as exc:
+            require_within(directory, self.root)
+        except PathEscapeError as exc:
             raise ValueError("blob generation path must stay inside blob root (symlink or traversal detected)") from exc
         return directory
 
     @staticmethod
     def _atomic_write(path: Path, content: bytes) -> None:
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-        if path.is_symlink() or temporary.is_symlink() or path.parent.is_symlink():
+        if path.is_symlink() or path.parent.is_symlink():
             raise ValueError("blob path cannot be written through a symlink")
-        try:
-            with temporary.open("xb") as stream:
-                stream.write(content)
-                stream.flush()
-                os.fsync(stream.fileno())
-            temporary.replace(path)
-            try:
-                directory_fd = os.open(path.parent, os.O_RDONLY)
-            except OSError:
-                pass
-            else:
-                try:
-                    os.fsync(directory_fd)
-                except OSError:
-                    pass
-                finally:
-                    os.close(directory_fd)
-        finally:
-            temporary.unlink(missing_ok=True)
+        atomic_write_bytes(path, content, fsync=True)

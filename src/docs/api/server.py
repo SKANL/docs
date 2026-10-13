@@ -164,10 +164,7 @@ class X20Transport:
         response: Response | None = None
         try:
             if origin and origin.rstrip("/") not in self.config.cors_origins:
-                response = Response.json(
-                    {"error": {"code": "cors_denied", "message": "Origin is not allowed", "details": {}}},
-                    403,
-                )
+                response = Response.error("cors_denied", "Origin is not allowed", 403)
             elif method == "OPTIONS" and origin:
                 response = Response(204, b"", {})
             elif path == "/healthz":

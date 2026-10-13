@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
-import time
+from importlib import import_module
 from importlib.resources import files
 from pathlib import Path
 from threading import RLock
@@ -200,24 +199,9 @@ class WorkspaceRegistry:
         return value
 
     def _write(self, value: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle, name = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name, suffix=".tmp")
-        temporary = Path(name)
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as stream:
-                stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
-            # ponytail: bounded retry for another PROCESS (CLI vs sidecar) holding the file
-            # open on Windows; in-process access is already serialized by the path lock.
-            for attempt in range(50):
-                try:
-                    temporary.replace(self.path)
-                    return
-                except PermissionError:
-                    if attempt == 49:
-                        raise
-                    time.sleep(0.02)
-        finally:
-            temporary.unlink(missing_ok=True)
+        # Resolved lazily so `application` never imports an infrastructure module (same seam as atomic_transform).
+        write = import_module("docs.infrastructure.atomic_write").atomic_write_text
+        write(self.path, json.dumps(value, indent=2, sort_keys=True) + "\n")
 
     @staticmethod
     def _name(value: str) -> str:

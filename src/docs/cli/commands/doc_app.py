@@ -17,6 +17,7 @@ from docs.application.document_summary import build_document_summary
 from docs.application.templates import builtin_names, read_builtin
 from docs.application.workspaces import WorkspaceRegistry
 from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
+from docs.domain.identity import pretty_json
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.domain.workspace_format import (
@@ -89,7 +90,7 @@ def doc_init(
         write_workspace_marker(root)
 
     config_path.write_text(
-        json.dumps(new_config, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+        pretty_json(new_config), encoding="utf-8"
     )
 
     documents_path.mkdir(parents=True, exist_ok=True)

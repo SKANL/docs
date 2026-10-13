@@ -356,6 +356,7 @@ class ApplicationComposition:
                     svg_rasterizer=self.svg_rasterizer,
                     image_metadata=PythonDocxImageMetadataAdapter(),
                     writer=FilesystemIngestArtifactWriter(),
+                    file_writer=self.atomic_file_writer,
                 )
             except Exception:
                 self.generate_visuals_service = None

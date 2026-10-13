@@ -12,9 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.domain.identity import sha256_bytes, sha256_file
+from docs.domain.paths import PathEscapeError, confine
+
 from .manifest import (
     ManifestError,
     PluginManifest,
+    make_sbom,
     manifest_hash,
     manifest_identity,
     plugin_identity,
@@ -58,7 +62,7 @@ def package_digest(path: Path) -> str:
 
 def archive_digest(path: Path) -> str:
     """Hash the distributable archive bytes for supply-chain pinning."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return sha256_file(Path(path))
 
 
 def verify_sbom(raw_manifest: Mapping[str, Any], package_root: Path) -> dict[str, Any]:
@@ -73,10 +77,10 @@ def verify_sbom(raw_manifest: Mapping[str, Any], package_root: Path) -> dict[str
                 "type": "package-file",
                 "name": item.relative_to(root).as_posix(),
                 "size": len(content),
-                "digest": hashlib.sha256(content).hexdigest(),
+                "digest": sha256_bytes(content),
             }
         )
-    verified = {"format": "docs.sbom/v1", "components": components, "digest": manifest_hash(components)}
+    verified = make_sbom(components)
     label = "verified" if declared and declared.get("digest") == verified["digest"] else (
         "declared-mismatch" if declared else "verified-only"
     )
@@ -129,15 +133,17 @@ class PluginPackageInstaller:
                 seen: set[str] = set()
                 for member in archive.infolist():
                     name = member.filename.replace("\\", "/")
-                    target = Path(name)
-                    if not name or target.is_absolute() or ".." in target.parts or name in seen:
+                    try:
+                        output = confine(destination, name)
+                    except PathEscapeError as exc:
+                        raise ManifestError("plugin package contains an unsafe or duplicate path") from exc
+                    if name in seen:
                         raise ManifestError("plugin package contains an unsafe or duplicate path")
                     seen.add(name)
                     if member.is_dir():
                         continue
                     if (member.external_attr >> 16) & 0o170000 == 0o120000:
                         raise ManifestError("plugin package must not contain symlinks")
-                    output = destination / target
                     output.parent.mkdir(parents=True, exist_ok=True)
                     output.write_bytes(archive.read(member))
         except zipfile.BadZipFile as exc:

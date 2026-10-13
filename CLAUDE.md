@@ -48,6 +48,12 @@ three share; never re-declare an artifact filename or extension set locally.
 - A `# ponytail:` comment marks a deliberate simplification and names its
   ceiling plus the upgrade path, so a shortcut reads as intent rather than
   oversight. Used across `src/`, `tests/` and `tools/`.
+- One implementation per primitive: path confinement is `domain/paths.py`
+  (`confine`/`require_within`/`is_within`, raising `PathEscapeError`); atomic
+  single-file writes are `infrastructure/atomic_write.py` (application code
+  reaches it through the `IngestArtifactWriter` port); hashing and canonical
+  or pretty JSON are `domain/identity.py`; the authoring timestamp is
+  `domain/authoring_clock.py`. Do not re-declare these locally.
 - Determinism: same inputs must produce identical outputs; no timestamps or
   randomness in generated artifacts.
 

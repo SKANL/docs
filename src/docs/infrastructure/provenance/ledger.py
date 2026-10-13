@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import stat
-import tempfile
 import threading
 import time
 from collections.abc import Iterable, Iterator, Mapping
@@ -16,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.identity import canonical_json
+from docs.domain.paths import require_within
+from docs.infrastructure.atomic_write import atomic_write_text
 
 _PROCESS_LOCK = threading.Lock()
 
@@ -79,7 +80,7 @@ class ProvenanceLedger:
                 raise ValueError(f"provenance refuses symlinked path: {path}")
             if self._trusted_root is not None:
                 try:
-                    path.resolve(strict=True).relative_to(self._trusted_root)
+                    require_within(path, self._trusted_root, strict=True)
                 except (OSError, ValueError) as exc:
                     raise ValueError(f"provenance path is outside trusted root: {path}") from exc
             entries.append((self._stored_path(identities.get(path, path)), path))
@@ -101,7 +102,7 @@ class ProvenanceLedger:
             path = candidate if candidate.is_absolute() else self._log_path.parent / candidate
             try:
                 if self._trusted_root is not None:
-                    path.resolve(strict=True).relative_to(self._trusted_root)
+                    require_within(path, self._trusted_root, strict=True)
                 if path.is_symlink() or not path.is_file() or not os.path.samefile(path, path.resolve()):
                     return False
                 if self._hash_verified_path(path) != expected_hash:
@@ -115,7 +116,7 @@ class ProvenanceLedger:
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"provenance requires a regular file: {path}")
         try:
-            path.resolve(strict=True).relative_to(self._trusted_root or path.resolve(strict=True))
+            require_within(path, self._trusted_root or path, strict=True)
         except (OSError, ValueError) as exc:
             if self._trusted_root is not None:
                 raise ValueError(f"provenance path is outside trusted root: {path}") from exc
@@ -163,17 +164,7 @@ class ProvenanceLedger:
         return json.loads(self._log_path.read_text(encoding="utf-8"))
 
     def _write_payload(self, payload: dict[str, dict[str, dict[str, Any]]]) -> None:
-        self._log_path.parent.mkdir(parents=True, exist_ok=True)
-        descriptor, temporary_name = tempfile.mkstemp(prefix=".provenance-v2-", suffix=".tmp", dir=self._log_path.parent)
-        temporary_path = Path(temporary_name)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(canonical_json(payload))
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, self._log_path)
-        finally:
-            temporary_path.unlink(missing_ok=True)
+        atomic_write_text(self._log_path, canonical_json(payload), fsync=True)
 
     @contextmanager
     def _lock(self) -> Iterator[None]:

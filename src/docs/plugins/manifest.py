@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+
+from docs.domain.identity import canonical_json, sha256_bytes
 
 SCHEMA = "docs.plugin/v1"
 ALLOWED_CAPABILITIES = frozenset({"render", "ingest", "transform"})
@@ -41,14 +41,14 @@ class PluginManifest:
 
 def _canonical(value: Any) -> bytes:
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return canonical_json(value, strict=True).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise ManifestError("manifest contains non-canonical JSON data") from exc
 
 
 def manifest_hash(value: Mapping[str, Any] | Any) -> str:
     """Return a stable SHA-256 for JSON-compatible data."""
-    return hashlib.sha256(_canonical(value)).hexdigest()
+    return sha256_bytes(_canonical(value))
 
 
 def manifest_document(manifest: PluginManifest) -> dict[str, Any]:
@@ -163,6 +163,14 @@ def validate_manifest(raw: Mapping[str, Any]) -> PluginManifest:
     return PluginManifest(plugin_id, version, tuple(entrypoint), requested, api, tuple(formats_raw), permissions, network, deterministic, limits, signature, sbom, toolchain)
 
 
+SBOM_FORMAT = "docs.sbom/v1"
+
+
+def make_sbom(components: list[dict[str, Any]]) -> dict[str, Any]:
+    """The one SBOM envelope: format tag, components, and the digest that pins them."""
+    return {"format": SBOM_FORMAT, "components": components, "digest": manifest_hash(components)}
+
+
 def generate_sbom(manifest: PluginManifest, *, toolchain: Mapping[str, str] | None = None) -> dict[str, Any]:
     """Build deterministic metadata without importing or running plugin code."""
     declared = dict(manifest.toolchain)
@@ -173,4 +181,4 @@ def generate_sbom(manifest: PluginManifest, *, toolchain: Mapping[str, str] | No
         {"type": "entrypoint", "name": manifest.entrypoint[0], "version": declared.get("runtime", "unknown"), "digest": manifest_hash(list(manifest.entrypoint))},
     ]
     components.extend({"type": "toolchain", "name": key, "version": value, "digest": manifest_hash({key: value})} for key, value in sorted(declared.items()))
-    return {"format": "docs.sbom/v1", "components": components, "digest": manifest_hash(components)}
+    return make_sbom(components)
