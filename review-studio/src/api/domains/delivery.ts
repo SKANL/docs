@@ -1,6 +1,6 @@
 // Typed client for the delivery routes: package, publish, and the publication history (S5.1 contract).
 // A release is not here: it is a pipeline run with policy "release" (see pipeline.runDocument).
-import type { ScopedRequest } from "./authoring";
+import { defined, docPath, jsonInit, type Transport } from "../http";
 import type { OutputFormat, RunPolicy } from "./pipeline";
 
 export interface PackageInput { runId?: string; name?: string }
@@ -35,15 +35,11 @@ export interface DeliveryApi {
   listPublicationHistory(): Promise<PublicationRecord[]>;
 }
 
-const post = (body: Record<string, unknown>): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-/** JSON drops undefined values, so unchosen fields never reach the server. */
-const defined = (input: Record<string, unknown>) => Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
-
-export function createDeliveryApi(request: ScopedRequest): DeliveryApi {
-  const doc = (id: string) => `documents/${encodeURIComponent(id)}`;
+export function createDeliveryApi(t: Transport): DeliveryApi {
+  const request = t.scoped;
   return {
-    packageDocument: (id, { runId, name } = {}) => request(`${doc(id)}/package`, post(defined({ run_id: runId, name }))),
-    publishDocument: (id, { destination, format, policy }) => request(`${doc(id)}/publications`, post(defined({ destination, format, policy }))),
+    packageDocument: (id, { runId, name } = {}) => request(`${docPath(id)}/package`, jsonInit("POST", defined({ run_id: runId, name }))),
+    publishDocument: (id, { destination, format, policy }) => request(`${docPath(id)}/publications`, jsonInit("POST", defined({ destination, format, policy }))),
     async listPublicationHistory() {
       const raw = await request<{ items?: Array<Record<string, unknown>> }>("publications");
       return (raw.items ?? []).map(toPublicationRecord);

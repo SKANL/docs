@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import type { BaselinePromotion } from "@/api/domains/review";
 import { useApi } from "@/app/providers";
 import { Button } from "@/components/ui/button";

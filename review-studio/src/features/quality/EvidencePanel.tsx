@@ -78,7 +78,7 @@ export function EvidencePanel({ workspaceId, runId }: { workspaceId: string | nu
   const can = useCapability();
   const available = can("document.evidence") && !!api.getRunEvidence;
   const evidence = useQuery({ queryKey: reviewKeys.evidence(workspaceId, runId ?? ""), queryFn: () => api.getRunEvidence!(runId!), enabled: !!runId && available });
-  const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: () => api.listRuns(), enabled: !runId });
+  const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: async () => (await api.listRunPage!()).items, enabled: !runId });
 
   if (!runId) {
     if (runs.isPending) return <Skeleton className="h-24 w-full" />;
@@ -86,7 +86,7 @@ export function EvidencePanel({ workspaceId, runId }: { workspaceId: string | nu
     if (runs.data.length === 0) return <EmptyState title="No runs yet" description="Run the pipeline for a document; its evidence is collected when the run finishes."><Button asChild><Link to="/pipeline">Open pipeline</Link></Button></EmptyState>;
     return <section aria-label="Runs with evidence" className="grid gap-2">
       <h2 className="text-xl font-semibold">Choose a run</h2>
-      <ul className="grid gap-1">{runs.data.map(run => <li key={run.id} className="flex items-center gap-2 text-sm"><Link className="font-medium underline underline-offset-4" to={`/review/evidence/${encodeURIComponent(run.id)}`}>{run.id}</Link><Badge variant="secondary">{run.status}</Badge><span className="text-muted-foreground">{run.document}</span></li>)}</ul>
+      <ul className="grid gap-1">{runs.data.map(run => <li key={run.id} className="flex items-center gap-2 text-sm"><Link className="font-medium underline underline-offset-4" to={`/review/evidence/${encodeURIComponent(run.id)}`}>{run.id}</Link><Badge variant="secondary">{run.status}</Badge><span className="text-muted-foreground">{run.documentId}</span></li>)}</ul>
     </section>;
   }
   if (!available) return <Unavailable>Run evidence is not available on this server.</Unavailable>;

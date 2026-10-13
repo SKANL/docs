@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { DocumentRecord, Template, Workspace, WorkspaceMigration, WorkspaceStatus, ReviewApi } from "@/api/models";
-import { formatApiError } from "@/api/client";
+import { formatApiError } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

@@ -17,7 +17,7 @@ function QueueRow({ documentId, item, canConfirm }: { documentId: string; item: 
   const path = String(item.relative_path);
   const [role, setRole] = useState<Role>(roles.includes(item.proposed_role as Role) ? item.proposed_role as Role : "evidence");
   const confirm = useAction(
-    () => api.confirmDocumentClassification!(documentId, { relative_path: path, confirmed_role: role }),
+    () => api.confirmClassification!(documentId, { relative_path: path, confirmed_role: role }),
     { success: () => `Confirmed ${path} as ${role}.`, invalidate: [authoringKeys.classification(documentId)] },
   );
   return <li className="grid gap-2 rounded-lg border bg-card p-4">

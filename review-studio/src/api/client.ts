@@ -1,69 +1,13 @@
-import { createAuthoringApi, type AuthoringApi, type RevisionInput } from "./domains/authoring";
-import { createPipelineApi, type PipelineApi } from "./domains/pipeline";
+import { ApiConfigurationError, ApiError } from "./errors";
+import { authHeaders, workspaceStorage, type Transport, type WorkspaceSession } from "./http";
+import { createAuthoringApi, type AuthoringApi } from "./domains/authoring";
 import { createDeliveryApi, type DeliveryApi } from "./domains/delivery";
+import { createPipelineApi, type PipelineApi } from "./domains/pipeline";
+import { createReviewDomainApi, type ReviewDomainApi } from "./domains/review";
+import { createSystemApi, type SystemApi } from "./domains/system";
 import { createTemplatesApi, type TemplatesApi } from "./domains/templates";
 import { createToolsApi, type ToolsApi } from "./domains/tools";
-import { createQualityApi, type QualityApi } from "./domains/review";
-import type {
-  Artifact,
-  Baseline,
-  EvidencePassport,
-  Finding,
-  GraphQuery,
-  GraphQueryItem,
-  GraphQueryResult,
-  GraphEdge,
-  GraphNode,
-  Publication,
-  Revision,
-  Run,
-  Template,
-  Workspace,
-  ImportResult,
-  DocumentRecord,
-  DocumentSection,
-  DocumentContextTopic,
-} from "./models";
-
-export type Page<T> = { items: T[]; nextCursor?: string; total?: number };
-export type ProgressEvent = { type: string; progress?: number; message?: string; [key: string]: unknown };
-
-export class ApiError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly details?: unknown;
-  readonly requestId?: string;
-
-  constructor(message: string, status: number, code = "api_error", details?: unknown, requestId?: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-    this.code = code;
-    this.details = details;
-    this.requestId = requestId;
-  }
-}
-
-export class ApiConfigurationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ApiConfigurationError";
-  }
-}
-
-export function formatApiError(error: unknown, resource: string): string {
-  if (error instanceof ApiError) {
-    const summary = error.status === 401
-      ? `Authentication required to load ${resource}.`
-      : error.status === 403
-        ? `You are not authorized to load ${resource}.`
-        : `Unable to load ${resource}.`;
-    const request = error.requestId ? ` Request ID: ${error.requestId}.` : "";
-    return `${summary} ${error.message}${request}`;
-  }
-  if (error instanceof ApiConfigurationError) return error.message;
-  return `Unable to load ${resource}. ${error instanceof Error ? error.message : "The API returned an unknown error."}`;
-}
+import { createWorkspacesApi, type WorkspacesApi } from "./domains/workspaces";
 
 export type ReviewClientOptions = {
   baseUrl?: string;
@@ -72,8 +16,6 @@ export type ReviewClientOptions = {
   timeoutMs?: number;
   allowedPreviewOrigins?: readonly string[];
 };
-
-export type ListParams = { cursor?: string; limit?: number; workspaceId?: string };
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const STARTUP_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000];
@@ -103,277 +45,92 @@ async function errorFromResponse(response: Response): Promise<ApiError> {
   return new ApiError(message, response.status, typeof body.code === "string" ? body.code : "api_error", body.details, response.headers.get("x-request-id") ?? undefined);
 }
 
-function page<T>(payload: unknown): Page<T> {
-  if (Array.isArray(payload)) return { items: payload as T[] };
-  const value = payload as { items?: unknown; data?: unknown; next_cursor?: unknown; nextCursor?: unknown; total?: unknown };
-  const items = Array.isArray(value?.items) ? value.items : Array.isArray(value?.data) ? value.data : [];
-  return { items: items as T[], nextCursor: typeof value?.nextCursor === "string" ? value.nextCursor : typeof value?.next_cursor === "string" ? value.next_cursor : undefined, total: typeof value?.total === "number" ? value.total : undefined };
-}
-
-type RawGraphNode = { id?: unknown; kind?: unknown; label?: unknown; confidence?: unknown; attributes?: unknown; x?: unknown; y?: unknown };
-type RawGraphEdge = { source?: unknown; target?: unknown; relation?: unknown; from?: unknown; to?: unknown };
-
-const graphType = (kind: string): GraphNode["type"] => {
-  if (kind === "claim" || kind === "artifact" || kind === "section" || kind === "source") return kind;
-  return kind === "evidence" || kind === "input" || kind === "reference" ? "source" : "claim";
-};
-
-const confidenceScore = (value: unknown): number => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (value && typeof value === "object" && typeof (value as { score?: unknown }).score === "number") return (value as { score: number }).score;
-  return 0;
-};
-
-function normalizeArtifactKind(value: unknown): Artifact["kind"] {
-  const kind = typeof value === "string" ? value.toUpperCase() : "";
-  if (kind.includes("PDF")) return "PDF";
-  if (kind.includes("HTML")) return "HTML";
-  if (kind.includes("PNG") || kind.includes("PREVIEW")) return "PNG";
-  return "DOCX";
-}
-
-function normalizeRun(raw: Record<string, unknown>): Run {
-  if ((typeof raw.document === "string" && typeof raw.startedAt === "string") ||
-      (Object.keys(raw).every(key => ["id", "schema"].includes(key)) && typeof raw.id === "string")) {
-    return raw as unknown as Run;
-  }
-  const payload = raw.payload && typeof raw.payload === "object" ? raw.payload as Record<string, unknown> : {};
-  const status = String(raw.status ?? "unverified") as Run["status"];
-  const createdAt = String(raw.created_at ?? "");
-  const started = typeof payload.started_at === "string" ? payload.started_at : createdAt;
-  const progress = payload.progress && typeof payload.progress === "object" ? payload.progress as Record<string, unknown> : {};
-  const results = payload.report && typeof payload.report === "object" ? (payload.report as Record<string, unknown>).execution : undefined;
-  const execution = results && typeof results === "object" ? results as Record<string, unknown> : {};
-  const stages = Array.isArray(execution.results) ? execution.results as Array<Record<string, unknown>> : [];
-  const findings = typeof payload.findings === "number" ? payload.findings : stages.reduce((count, stage) => count + (Array.isArray(stage.errors) ? stage.errors.length : 0) + (Array.isArray(stage.warnings) ? stage.warnings.length : 0), 0);
-  return {
-    id: String(raw.id ?? ""),
-    document: String(payload.document_id ?? "—"),
-    template: String(payload.template ?? "—"),
-    startedAt: started,
-    duration: typeof payload.duration_ms === "number" ? `${payload.duration_ms} ms` : "—",
-    status: ["passed", "succeeded", "warnings", "failed", "unverified", "queued", "running", "cancelled", "expired"].includes(status) ? status : "unverified",
-    findings,
-    artifactCount: typeof payload.artifact_count === "number" ? payload.artifact_count : stages.reduce((count, stage) => count + (Array.isArray(stage.artifacts) ? stage.artifacts.length : 0), 0),
-    progress: typeof progress.percent === "number" ? progress.percent : undefined,
-  };
-}
-
-function normalizeGraph(payload: unknown): { nodes:GraphNode[]; edges:GraphEdge[] } {
-  const value = payload && typeof payload === "object" ? payload as { nodes?: unknown; edges?: unknown } : {};
-  const rawNodes = Array.isArray(value.nodes) ? value.nodes as RawGraphNode[] : [];
-  const nodes = rawNodes.flatMap((node, index) => {
-    if (typeof node.id !== "string") return [];
-    const angle = rawNodes.length ? (index / rawNodes.length) * Math.PI * 2 : 0;
-    return [{ id:node.id, label:typeof node.label === "string" ? node.label : node.id, type:graphType(typeof node.kind === "string" ? node.kind : "entity"), confidence:confidenceScore(node.confidence), x:typeof node.x === "number" ? node.x : 50 + Math.cos(angle) * 32, y:typeof node.y === "number" ? node.y : 50 + Math.sin(angle) * 32 }];
-  });
-  const edges = (Array.isArray(value.edges) ? value.edges as RawGraphEdge[] : []).flatMap(edge => {
-    const from = typeof edge.source === "string" ? edge.source : edge.from;
-    const to = typeof edge.target === "string" ? edge.target : edge.to;
-    return typeof from === "string" && typeof to === "string" ? [{ from, to, relation:typeof edge.relation === "string" ? edge.relation : "related" }] : [];
-  });
-  return { nodes, edges };
-}
-
-function normalizeGraphQuery(payload: unknown): GraphQueryResult {
-  const value = payload && typeof payload === "object" ? payload as { items?: unknown; graph_unavailable?: unknown; warnings?: unknown; context?: unknown } : {};
-  const items = (Array.isArray(value.items) ? value.items : []).flatMap((item): GraphQueryItem[] => {
-    if (!item || typeof item !== "object") return [];
-    const candidate = item as Record<string, unknown>;
-    if (typeof candidate.id !== "string") return [];
-    const attributes = candidate.attributes && typeof candidate.attributes === "object" ? candidate.attributes as Record<string, unknown> : undefined;
-    return [{ id:candidate.id, kind:typeof candidate.kind === "string" ? candidate.kind : "entity", label:typeof candidate.label === "string" ? candidate.label : candidate.id, confidence:confidenceScore(candidate.confidence), attributes }];
-  });
-  return { items, graphUnavailable:value.graph_unavailable === true, warnings:Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined, context:value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined };
-}
-
+/** The one HTTP client. Every operation lives in a domain; this class only owns transport, auth and the selected workspace. */
 export class ReviewApiClient {
   readonly baseUrl: string;
-  /** Source, asset, classification and context operations. */
-  readonly authoring: AuthoringApi = createAuthoringApi((path, init) => this.scopedRequest(path, init));
-  /** Plan, run and paged run list. */
-  readonly pipeline: PipelineApi = createPipelineApi((path, init) => this.scopedRequest(path, init));
+  /** Health and the capability catalogue. */
+  readonly system: SystemApi;
+  /** Workspaces, documents and source import. */
+  readonly workspaces: WorkspacesApi;
+  /** Source, asset, classification, context, section and revision operations. */
+  readonly authoring: AuthoringApi;
+  /** Plan, run, run list and live progress. */
+  readonly pipeline: PipelineApi;
+  /** Findings, artifacts, evidence, baselines, graph, inspect, diff, qa-docx and corrections. */
+  readonly review: ReviewDomainApi;
   /** Package, publish and the publication history. */
-  readonly delivery: DeliveryApi = createDeliveryApi((path, init) => this.scopedRequest(path, init));
-  /** Template administration. */
-  readonly templates: TemplatesApi = createTemplatesApi((path, init) => this.scopedRequest(path, init));
-  /** Specialist tools, diagnostics, issue codes and source import. */
-  readonly tools: ToolsApi = createToolsApi((path, init) => this.scopedRequest(path, init));
-  /** Evidence, baseline promotion, inspect, diff, qa-docx and corrections. */
-  readonly quality: QualityApi = createQualityApi((path, init) => this.scopedRequest(path, init));
+  readonly delivery: DeliveryApi;
+  /** Template administration and the plugin registry. */
+  readonly templates: TemplatesApi;
+  /** Specialist tools, diagnostics, issue codes and translation download. */
+  readonly tools: ToolsApi;
   private readonly requestFetch: typeof globalThis.fetch;
   private readonly timeoutMs: number;
   private readonly accessToken?: string;
   private readonly allowedPreviewOrigins: Set<string>;
-  private selectedWorkspaceId?: string;
-  private workspaces: Workspace[] = [];
 
   constructor(options: ReviewClientOptions = {}) {
     const configuredBase = new URL(options.baseUrl ?? "/v2", globalThis.location?.href ?? "http://localhost/");
     const path = configuredBase.pathname.replace(/\/+$/, "");
-    configuredBase.pathname = path.endsWith("/v1") ? `${path.slice(0, -3)}/v2` : path.endsWith("/v2") ? path : `${path}/v2`;
+    configuredBase.pathname = path.endsWith("/v2") ? path : `${path}/v2`;
     this.baseUrl = configuredBase.toString().replace(/\/$/, "");
     this.requestFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.accessToken = options.accessToken?.trim() || undefined;
     this.allowedPreviewOrigins = new Set(options.allowedPreviewOrigins ?? []);
-    try { this.selectedWorkspaceId = globalThis.localStorage?.getItem("docs.review.workspace") ?? undefined; } catch { this.selectedWorkspaceId = undefined; }
+
+    const session: WorkspaceSession = { selected: workspaceStorage.read(), select(id) { this.selected = id; workspaceStorage.write(id); } };
+    const transport: Transport = {
+      request: (path, init = {}) => this.request(path, init),
+      scoped: async (path, init = {}, explicitWorkspaceId) => {
+        const workspaceId = await transport.workspaceId(explicitWorkspaceId);
+        const [pathname, rawQuery] = path.split("?", 2);
+        const query = new URLSearchParams(rawQuery ?? "");
+        query.set("workspace_id", workspaceId);
+        return this.request(`${pathname}?${query}`, init);
+      },
+      send: (path, init, read) => this.send(path, init, read),
+      workspaceId: async explicit => {
+        if (explicit) return explicit;
+        if (!session.selected) await this.workspaces.listWorkspaces();
+        if (!session.selected) throw new ApiConfigurationError("No workspace is available. Create a workspace before continuing.");
+        return session.selected;
+      },
+      previewUrl: value => this.previewUrl(value),
+      session,
+    };
+    this.system = createSystemApi(transport);
+    this.workspaces = createWorkspacesApi(transport);
+    this.authoring = createAuthoringApi(transport);
+    this.pipeline = createPipelineApi(transport);
+    this.review = createReviewDomainApi(transport);
+    this.delivery = createDeliveryApi(transport);
+    this.templates = createTemplatesApi(transport);
+    this.tools = createToolsApi(transport);
   }
 
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  /** One timed, authenticated request. The caller reads the body; a failed response throws an ApiError. */
+  private async send<T>(path: string, init: RequestInit, read: (response: Response) => Promise<T>): Promise<T> {
+    const request = withSignal(init.signal ?? undefined, this.timeoutMs);
+    try {
+      const response = await this.requestFetch(joinUrl(this.baseUrl, path), { ...init, signal: request.signal, headers: { ...authHeaders(this.accessToken), ...init.headers } });
+      if (!response.ok) throw await errorFromResponse(response);
+      return await read(response);
+    } finally { request.cancel(); }
+  }
+
+  /** A JSON request that survives the sidecar's cold start: a refused connection is retried with a growing pause. */
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
+    const withAccept = { ...init, headers: { Accept: "application/json", ...init.headers } };
     for (let attempt = 0; ; attempt += 1) {
-      const request = withSignal(init.signal ?? undefined, this.timeoutMs);
       try {
-        const response = await this.requestFetch(joinUrl(this.baseUrl, path), { ...init, signal: request.signal, headers: { Accept: "application/json", ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}), ...init.headers } });
-        if (!response.ok) throw await errorFromResponse(response);
-        if (response.status === 204) return undefined as T;
-        return await response.json() as T;
+        return await this.send(path, withAccept, async response => response.status === 204 ? undefined as T : await response.json() as T);
       } catch (error) {
         const retryable = error instanceof TypeError && !init.signal?.aborted && attempt < STARTUP_RETRY_DELAYS_MS.length;
         if (!retryable) throw error;
         await new Promise(resolve => globalThis.setTimeout(resolve, STARTUP_RETRY_DELAYS_MS[attempt]));
-      } finally { request.cancel(); }
-    }
-  }
-
-  private async workspaceId(explicit?: string): Promise<string> {
-    if (explicit) return explicit;
-    if (this.selectedWorkspaceId) return this.selectedWorkspaceId;
-    await this.listWorkspaces();
-    if (!this.selectedWorkspaceId) throw new ApiConfigurationError("No workspace is available. Create a workspace before continuing.");
-    return this.selectedWorkspaceId;
-  }
-
-  private async scopedRequest<T>(path: string, init: RequestInit = {}, explicitWorkspaceId?: string): Promise<T> {
-    const workspaceId = await this.workspaceId(explicitWorkspaceId);
-    const [pathname, rawQuery] = path.split("?", 2);
-    const query = new URLSearchParams(rawQuery ?? "");
-    query.set("workspace_id", workspaceId);
-    return this.request<T>(`${pathname}?${query}`, init);
-  }
-
-  private list<T>(path: string, params: ListParams = {}) {
-    const query = new URLSearchParams();
-    if (params.cursor) query.set("cursor", params.cursor);
-    if (params.limit !== undefined) query.set("limit", String(params.limit));
-    return this.workspaceId(params.workspaceId).then(workspaceId => {
-      query.set("workspace_id", workspaceId);
-      return this.request<unknown>(`${path}${query.size ? `?${query}` : ""}`).then(page<T>);
-    });
-  }
-
-  listRuns(params?: ListParams) { return this.list<Record<string, unknown>>("runs", params).then(result => result.items.map(normalizeRun)); }
-  getRun(id:string) { return this.scopedRequest<Record<string, unknown>>("runs/" + encodeURIComponent(id)); }
-  getCapabilities() { return this.request<import("./models").CapabilityCatalog>("capabilities"); }
-  async health() {
-    const response = await this.requestFetch(joinUrl(this.baseUrl, "../health"), { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new ApiError(`Review API health check failed (${response.status})`, response.status, "health_check_failed");
-    return await response.json() as { ready:boolean; protocol?:string; version?:string };
-  }
-  listDocuments(workspaceId?: string) { return this.list<DocumentRecord>("documents", { workspaceId }).then(result => result.items); }
-  getDocument(id:string) { return this.scopedRequest<Record<string, unknown>>("documents/" + encodeURIComponent(id)); }
-  listDocumentRuns(id:string) { return this.scopedRequest<{items:Record<string, unknown>[]}>("documents/" + encodeURIComponent(id) + "/runs").then(result => result.items.map(normalizeRun)); }
-  listFindings(params?: ListParams) { return this.list<Finding>("findings", params).then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
-  listRunFindings(id:string) { return this.list<Finding>("runs/" + encodeURIComponent(id) + "/findings").then(result => result.items.map(item => ({...item, runId:(item as any).run_id, documentId:(item as any).document_id}))); }
-  listArtifacts(params?: ListParams) {
-    return this.list<Record<string, unknown>>("artifacts", params).then(result => result.items.map(raw => ({
-        id: typeof raw.id === "string" ? raw.id : "artifact",
-        name: typeof raw.name === "string" ? raw.name : typeof raw.id === "string" ? raw.id : "Unnamed artifact",
-        runId: typeof raw.run_id === "string" ? raw.run_id : undefined,
-        kind: normalizeArtifactKind(raw.kind),
-        size: typeof raw.size === "string" ? raw.size : typeof raw.size === "number" ? `${raw.size} bytes` : "Size unavailable",
-        status: raw.status === "failed" || raw.status === "warnings" || raw.status === "passed" ? raw.status : "unverified",
-        pages: typeof raw.pages === "number" ? raw.pages : undefined,
-        checksum: typeof raw.checksum === "string" ? raw.checksum : typeof raw.digest === "string" ? raw.digest : "Hash unavailable",
-      } satisfies Artifact)));
-  }
-  listRunArtifacts(id:string) { return this.list<Record<string, unknown>>("runs/" + encodeURIComponent(id) + "/artifacts").then(result => result.items.map(raw => ({id:typeof raw.id==="string"?raw.id:"artifact",name:typeof raw.name==="string"?raw.name:typeof raw.id==="string"?raw.id:"Unnamed artifact",runId:typeof raw.run_id==="string"?raw.run_id:id,kind:normalizeArtifactKind(raw.kind),size:typeof raw.size==="string"?raw.size:typeof raw.size==="number"?`${raw.size} bytes`:"Size unavailable",status:raw.status==="failed"||raw.status==="warnings"||raw.status==="passed"?raw.status:"unverified",pages:typeof raw.pages==="number"?raw.pages:undefined,checksum:typeof raw.checksum==="string"?raw.checksum:typeof raw.digest==="string"?raw.digest:"Hash unavailable"} satisfies Artifact))); }
-  getArtifact(id:string) { return this.scopedRequest<Record<string, unknown>>("artifacts/" + encodeURIComponent(id)); }
-  listArtifactPreviews(id:string) { return this.list<Record<string, unknown>>("artifacts/" + encodeURIComponent(id) + "/previews").then(result => result.items); }
-  getPassport(runId: string) { return this.scopedRequest<any>(`runs/${encodeURIComponent(runId)}/passport`).then(raw => { if (typeof raw?.coverage === "number") return raw as EvidencePassport; const entries=Array.isArray(raw?.entries)?raw.entries:[]; const pipeline=entries.find((entry:any)=>entry?.stage==="pipeline")?.result??{}; const execution=pipeline?.report?.execution; const results=Array.isArray(execution?.results)?execution.results:[]; const failures=results.filter((item:any)=>item?.ok===false).length; return {...raw,id:raw.run_id,runId:raw.run_id,verifiedAt:new Date().toISOString(),coverage:results.length?Math.round(((results.length-failures)/results.length)*100):0,attestations:entries.length,sources:0,claims:0,unresolved:failures,entries} as EvidencePassport; }); }
-  getGraph() { return this.scopedRequest<unknown>("graph").then(normalizeGraph); }
-  getGraphQuery(query: GraphQuery, id?: string) {
-    const params = new URLSearchParams({ query });
-    if (id) params.set("id", id);
-    return this.workspaceId().then(workspaceId => {
-      params.set("workspace_id", workspaceId);
-      return this.request<unknown>(`graph?${params}`).then(normalizeGraphQuery);
-    });
-  }
-  listTemplates(params?: ListParams) { return this.list<Template>("templates", params).then(result => result.items); }
-  listPlugins(params?: ListParams) { return this.list<Record<string, unknown>>("plugins", params).then(result => result.items); }
-  getPlugin(id:string) { return this.scopedRequest<Record<string, unknown>>("plugins/" + encodeURIComponent(id)); }
-  listBaselines(params?: ListParams) { return this.list<Baseline>("baselines", params).then(result => result.items); }
-  getBaseline(id:string) { return this.scopedRequest<Record<string, unknown>>("baselines/" + encodeURIComponent(id)); }
-  listRevisions(params?: ListParams) { return this.list<Revision>("revisions", params).then(result => result.items); }
-  getRevision(id:string) { return this.scopedRequest<Record<string, unknown>>("revisions/" + encodeURIComponent(id)); }
-  listPublications(params?: ListParams) { return this.list<Publication>("publications", params).then(result => result.items); }
-  listWorkspaces() {
-    return this.request<unknown>("workspaces").then(raw => {
-      const items = page<Workspace>(raw).items;
-      const persisted = this.selectedWorkspaceId && items.some(item => item.id === this.selectedWorkspaceId) ? this.selectedWorkspaceId : undefined;
-      const selected = persisted ?? items[0]?.id;
-      this.workspaces = items;
-      if (selected) {
-        this.selectedWorkspaceId = selected;
-        try { globalThis.localStorage?.setItem("docs.review.workspace", selected); } catch { /* offline/browser storage unavailable */ }
       }
-      const selectedItem = selected ? items.find(item => item.id === selected) : undefined;
-      return selectedItem ? [selectedItem, ...items.filter(item => item.id !== selected)] : items;
-    });
-  }
-  async createWorkspace(input: { name:string }) {
-    const workspace = await this.request<Workspace>("workspaces", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) });
-    this.workspaces = [...this.workspaces.filter(item => item.id !== workspace.id), workspace];
-    await this.selectWorkspace(workspace.id);
-    return workspace;
-  }
-  async renameWorkspace(id:string,name:string) {
-    const workspace = await this.request<Workspace>("workspaces/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name}) });
-    this.workspaces = this.workspaces.map(item => item.id === id ? workspace : item);
-    return workspace;
-  }
-  async deleteWorkspace(id:string) {
-    const result = await this.request<Record<string,unknown>>("workspaces/"+encodeURIComponent(id), { method:"DELETE" });
-    this.workspaces = this.workspaces.filter(item => item.id !== id);
-    if (this.selectedWorkspaceId === id) {
-      this.selectedWorkspaceId = undefined;
-      try { globalThis.localStorage?.removeItem("docs.review.workspace"); } catch { /* offline/browser storage unavailable */ }
     }
-    return result;
-  }
-  getWorkspaceStatus(id:string) { return this.request<import("./models").WorkspaceStatus>("workspaces/"+encodeURIComponent(id)+"/status"); }
-  migrateWorkspace(id:string,input:{apply:boolean}) { return this.request<import("./models").WorkspaceMigration>("workspaces/"+encodeURIComponent(id)+"/migrate", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  getCurrentDocument(workspaceId:string) { return this.request<import("./models").CurrentDocument>("current-document?workspace_id="+encodeURIComponent(workspaceId)); }
-  useDocument(id:string,workspaceId:string) { return this.scopedRequest<import("./models").DocumentSummary>("documents/"+encodeURIComponent(id)+"/use", { method:"POST" }, workspaceId); }
-  renameDocument(id:string,newId:string,workspaceId:string) { return this.scopedRequest<import("./models").DocumentSummary>("documents/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({new_id:newId}) }, workspaceId); }
-  deleteDocument(id:string,workspaceId:string) { return this.scopedRequest<{deleted:string;current_document_id:string|null}>("documents/"+encodeURIComponent(id), { method:"DELETE" }, workspaceId); }
-  getDocumentStatus(documentId:string,workspaceId?:string) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/status", {}, workspaceId); }
-  getDocumentContext(documentId:string) { return this.scopedRequest<{document_id:string;topics:DocumentContextTopic[]}>("documents/"+encodeURIComponent(documentId)+"/context"); }
-  getDocumentClassification(documentId:string) { return this.scopedRequest<{document_id:string;items:Array<Record<string,unknown>>}>("documents/"+encodeURIComponent(documentId)+"/classification"); }
-  confirmDocumentClassification(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/classification", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  setDocumentContext(documentId:string,input:{topic:string;field?:string;value:string}) { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/context", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); }
-  reviseDocument(documentId:string,input:RevisionInput) { return this.authoring.reviseDocument(documentId,input); }
-  listDocumentSections(documentId:string) { return this.scopedRequest<{items:DocumentSection[]}>("documents/"+encodeURIComponent(documentId)+"/sections").then(result=>result.items); }
-  getDocumentSection(documentId:string,sectionId:string) { return this.scopedRequest<DocumentSection>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId)); }
-  updateDocumentSection(documentId:string,sectionId:string,body:string,request="Review Studio section edit") { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/sections/"+encodeURIComponent(sectionId), { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({body,request}) }); }
-  createDocument(input: { workspaceId:string; documentId:string; template:string; title?:string }) { return this.scopedRequest<Record<string,unknown>>("documents", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:input.workspaceId,document_id:input.documentId,template:input.template,title:input.title??""}) }, input.workspaceId); }
-  async createRun(input: { documentId:string; workspaceId:string; pipelineId?:string; format?:string }) { const workspaceId = await this.workspaceId(input.workspaceId); return this.request<Record<string,unknown>>("runs?workspace_id="+encodeURIComponent(workspaceId), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({document_id:input.documentId,workspace_id:workspaceId,pipeline_id:input.pipelineId??"document",format:input.format??"docx"}) }); }
-  cancelRun(id:string) { return this.scopedRequest<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/cancel", { method:"POST" }); }
-  retryRun(id:string) { return this.scopedRequest<Record<string,unknown>>("runs/"+encodeURIComponent(id)+"/retry", { method:"POST" }); }
-  documentAction(documentId:string, action:"prepare"|"build"|"verify"|"publish", workspaceId:string, format="docx") { return this.scopedRequest<Record<string,unknown>>("documents/"+encodeURIComponent(documentId)+"/"+action, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({workspace_id:workspaceId, policy: action === "publish" ? "release" : undefined, format}) }, workspaceId); }
-  async selectWorkspace(id:string): Promise<Workspace> {
-    const workspace = await this.request<Workspace>("workspaces/"+encodeURIComponent(id)+"/use", { method:"POST" });
-    this.workspaces = [...this.workspaces.filter(item => item.id !== id), workspace];
-    this.selectedWorkspaceId = id;
-    try { globalThis.localStorage?.setItem("docs.review.workspace", id); } catch { /* offline/browser storage unavailable */ }
-    return workspace;
-  }
-  async importDocument(file: File, workspace: Workspace, options: {documentId?:string;template?:string;title?:string} = {}): Promise<ImportResult> {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const query = new URLSearchParams({workspace_id:workspace.id, template:options.template??"documento-generico", title:options.title??file.name});
-    if (options.documentId) query.set("document_id", options.documentId);
-    return this.scopedRequest<ImportResult>("documents/import/raw?" + query.toString(), { method:"POST", headers:{"Content-Type":file.type||"application/octet-stream", "X-Docs-Filename":file.name}, body:bytes }, workspace.id);
   }
 
   previewUrl(value: string): string {
@@ -383,75 +140,4 @@ export class ReviewApiClient {
     if (!sameOrigin && !this.allowedPreviewOrigins.has(url.origin)) throw new TypeError("Preview URL origin is not allowed");
     return url.toString();
   }
-
-  /** The translated PDF as a Blob, fetched with the same Bearer header as every other request. */
-  async downloadTranslation(path: string): Promise<Blob> {
-    const workspaceId = await this.workspaceId();
-    const query = new URLSearchParams({ path, workspace_id: workspaceId });
-    const request = withSignal(undefined, this.timeoutMs);
-    try {
-      const response = await this.requestFetch(joinUrl(this.baseUrl, `translations/output?${query}`), { signal: request.signal, headers: { Accept: "application/pdf", ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}) } });
-      if (!response.ok) throw await errorFromResponse(response);
-      return await response.blob();
-    } finally { request.cancel(); }
-  }
-
-  async streamProgress(runId: string, onEvent: (event: ProgressEvent) => void, signal?: AbortSignal): Promise<void> {
-    let terminal = false;
-    while (!terminal) {
-      if (signal?.aborted) return;
-      const request = withSignal(signal, this.timeoutMs);
-      try {
-        const workspaceId = await this.workspaceId();
-        const response = await this.requestFetch(joinUrl(this.baseUrl, `runs/${encodeURIComponent(runId)}/progress?workspace_id=${encodeURIComponent(workspaceId)}`), { signal: request.signal, headers: { Accept: "text/event-stream", ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}) } });
-        if (!response.ok) throw await errorFromResponse(response);
-        if (!response.body) throw new ApiError("Progress stream has no body", 502, "empty_stream");
-        await yieldSse(response.body, event => {
-          onEvent(event);
-          const status = (event.run as { status?: string } | undefined)?.status;
-          terminal = event.type === "terminal" || ["succeeded", "completed", "failed", "cancelled", "expired"].includes(String(status));
-        });
-      } finally { request.cancel(); }
-      if (!terminal) await waitForProgress(signal, 750);
-    }
-  }
-
-  artifactPreviewUrl(runId: string, artifactId: string): string {
-    if (!this.selectedWorkspaceId) throw new ApiConfigurationError("Select a workspace before requesting an artifact preview.");
-    return this.previewUrl(`runs/${encodeURIComponent(runId)}/previews/${encodeURIComponent(artifactId)}?workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}`);
-  }
-}
-
-async function waitForProgress(signal: AbortSignal | undefined, delayMs: number): Promise<void> {
-  await new Promise<void>(resolve => {
-    const timer = globalThis.setTimeout(resolve, delayMs);
-    signal?.addEventListener("abort", () => { globalThis.clearTimeout(timer); resolve(); }, { once: true });
-  });
-}
-
-export async function yieldSse(stream: ReadableStream<Uint8Array>, onEvent: (event: ProgressEvent) => void): Promise<void> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const records = buffer.split(/\r?\n\r?\n/);
-      buffer = records.pop() ?? "";
-      for (const record of records) {
-        const lines = record.split(/\r?\n/);
-        const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trimStart()).join("\n");
-        if (!data || data === "[DONE]") continue;
-        const name = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
-        try {
-          const event = JSON.parse(data) as ProgressEvent;
-          // The server's closing frame is `event: terminal`; its payload carries no `type` of its own.
-          onEvent(name === "terminal" ? { ...event, type: "terminal" } : event);
-        } catch { /* Ignore malformed keep-alive records. */ }
-      }
-    }
-    buffer += decoder.decode();
-  } finally { reader.releaseLock(); }
 }

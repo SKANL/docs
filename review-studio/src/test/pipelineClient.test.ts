@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, ReviewApiClient } from "../api/client";
+import { ApiError } from "../api/errors";
+import { ReviewApiClient } from "../api/client";
 import { toRunRecord } from "../api/domains/pipeline";
 
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" }, ...init });
@@ -69,7 +70,7 @@ describe("streamProgress terminal event", () => {
       "id: r1\nevent: terminal\ndata: {\"run\":{\"id\":\"r1\",\"status\":\"succeeded\"}}\n\n",
     ));
     const events: Array<{ type: string }> = [];
-    await client.streamProgress("r1", event => events.push(event));
+    await client.pipeline.streamProgress("r1", event => events.push(event));
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(events.map(e => e.type)).toEqual(["build", "terminal"]);
   });
@@ -77,13 +78,13 @@ describe("streamProgress terminal event", () => {
   it("sends the Bearer token on the progress stream like every other request", async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => sse("event: terminal\ndata: {\"run\":{\"id\":\"r1\",\"status\":\"succeeded\"}}\n\n"));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", accessToken: "token-123", fetch: fetcher });
-    await client.streamProgress("r1", () => {});
+    await client.pipeline.streamProgress("r1", () => {});
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Accept: "text/event-stream", Authorization: "Bearer token-123" } });
   });
 
   it("recognises a terminal event even when the run status is not in the known list", async () => {
     const { client, fetcher } = setup(() => sse("event: terminal\ndata: {\"run\":{\"id\":\"r1\",\"status\":\"timed_out\"}}\n\n"));
-    await client.streamProgress("r1", () => {});
+    await client.pipeline.streamProgress("r1", () => {});
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

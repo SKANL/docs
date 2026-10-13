@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
-import { ApiError } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import { useApi } from "@/app/providers";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { loadCapabilityActions } from "@/lib/capability-registry";
@@ -46,10 +46,10 @@ export function useClassification(doc: string) {
     queryKey: authoringKeys.classification(doc),
     // A 404 classification_unavailable means no queue exists yet; that is "nothing pending", not a failure.
     queryFn: async () => {
-      try { return (await api.getDocumentClassification!(doc)).items; }
+      try { return (await api.getClassificationQueue!(doc)).items; }
       catch (error) { if (error instanceof ApiError && error.code === "classification_unavailable") return []; throw error; }
     },
-    enabled: !!api.getDocumentClassification,
+    enabled: !!api.getClassificationQueue,
   });
 }
 

@@ -2,7 +2,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../api/client";
+import { ApiError } from "../api/errors";
 import { artifact, bundle, finding, inspected, makeReviewApi, openReview, reviewCatalog } from "./reviewHarness";
 
 afterEach(() => { cleanup(); window.location.hash = ""; });

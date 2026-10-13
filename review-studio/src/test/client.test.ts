@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, ReviewApiClient, yieldSse } from "../api/client";
+import { ApiError } from "../api/errors";
+import { yieldSse } from "../api/domains/pipeline";
+import { ReviewApiClient } from "../api/client";
 
 const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" }, ...init });
 
@@ -9,7 +11,7 @@ describe("ReviewApiClient", () => {
   it("downloads a translation as a Blob with the Bearer header", async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("%PDF", { status: 200, headers: { "content-type": "application/pdf" } }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", accessToken: "token-123", fetch: fetcher });
-    const blob = await client.downloadTranslation("artifacts/translations/a b.es.pdf");
+    const blob = await client.tools.downloadTranslation("artifacts/translations/a b.es.pdf");
     expect(blob.size).toBe(4);
     expect(fetcher.mock.calls[0]?.[0].toString()).toBe("https://review.test/v2/translations/output?path=artifacts%2Ftranslations%2Fa+b.es.pdf&workspace_id=workspace-1");
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Authorization: "Bearer token-123" } });
@@ -18,14 +20,14 @@ describe("ReviewApiClient", () => {
   it("surfaces a failed translation download as an ApiError", async () => {
     const fetcher = vi.fn(async () => jsonResponse({ error: { code: "output_not_found", message: "gone" } }, { status: 404 }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
-    await expect(client.downloadTranslation("artifacts/translations/x.pdf")).rejects.toMatchObject({ code: "output_not_found", status: 404 });
+    await expect(client.tools.downloadTranslation("artifacts/translations/x.pdf")).rejects.toMatchObject({ code: "output_not_found", status: 404 });
   });
 
-  it("normalizes configured API origins to the canonical v2 surface", async () => {
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
-    const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });
-    await client.listRuns();
-    expect(fetcher.mock.calls[0]?.[0].toString()).toBe("https://review.test/v2/runs?workspace_id=workspace-1");
+  it("appends /v2 to a bare origin and keeps an explicit /v2", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ items: [] }));
+    await new ReviewApiClient({ baseUrl: "https://review.test", fetch: fetcher }).pipeline.listRunPage();
+    await new ReviewApiClient({ baseUrl: "https://review.test/v2/", fetch: fetcher }).pipeline.listRunPage();
+    expect(fetcher.mock.calls.map(call => call[0].toString())).toEqual(Array(2).fill("https://review.test/v2/runs?workspace_id=workspace-1"));
   });
 
   it("bootstraps an explicit local workspace before scoped content requests", async () => {
@@ -38,7 +40,7 @@ describe("ReviewApiClient", () => {
     });
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
-    await client.listRuns();
+    await client.pipeline.listRunPage();
 
     expect(fetcher.mock.calls.map(call => call[0].toString())).toEqual([
       "https://review.test/v2/workspaces",
@@ -54,7 +56,7 @@ describe("ReviewApiClient", () => {
     });
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
-    await client.createWorkspace({ name: "B" });
+    await client.workspaces.createWorkspace({ name: "B" });
 
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ name: "B" });
     expect(fetcher.mock.calls.map(call => new URL(call[0].toString()).pathname)).toEqual([
@@ -72,7 +74,7 @@ describe("ReviewApiClient", () => {
     ] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
-    const result = await client.listWorkspaces();
+    const result = await client.workspaces.listWorkspaces();
 
     expect(result.map(item => item.id)).toEqual(["workspace-b", "workspace-a"]);
   });
@@ -98,16 +100,16 @@ describe("ReviewApiClient", () => {
     });
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
-    await client.listWorkspaces();
-    await client.selectWorkspace(workspace.id);
-    await client.getWorkspaceStatus(workspace.id);
-    await client.migrateWorkspace(workspace.id, { apply: false });
-    await client.listDocuments(workspace.id);
-    await client.getCurrentDocument(workspace.id);
-    await client.useDocument(summary.id, workspace.id);
-    await client.renameDocument(summary.id, "field-notes-renamed", workspace.id);
-    await client.deleteDocument(summary.id, workspace.id);
-    await client.getDocumentStatus(summary.id, workspace.id);
+    await client.workspaces.listWorkspaces();
+    await client.workspaces.selectWorkspace(workspace.id);
+    await client.workspaces.getWorkspaceStatus(workspace.id);
+    await client.workspaces.migrateWorkspace(workspace.id, { apply: false });
+    await client.workspaces.listDocuments(workspace.id);
+    await client.workspaces.getCurrentDocument(workspace.id);
+    await client.workspaces.useDocument(summary.id, workspace.id);
+    await client.workspaces.renameDocument(summary.id, "field-notes-renamed", workspace.id);
+    await client.workspaces.deleteDocument(summary.id, workspace.id);
+    await client.workspaces.getDocumentStatus(summary.id, workspace.id);
 
     expect(calls.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
       "/v2/workspaces",
@@ -137,26 +139,26 @@ describe("ReviewApiClient", () => {
       },
     });
 
-    await expect(client.listRuns()).resolves.toEqual([{ id: "run-after-startup" }]);
+    await expect(client.pipeline.listRunPage()).resolves.toMatchObject({ items: [{ id: "run-after-startup" }] });
     expect(attempts).toBe(3);
   });
   it("builds typed paginated /v2 requests", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{ id: "run-1" }], next_cursor: "next", total: 4 }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
-    await expect(client.listRuns({ cursor: "a b", limit: 2 })).resolves.toEqual([{ id: "run-1" }]);
-    expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v2/runs?cursor=a+b&limit=2&workspace_id=workspace-1");
+    await expect(client.pipeline.listRunPage({ cursor: "a b", limit: 2 })).resolves.toMatchObject({ items: [{ id: "run-1" }], nextCursor: "next" });
+    expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v2/runs?limit=2&cursor=a+b&workspace_id=workspace-1");
   });
 
   it("serializes semantic graph domain queries with an optional id", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
-    await client.getGraphQuery("findings_affected_by_revision", "rev 1");
+    await client.review.getGraphQuery("findings_affected_by_revision", "rev 1");
 
     expect(fetcher.mock.calls[0][0].toString()).toBe("https://review.test/v2/graph?query=findings_affected_by_revision&id=rev+1&workspace_id=workspace-1");
   });
 
-  it("maps the production X20 run envelope to the review model", async () => {
+  it("maps the production X20 run envelope to a run record", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{
       schema: "docs.x20/v1",
       id: "run-real",
@@ -175,24 +177,20 @@ describe("ReviewApiClient", () => {
     }]}));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
-    await expect(client.listRuns()).resolves.toMatchObject([{
+    await expect(client.pipeline.listRunPage()).resolves.toMatchObject({ items: [{
       id: "run-real",
-      document: "doc-real",
-      template: "technical-report-srs",
-      startedAt: "2026-09-21T12:00:01Z",
-      duration: "1250 ms",
+      documentId: "doc-real",
       status: "succeeded",
-      findings: 2,
-      artifactCount: 3,
-      progress: 100,
-    }]);
+      createdAt: "2026-09-21T12:00:00Z",
+      percent: 100,
+    }] });
   });
 
   it("attaches a configured bearer token without replacing request headers", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", accessToken: "token-123", fetch: fetcher });
 
-    await client.listRuns();
+    await client.pipeline.listRunPage();
 
     expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Accept: "application/json", Authorization: "Bearer token-123" } });
   });
@@ -200,7 +198,7 @@ describe("ReviewApiClient", () => {
   it("passes the selected output format to document actions", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ id: "run-pdf" }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
-    await client.documentAction("doc-1", "build", "workspace-1", "pdf");
+    await client.pipeline.documentAction("doc-1", "build", "workspace-1", "pdf");
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({ workspace_id: "workspace-1", format: "pdf" });
   });
 
@@ -212,9 +210,9 @@ describe("ReviewApiClient", () => {
         : jsonResponse({ items: [] }));
     });
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
-    await client.listWorkspaces();
-    await client.selectWorkspace("workspace-2");
-    await client.getGraphQuery("unused_references");
+    await client.workspaces.listWorkspaces();
+    await client.workspaces.selectWorkspace("workspace-2");
+    await client.review.getGraphQuery("unused_references");
     const lastCall = fetcher.mock.calls[fetcher.mock.calls.length - 1];
     expect(lastCall?.[0].toString()).toBe("https://review.test/v2/graph?query=unused_references&workspace_id=workspace-2");
   });
@@ -222,18 +220,18 @@ describe("ReviewApiClient", () => {
   it("normalizes backend graph nodes and edges without changing the UI shape", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ nodes: [{ id: "claim-1", kind: "claim", label: "Claim", confidence: { score: 0.75 } }], edges: [{ source: "source-1", target: "claim-1", relation: "supports" }] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
-    await expect(client.getGraph()).resolves.toMatchObject({ nodes: [{ id: "claim-1", type: "claim", confidence: 0.75 }], edges: [{ from: "source-1", to: "claim-1" }] });
+    await expect(client.review.getGraph()).resolves.toMatchObject({ nodes: [{ id: "claim-1", type: "claim", confidence: 0.75 }], edges: [{ from: "source-1", to: "claim-1" }] });
   });
 
   it("normalizes structured API errors", async () => {
     const client = new ReviewApiClient({ fetch: vi.fn().mockResolvedValue(jsonResponse({ code: "invalid_run", message: "Run not found", details: { id: "x" } }, { status: 404, statusText: "Not Found", headers: { "x-request-id": "req-1" } })) });
-    await expect(client.getPassport("x")).rejects.toMatchObject({ name: "ApiError", status: 404, code: "invalid_run", requestId: "req-1", details: { id: "x" } });
+    await expect(client.review.getRunEvidence("x")).rejects.toMatchObject({ name: "ApiError", status: 404, code: "invalid_run", requestId: "req-1", details: { id: "x" } });
   });
 
   it("aborts requests after the configured timeout", async () => {
     vi.useFakeTimers();
     const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason))));
-    const promise = new ReviewApiClient({ fetch: fetcher, timeoutMs: 25 }).listRuns();
+    const promise = new ReviewApiClient({ fetch: fetcher, timeoutMs: 25 }).pipeline.listRunPage();
     const rejected = expect(promise).rejects.toMatchObject({ name: "TimeoutError" });
     await vi.advanceTimersByTimeAsync(25);
     await rejected;

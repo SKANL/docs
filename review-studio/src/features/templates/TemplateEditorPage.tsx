@@ -4,7 +4,7 @@ import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { StructureView } from "@/components/shared/StructureView";
-import { ApiError } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

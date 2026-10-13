@@ -1,5 +1,5 @@
 // Typed client for the specialist tools (S6.2 contract): collection, rules, DOCX, translation, diagnostics, issue codes, import.
-import type { ScopedRequest } from "./authoring";
+import { defined, docPath, jsonInit, type Transport } from "../http";
 import type { TemplateIssue } from "./templates";
 
 export type FileTool = "collect-sources" | "collect-issues" | "collect-code-evidence" | "build-rules" | "build-ledger";
@@ -38,15 +38,12 @@ export interface ToolsApi {
   auditDocxFormat(documentId: string, input?: { strict?: boolean; artifactId?: string }): Promise<FormatAudit>;
   translatePdf(input: TranslateInput): Promise<TranslateResult>;
   getDocumentSummary(documentId: string): Promise<DocumentSummary>;
+  downloadTranslation(path: string): Promise<Blob>;
   importSourceFile(documentId: string, input: { filename: string; content_base64: string }): Promise<SourceImported>;
 }
 
-const post = (body: Record<string, unknown>): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-/** JSON drops undefined values, so unchosen fields never reach the server. */
-const defined = (input: Record<string, unknown>) => Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
-
-export function createToolsApi(request: ScopedRequest): ToolsApi {
-  const doc = (id: string) => `documents/${encodeURIComponent(id)}`;
+export function createToolsApi(t: Transport): ToolsApi {
+  const request = t.scoped;
   return {
     getDiagnostics: ({ documentId, strict } = {}) => {
       const query = new URLSearchParams();
@@ -55,13 +52,17 @@ export function createToolsApi(request: ScopedRequest): ToolsApi {
       return request(`diagnostics${query.size ? `?${query}` : ""}`);
     },
     explainIssueCode: code => request(`issue-codes/${encodeURIComponent(code)}`),
-    runFileTool: (tool, id, { repoRoot } = {}) => request(`${doc(id)}/${FILE_TOOL_PATH[tool]}`, post(defined({ repo_root: repoRoot }))),
-    reviewRules: (id, { strict } = {}) => request(`${doc(id)}/review-rules`, post(defined({ strict }))),
-    buildDocx: (id, { output } = {}) => request(`${doc(id)}/build-docx`, post(defined({ output }))),
-    auditDocxFormat: (id, { strict, artifactId } = {}) => request(`${doc(id)}/format-audit-docx`, post(defined({ strict, artifact_id: artifactId }))),
+    runFileTool: (tool, id, { repoRoot } = {}) => request(`${docPath(id)}/${FILE_TOOL_PATH[tool]}`, jsonInit("POST", defined({ repo_root: repoRoot }))),
+    reviewRules: (id, { strict } = {}) => request(`${docPath(id)}/review-rules`, jsonInit("POST", defined({ strict }))),
+    buildDocx: (id, { output } = {}) => request(`${docPath(id)}/build-docx`, jsonInit("POST", defined({ output }))),
+    auditDocxFormat: (id, { strict, artifactId } = {}) => request(`${docPath(id)}/format-audit-docx`, jsonInit("POST", defined({ strict, artifact_id: artifactId }))),
     translatePdf: ({ artifactId, filename, contentBase64, to, sourceLang, output, overwrite }) =>
-      request("translations", post(defined({ artifact_id: artifactId, filename, content_base64: contentBase64, to, source_lang: sourceLang, output, overwrite }))),
-    getDocumentSummary: id => request(`${doc(id)}/summary`),
-    importSourceFile: (id, input) => request(`${doc(id)}/imports`, post(input)),
+      request("translations", jsonInit("POST", defined({ artifact_id: artifactId, filename, content_base64: contentBase64, to, source_lang: sourceLang, output, overwrite }))),
+    async downloadTranslation(path) {
+      const workspaceId = await t.workspaceId();
+      return t.send(`translations/output?${new URLSearchParams({ path, workspace_id: workspaceId })}`, { headers: { Accept: "application/pdf" } }, response => response.blob());
+    },
+    getDocumentSummary: id => request(`${docPath(id)}/summary`),
+    importSourceFile: (id, input) => request(`${docPath(id)}/imports`, jsonInit("POST", input)),
   };
 }

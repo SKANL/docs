@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiConfigurationError, ReviewApiClient } from "../api/client";
+import { ApiConfigurationError } from "../api/errors";
+import { ReviewApiClient } from "../api/client";
 import { createReviewApi } from "../api/factory";
 
 describe("createReviewApi", () => {
@@ -8,8 +9,8 @@ describe("createReviewApi", () => {
   });
 
   it("selects the configured fetch-backed API", () => {
-    const api = createReviewApi({ apiBaseUrl: "https://review.example.test/v1", fetch: viFetch() });
-    expect(api.listRuns).toBeTypeOf("function");
+    const api = createReviewApi({ apiBaseUrl: "https://review.example.test/v2", fetch: viFetch() });
+    expect(api.listRunPage).toBeTypeOf("function");
     expect(api.getCapabilities).toBeTypeOf("function");
     expect(api.reviewDocument).toBeTypeOf("function");
     expect(ReviewApiClient).toBeTypeOf("function");

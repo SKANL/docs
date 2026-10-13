@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
-import { ApiError } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Badge } from "@/components/ui/badge";

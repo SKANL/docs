@@ -35,7 +35,7 @@ export function ArtifactsPanel({ workspaceId, selectedId }: { workspaceId: strin
   const api = useApi();
   const [runId, setRunId] = useState("all");
   const artifacts = useQuery({ queryKey: reviewKeys.artifacts(workspaceId), queryFn: () => api.listArtifacts() });
-  const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: () => api.listRuns() });
+  const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: async () => (await api.listRunPage!()).items });
   if (artifacts.isPending) return <Skeleton className="h-24 w-full" />;
   if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={errorText(artifacts.error, "artifacts")} onRetry={() => void artifacts.refetch()} />;
   const all = artifacts.data;
