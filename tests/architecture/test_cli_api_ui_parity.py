@@ -85,7 +85,9 @@ def test_capability_catalog_http_route_returns_the_declared_catalog():
 
 # `document classify` left this list in S2.1: the CLI and the API now share
 # `review_classification_queue`, so the equivalence is no longer partial.
+# `document publish` left it in S5.1: both run `preflight_publish` then `publish`
+# over the same current-input identities.
 def test_partial_cli_equivalents_are_not_advertised_as_available():
     by_command = {item["cli_command"]: item for item in _capabilities()}
-    for command in ("doc status", "document publish"):
+    for command in ("doc status",):
         assert by_command[command]["status"] == "planned", command

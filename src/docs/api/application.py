@@ -29,10 +29,12 @@ from docs.application.workspace_migration import (
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentNotFoundError
 from docs.domain.runtime_records import Run
+from docs.domain.sections import infer_section_id_from_path
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
 from .authoring_routes import AuthoringRoutes
+from .delivery_routes import DeliveryRoutes
 from .document_dto import (
     DocumentCreateRequest,
     DocumentCurrentResponse,
@@ -165,9 +167,15 @@ class X20Application:
             services_for=self._workspace_services_for,
             host=self,
         )
+        self._delivery = DeliveryRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+            owned_run=self._quality._owned_run,
+            publications=lambda: self.publication_store,
+        )
         self._operation_routes: dict[str, Any] = {
             "authoring": self._authoring, "sections": self._sections, "pipeline": self._pipeline,
-            "quality": self._quality,
+            "quality": self._quality, "delivery": self._delivery,
         }
         # SSE progress stream bounds: a stream never holds a worker thread longer
         # than `progress_max_seconds`; the client reconnects until terminal.
@@ -899,7 +907,7 @@ class X20Application:
         root = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections"
         items = []
         for path in sorted(root.glob("*.md")) if root.is_dir() else []:
-            section_id = path.stem
+            section_id = infer_section_id_from_path(path)
             body = path.read_text(encoding="utf-8")
             items.append({"id": section_id, "filename": path.name, "body": body})
         return Response.json({"document_id": document_id, "workspace_id": workspace["id"], "items": items})
@@ -910,8 +918,9 @@ class X20Application:
         safe_id = Path(section_id).name
         if safe_id != section_id or not section_id or section_id in {".", ".."}:
             raise APIError("invalid_section", "Invalid section identifier", 400)
-        path = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections" / f"{section_id}.md"
-        if not path.is_file():
+        sections = Path(str(workspace["root"])).resolve() / "documents" / document_id / "sections"
+        path = next((p for p in sorted(sections.glob("*.md")) if infer_section_id_from_path(p) == section_id), None)
+        if path is None:
             raise APIError("section_not_found", "Section not found in workspace", 404)
         return Response.json({"document_id": document_id, "workspace_id": workspace["id"], "id": section_id, "filename": path.name, "body": path.read_text(encoding="utf-8")})
 

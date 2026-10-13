@@ -326,3 +326,41 @@ class QaDocxResponse(AuthoringDTO):
 class CorrectionsResponse(AuthoringDTO):
     document_id: str
     applied: int
+
+
+class PackageRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    run_id: str | None = None  # optional reference: the run this package is cut from
+    name: str | None = None  # archive stem under artifacts/packages; defaults to the run id or "current"
+
+
+class PackageResponse(AuthoringDTO):
+    document_id: str
+    run_id: str | None
+    source: str
+    destination: str
+    sha256: str
+    size_bytes: int
+
+
+class PublishRequest(AuthoringDTO):
+    workspace_id: str | None = None
+    format: str | None = None
+    destination: str  # relative to the document's output/release directory
+    policy: Literal["draft", "strict", "release"] = "release"
+
+
+class PublicationResponse(AuthoringDTO):
+    id: str
+    document_id: str
+    format: str
+    policy: str
+    source: str
+    destination: str
+    manifest: str
+    artifact_sha256: str
+    manifest_sha256: str
+    provenance_run: str
+    attestation_sha256: str
+    identities: dict[str, Any]
+    warnings: list[str]

@@ -1397,3 +1397,17 @@ def test_graph_query_rejects_conflicting_query_and_mode():
         "message": "query and mode cannot be used together",
         "details": {},
     }
+
+
+def test_section_routes_use_canonical_section_ids_for_ordered_files(tmp_path):
+    """Listed ids must be the ids every section operation accepts (`NNN-<id>.md` -> `<id>`)."""
+    application = section_app(tmp_path)
+    workspace_id = application.workspace_registry.list()[0]["id"]
+    sections = tmp_path / "workspace" / "documents" / "d1" / "sections"
+    (sections / "020-introduccion.md").write_text("Intro body", encoding="utf-8")
+
+    listed = body(application.dispatch(Request("GET", f"/v2/documents/d1/sections?workspace_id={workspace_id}")))
+    fetched = application.dispatch(Request("GET", f"/v2/documents/d1/sections/introduccion?workspace_id={workspace_id}"))
+
+    assert {"id": "introduccion", "filename": "020-introduccion.md", "body": "Intro body"} in listed["items"]
+    assert body(fetched)["filename"] == "020-introduccion.md"

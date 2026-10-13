@@ -434,6 +434,87 @@ def test_sidecar_wsgi_section_routes_use_real_composition(tmp_path: Path) -> Non
         thread.join(timeout=2)
 
 
+def test_sidecar_wsgi_delivery_routes_package_and_publish_a_verified_build(tmp_path: Path) -> None:
+    import hashlib
+
+    from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
+    from docs.application.provenance import ProvenanceLedger
+    from docs.domain.artifacts import ArtifactRef, BuildManifest
+
+    server = build_server(SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path))
+    application = server._docs_application.application
+    workspace = application.workspace_registry.list()[0]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+
+    def call(method: str, path: str, payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}{path}",
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=20)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    scope = f"workspace_id={workspace['id']}"
+    try:
+        status, _ = call("POST", "/v2/documents", {
+            "workspace_id": workspace["id"], "document_id": "ship", "template": "documento-generico", "title": "S",
+        })
+        assert status == 201
+        status, missing = call("POST", f"/v2/documents/ship/package?{scope}", {})
+        assert status == 409 and missing["error"]["code"] == "package_source_unavailable", missing
+
+        # a real verified build: live identities + a recorded attestation (what a pipeline run leaves behind)
+        root = Path(workspace["root"]).resolve() / "documents" / "ship"
+        deps = application._workspace_services_for(str(Path(workspace["root"]).resolve()))
+        resolved, config, renderer = _resolve_publish_inputs(deps, root, "docx")
+        ids = _current_input_identities(resolved=resolved, config=config, renderer=renderer, root=root, output_format="docx")
+        current = root / "output" / "current"
+        current.mkdir(parents=True, exist_ok=True)
+        artifact = current / "ship.docx"
+        artifact.write_bytes(b"docx-bytes")
+        manifest = BuildManifest(
+            document_id="ship", source_hash=ids["source_hash"], template_hash=ids["template_hash"],
+            template_ir_hash=ids["template_ir_hash"], config_hash=ids["config_hash"], context_hash=ids["context_hash"],
+            asset_hashes=ids["asset_hashes"], renderer_versions=ids["renderer_versions"],
+            artifacts=(ArtifactRef(str(artifact.resolve()), hashlib.sha256(artifact.read_bytes()).hexdigest()),),
+            verification={"passed": True}, provenance_run="run-1",
+        )
+        (current / "ship.docx.manifest.json").write_text(manifest.to_json(), encoding="utf-8")
+        (root / "runs").mkdir(exist_ok=True)
+        ledger = ProvenanceLedger(root / "runs" / "provenance.json", trusted_root=root)
+        ledger.record_run("run-1", inputs=(), outputs=())
+        ledger.record_attestation("run-1", manifest.attestation())
+        # the sidecar projects publications through the pipeline run that built the artifact
+        application.run_store.put(Run("run-1", "succeeded", {"workspace_id": workspace["id"], "document_id": "ship"}, ""))
+
+        status, packaged = call("POST", f"/v2/documents/ship/package?{scope}", {"name": "v1"})
+        assert status == 200, packaged
+        assert packaged["destination"] == "artifacts/packages/ship-v1.zip"
+        status, again = call("POST", f"/v2/documents/ship/package?{scope}", {"name": "v1"})
+        assert status == 200 and again["sha256"] == packaged["sha256"]
+
+        status, denied = call("POST", f"/v2/documents/ship/publications?{scope}", {"destination": "a.docx", "policy": "draft"})
+        assert status == 422 and denied["error"]["code"] == "publish_policy_denied", denied
+        status, escaped = call("POST", f"/v2/documents/ship/publications?{scope}", {"destination": "../a.docx"})
+        assert status == 400 and escaped["error"]["code"] == "destination_not_permitted", escaped
+        status, published = call("POST", f"/v2/documents/ship/publications?{scope}", {"destination": "a.docx"})
+        assert status == 201, published
+        assert published["artifact_sha256"] == hashlib.sha256(b"docx-bytes").hexdigest()
+        assert (root / "output" / "release" / "a.docx").read_bytes() == b"docx-bytes"
+        status, listed = call("GET", f"/v2/publications?{scope}")
+        assert [item["id"] for item in listed["items"]] == [published["id"]], listed
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
 def test_sidecar_templates_endpoint_reads_workspace_manifests(tmp_path: Path) -> None:
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     health_app = build_application(config)

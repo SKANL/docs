@@ -67,6 +67,8 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const discard = (id: string) => setDrafts(({ [id]: _dropped, ...rest }) => rest);
   const apply = (id: string, focus: boolean) => {
     if (focus) { if (id === activeId) editor.current?.focus(); else focusAfterSelect.current = true; }
+    // Section-bound results must not survive a switch: a stale retry would target the new section.
+    if (id !== activeId) { save.reset(); build.reset(); reviewSection.reset(); stamp.reset(); }
     setSelected(id);
   };
   const open = (id: string, focus = false) => {
@@ -75,11 +77,12 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   };
 
   const invalidate = [authoringKeys.sections(documentId)];
-  const save = useAction((text: string) => api.updateDocumentSection!(documentId, activeId!, text), { success: () => `Saved section ${activeId}.`, invalidate, onDone: () => discard(activeId!) });
-  const build = useAction(() => api.buildSection!(documentId, activeId!), { success: result => `Built ${result.path}.`, invalidate });
-  const reviewSection = useAction(() => api.reviewSection!(documentId, activeId!), { success: result => result.passed ? "Section review passed." : "Section review found issues.", onDone: setReview });
+  // The target section travels in the mutation variables so a retry replays the same target and text.
+  const save = useAction(({ id, text }: { id: string; text: string }) => api.updateDocumentSection!(documentId, id, text), { success: (_result, { id }) => `Saved section ${id}.`, invalidate, onDone: (_result, { id }) => discard(id) });
+  const build = useAction((id: string) => api.buildSection!(documentId, id), { success: result => `Built ${result.path}.`, invalidate });
+  const reviewSection = useAction((id: string) => api.reviewSection!(documentId, id), { success: result => result.passed ? "Section review passed." : "Section review found issues.", onDone: setReview });
   const reviewDocument = useAction(() => api.reviewDocument!(documentId), { success: result => result.passed ? "Document review passed." : "Document review found issues.", onDone: setReview });
-  const stamp = useAction(() => api.stampSection!(documentId, activeId!, { by: by.trim(), ...(model.trim() ? { model: model.trim() } : {}) }), { success: result => `Stamped ${result.section_id} as ${result.authored_by}.`, onDone: () => setStampOpen(false) });
+  const stamp = useAction((id: string) => api.stampSection!(documentId, id, { by: by.trim(), ...(model.trim() ? { model: model.trim() } : {}) }), { success: result => `Stamped ${result.section_id} as ${result.authored_by}.`, onDone: () => setStampOpen(false) });
   const pack = useAction(() => api.packContext!(documentId, target.trim()), { success: result => `Packed context for ${result.target}.`, onDone: result => { setPacked(result); setPackOpen(false); } });
 
   if (sections.isPending) return <Skeleton className="h-48 w-full" />;
@@ -101,9 +104,9 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
         <Label htmlFor="section-body">Section body</Label>
         <Textarea id="section-body" ref={editor} rows={14} value={body} onChange={event => activeId && setDrafts(current => ({ ...current, [activeId]: event.target.value }))} />
         <div className="flex flex-wrap gap-2">
-          <Button type="button" disabled={!activeId || !dirty(activeId) || save.isPending} onClick={() => save.mutate(body)}>{save.isPending ? "Saving…" : "Save section"}</Button>
-          {can("build-section") && api.buildSection && <Button type="button" variant="outline" disabled={build.isPending} onClick={() => build.mutate(undefined)}>Build section</Button>}
-          {can("review-section") && api.reviewSection && <Button type="button" variant="outline" disabled={reviewSection.isPending} onClick={() => reviewSection.mutate(undefined)}>Review section</Button>}
+          <Button type="button" disabled={!activeId || !dirty(activeId) || save.isPending} onClick={() => save.mutate({ id: activeId!, text: body })}>{save.isPending ? "Saving…" : "Save section"}</Button>
+          {can("build-section") && api.buildSection && <Button type="button" variant="outline" disabled={build.isPending} onClick={() => build.mutate(activeId!)}>Build section</Button>}
+          {can("review-section") && api.reviewSection && <Button type="button" variant="outline" disabled={reviewSection.isPending} onClick={() => reviewSection.mutate(activeId!)}>Review section</Button>}
           {can("stamp-section") && api.stampSection && <Button type="button" variant="outline" onClick={() => { stamp.reset(); setStampOpen(true); }}>Stamp section</Button>}
         </div>
         <ActionError action={save} what="save the section" />
@@ -119,7 +122,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
 
     <Dialog open={stampOpen} onOpenChange={setStampOpen}>
       <DialogContent><DialogHeader><DialogTitle>Stamp section {activeId}</DialogTitle><DialogDescription>Records who authored this section and with which model.</DialogDescription></DialogHeader>
-        <form className="grid gap-3" onSubmit={event => { event.preventDefault(); stamp.mutate(undefined); }}>
+        <form className="grid gap-3" onSubmit={event => { event.preventDefault(); stamp.mutate(activeId!); }}>
           <div className="grid gap-1"><Label htmlFor="stamp-by">Stamped by</Label><Input id="stamp-by" value={by} onChange={event => setBy(event.target.value)} required /></div>
           <div className="grid gap-1"><Label htmlFor="stamp-model">Model</Label><Input id="stamp-model" value={model} onChange={event => setModel(event.target.value)} /></div>
           <ActionError action={stamp} what="stamp the section" />
