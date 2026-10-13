@@ -197,7 +197,7 @@ def _route_patterns() -> list[re.Pattern]:
 
 def test_every_claimed_ui_route_exists_in_the_router():
     patterns = _route_patterns()
-    tabs = {"authoring": "features/authoring/AuthoringRoute.tsx", "review": "features/quality/QualityRoute.tsx"}
+    tabs = {"authoring": "features/authoring/AuthoringRoute.tsx", "review": "features/review/ReviewRoute.tsx"}
     for command, entry in _parity_ui().items():
         if not entry.get("ui"):
             continue
