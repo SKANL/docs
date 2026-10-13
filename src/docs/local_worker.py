@@ -14,7 +14,7 @@ from .infrastructure.persistence.sqlite_runtime import (
     SqlitePublicationStore,
     SqliteRunStore,
 )
-from .sidecar import _build_worker
+from .sidecar.worker import build_worker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     artifact_store = SqliteArtifactStore(state)
     findings_store = SqliteFindingStore(state)
     publication_store = SqlitePublicationStore(state)
-    runner = _build_worker(
+    runner = build_worker(
         root,
         queue,
         state,

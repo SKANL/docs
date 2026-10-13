@@ -10,7 +10,7 @@ def test_authoring_timestamp_uses_the_cli_second_precision_format() -> None:
 
 def test_every_authoring_surface_shares_the_one_clock() -> None:
     import docs.api.section_routes as routes
-    import docs.sidecar as sidecar
+    import docs.sidecar.document_actions as actions
 
     assert routes.authoring_timestamp is authoring_timestamp
-    assert "authoring_timestamp()" in Path(sidecar.__file__).read_text(encoding="utf-8")
+    assert "authoring_timestamp()" in Path(actions.__file__).read_text(encoding="utf-8")

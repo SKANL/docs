@@ -9,11 +9,11 @@ from typing import Any, ClassVar
 
 import pytest
 
-import docs.sidecar as sidecar
 from docs.api.http import Request
 from docs.domain.runtime_records import Artifact, Run
 from docs.domain.workspace import Workspace
-from docs.sidecar import SidecarConfig, _persist_worker_evidence, build_application, build_server, run
+from docs.sidecar import SidecarConfig, build_application, build_server, run
+from docs.sidecar.worker import build_worker, persist_worker_evidence
 
 
 @pytest.fixture(autouse=True)
@@ -64,7 +64,7 @@ def test_api_document_creation_composes_the_requested_workspace(
         calls.append(workspace)
         return Composition()
 
-    monkeypatch.setattr("docs.composition.compose_application", compose)
+    monkeypatch.setattr("docs.sidecar.document_actions.compose_application", compose)
     application = build_application(SidecarConfig(workspace=tmp_path))
     try:
         response = application.application.dispatch(Request(
@@ -112,7 +112,7 @@ def test_api_context_reads_compose_each_requested_workspace_without_leakage(
     def compose(workspace: Workspace) -> Composition:
         return Composition(workspace)
 
-    monkeypatch.setattr("docs.composition.compose_application", compose)
+    monkeypatch.setattr("docs.sidecar.document_actions.compose_application", compose)
     application = build_application(SidecarConfig(workspace=tmp_path))
     try:
         for workspace in (first, second):
@@ -137,9 +137,9 @@ def test_sidecar_worker_bootstrap_reuses_the_shared_application_composition(monk
     calls = []
     application = type("Application", (), {"observability": observability})()
 
-    monkeypatch.setattr(sidecar, "compose_application", lambda workspace: calls.append(workspace) or application)
+    monkeypatch.setattr("docs.sidecar.worker.compose_application", lambda workspace: calls.append(workspace) or application)
 
-    runner = sidecar._build_worker(
+    runner = build_worker(
         tmp_path,
         object(),
         tmp_path / "worker.sqlite3",
@@ -184,7 +184,7 @@ def test_worker_passport_contains_each_pipeline_stage_receipt() -> None:
         ]}}}
 
     passports, artifacts, findings = Store(), Store(), Store()
-    _persist_worker_evidence(passports, artifacts, findings, Result())
+    persist_worker_evidence(passports, artifacts, findings, Result())
 
     assert [entry["stage"] for entry in passports.value.entries] == [
         "worker", "pipeline", "pipeline_stage", "pipeline_stage"
@@ -628,7 +628,7 @@ def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
 def test_filesystem_stores_follow_the_selected_workspace_and_ignore_invalid_manifests(tmp_path: Path) -> None:
     """The sidecar reads each canonical workspace boundary, never process cwd state."""
     from docs.composition import open_workspace_registry
-    from docs.sidecar import _FilesystemDocumentStore, _FilesystemTemplateStore
+    from docs.sidecar.stores import FilesystemDocumentStore, FilesystemTemplateStore
 
     registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     first_root, second_root = tmp_path / "first", tmp_path / "second"
@@ -646,8 +646,8 @@ def test_filesystem_stores_follow_the_selected_workspace_and_ignore_invalid_mani
     (second_root / "templates" / "template.json").write_text('{"template_version":"2"}', encoding="utf-8")
     (second_root / "templates" / "bad.json").write_text("[", encoding="utf-8")
 
-    documents = _FilesystemDocumentStore(tmp_path, registry)
-    templates = _FilesystemTemplateStore(tmp_path, registry)
+    documents = FilesystemDocumentStore(tmp_path, registry)
+    templates = FilesystemTemplateStore(tmp_path, registry)
 
     assert documents.list() == [{"title": "Second", "id": "second"}]
     assert documents.get("second") == {"title": "Second", "id": "second"}
@@ -661,7 +661,7 @@ def test_filesystem_stores_follow_the_selected_workspace_and_ignore_invalid_mani
 
 def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_baselines(tmp_path: Path) -> None:
     from docs.composition import open_workspace_registry
-    from docs.sidecar import _WorkspaceJsonCollectionStore
+    from docs.sidecar.stores import WorkspaceJsonCollectionStore
 
     registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     workspace = registry.create("Workspace", tmp_path / "workspace")
@@ -675,8 +675,8 @@ def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_b
     revisions.mkdir(parents=True)
     (revisions / "revision-log.json").write_text('[{"id":"revision-1"}]', encoding="utf-8")
 
-    baseline_store = _WorkspaceJsonCollectionStore(tmp_path, "baselines", registry)
-    revision_store = _WorkspaceJsonCollectionStore(tmp_path, "revisions", registry)
+    baseline_store = WorkspaceJsonCollectionStore(tmp_path, "baselines", registry)
+    revision_store = WorkspaceJsonCollectionStore(tmp_path, "revisions", registry)
 
     assert [item["id"] for item in baseline_store.list()] == ["baseline"]
     assert [item["id"] for item in revision_store.list()] == ["revision-1"]
@@ -693,25 +693,25 @@ def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_b
 def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> None:
     from docs.application.workspaces import WorkspaceRegistryError
     from docs.composition import open_workspace_registry
-    from docs.sidecar import _WorkspaceRunStore
+    from docs.sidecar.stores import WorkspaceRunStore
 
     registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     workspace = registry.create("Workspace", tmp_path / "workspace")
     (Path(workspace["root"]) / "workspace.json").unlink()
 
     with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
-        _WorkspaceRunStore(registry).put(Run("run", payload={"workspace_id": workspace["id"]}))
+        WorkspaceRunStore(registry).put(Run("run", payload={"workspace_id": workspace["id"]}))
 
 
 def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace(tmp_path: Path) -> None:
     from docs.composition import open_workspace_registry
-    from docs.sidecar import _WorkspaceEvidenceStores, _WorkspaceJobQueue, _WorkspaceRunStore
+    from docs.sidecar.stores import WorkspaceEvidenceStores, WorkspaceJobQueue, WorkspaceRunStore
 
     registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     first = registry.create("First", tmp_path / "first")
     second = registry.create("Second", tmp_path / "second")
-    runs = _WorkspaceRunStore(registry, tmp_path)
-    queue = _WorkspaceJobQueue(registry, tmp_path)
+    runs = WorkspaceRunStore(registry, tmp_path)
+    queue = WorkspaceJobQueue(registry, tmp_path)
     first_run = Run("first-run", payload={"workspace_id": first["id"]})
     second_run = Run("second-run", payload={"workspace_id": second["id"]})
     runs.put(first_run)
@@ -724,7 +724,7 @@ def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace
     assert queue.cancel("second-run") is True
     assert queue.is_cancelled("second-run") is True
 
-    evidence = _WorkspaceEvidenceStores(registry, runs, tmp_path)
+    evidence = WorkspaceEvidenceStores(registry, runs, tmp_path)
     artifact = Artifact("artifact-1", "second-run", "docx", "digest")
     evidence.artifact().put(artifact)
     evidence.finding().put({"id": "finding-1", "run_id": "second-run", "severity": "high"})
