@@ -34,4 +34,5 @@ def confine(root: Path, relative: str | Path, *, strict: bool = False) -> Path:
     parts = PureWindowsPath(text)
     if not text.strip() or parts.anchor or parts.drive or ".." in parts.parts or Path(text).is_absolute():
         raise PathEscapeError(f"path must be relative and inside its root: {text!r}")
-    return require_within(root / text, root, strict=strict)
+    # Join the parsed parts, not the raw text: on POSIX "a\b" would otherwise be one odd filename.
+    return require_within(root.joinpath(*parts.parts), root, strict=strict)
