@@ -9,11 +9,10 @@ const document = { id: "field-notes", title: "Field notes", template: "documento
 
 function makeApi(overrides: Partial<ReviewApi> = {}): ReviewApi {
   return {
-    listRuns: async () => [], listFindings: async () => [], listArtifacts: async () => [],
-    getPassport: async () => ({ id: "p", runId: "r", verifiedAt: "", coverage: 0, attestations: 0, sources: 0, claims: 0, unresolved: 0 }),
+    listFindings: async () => [], listArtifacts: async () => [],
     getGraph: async () => ({ nodes: [], edges: [] }), getGraphQuery: async () => ({ items: [], graphUnavailable: false }),
     listTemplates: async () => [{ id: "documento-generico", name: "Generic document" }], listBaselines: async () => [],
-    listRevisions: async () => [], listPublications: async () => [],
+    listRevisions: async () => [],
     listWorkspaces: async () => [workspace], selectWorkspace: async () => workspace,
     createWorkspace: async input => ({ ...workspace, name: input.name }),
     renameWorkspace: async (_id, name) => ({ ...workspace, name }), deleteWorkspace: async id => ({ deleted: id }),
@@ -39,11 +38,12 @@ afterEach(() => {
 describe("workspace and document journeys", () => {
   it("creates a workspace and makes it the selected context", async () => {
     const workspaces = [workspace];
-    const createWorkspace = vi.fn(async input => { const created = { ...workspace, id: "workspace-new", name: input.name }; workspaces.push(created); return created; });
-    window.location.hash = "#workspace";
+    const createWorkspace = vi.fn(async input => { const created = { ...workspace, id: "workspace-new", name: input.name }; workspaces.unshift(created); return created; }); // the server selects a new workspace and lists the selected one first
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ listWorkspaces: async () => workspaces, createWorkspace })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" }, { timeout: 5000 });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(await screen.findByRole("button", { name: "Create workspace" }));
     const dialog = await screen.findByRole("dialog", { name: "Create workspace" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Workspace name" }), { target: { value: "Studio" } });
@@ -59,10 +59,11 @@ describe("workspace and document journeys", () => {
       if (!renamed) { renamed = true; throw new Error("Workspace service is temporarily unavailable"); }
       return { ...workspace, name };
     });
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ renameWorkspace })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Rename workspace" }));
     const dialog = await screen.findByRole("dialog", { name: "Rename workspace" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Workspace name" }), { target: { value: "Renamed research" } });
@@ -82,10 +83,11 @@ describe("workspace and document journeys", () => {
       return { deleted: id };
     });
     const selectWorkspace = vi.fn(async () => remaining);
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ listWorkspaces: async () => [workspace, remaining], deleteWorkspace, selectWorkspace })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Delete workspace" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Delete workspace" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete workspace" }));
@@ -104,10 +106,11 @@ describe("workspace and document journeys", () => {
       if (!failedApply) { failedApply = true; throw new Error("Migration service is temporarily unavailable"); }
       return { source_workspace_id: workspace.id, detected_format: "legacy", ready: true, published: true, workspace: { ...workspace, id: "workspace-migrated", name: "Research migrated" }, errors: [] };
     });
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ migrateWorkspace })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(await screen.findByRole("button", { name: "Review migration" }));
     const dialog = await screen.findByRole("dialog", { name: "Migrate workspace" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
@@ -132,10 +135,11 @@ describe("workspace and document journeys", () => {
     const useDocument = vi.fn(async id => { currentId = id; return { ...docs.find(item => item.id === id)!, active: true }; });
     const renameDocument = vi.fn(async (id, newId) => { const item = docs.find(candidate => candidate.id === id)!; const renamed = { ...item, id: newId }; docs[docs.indexOf(item)] = renamed; if (currentId === id) currentId = newId; return renamed; });
     const deleteDocument = vi.fn(async id => { docs.splice(docs.findIndex(item => item.id === id), 1); if (currentId === id) currentId = null; return { deleted: id, current_document_id: currentId }; });
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ listDocuments: async () => [...docs], getCurrentDocument: async () => ({ current_document_id: currentId, document: docs.find(item => item.id === currentId) ?? null }), createDocument, useDocument, renameDocument, deleteDocument })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Create document" }));
     const createDialog = await screen.findByRole("dialog", { name: "Create document" });
     fireEvent.change(within(createDialog).getByRole("textbox", { name: "Document ID" }), { target: { value: "new-notes" } });
@@ -162,7 +166,7 @@ describe("workspace and document journeys", () => {
   });
 
   it("explains that workspace selection is unavailable when the API has no selection capability", async () => {
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     const secondWorkspace = { ...workspace, id: "workspace-b", name: "Writing" };
     render(<App api={makeApi({ listWorkspaces: async () => [workspace, secondWorkspace], selectWorkspace: undefined })} />);
 
@@ -172,10 +176,11 @@ describe("workspace and document journeys", () => {
   });
 
   it("does not claim a newly created document was selected when selection is unsupported", async () => {
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ useDocument: undefined })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Create document" }));
     const dialog = await screen.findByRole("dialog", { name: "Create document" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Document ID" }), { target: { value: "not-selectable" } });
@@ -194,10 +199,11 @@ describe("workspace and document journeys", () => {
       published: input.apply,
       errors: [],
     }));
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ migrateWorkspace })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Review migration" }));
     const dialog = await screen.findByRole("dialog", { name: "Migrate workspace" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Inspect workspace" }));
@@ -213,15 +219,16 @@ describe("workspace and document journeys", () => {
   it("allows closing pending creation dialogs and prevents a duplicate submission", async () => {
     let finishCreate!: (created: typeof workspace) => void;
     const createWorkspace = vi.fn(() => new Promise<typeof workspace>(resolve => { finishCreate = resolve; }));
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ createWorkspace })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
     const dialog = await screen.findByRole("dialog", { name: "Create workspace" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Workspace name" }), { target: { value: "Pending workspace" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create workspace" }));
-    expect(within(dialog).getByText(/cannot be cancelled/i)).toBeTruthy();
+    expect(await within(dialog).findByText(/cannot be cancelled/i)).toBeTruthy();
     fireEvent.keyDown(dialog, { key: "Escape" });
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create workspace" })).toBeNull());
@@ -234,16 +241,17 @@ describe("workspace and document journeys", () => {
   it("allows closing a pending document dialog without resubmitting its mutation", async () => {
     let finishCreate!: (created: Record<string, unknown>) => void;
     const createDocument = vi.fn(() => new Promise<Record<string, unknown>>(resolve => { finishCreate = resolve; }));
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ createDocument })} />);
 
     await screen.findByRole("heading", { name: "Workspace and document control" });
+    await screen.findByRole("combobox", { name: "Active workspace" }); // the workspace list loads after the page renders
     fireEvent.click(screen.getByRole("button", { name: "Create document" }));
     const dialog = await screen.findByRole("dialog", { name: "Create document" });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Document ID" }), { target: { value: "pending-document" } });
     fireEvent.change(within(dialog).getByRole("textbox", { name: "Title" }), { target: { value: "Pending document" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create document" }));
-    expect(within(dialog).getByText(/cannot be cancelled/i)).toBeTruthy();
+    expect(await within(dialog).findByText(/cannot be cancelled/i)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create document" })).toBeNull());
@@ -260,7 +268,7 @@ describe("workspace and document journeys", () => {
       if (attempts === 1) throw new Error("Status service unavailable");
       return { document_id: document.id, succeeded: true, capabilities: [], publication_blockers: [] };
     });
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ getCurrentDocument: async () => ({ current_document_id: document.id, document }), getDocumentStatus })} />);
 
     const retry = await screen.findByRole("button", { name: "Retry document status" });
@@ -273,11 +281,11 @@ describe("workspace and document journeys", () => {
 
   it("keeps the shared workspace journey and reports desktop-local bootstrap in Tauri", async () => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi()} />);
 
     expect(await screen.findByRole("heading", { name: "Workspace and document control" })).toBeTruthy();
     expect(screen.getByText(/Desktop storage is prepared in app data/)).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "Active workspace" })).toBeTruthy();
+    expect(await screen.findByRole("combobox", { name: "Active workspace" })).toBeTruthy();
   });
 });

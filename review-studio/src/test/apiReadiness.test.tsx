@@ -8,7 +8,7 @@ afterEach(() => { cleanup(); window.location.hash = ""; });
 
 describe("local service cold start", () => {
   it("keeps polling health and reloads the page once the service becomes ready", async () => {
-    window.location.hash = "#workspace";
+    window.location.hash = "#/configure/workspaces";
     // State-based, not order-based: the page is a lazy chunk, so it may mount before or after the service turns ready.
     let ready = false;
     const health = vi.fn<NonNullable<ReviewApi["health"]>>(async () => {
