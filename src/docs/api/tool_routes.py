@@ -236,6 +236,18 @@ class ToolRoutes(RouteSupport):
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
+    def translation_output(self, request: Request) -> Response:
+        """Serve one translated PDF; only files under artifacts/translations are reachable."""
+        root = Path(self._workspace_root(request, None)).resolve()
+        target = self._confined(root, request.query.get("path", ""), ".pdf")
+        if not target.is_relative_to((root / _TRANSLATIONS).resolve()):
+            raise APIError("output_not_permitted", f"Output must be inside {_TRANSLATIONS.as_posix()}", 400)
+        if not target.is_file():
+            raise APIError("output_not_found", "The translated file does not exist", 404)
+        return Response(200, target.read_bytes(), {
+            "content-type": "application/pdf", "content-disposition": f'attachment; filename="{target.name}"',
+        })
+
     def _translate(
         self, deps: Any, root: Path, source: Path, label: str, destination: Path, data: dto.TranslateRequest,
     ) -> Response:

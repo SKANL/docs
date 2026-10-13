@@ -22,14 +22,16 @@ class Operation:
     summary: str
     handler: str  # method name on the route object named by `routes`
     request: type[dto.AuthoringDTO] | None
-    response: type[dto.AuthoringDTO]
+    response: type[dto.AuthoringDTO] | None
     success_status: int = 200
     routes: str = "authoring"  # key of the handler object ("authoring", "sections", "pipeline", "quality", "delivery", "templates" or "tools")
+    media_type: str | None = None  # a binary download: no JSON DTO, the response body is the file
 
     def request_ref(self) -> dict[str, str] | None:
         return _ref(self.request) if self.request else None
 
     def response_ref(self) -> dict[str, str]:
+        assert self.response is not None  # binary operations have no JSON response model
         return _ref(self.response)
 
 
@@ -158,6 +160,9 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation(("explain",), "GET", "/v2/issue-codes/{code}", "documents:read",
               "Explain one review issue code from the catalogue", "explain_issue_code", None,
               dto.IssueCodeResponse, routes="tools"),
+    Operation((), "GET", "/v2/translations/output", "documents:read",
+              "Download a translated PDF from artifacts/translations (path is workspace-relative and confined "
+              "to that folder)", "translation_output", None, None, routes="tools", media_type="application/pdf"),
     Operation((), "GET", "/v2/template-catalog", "documents:read",
               "List the built-in templates (what `template list --available` prints) and whether each is "
               "installed in the workspace", "template_catalog", None, dto.TemplateCatalogResponse, routes="tools"),

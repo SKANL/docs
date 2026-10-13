@@ -152,6 +152,20 @@ describe("translation workflow", () => {
     expect(result.textContent).toContain("3/4 blocks");
   });
 
+  it("links the translated PDF to the scoped download route", async () => {
+    const translatePdf = vi.fn(async () => ({ status: "translated", source: "manual.pdf", output: "artifacts/translations/manual.es.pdf" }));
+    const translationOutputUrl = vi.fn((path: string) => `https://review.test/v2/translations/output?path=${path}`);
+    openAt("/tools", toolsApi({ translatePdf, translationOutputUrl }));
+    const region = await card("Translate PDF");
+    await userEvent.click(await within(region).findByRole("combobox", { name: "PDF artifact" }));
+    await userEvent.click(await screen.findByRole("option", { name: "manual.pdf" }));
+    await userEvent.type(within(region).getByRole("textbox", { name: "Target language" }), "es");
+    await userEvent.click(within(region).getByRole("button", { name: "Run Translate PDF" }));
+    const link = await within(region).findByRole("link", { name: "Download translated PDF" });
+    expect(link.getAttribute("href")).toBe("https://review.test/v2/translations/output?path=artifacts/translations/manual.es.pdf");
+    expect(translationOutputUrl).toHaveBeenCalledWith("artifacts/translations/manual.es.pdf");
+  });
+
   it("uploads a PDF with a source language", async () => {
     const translatePdf = vi.fn(async () => ({ status: "translated", source: "manual.pdf", output: "artifacts/translations/manual.es.pdf" }));
     openAt("/tools", toolsApi({ translatePdf }));

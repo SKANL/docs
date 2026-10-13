@@ -230,6 +230,7 @@ class X20Application:
             ("GET", "/v2/diagnostics"),
             ("GET", "/v2/template-catalog"),
             ("POST", "/v2/translations"),
+            ("GET", "/v2/translations/output"),
         }
         self._validate_initial_route_collisions()
         self._register_owned_route("GET", "/v2/capabilities", lambda _: Response.json(build_capability_catalog()))
@@ -255,6 +256,7 @@ class X20Application:
         self._register_owned_route("GET", "/v2/diagnostics", self._tools.diagnostics)
         self._register_owned_route("GET", "/v2/template-catalog", self._tools.template_catalog)
         self._register_owned_route("POST", "/v2/translations", self._tools.translate)
+        self._register_owned_route("GET", "/v2/translations/output", self._tools.translation_output)
 
     def dispatch(self, request: Request) -> Response:
         with self.observability.span("docs.api.request", {"method": request.method.upper()}):

@@ -501,3 +501,34 @@ def test_translate_upload_error_code_is_stable(api, monkeypatch):
     response = api("POST", "/v2/translations", {**pdf_upload(), "to": "en"})
     assert response.status == 400 and code(response) == "invalid_source"
     assert "secret" not in response.body.decode()
+
+
+# -- translation output download --------------------------------------------------
+def test_translation_output_is_served_from_the_translations_folder(api):
+    target = api.ws_root / "artifacts" / "translations" / "book.en.pdf"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"%PDF translated")
+    response = api("GET", "/v2/translations/output?path=artifacts/translations/book.en.pdf")
+    assert response.status == 200, response.body
+    assert response.body == b"%PDF translated"
+    assert response.headers["content-type"] == "application/pdf"
+    assert "book.en.pdf" in response.headers["content-disposition"]
+
+
+@pytest.mark.parametrize("requested", [
+    "../../etc/passwd.pdf", "artifacts/translations/../../secret.pdf", "artifacts/other.pdf",
+    "/abs/book.pdf", "artifacts/translations/book.en.docx", "",
+])
+def test_translation_output_refuses_anything_outside_the_translations_folder(api, requested):
+    (api.ws_root / "artifacts").mkdir(exist_ok=True)
+    (api.ws_root / "artifacts" / "other.pdf").write_bytes(b"%PDF")
+    (api.ws_root / "secret.pdf").write_bytes(b"%PDF")
+    response = api("GET", f"/v2/translations/output?path={requested}")
+    assert response.status == 400 and code(response) == "output_not_permitted"
+
+
+def test_translation_output_missing_file_is_404_and_scope_is_documents_read(api):
+    response = api("GET", "/v2/translations/output?path=artifacts/translations/none.pdf")
+    assert response.status == 404 and code(response) == "output_not_found"
+    assert "/v2/translations/output" in build_openapi_document()["paths"]
+    assert api.app._required_scope("GET", "/v2/translations/output") == "documents:read"

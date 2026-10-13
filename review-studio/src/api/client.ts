@@ -384,6 +384,11 @@ export class ReviewApiClient {
     return url.toString();
   }
 
+  translationOutputUrl(path: string): string {
+    if (!this.selectedWorkspaceId) throw new ApiConfigurationError("Select a workspace before downloading a translation.");
+    return this.previewUrl(`translations/output?path=${encodeURIComponent(path)}&workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}`);
+  }
+
   async streamProgress(runId: string, onEvent: (event: ProgressEvent) => void, signal?: AbortSignal): Promise<void> {
     let terminal = false;
     while (!terminal) {

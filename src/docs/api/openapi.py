@@ -19,6 +19,10 @@ def _json_response(schema: dict[str, Any], description: str = "Successful respon
     return {"description": description, "content": {"application/json": {"schema": schema}}}
 
 
+def _binary_response(media_type: str) -> dict[str, Any]:
+    return {"description": "Successful response", "content": {media_type: {"schema": {"type": "string", "format": "binary"}}}}
+
+
 def _operation(
     summary: str,
     response: dict[str, Any],
@@ -437,7 +441,7 @@ def build_openapi_document() -> dict[str, Any]:
     for operation in OPERATIONS:
         paths.setdefault(operation.path, {})[operation.method.lower()] = _operation(
             operation.summary,
-            _json_response(operation.response_ref()),
+            _binary_response(operation.media_type) if operation.media_type else _json_response(operation.response_ref()),
             request=operation.request_ref(),
             scopes=(operation.scope,),
             success_status=operation.success_status,
