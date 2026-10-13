@@ -782,8 +782,8 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         return {"document_id": document_id, "topic": topic, "field": field, "path": str(path)}
 
     def revise_document(document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        from .application.authoring_clock import authoring_timestamp
         from .composition import compose_application
+        from .domain.authoring_clock import authoring_timestamp
         from .domain.normative import resolve_normative_settings
         from .domain.workspace import Workspace
 

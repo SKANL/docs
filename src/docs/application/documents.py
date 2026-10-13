@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
 from typing import Protocol
 
+from docs.domain.authoring_clock import authoring_timestamp
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentRepository
 from docs.domain.ports.registry_repository import RegistryRepository
@@ -32,16 +32,12 @@ _SUBDIRS = (
 )
 
 
-def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
 class DocumentService:
     def __init__(
         self,
         repository: DocumentLifecycleRepository,
         workspace: Workspace,
-        clock: Callable[[], str] = _now,
+        clock: Callable[[], str] = authoring_timestamp,
     ) -> None:
         self.repository = repository
         self.workspace = workspace

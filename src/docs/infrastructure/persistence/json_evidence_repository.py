@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from docs.domain.authoring_clock import authoring_timestamp
 from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
 
 _TRACEABILITY_SUFFIXES = {".md", ".json"}
@@ -66,7 +66,7 @@ class JsonEvidenceRepository:
                 existing = {}
             if _strip_generated_at(existing) == _strip_generated_at(next_payload):
                 return
-        next_payload["generated_at"] = datetime.now().isoformat(timespec="seconds")
+        next_payload["generated_at"] = authoring_timestamp()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             pretty_json(next_payload), encoding="utf-8"

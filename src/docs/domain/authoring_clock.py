@@ -1,6 +1,6 @@
 """The single wall-clock stamp for authored provenance (stamp, revise).
 
-Same value the CLI writes (`datetime.now().isoformat(timespec="seconds")`), so
+The one wall-clock stamp: same value the CLI writes (`datetime.now().isoformat(timespec="seconds")`), so
 a section stamped over HTTP, the worker, or the shell carries one format.
 """
 
