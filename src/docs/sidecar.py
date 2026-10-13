@@ -555,7 +555,7 @@ class _HealthApplication:
         *,
         workspace_error: str | None = None,
         worker_runner: WorkerRunner | None = None,
-        worker_thread: threading.Thread | multiprocessing.Process | None = None,
+        worker_thread: threading.Thread | multiprocessing.process.BaseProcess | None = None,
     ) -> None:
         self.application = application
         self.health_path = health_path
