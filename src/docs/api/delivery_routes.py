@@ -10,7 +10,6 @@ sha256 digests only.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +17,7 @@ from typing import Any
 
 from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
 from docs.application.package_publication_service import PackagePublicationError, PublishPolicyDeniedError
+from docs.domain.identity import sha256_bytes
 from docs.domain.paths import PathEscapeError, confine
 from docs.domain.pipeline_policy import PipelineMode
 from docs.domain.ports.document_repository import DocumentNotFoundError
@@ -26,10 +26,6 @@ from . import authoring_dto as dto
 from .authoring_routes import RouteSupport, _jsonable, _safe_segment
 from .http import APIError, Request, Response
 from .pipeline_routes import output_format
-
-
-def _sha(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 class DeliveryRoutes(RouteSupport):
@@ -74,7 +70,7 @@ class DeliveryRoutes(RouteSupport):
         archive = output.read_bytes()
         return Response.json(dto.PackageResponse(
             document_id=document_id, run_id=data.run_id, source=self._rel(ws, source),
-            destination=self._rel(ws, output), sha256=_sha(archive), size_bytes=len(archive),
+            destination=self._rel(ws, output), sha256=sha256_bytes(archive), size_bytes=len(archive),
         ).model_dump())
 
     # -- publish -------------------------------------------------------------
@@ -121,9 +117,9 @@ class DeliveryRoutes(RouteSupport):
             result = service.publish(prepared, current_identities=current)
         except PackagePublicationError as exc:
             raise APIError("publish_failed", self._clean(str(exc), ws), 409) from exc
-        artifact_sha, manifest_sha = _sha(prepared.source_bytes), _sha(prepared.manifest_bytes)
+        artifact_sha, manifest_sha = sha256_bytes(prepared.source_bytes), sha256_bytes(prepared.manifest_bytes)
         destination_rel = self._rel(ws, result.artifact)
-        record_id = "pub-" + _sha(f"{document_id}\0{destination_rel}\0{artifact_sha}\0{manifest_sha}".encode())[:16]
+        record_id = "pub-" + sha256_bytes(f"{document_id}\0{destination_rel}\0{artifact_sha}\0{manifest_sha}".encode())[:16]
         self._record(
             request, data.workspace_id, record_id, document_id, destination_rel, artifact_sha, prepared,
             policy=policy.value, warnings=list(result.warnings),

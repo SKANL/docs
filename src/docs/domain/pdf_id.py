@@ -15,8 +15,9 @@ Pure data. No I/O, no imports from other layers.
 """
 from __future__ import annotations
 
-import hashlib
 import re
+
+from docs.domain.identity import sha256_bytes
 
 _ID_RE = re.compile(rb"/ID\s*\[\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\]")
 
@@ -44,7 +45,7 @@ def normalize_pdf_id(raw: bytes) -> bytes:
         + b"0" * len(second)
         + raw[match.end(2) :]
     )
-    digest = hashlib.sha256(neutral).hexdigest().upper().encode("ascii")
+    digest = sha256_bytes(neutral).upper().encode("ascii")
     return (
         raw[: match.start(1)]
         + digest[: len(first)]

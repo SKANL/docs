@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from docs.domain.identity import sha256_bytes
+
 from .auth import AuthError, Principal, TokenValidator, bearer_auth
 
 _REASON = {
@@ -163,7 +165,7 @@ def paginate(
     values = list(items)
     # The cursor names a position, not part of the query it pages through.
     bound = sorted((k, v) for k, v in (query or {}).items() if k != "cursor")
-    binding = hashlib.sha256(json.dumps([resource, bound], separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+    binding = sha256_bytes(json.dumps([resource, bound], separators=(",", ":"), sort_keys=True).encode())
     start = 0
     if cursor:
         data = _decode(cursor)
@@ -342,7 +344,7 @@ class Router:
         else:
             body = json.dumps(r.body, sort_keys=True, separators=(",", ":"))
         return (
-            hashlib.sha256(f"{principal}\0{r.method.upper()}\0{r.route_path}\0{body}".encode()).hexdigest() + ":" + key
+            sha256_bytes(f"{principal}\0{r.method.upper()}\0{r.route_path}\0{body}".encode()) + ":" + key
         )
 
     def _cors(self, response: Response, origin: str | None) -> Response:

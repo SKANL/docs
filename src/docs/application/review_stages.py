@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,7 @@ from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.structural_audit import StructuralAuditService
 from docs.domain.artifacts import RenderProfile
+from docs.domain.identity import sha256_file
 from docs.domain.models.template import Template
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
@@ -315,7 +315,7 @@ class ReviewStageService:
                 passed, detail = self._pdf_reproducibility(artifact_path, rebuilt)
                 if not passed:
                     raise RuntimeError(detail)
-            elif sha256(artifact_path.read_bytes()).digest() != sha256(rebuilt.read_bytes()).digest():
+            elif sha256_file(artifact_path) != sha256_file(rebuilt):
                 raise RuntimeError("reproducibility divergence detected")
         except Exception as exc:
             return self._outcome(

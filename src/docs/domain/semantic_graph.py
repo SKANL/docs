@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
-from docs.domain.identity import canonical_json
+from docs.domain.identity import canonical_json, sha256_bytes
 
 SCHEMA = "docs.semantic-graph/v1"
 Evidence = Literal["extracted", "inferred", "ambiguous"]
@@ -149,7 +148,7 @@ class SemanticEdge:
 
     @property
     def id(self) -> str:
-        return hashlib.sha256(canonical_json(self._identity_dict(), strict=True).encode()).hexdigest()
+        return sha256_bytes(canonical_json(self._identity_dict(), strict=True).encode())
 
     def _identity_dict(self) -> dict[str, Any]:
         return {
@@ -182,7 +181,7 @@ class SemanticGraph:
 
     @property
     def graph_id(self) -> str:
-        return hashlib.sha256(self.canonical_json().encode()).hexdigest()
+        return sha256_bytes(self.canonical_json().encode())
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> SemanticGraph:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import binascii
-import hashlib
 import io
 import mimetypes
 import re
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from docs.domain.identity import sha256_bytes, sha256_file
 from docs.domain.workspace_format import validate_workspace_marker
 
 
@@ -68,12 +68,12 @@ class SourceImportService:
         doc = self._document_id(document_id or Path(safe_name).stem)
         inbox = root / "documents" / doc / "inbox"
         inbox.mkdir(parents=True, exist_ok=True)
-        digest = hashlib.sha256(content).hexdigest()
+        digest = sha256_bytes(content)
         destination = inbox / f"{digest[:12]}-{safe_name}"
         deduplicated = False
         if destination.is_file() and destination.stat().st_size == len(content):
             try:
-                deduplicated = hashlib.sha256(destination.read_bytes()).hexdigest() == digest
+                deduplicated = sha256_file(destination) == digest
             except OSError:
                 deduplicated = False
         if not deduplicated:

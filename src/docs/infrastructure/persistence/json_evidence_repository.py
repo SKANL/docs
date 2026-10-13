@@ -1,11 +1,12 @@
 # src/docs/infrastructure/persistence/json_evidence_repository.py
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from docs.domain.identity import sha256_bytes, sha256_file
 
 _TRACEABILITY_SUFFIXES = {".md", ".json"}
 
@@ -20,14 +21,14 @@ def _strip_generated_at(value: Any) -> Any:
 
 class JsonEvidenceRepository:
     def hash_file(self, path: Path) -> str:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return sha256_file(path)
 
     def hash_json(self, value: Any) -> str:
         text = json.dumps(value, ensure_ascii=False, sort_keys=True)
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return sha256_bytes(text.encode("utf-8"))
 
     def hash_text(self, text: str) -> str:
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return sha256_bytes(text.encode("utf-8"))
 
     def list_manual_files(self, manual_dir: Path) -> list[Path]:
         return sorted(manual_dir.glob("*.md"))

@@ -4,10 +4,10 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any, ClassVar
 
 from docs.domain.identity import canonical_json as identity_canonical_json
+from docs.domain.identity import sha256_bytes
 from docs.domain.runtime_records import Passport
 
 EVIDENCE_PASSPORT_SCHEMA = "docs.evidence-passport/v1"
@@ -119,7 +119,7 @@ class EvidencePassport:
 
 def _digest(passport: Passport) -> str:
     payload = {"schema": EVIDENCE_PASSPORT_SCHEMA, "passport": passport.to_dict()}
-    return sha256(canonical_json(payload)).hexdigest()
+    return sha256_bytes(canonical_json(payload))
 
 
 def _json_value(value: Any) -> Any:

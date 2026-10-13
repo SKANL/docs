@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import mimetypes
 import os
@@ -80,7 +79,7 @@ def _promote_release_candidate(
     if any(path.is_symlink() for path in (release_dir, *release_dir.parents)):
         raise RuntimeError("release directory must not be symlinked")
     candidate_identity = os.stat(candidate, follow_symlinks=False)
-    candidate_hash = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    candidate_hash = sha256_file(candidate)
     with _package_lock(destination):
         parent_identity = _directory_identity(release_dir)
         _assert_directory_identity(release_dir, parent_identity, operation="release publication")
@@ -90,7 +89,7 @@ def _promote_release_candidate(
             candidate_identity.st_ino,
             candidate_identity.st_size,
             candidate_identity.st_mtime_ns,
-        ) or hashlib.sha256(candidate.read_bytes()).hexdigest() != candidate_hash:
+        ) or sha256_file(candidate) != candidate_hash:
             raise RuntimeError("release candidate changed before publication")
         with directory_handle_guard(release_dir):
             os.replace(candidate, destination)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import multiprocessing
@@ -20,6 +19,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
+
+from docs.domain.identity import sha256_bytes, sha256_file
 
 from .api.application import X20Application
 from .api.http import Response, Router
@@ -1113,12 +1114,12 @@ def _persist_worker_evidence(
                 )
             if candidate is not None and candidate.is_file():
                 materialized = True
-                digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+                digest = sha256_file(candidate)
                 record["size_bytes"] = candidate.stat().st_size
             else:
                 materialized = False
                 encoded = json.dumps(record, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-                digest = hashlib.sha256(encoded).hexdigest()
+                digest = sha256_bytes(encoded)
             artifact_store.put(
                 Artifact(
                     id=f"{result.run_id}-{stage.get('stage', 'stage')}-{index}",

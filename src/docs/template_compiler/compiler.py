@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any
 
 from pydantic import ValidationError
 
+from docs.domain.identity import sha256_bytes
 from docs.domain.models.template import Template
 from docs.domain.pipeline_kernel import deterministic_json
 from docs.domain.template_validation import validate_template
@@ -84,7 +84,7 @@ class TemplateCompiler:
             fidelity_checks=tuple(dict(item) for item in contract.get("fidelity_checks", [])),
             allowed_degradations=tuple(contract.get("allowed_degradations", [])),
             contract_declared=True,
-            contract_hash=hashlib.sha256(deterministic_json(_deep_thaw(contract)).encode()).hexdigest(),
+            contract_hash=sha256_bytes(deterministic_json(_deep_thaw(contract)).encode()),
         )
 
 

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docs.domain.identity import sha256_bytes, sha256_file
 from docs.domain.paths import PathEscapeError, confine
 
 from .manifest import (
@@ -60,7 +61,7 @@ def package_digest(path: Path) -> str:
 
 def archive_digest(path: Path) -> str:
     """Hash the distributable archive bytes for supply-chain pinning."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return sha256_file(Path(path))
 
 
 def verify_sbom(raw_manifest: Mapping[str, Any], package_root: Path) -> dict[str, Any]:
@@ -75,7 +76,7 @@ def verify_sbom(raw_manifest: Mapping[str, Any], package_root: Path) -> dict[str
                 "type": "package-file",
                 "name": item.relative_to(root).as_posix(),
                 "size": len(content),
-                "digest": hashlib.sha256(content).hexdigest(),
+                "digest": sha256_bytes(content),
             }
         )
     verified = {"format": "docs.sbom/v1", "components": components, "digest": manifest_hash(components)}

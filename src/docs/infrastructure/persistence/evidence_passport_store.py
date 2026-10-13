@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from hashlib import sha256
 from pathlib import Path
 
 from docs.domain.evidence_passport import EvidencePassport, canonical_json
+from docs.domain.identity import sha256_bytes
 
 
 class FileEvidencePassportStore:
@@ -44,7 +44,7 @@ class FileEvidencePassportStore:
     def _path_for(self, run_id: str) -> Path:
         if type(run_id) is not str or not run_id:
             raise TypeError("run_id must be a non-empty string")
-        return self._root / f"{sha256(run_id.encode('utf-8')).hexdigest()}.json"
+        return self._root / f"{sha256_bytes(run_id.encode('utf-8'))}.json"
 
     def _write_temporary(self, payload: bytes) -> Path:
         descriptor, name = tempfile.mkstemp(dir=self._root, prefix=".evidence-passport-", suffix=".tmp")

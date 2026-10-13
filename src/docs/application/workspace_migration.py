@@ -7,7 +7,6 @@ it parses any format record, and it never creates migration state or layout.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -19,6 +18,7 @@ from typing import Literal
 
 from pydantic import ValidationError
 
+from docs.domain.identity import sha256_bytes
 from docs.domain.ports.registry_repository import Registry
 from docs.domain.workspace_format import WorkspaceFormatError, validate_workspace_marker
 
@@ -195,7 +195,7 @@ class WorkspaceMigrationInspector:
                 relative = path.relative_to(root).as_posix()
                 if entry.is_symlink():
                     link_bytes = os.readlink(path).encode("utf-8", errors="surrogateescape")
-                    digest = hashlib.sha256(link_bytes).hexdigest()
+                    digest = sha256_bytes(link_bytes)
                     records.append(MigrationRecord(relative, len(link_bytes), digest))
                     errors.append(MigrationInspectionError("workspace_symlink_unsupported", relative, digest))
                 elif entry.is_dir(follow_symlinks=False):
@@ -206,7 +206,7 @@ class WorkspaceMigrationInspector:
                     except OSError:
                         errors.append(MigrationInspectionError("workspace_source_unreadable", relative))
                         continue
-                    digest = hashlib.sha256(payload).hexdigest()
+                    digest = sha256_bytes(payload)
                     records.append(MigrationRecord(relative, len(payload), digest))
                     contents[relative] = payload
                 else:
@@ -256,7 +256,7 @@ class WorkspaceMigrationInspector:
             if required:
                 return None, MigrationInspectionError("document_registry_missing", path)
             return Registry(), None
-        digest = hashlib.sha256(payload).hexdigest()
+        digest = sha256_bytes(payload)
         try:
             decoded = payload.decode("utf-8")
             value = json.loads(decoded, object_pairs_hook=cls._closed_object)
@@ -343,7 +343,7 @@ class WorkspaceMigrationInspector:
                 MigrationInspectionError(
                     "document_registry_active_missing",
                     "documents/registry.json",
-                    hashlib.sha256(record).hexdigest(),
+                    sha256_bytes(record),
                 )
             )
         for summary in registry.documents:
@@ -418,7 +418,7 @@ class WorkspaceMigrationPublisher:
     def _copy_record(self, source_root: Path, scratch: Path, record: MigrationRecord) -> None:
         source_path = source_root / record.path
         payload = source_path.read_bytes()
-        if len(payload) != record.size or hashlib.sha256(payload).hexdigest() != record.sha256:
+        if len(payload) != record.size or sha256_bytes(payload) != record.sha256:
             raise WorkspaceMigrationError("migration_source_changed")
         destination_path = scratch / record.path
         destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -442,7 +442,7 @@ class WorkspaceMigrationPublisher:
             raise WorkspaceMigrationError("migration_staged_validation_failed")
         expected = {record.path: record.sha256 for record in source.preserved}
         if source.detected_format == CURRENT_UNVERSIONED_FORMAT:
-            expected["workspace.json"] = hashlib.sha256(self._MARKER_BYTES).hexdigest()
+            expected["workspace.json"] = sha256_bytes(self._MARKER_BYTES)
         actual = {record.path: record.sha256 for record in staged.records}
         if actual != expected:
             raise WorkspaceMigrationError("migration_staged_verification_failed")

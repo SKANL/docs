@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -10,6 +9,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile, ZipFile
+
+from docs.domain.identity import sha256_bytes
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,7 @@ class DocxImportService:
         source = Path(path)
         output = Path(output_dir)
         source_bytes = source.read_bytes()
-        source_hash = hashlib.sha256(source_bytes).hexdigest()
+        source_hash = sha256_bytes(source_bytes)
         try:
             docx = import_module("docx")
         except ModuleNotFoundError as exc:

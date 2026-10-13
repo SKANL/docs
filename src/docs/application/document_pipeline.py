@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import inspect as inspect_module
 import json
 import os
@@ -173,7 +172,7 @@ def _successful_stage_result(name: str, artifact: Path) -> StageResult:
     record = ArtifactRecord(
         f"{name}-complete",
         str(artifact),
-        hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        sha256_file(artifact),
         producer_stage=name,
     )
     return StageResult(

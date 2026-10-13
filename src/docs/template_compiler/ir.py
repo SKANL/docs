@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from docs.domain.identity import sha256_bytes
 
 TEMPLATE_IR_VERSION = "1.0"
 
@@ -148,4 +149,4 @@ class TemplateIR(BaseModel):
     @property
     def ir_hash(self) -> str:
         """Return the stable content hash used by build provenance."""
-        return hashlib.sha256(self.to_json().encode("utf-8")).hexdigest()
+        return sha256_bytes(self.to_json().encode("utf-8"))

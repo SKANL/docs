@@ -14,7 +14,7 @@ Pure data. No I/O, no imports from other layers.
 """
 from __future__ import annotations
 
-import hashlib
+from docs.domain.identity import sha256_bytes
 
 # NUL joins the components so no combination can collide by concatenation --
 # ("ab", "c") and ("a", "bc") must never share a key.
@@ -25,4 +25,4 @@ def memory_key(
     text: str, source_lang: str, target_lang: str, engine_id: str, glossary_version: str
 ) -> str:
     payload = _SEPARATOR.join([text, source_lang, target_lang, engine_id, glossary_version])
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return sha256_bytes(payload.encode("utf-8"))

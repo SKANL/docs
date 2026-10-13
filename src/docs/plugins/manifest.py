@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from docs.domain.identity import canonical_json
+from docs.domain.identity import canonical_json, sha256_bytes
 
 SCHEMA = "docs.plugin/v1"
 ALLOWED_CAPABILITIES = frozenset({"render", "ingest", "transform"})
@@ -49,7 +48,7 @@ def _canonical(value: Any) -> bytes:
 
 def manifest_hash(value: Mapping[str, Any] | Any) -> str:
     """Return a stable SHA-256 for JSON-compatible data."""
-    return hashlib.sha256(_canonical(value)).hexdigest()
+    return sha256_bytes(_canonical(value))
 
 
 def manifest_document(manifest: PluginManifest) -> dict[str, Any]:

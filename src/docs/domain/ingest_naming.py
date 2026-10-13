@@ -1,8 +1,9 @@
 # src/docs/domain/ingest_naming.py
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
+
+from docs.domain.identity import sha256_bytes
 
 
 def sha256_hex(data: bytes) -> str:
@@ -11,7 +12,7 @@ def sha256_hex(data: bytes) -> str:
     Ingest`). Single source of truth shared by `IngestService` and every
     `SourceIngestPort` adapter, so both sides always agree on the same
     output path for the same source bytes."""
-    return hashlib.sha256(data).hexdigest()
+    return sha256_bytes(data)
 
 
 def ingested_output_path(out_dir: Path, stem: str, kind: str, sha8: str) -> Path:

@@ -11,7 +11,7 @@ from typing import Any, cast
 from PIL import Image, ImageChops, UnidentifiedImageError
 
 from docs.domain.artifacts import ArtifactRef, RenderProfile, VerificationFinding, VerificationReport
-from docs.domain.identity import sha256_content
+from docs.domain.identity import sha256_content, sha256_file
 from docs.domain.visual_baseline import compare_preview_baseline
 from docs.infrastructure.verification.html_browser_qa import PlaywrightHtmlBrowserQa
 from docs.infrastructure.verification.html_inspection import HtmlInspection
@@ -88,7 +88,7 @@ class RenderVerificationAdapter:
             checked_artifacts=checked_artifacts,
             preview_hashes=(
                 {
-                    preview.name: hashlib.sha256(preview.read_bytes()).hexdigest()
+                    preview.name: sha256_file(preview)
                     for preview in sorted(preview_dir.glob("*.png"), key=lambda item: item.name)
                     if preview.is_file()
                 }
@@ -379,7 +379,7 @@ class RenderVerificationAdapter:
             evidence = dict(finding.evidence)
             evidence.update({
                 "screenshot_path": screenshot.resolve().as_posix(),
-                "screenshot_sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest(),
+                "screenshot_sha256": sha256_file(screenshot),
                 "screenshot_size_bytes": screenshot.stat().st_size,
             })
             enriched.append(replace(finding, evidence=evidence))

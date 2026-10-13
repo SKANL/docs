@@ -10,13 +10,13 @@ absolute paths.
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
+from docs.domain.identity import sha256_bytes, sha256_file
 from docs.domain.paths import PathEscapeError, require_within
 
 from . import authoring_dto as dto
@@ -27,10 +27,6 @@ from .http import APIError, Request, Response
 
 def _dict(value: Any) -> dict[str, Any]:
     return value.to_dict() if hasattr(value, "to_dict") else dict(value)
-
-
-def _sha(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _recorded_path(artifact: Mapping[str, Any]) -> str | None:
@@ -137,9 +133,9 @@ class QualityRoutes(RouteSupport):
         )
         previews = [a["id"] for a in records if _is_png(a)]
         evidence = {"passport": _dict(passport), "artifacts": [r.model_dump() for r in refs], "findings": findings}
-        digest = hashlib.sha256(
+        digest = sha256_bytes(
             json.dumps(evidence, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
-        ).hexdigest()
+        )
         return Response.json(dto.EvidenceBundleResponse(
             run_id=run_id, evidence_sha256=digest, passport=_dict(passport), artifacts=refs, findings=findings,
             previews=dto.PreviewAvailability(available=bool(previews), artifact_ids=previews),
@@ -169,7 +165,7 @@ class QualityRoutes(RouteSupport):
             raise APIError("baseline_rejected", str(exc).replace(str(root), "."), 409) from exc
         return Response.json(dto.BaselinePromotionResponse(
             run_id=data.run_id, name=name, destination=self._relative(root, destination), replaced=replaced,
-            pages=[dto.BaselinePage(name=p.name, sha256=_sha(p)) for p in published],
+            pages=[dto.BaselinePage(name=p.name, sha256=sha256_file(p)) for p in published],
         ).model_dump(), 201)
 
     # -- inspect / diff ------------------------------------------------------

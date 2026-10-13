@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from docs.domain.identity import sha256_bytes
 from docs.domain.paths import is_within
 from docs.domain.pipeline_kernel import ArtifactContract, ArtifactRecord
 from docs.domain.ports.atomic_file_port import AtomicFilePort
@@ -45,7 +45,7 @@ class StageArtifactStore:
         return ArtifactRecord(
             contract=contract.name,
             path=relative.as_posix(),
-            sha256=hashlib.sha256(content).hexdigest(),
+            sha256=sha256_bytes(content),
             metadata=dict(metadata or {}),
             media_type=contract.media_type,
             size_bytes=len(content),

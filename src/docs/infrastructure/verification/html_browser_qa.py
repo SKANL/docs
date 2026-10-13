@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 from docs.domain.artifacts import RenderProfile, VerificationFinding
+from docs.domain.identity import sha256_file
 
 BROWSER_TIMEOUT_MS = 10_000
 
@@ -171,10 +172,9 @@ class PlaywrightHtmlBrowserQa:
                                     page.screenshot(path=screenshot, full_page=True, timeout=BROWSER_TIMEOUT_MS)
                                 evidence = {"viewport": [width, height], **metrics}
                                 if screenshot is not None:
-                                    import hashlib
                                     evidence.update({
                                         "screenshot_path": screenshot.resolve().as_posix(),
-                                        "screenshot_sha256": hashlib.sha256(screenshot.read_bytes()).hexdigest(),
+                                        "screenshot_sha256": sha256_file(screenshot),
                                         "screenshot_size_bytes": screenshot.stat().st_size,
                                     })
                                 findings.append(VerificationFinding(
