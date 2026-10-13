@@ -85,13 +85,6 @@ describe("routes", () => {
     expect(await screen.findByRole("combobox", { name: "Query" })).toBeTruthy();
   });
 
-  it.each(["delivery"])("renders an honest placeholder for /%s", async area => {
-    window.location.hash = `#/${area}`;
-    render(<App api={makeApi()} />);
-    expect(await screen.findByText("Not available yet")).toBeTruthy();
-    expect(screen.getByText(/Slice \d/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /run|build|publish/i })).toBeNull();
-  });
 });
 
 describe("design tokens", () => {
