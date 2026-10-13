@@ -4,7 +4,7 @@ import { ErrorState } from "@/components/shared/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ActionError, useAction } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
 import { CheckOutcome } from "@/features/templates/Issues";
 import type { FileTool } from "@/api/domains/tools";
 import { StrictSwitch, ToolCard } from "./ToolCard";

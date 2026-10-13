@@ -2,14 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
 import type { ArtifactDiff } from "@/api/domains/review";
+import type { Artifact } from "@/api/models";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ActionError, Unavailable, errorText, useAction, useCapability } from "@/features/authoring/data";
-import { Facts, reviewKeys } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useCapability } from "@/lib/capability-registry";
+import { Facts } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 import { reportRows } from "./inspection";
 
 const SHOWN_LINES = 200;
@@ -35,22 +38,17 @@ export function DiffViewer({ diff }: { diff: ArtifactDiff }) {
   </section>;
 }
 
-export function DiffPanel({ workspaceId }: { workspaceId: string | null }) {
+function DiffForm({ artifacts }: { artifacts: Artifact[] }) {
   const api = useApi();
-  const can = useCapability();
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [result, setResult] = useState<ArtifactDiff | null>(null);
-  const artifacts = useQuery({ queryKey: reviewKeys.artifacts(workspaceId), queryFn: () => api.listArtifacts() });
   const compare = useAction(() => api.diffArtifacts!(left, right), { success: () => "Comparison ready.", onDone: setResult });
-  if (!can("document.diff") || !api.diffArtifacts) return <Unavailable>Artifact comparison is not available on this server.</Unavailable>;
-  if (artifacts.isPending) return <Skeleton className="h-24 w-full" />;
-  if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={errorText(artifacts.error, "artifacts")} onRetry={() => void artifacts.refetch()} />;
-  if (artifacts.data.length < 2) return <EmptyState title="Nothing to compare yet" description="Comparing needs two artifacts. Build the document again to produce a second one." />;
+  if (artifacts.length < 2) return <EmptyState title="Nothing to compare yet" description="Comparing needs two artifacts. Build the document again to produce a second one." />;
   const picker = (label: string, value: string, set: (id: string) => void) => <div className="grid gap-1"><Label htmlFor={`diff-${label}`}>{label}</Label>
     <Select value={value} onValueChange={id => { set(id); setResult(null); compare.reset(); }}>
       <SelectTrigger id={`diff-${label}`} aria-label={label} className="w-64"><SelectValue placeholder="Choose an artifact" /></SelectTrigger>
-      <SelectContent>{artifacts.data.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+      <SelectContent>{artifacts.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
     </Select></div>;
   return <div className="grid gap-4">
     <div className="flex flex-wrap items-end gap-4">
@@ -61,4 +59,12 @@ export function DiffPanel({ workspaceId }: { workspaceId: string | null }) {
     <ActionError action={compare} what="compare the artifacts" />
     {result && <DiffViewer diff={result} />}
   </div>;
+}
+
+export function DiffPanel({ workspaceId }: { workspaceId: string | null }) {
+  const api = useApi();
+  const can = useCapability();
+  const artifacts = useQuery({ queryKey: reviewKeys.artifacts(workspaceId), queryFn: () => api.listArtifacts() });
+  if (!can("document.diff") || !api.diffArtifacts) return <Unavailable>Artifact comparison is not available on this server.</Unavailable>;
+  return <QueryBoundary query={artifacts} title="Could not load artifacts">{list => <DiffForm artifacts={list} />}</QueryBoundary>;
 }

@@ -1,12 +1,14 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import type { Artifact } from "@/api/models";
 import type { ArtifactReport } from "@/api/domains/review";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorText } from "@/features/authoring/data";
-import { Digest, Facts, reviewKeys } from "./data";
+
+import { Digest, Facts } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 
 /** The structured inspect report for one artifact: where it lives, what it is, and its digest. */
 export const reportRows = (report: ArtifactReport): Array<[string, React.ReactNode]> => [
@@ -16,9 +18,8 @@ export const reportRows = (report: ArtifactReport): Array<[string, React.ReactNo
 export function InspectionPanel({ workspaceId, artifactId }: { workspaceId: string | null; artifactId: string }) {
   const api = useApi();
   const report = useQuery({ queryKey: reviewKeys.inspect(workspaceId, artifactId), queryFn: () => api.inspectArtifact!(artifactId) });
-  if (report.isPending) return <Skeleton className="h-16 w-full" />;
-  if (report.isError) return <ErrorState title="Could not inspect the artifact" message={errorText(report.error, "inspection")} onRetry={() => void report.refetch()} />;
-  return <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(report.data)} /></section>;
+  return <QueryBoundary query={report} title="Could not inspect the artifact" skeleton="h-16 w-full">{data =>
+    <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(data)} /></section>}</QueryBoundary>;
 }
 
 /** Page previews for an artifact. Every failure path says what is missing instead of leaving a blank box. */
@@ -33,7 +34,7 @@ export function ArtifactPreview({ workspaceId, artifact }: { workspaceId: string
   const urlFor = (previewId: string) => { try { return artifact.runId ? api.artifactPreviewUrl?.(artifact.runId, previewId) : undefined; } catch { return undefined; } };
   let body: React.ReactNode;
   if (previews.isPending) body = <Skeleton className="h-24 w-full" />;
-  else if (previews.isError) body = <p role="status" className="text-sm text-muted-foreground">Previews could not be loaded. {errorText(previews.error, "previews")}</p>;
+  else if (previews.isError) body = <p role="status" className="text-sm text-muted-foreground">Previews could not be loaded. {formatApiError(previews.error)}</p>;
   else if (previews.data.length === 0) body = <p role="status" className="text-sm text-muted-foreground">No rendered previews exist for this artifact. Page previews need a render toolchain such as LibreOffice; the file itself can still be inspected.</p>;
   else body = <ul className="grid gap-3 sm:grid-cols-2">{previews.data.map((preview, index) => {
     const url = urlFor(preview.id);

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { Button } from "@/components/ui/button";
-import { ActionError, useAction } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
 
 /** A release is a pipeline run with policy "release". Whether it may proceed is the server's call, reported on the run. */
 export function ReleasePanel({ workspaceId, documentId }: { workspaceId: string | null; documentId: string }) {

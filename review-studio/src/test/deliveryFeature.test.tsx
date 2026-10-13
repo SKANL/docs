@@ -2,7 +2,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../api/client";
+import { ApiError } from "../api/errors";
 import type { PublicationRecord } from "../api/domains/delivery";
 import { deliveryApi, deliveryCatalog, packaged, published, record } from "./deliveryHarness";
 import { openPipeline } from "./pipelineHarness";

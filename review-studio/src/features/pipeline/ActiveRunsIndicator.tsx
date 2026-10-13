@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
-import { useCapability } from "@/features/authoring/data";
+import { useCapability } from "@/lib/capability-registry";
 
 /** Topbar chip: how many runs are in flight in the current workspace. Renders nothing when idle or unsupported. */
 export function ActiveRunsIndicator() {

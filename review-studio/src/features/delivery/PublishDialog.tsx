@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ActionError, useAction } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
 import type { OutputFormat, RunPolicy } from "@/api/domains/pipeline";
 import type { PublicationResult, PublishInput } from "@/api/domains/delivery";
 import { deliveryKeys } from "./data";

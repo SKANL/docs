@@ -3,16 +3,16 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { errorText, useCapability, Unavailable } from "@/features/authoring/data";
+import { useCapability } from "@/lib/capability-registry";
+import { Unavailable } from "@/components/shared/Unavailable";
 import { isTerminalStatus } from "@/api/domains/pipeline";
-import { RunStatusBadge } from "./RunStatusBadge";
+import { RunStatusBadge } from "@/components/shared/StatusBadge";
 
 const statuses = ["all", "queued", "running", "succeeded", "failed", "cancelled"];
 const PAGE_SIZE = 20;
@@ -52,8 +52,7 @@ export function RunList({ workspaceId }: { workspaceId: string | null }) {
         <div className="grid gap-1"><Label htmlFor="run-document">Document</Label>
           <Input id="run-document" className="w-56" value={documentText} onChange={event => setDocumentText(event.target.value)} /></div>
       </div>
-      {runs.isPending ? <Skeleton className="h-24 w-full" /> : runs.isError ? <ErrorState message={errorText(runs.error, "runs")} onRetry={() => void runs.refetch()} />
-        : items.length === 0 ? <EmptyState title="No runs yet" description="Runs appear here once you launch the pipeline for a document." />
+      <QueryBoundary query={runs}>{() => items.length === 0 ? <EmptyState title="No runs yet" description="Runs appear here once you launch the pipeline for a document." />
         : <>
           <Table aria-label="Runs">
             <TableHeader><TableRow><TableHead>Run</TableHead><TableHead>Document</TableHead><TableHead>Status</TableHead><TableHead>Format</TableHead><TableHead>Started</TableHead></TableRow></TableHeader>
@@ -66,7 +65,7 @@ export function RunList({ workspaceId }: { workspaceId: string | null }) {
             </TableRow>)}</TableBody>
           </Table>
           {runs.hasNextPage && <Button type="button" variant="outline" className="w-fit" disabled={runs.isFetchingNextPage} onClick={() => void runs.fetchNextPage()}>Load more</Button>}
-        </>}
+        </>}</QueryBoundary>
     </>}
   </section>;
 }

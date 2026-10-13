@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { ApiError } from "@/api/client";
+import { ApiError, formatApiError } from "@/api/errors";
 import type { BaselinePromotion } from "@/api/domains/review";
 import { useApi } from "@/app/providers";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ActionError, errorText, useAction } from "@/features/authoring/data";
-import { Digest, reviewKeys } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Digest } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 
 /**
  * Promote a run's rendered pages to a baseline. Replacing an existing baseline is a separate,
@@ -37,7 +38,7 @@ export function BaselinePromotionDialog({ workspaceId, runId, onClose }: { works
         <div className="grid gap-1"><Label htmlFor="baseline-name">Baseline name</Label>
           <Input id="baseline-name" value={name} disabled={busy} onChange={event => { setName(event.target.value); promote.reset(); }} /></div>
         {exists && <div className="grid gap-2 rounded-md border border-destructive/40 p-3 text-sm" role="alert">
-          <p>{errorText(promote.error, "baseline")}</p>
+          <p>{formatApiError(promote.error)}</p>
           <p>Replacing overwrites the approved pages of this baseline. Confirm only if the new render is the correct reference.</p>
           <Button type="button" variant="destructive" className="w-fit" disabled={busy} onClick={() => promote.mutate(true)}>Replace existing baseline</Button>
         </div>}

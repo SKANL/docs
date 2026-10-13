@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, ReviewApiClient } from "../api/client";
+import { ApiError } from "../api/errors";
+import { ReviewApiClient } from "../api/client";
 
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" }, ...init });
 const setup = (response: () => Response) => {

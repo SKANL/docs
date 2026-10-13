@@ -2,17 +2,19 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import type { RevisionInput, RevisionResult } from "@/api/domains/authoring";
-import { ActionError, Unavailable, authoringKeys, errorText, useAction, useCapability } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys } from "./data";
 
 /** Readable detail: scalars and lists of scalars only; nested structures are skipped rather than dumped as JSON. */
 function RevisionDetail({ detail }: { detail: Record<string, unknown> }) {
@@ -64,12 +66,11 @@ export function RevisionsPanel({ documentId }: { documentId: string }) {
   return <div className="grid gap-6">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Revisions</h2>
       {can("doc.revise") && api.reviseDocument ? <Button type="button" onClick={() => setReviseOpen(true)}>Revise document</Button> : <Unavailable>Revising is not available on this server.</Unavailable>}</div>
-    {!can("revisions.list") ? <Unavailable>Revisions are not available on this server.</Unavailable> : list.isPending ? <Skeleton className="h-24 w-full" /> : list.isError ? <ErrorState message={errorText(list.error, "revisions")} onRetry={() => void list.refetch()} />
-      : list.data.length === 0 ? <EmptyState title="No revisions yet" description="Saving a section or revising the document records a revision here." />
-      : <ol aria-label="Revision timeline" className="grid gap-3 border-l pl-4">{list.data.map(item => <li key={item.id} className="grid gap-1">
+    {!can("revisions.list") ? <Unavailable>Revisions are not available on this server.</Unavailable> : <QueryBoundary query={list}>{revisions => revisions.length === 0 ? <EmptyState title="No revisions yet" description="Saving a section or revising the document records a revision here." />
+      : <ol aria-label="Revision timeline" className="grid gap-3 border-l pl-4">{revisions.map(item => <li key={item.id} className="grid gap-1">
         <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.message}</span><Badge variant="outline">{item.status}</Badge></div>
         <p className="text-sm text-muted-foreground">{item.author} · {item.date} · {item.files} files</p>
-        {api.getRevision && <Button type="button" variant="ghost" size="sm" className="w-fit" aria-label={`View revision ${item.id}`} onClick={() => open.mutate(item.id)}>View</Button>}</li>)}</ol>}
+        {api.getRevision && <Button type="button" variant="ghost" size="sm" className="w-fit" aria-label={`View revision ${item.id}`} onClick={() => open.mutate(item.id)}>View</Button>}</li>)}</ol>}</QueryBoundary>}
     <ActionError action={open} what="load the revision" />
     {open.data && <section aria-label={`Revision ${open.data.id}`} className="rounded-lg border bg-card p-4"><h3 className="mb-2 font-semibold">Revision {open.data.id}</h3><RevisionDetail detail={open.data.detail} /></section>}
     <ReviseDialog documentId={documentId} open={reviseOpen} onOpenChange={setReviseOpen} />

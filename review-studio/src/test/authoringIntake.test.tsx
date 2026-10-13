@@ -2,7 +2,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../api/client";
+import { ApiError } from "../api/errors";
 import { catalogWithout, makeApi, openAuthoring } from "./authoringHarness";
 
 afterEach(() => { cleanup(); window.location.hash = ""; });
@@ -74,19 +74,19 @@ describe("source intake", () => {
 
 describe("classification", () => {
   it("confirms the role of a pending source", async () => {
-    const confirmDocumentClassification = vi.fn(async () => ({}));
+    const confirmClassification = vi.fn(async () => ({ document_id: "doc-1", items: [] }));
     openAuthoring("classification", makeApi({
-      getDocumentClassification: async id => ({ document_id: id, items: [{ relative_path: "inbox/a.md", proposed_role: "evidence", confidence: 0.9 }] }),
-      confirmDocumentClassification,
+      getClassificationQueue: async id => ({ document_id: id, items: [{ relative_path: "inbox/a.md", proposed_role: "evidence", confidence: 0.9 }] }),
+      confirmClassification,
     }));
     await userEvent.click(await screen.findByRole("combobox", { name: "Role for inbox/a.md" }));
     await userEvent.click(await screen.findByRole("option", { name: "normative" }));
     await userEvent.click(screen.getByRole("button", { name: "Confirm role for inbox/a.md" }));
-    await waitFor(() => expect(confirmDocumentClassification).toHaveBeenCalledWith("doc-1", { relative_path: "inbox/a.md", confirmed_role: "normative" }));
+    await waitFor(() => expect(confirmClassification).toHaveBeenCalledWith("doc-1", { relative_path: "inbox/a.md", confirmed_role: "normative" }));
   });
 
   it("explains that nothing is pending when the queue is unavailable", async () => {
-    openAuthoring("classification", makeApi({ getDocumentClassification: async () => { throw new ApiError("none", 404, "classification_unavailable"); } }));
+    openAuthoring("classification", makeApi({ getClassificationQueue: async () => { throw new ApiError("none", 404, "classification_unavailable"); } }));
     expect(await screen.findByRole("heading", { name: "No classification pending" })).toBeTruthy();
   });
 });

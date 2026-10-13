@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -9,7 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { ActionError, Unavailable, errorText, useAction, useActiveContext, useCapability } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 
 function QaResult({ result }: { result: QaDocxResult }) {
   return <section aria-label="QA result" className="grid gap-2 rounded-lg border bg-card p-4">
@@ -55,6 +59,6 @@ export function QaPanel() {
       <Button type="button" variant="outline" className="w-fit" onClick={() => setConfirming(true)}>Apply corrections</Button>
     </section>}
     <ConfirmActionDialog open={confirming} onOpenChange={setConfirming} title="Apply pending corrections?" description={`This edits the section files of ${documentId}. Review them in Authoring afterwards.`}
-      confirmLabel="Apply corrections" pending={corrections.isPending} error={corrections.isError ? errorText(corrections.error, "corrections") : undefined} onConfirm={() => corrections.mutate(undefined)} />
+      confirmLabel="Apply corrections" pending={corrections.isPending} error={corrections.isError ? formatApiError(corrections.error) : undefined} onConfirm={() => corrections.mutate(undefined)} />
   </div>;
 }

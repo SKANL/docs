@@ -1,16 +1,19 @@
+import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { ActionError, Unavailable, authoringKeys, errorText, useAction, useCapability, useContextStatus } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys, useContextStatus } from "./data";
 
 export function ContextPanel({ documentId }: { documentId: string }) {
   const api = useApi();
@@ -32,10 +35,8 @@ export function ContextPanel({ documentId }: { documentId: string }) {
   return <div className="grid gap-6">
     <h2 className="text-xl font-semibold">Context</h2>
     {!can("context.status") ? <Unavailable>Context status is not available on this server.</Unavailable>
-      : status.isPending ? <Skeleton className="h-24 w-full" />
-      : status.isError ? <ErrorState message={errorText(status.error, "context")} onRetry={() => void status.refetch()} />
-      : status.data.topics.length === 0 ? <EmptyState title="No context topics" description="The template declares no context topics for this document." />
-      : <ul className="grid gap-3 sm:grid-cols-2" aria-label="Context topics">{status.data.topics.map(item => <li key={item.id}><Card>
+      : <QueryBoundary query={status}>{({ topics }) => topics.length === 0 ? <EmptyState title="No context topics" description="The template declares no context topics for this document." />
+      : <ul className="grid gap-3 sm:grid-cols-2" aria-label="Context topics">{topics.map(item => <li key={item.id}><Card>
         <CardHeader><CardTitle className="flex flex-wrap items-center gap-2 text-base"><span>{item.title}</span>
           <Badge variant={item.missing ? "destructive" : "secondary"}>{item.missing ? "Missing" : "Ready"}</Badge>{item.required && <Badge variant="outline">Required</Badge>}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
@@ -44,7 +45,7 @@ export function ContextPanel({ documentId }: { documentId: string }) {
             {can("context.set") && <Button type="button" size="sm" variant="outline" aria-label={`Set value for ${item.id}`} onClick={() => { setTopic(item.id); setField(item.fields[0]?.key ?? ""); }}>Set value</Button>}
             {item.exists && can("context.show") && <Button type="button" size="sm" variant="ghost" aria-label={`View ${item.id}`} disabled={show.isPending} onClick={() => show.mutate(item.id)}>View</Button>}
             {item.exists && can("context.rm") && <Button type="button" size="sm" variant="ghost" aria-label={`Remove ${item.id}`} onClick={() => { remove.reset(); setRemoving(item.id); }}>Remove</Button>}
-          </div></CardContent></Card></li>)}</ul>}
+          </div></CardContent></Card></li>)}</ul>}</QueryBoundary>}
     <ActionError action={show} what="load the topic" />
     {shown && <section aria-label={`Topic ${shown.topic}`} className="rounded-lg border bg-card p-4"><h3 className="font-semibold">{shown.topic}</h3><pre className="mt-2 text-sm whitespace-pre-wrap">{shown.content}</pre></section>}
 
@@ -66,7 +67,7 @@ export function ContextPanel({ documentId }: { documentId: string }) {
     {ingest.data && <p role="status" className="text-sm">Topics now available: {ingest.data.topics.join(", ") || "none"}.</p>}
 
     <ConfirmActionDialog open={removing !== null} title={`Remove topic ${removing ?? ""}?`} description="The saved answers for this topic are deleted. You can write the questionnaire again afterwards."
-      confirmLabel="Remove topic" pending={remove.isPending} error={remove.isError ? errorText(remove.error, "remove topic") : undefined}
+      confirmLabel="Remove topic" pending={remove.isPending} error={remove.isError ? formatApiError(remove.error) : undefined}
       onOpenChange={open => { if (!open) setRemoving(null); }} onConfirm={() => removing && remove.mutate(removing)} />
   </div>;
 }

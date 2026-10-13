@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
-import { ApiError } from "@/api/client";
+import { ApiError } from "@/api/errors";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Badge } from "@/components/ui/badge";
@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ActionError, fileToBase64 } from "@/features/authoring/data";
-import { Facts, scalarRows } from "@/features/quality/data";
+import { ActionError } from "@/lib/actions";
+import { fileToBase64 } from "@/lib/files";
+import { Facts, scalarRows } from "@/components/shared/Facts";
 import type { TranslateInput, TranslateResult } from "@/api/domains/tools";
 import { ToolCard } from "./ToolCard";
 

@@ -8,7 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { SourceIngestResult } from "@/api/domains/authoring";
-import { ActionError, Unavailable, authoringKeys, fileToBase64, useAction, useCapability } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { fileToBase64 } from "@/lib/files";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys } from "./data";
 
 function IngestResult({ result }: { result: SourceIngestResult }) {
   return <section aria-label="Ingest result" className="grid gap-4">

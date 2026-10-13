@@ -1,4 +1,6 @@
-// Typed client for source, asset, classification, context (S2.1) and section authoring (S2.2) routes.
+// Typed client for source, asset, classification, context (S2.1), section authoring (S2.2) and revision routes.
+import { docPath, jsonInit, listPage, type ListParams, type Transport } from "../http";
+import type { Status } from "./review";
 
 export type ClassificationRole = "evidence" | "example" | "normative";
 
@@ -17,6 +19,8 @@ export interface SourceIngestResult {
 /** A source file the server holds for the document: raw in the inbox, or already converted by ingest. */
 export interface SourceInventory { document_id: string; items: Array<{ name: string; path: string; state: "inbox" | "ingested" }> }
 export interface ClassificationQueue { document_id: string; items: Array<Record<string, unknown>> }
+export type DocumentContextTopic = { id: string; title: string; required: boolean; exists: boolean; missing: boolean; fields: Array<{ key: string; label: string; required?: boolean }> };
+export interface ContextStatus { document_id: string; topics: DocumentContextTopic[] }
 export interface ContextRequests { document_id: string; path: string; markdown: string }
 export interface ContextIngested { document_id: string; topics: string[] }
 export interface ContextTopicContent { document_id: string; topic: string; content: string }
@@ -36,6 +40,9 @@ export interface SectionStamped { document_id: string; section_id: string; path:
 export interface RevisionInput { target_id: string; new_body?: string; new_value?: string; request?: string; field?: string; strict?: boolean }
 export interface RevisionResult { target_id: string; diff: string; summary: string; changed_sections: string[]; diff_path: string }
 
+export type DocumentSection = { id: string; filename: string; body: string };
+export type Revision = { id: string; message: string; author: string; date: string; status: Status; files: number };
+
 export interface AuthoringApi {
   listAssets(documentId: string, kind?: string): Promise<AssetList>;
   addAsset(documentId: string, input: { filename: string; contentBase64: string; name?: string }): Promise<AssetAdded>;
@@ -44,42 +51,51 @@ export interface AuthoringApi {
   listSources(documentId: string): Promise<SourceInventory>;
   getClassificationQueue(documentId: string): Promise<ClassificationQueue>;
   confirmClassification(documentId: string, input: { relative_path: string; confirmed_role: ClassificationRole }): Promise<ClassificationQueue>;
+  getDocumentContext(documentId: string): Promise<ContextStatus>;
+  setDocumentContext(documentId: string, input: { topic: string; field?: string; value: string }): Promise<Record<string, unknown>>;
   elicitContext(documentId: string, topic?: string): Promise<ContextRequests>;
   ingestContext(documentId: string): Promise<ContextIngested>;
   showContextTopic(documentId: string, topic: string): Promise<ContextTopicContent>;
   removeContextTopic(documentId: string, topic: string): Promise<ContextTopicRemoved>;
+  listDocumentSections(documentId: string): Promise<DocumentSection[]>;
+  updateDocumentSection(documentId: string, sectionId: string, body: string, request?: string): Promise<Record<string, unknown>>;
   buildSection(documentId: string, sectionId: string): Promise<SectionBuilt>;
   packContext(documentId: string, target: string): Promise<ContextPacked>;
   reviewSection(documentId: string, sectionId: string, options?: { strict?: boolean }): Promise<ReviewResult>;
   reviewDocument(documentId: string, options?: { strict?: boolean; dimensions?: ReviewDimension[] }): Promise<ReviewResult>;
   stampSection(documentId: string, sectionId: string, input: { by: string; model?: string }): Promise<SectionStamped>;
   reviseDocument(documentId: string, input: RevisionInput): Promise<RevisionResult>;
+  listRevisions(params?: ListParams): Promise<Revision[]>;
+  getRevision(id: string): Promise<Record<string, unknown>>;
 }
 
-/** Workspace-scoped request function supplied by the API client. */
-export type ScopedRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
+const sectionPath = (documentId: string, sectionId: string) => `${docPath(documentId)}/sections/${encodeURIComponent(sectionId)}`;
 
-const json = (method: string, body?: unknown): RequestInit => ({ method, ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
-const doc = (id: string) => `documents/${encodeURIComponent(id)}`;
-
-export function createAuthoringApi(request: ScopedRequest): AuthoringApi {
+export function createAuthoringApi(t: Transport): AuthoringApi {
+  const request = t.scoped;
   return {
-    listAssets: (id, kind) => request(`${doc(id)}/assets${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
-    addAsset: (id, { filename, contentBase64, name }) => request(`${doc(id)}/assets`, json("POST", { filename, content_base64: contentBase64, ...(name ? { name } : {}) })),
-    removeAsset: (id, name) => request(`${doc(id)}/assets/${encodeURIComponent(name)}`, json("DELETE")),
-    ingestSources: (id, files = []) => request(`${doc(id)}/ingest`, json("POST", { files })),
-    listSources: id => request(`${doc(id)}/sources`),
-    getClassificationQueue: id => request(`${doc(id)}/classification`),
-    confirmClassification: (id, input) => request(`${doc(id)}/classification`, json("POST", input)),
-    elicitContext: (id, topic = "") => request(`${doc(id)}/context/requests`, json("POST", { topic })),
-    ingestContext: id => request(`${doc(id)}/context/ingest`, json("POST", {})),
-    showContextTopic: (id, topic) => request(`${doc(id)}/context/${encodeURIComponent(topic)}`),
-    removeContextTopic: (id, topic) => request(`${doc(id)}/context/${encodeURIComponent(topic)}`, json("DELETE")),
-    buildSection: (id, section) => request(`${doc(id)}/sections/${encodeURIComponent(section)}/build`, json("POST", {})),
-    packContext: (id, target) => request(`${doc(id)}/context-pack`, json("POST", { target })),
-    reviewSection: (id, section, options = {}) => request(`${doc(id)}/sections/${encodeURIComponent(section)}/review`, json("POST", options)),
-    reviewDocument: (id, options = {}) => request(`${doc(id)}/review`, json("POST", options)),
-    stampSection: (id, section, input) => request(`${doc(id)}/sections/${encodeURIComponent(section)}/stamp`, json("POST", input)),
-    reviseDocument: (id, input) => request(`${doc(id)}/revisions`, json("POST", input)),
+    listAssets: (id, kind) => request(`${docPath(id)}/assets${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`),
+    addAsset: (id, { filename, contentBase64, name }) => request(`${docPath(id)}/assets`, jsonInit("POST", { filename, content_base64: contentBase64, ...(name ? { name } : {}) })),
+    removeAsset: (id, name) => request(`${docPath(id)}/assets/${encodeURIComponent(name)}`, jsonInit("DELETE")),
+    ingestSources: (id, files = []) => request(`${docPath(id)}/ingest`, jsonInit("POST", { files })),
+    listSources: id => request(`${docPath(id)}/sources`),
+    getClassificationQueue: id => request(`${docPath(id)}/classification`),
+    confirmClassification: (id, input) => request(`${docPath(id)}/classification`, jsonInit("POST", input)),
+    getDocumentContext: id => request(`${docPath(id)}/context`),
+    setDocumentContext: (id, input) => request(`${docPath(id)}/context`, jsonInit("POST", input)),
+    elicitContext: (id, topic = "") => request(`${docPath(id)}/context/requests`, jsonInit("POST", { topic })),
+    ingestContext: id => request(`${docPath(id)}/context/ingest`, jsonInit("POST", {})),
+    showContextTopic: (id, topic) => request(`${docPath(id)}/context/${encodeURIComponent(topic)}`),
+    removeContextTopic: (id, topic) => request(`${docPath(id)}/context/${encodeURIComponent(topic)}`, jsonInit("DELETE")),
+    listDocumentSections: async id => (await request<{ items: DocumentSection[] }>(`${docPath(id)}/sections`)).items,
+    updateDocumentSection: (id, sectionId, body, requestText = "Review Studio section edit") => request(sectionPath(id, sectionId), jsonInit("PUT", { body, request: requestText })),
+    buildSection: (id, section) => request(`${sectionPath(id, section)}/build`, jsonInit("POST", {})),
+    packContext: (id, target) => request(`${docPath(id)}/context-pack`, jsonInit("POST", { target })),
+    reviewSection: (id, section, options = {}) => request(`${sectionPath(id, section)}/review`, jsonInit("POST", options)),
+    reviewDocument: (id, options = {}) => request(`${docPath(id)}/review`, jsonInit("POST", options)),
+    stampSection: (id, section, input) => request(`${sectionPath(id, section)}/stamp`, jsonInit("POST", input)),
+    reviseDocument: (id, input) => request(`${docPath(id)}/revisions`, jsonInit("POST", input)),
+    listRevisions: async params => (await listPage<Revision>(request, "revisions", params)).items,
+    getRevision: id => request(`revisions/${encodeURIComponent(id)}`),
   };
 }

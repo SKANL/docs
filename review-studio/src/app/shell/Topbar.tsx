@@ -1,5 +1,5 @@
 import { Command as CommandIcon } from "lucide-react";
-import { ApiStatus, type ApiHealth } from "@/components/ApiStatus";
+import { ApiStatus, type ApiHealth } from "@/components/shared/ApiStatus";
 import { Button } from "@/components/ui/button";
 import { ActiveRunsIndicator } from "@/features/pipeline/ActiveRunsIndicator";
 

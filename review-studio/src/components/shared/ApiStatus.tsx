@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ReviewApi } from "../api/models";
-import { formatApiError } from "../api/client";
+import type { ReviewApi } from "@/api/models";
+import { formatApiError } from "@/api/errors";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 

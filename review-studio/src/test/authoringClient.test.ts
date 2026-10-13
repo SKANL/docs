@@ -83,10 +83,10 @@ describe("authoring client", () => {
 
   it("sends the workspace scope on classification reads and confirmations", async () => {
     const read = setup({ document_id: "d", items: [] });
-    await read.client.getDocumentClassification("d");
+    await read.client.authoring.getClassificationQueue("d");
     expect(read.call()).toMatchObject({ method: "GET", query: { workspace_id: "ws-1" } });
     const confirm = setup({ document_id: "d", items: [] });
-    await confirm.client.confirmDocumentClassification("d", { relative_path: "a/x.md", confirmed_role: "evidence" });
+    await confirm.client.authoring.confirmClassification("d", { relative_path: "a/x.md", confirmed_role: "evidence" });
     expect(confirm.call()).toMatchObject({ method: "POST", query: { workspace_id: "ws-1" } });
   });
 

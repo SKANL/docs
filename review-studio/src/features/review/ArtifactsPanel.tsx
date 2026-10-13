@@ -3,16 +3,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
-import { StatusBadge } from "@/components/StatusBadge";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { Artifact } from "@/api/models";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { errorText, useCapability } from "@/features/authoring/data";
-import { Digest, Facts, reviewKeys } from "./data";
+import { useCapability } from "@/lib/capability-registry";
+import { Digest, Facts } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 import { ArtifactPreview, InspectionPanel } from "./inspection";
 
 function ArtifactDetail({ workspaceId, artifact }: { workspaceId: string | null; artifact: Artifact }) {
@@ -31,14 +31,10 @@ function ArtifactDetail({ workspaceId, artifact }: { workspaceId: string | null;
   </section>;
 }
 
-export function ArtifactsPanel({ workspaceId, selectedId }: { workspaceId: string | null; selectedId?: string }) {
+function ArtifactsTable({ workspaceId, all, selectedId }: { workspaceId: string | null; all: Artifact[]; selectedId?: string }) {
   const api = useApi();
   const [runId, setRunId] = useState("all");
-  const artifacts = useQuery({ queryKey: reviewKeys.artifacts(workspaceId), queryFn: () => api.listArtifacts() });
-  const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: () => api.listRuns() });
-  if (artifacts.isPending) return <Skeleton className="h-24 w-full" />;
-  if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={errorText(artifacts.error, "artifacts")} onRetry={() => void artifacts.refetch()} />;
-  const all = artifacts.data;
+  const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: async () => (await api.listRunPage!()).items });
   if (all.length === 0) return <EmptyState title="No artifacts" description="Artifacts appear here after a build produces output for a run." />;
   const rows = runId === "all" ? all : all.filter(item => item.runId === runId);
   const selected = selectedId ? all.find(item => item.id === selectedId) : undefined;
@@ -57,4 +53,10 @@ export function ArtifactsPanel({ workspaceId, selectedId }: { workspaceId: strin
     </Table>
     {selected ? <ArtifactDetail workspaceId={workspaceId} artifact={selected} /> : selectedId && <p className="text-sm text-muted-foreground" role="status">Artifact {selectedId} is not in this workspace.</p>}
   </div>;
+}
+
+export function ArtifactsPanel({ workspaceId, selectedId }: { workspaceId: string | null; selectedId?: string }) {
+  const api = useApi();
+  const artifacts = useQuery({ queryKey: reviewKeys.artifacts(workspaceId), queryFn: () => api.listArtifacts() });
+  return <QueryBoundary query={artifacts} title="Could not load artifacts">{all => <ArtifactsTable workspaceId={workspaceId} all={all} selectedId={selectedId} />}</QueryBoundary>;
 }

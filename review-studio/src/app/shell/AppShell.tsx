@@ -2,7 +2,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useRef, useState } fr
 import { Outlet, useLocation } from "react-router-dom";
 import { RouteErrorBoundary } from "@/components/shared/RouteErrorBoundary";
 import { useApi } from "@/app/providers";
-import { useApiHealth } from "@/components/ApiStatus";
+import { useApiHealth } from "@/components/shared/ApiStatus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";

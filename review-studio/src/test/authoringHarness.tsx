@@ -12,7 +12,7 @@ export const sections = [{ id: "intro", filename: "intro.md", body: "Intro body"
 
 export function makeApi(overrides: Partial<ReviewApi> = {}): ReviewApi {
   return {
-    listRuns: async () => [], listFindings: async () => [], listArtifacts: async () => [], listRevisions: async () => [],
+    listFindings: async () => [], listArtifacts: async () => [], listRevisions: async () => [],
     getCapabilities: async () => catalogWithout(),
     listWorkspaces: async () => [{ id: "ws-1", name: "Research", root: "C:/data" }],
     getCurrentDocument: async () => ({ current_document_id: "doc-1", document: { id: "doc-1", title: "Field notes", active: true } }),

@@ -1,34 +1,29 @@
-export type Status = "passed" | "warnings" | "failed" | "unverified";
-export type Run = { id:string; document:string; template:string; startedAt:string; duration:string; status:Status; findings:number; artifactCount:number; progress?:number };
-export type Finding = { id:string; runId?:string; documentId?:string; title:string; severity:"critical"|"high"|"medium"|"low"; status:Status; location:string; summary:string; owner:string; updated:string };
-export type Artifact = { id:string; name:string; runId?:string; kind:"DOCX"|"PDF"|"HTML"|"PNG"; size:string; status:Status; pages?:number; checksum:string };
-export type EvidencePassport = { id:string; runId:string; verifiedAt:string; coverage:number; attestations:number; sources:number; claims:number; unresolved:number; entries?:Array<Record<string,unknown>> };
-export type GraphNode = { id:string; label:string; type:"claim"|"source"|"artifact"|"section"; confidence:number; x:number; y:number };
-export type GraphEdge = { from:string; to:string; relation:string };
-export type GraphQuery = "claims_without_evidence"|"findings_affected_by_revision"|"artifacts_derived_from_input"|"unused_references"|"unmet_requirements";
-export type GraphQueryItem = { id:string; kind:string; label:string; confidence?:number; attributes?:Record<string, unknown> };
-export type GraphQueryResult = { items:GraphQueryItem[]; graphUnavailable?:boolean; warnings?:string[]; context?:Record<string, unknown> };
-export type Template = { id:string; name:string; version:string; sections:number; contract:Status; updated:string };
-export type Baseline = { id:string; name:string; scope:string; created:string; status:Status; delta:string };
-export type Revision = { id:string; message:string; author:string; date:string; status:Status; files:number };
-export type Publication = { id:string; environment:string; artifact:string; status:Status; publishedAt:string; approver:string };
-export type Workspace = { id:string; name:string; root:string };
-export type WorkspaceStatus = { workspace:Workspace; active:boolean };
-export type WorkspaceMigration = { source_workspace_id:string; detected_format:string; ready:boolean; published:boolean; workspace?:Workspace|null; errors:string[] };
-export type DocumentSummary = { id:string; title?:string; template?:string; active:boolean; created_at?:string };
-export type CurrentDocument = { current_document_id:string|null; document:DocumentSummary|null };
-export type ApiHealth = { ready:boolean; protocol?:string; version?:string };
-export type Capability = { id:string; cli_command:string|null; route:string|null; scopes:string[]; surface:"web+desktop"; slice:string; status:"available"|"planned" };
-export type CapabilityGroup = { id:string; capabilities:Capability[] };
-export type CapabilityCatalog = { groups:CapabilityGroup[] };
-export type DocumentRecord = { id:string; title?:string; template?:string; lifecycle?:string; path?:string; active?:boolean; created_at?:string };
-export type DocumentSection = { id:string; filename:string; body:string };
-export type ImportResult = { id:string; document_id:string; filename:string; path:string; mime_type:string; size:number; sha256:string; deduplicated?:boolean };
-export type DocumentContextTopic = { id:string; title:string; required:boolean; exists:boolean; missing:boolean; fields:Array<{key:string;label:string;required?:boolean}> };
 import type { AuthoringApi } from "./domains/authoring";
-import type { PipelineApi } from "./domains/pipeline";
-import type { QualityApi } from "./domains/review";
 import type { DeliveryApi } from "./domains/delivery";
+import type { PipelineApi } from "./domains/pipeline";
+import type { ReviewDomainApi } from "./domains/review";
+import type { SystemApi } from "./domains/system";
 import type { TemplatesApi } from "./domains/templates";
 import type { ToolsApi } from "./domains/tools";
-export interface ReviewApi extends Partial<AuthoringApi>, Partial<PipelineApi>, Partial<QualityApi>, Partial<DeliveryApi>, Partial<TemplatesApi>, Partial<ToolsApi> { health?():Promise<ApiHealth>; getCapabilities?():Promise<CapabilityCatalog>; listRuns():Promise<Run[]>; getRun?(id:string):Promise<Record<string,unknown>>; listDocuments?(workspaceId?:string):Promise<DocumentRecord[]>; getDocument?(id:string):Promise<Record<string,unknown>>; listDocumentRuns?(id:string):Promise<Run[]>; listFindings():Promise<Finding[]>; listRunFindings?(id:string):Promise<Finding[]>; listArtifacts():Promise<Artifact[]>; listRunArtifacts?(id:string):Promise<Artifact[]>; getArtifact?(id:string):Promise<Record<string,unknown>>; listArtifactPreviews?(id:string):Promise<Record<string,unknown>[]>; getPassport(runId:string):Promise<EvidencePassport>; getGraph():Promise<{nodes:GraphNode[];edges:GraphEdge[]}>; getGraphQuery(query:GraphQuery,id?:string):Promise<GraphQueryResult>; listTemplates():Promise<Template[]>; listBaselines():Promise<Baseline[]>; getBaseline?(id:string):Promise<Record<string,unknown>>; listRevisions():Promise<Revision[]>; getRevision?(id:string):Promise<Record<string,unknown>>; listPublications():Promise<Publication[]>; listPlugins?():Promise<Record<string,unknown>[]>; getPlugin?(id:string):Promise<Record<string,unknown>>; listWorkspaces?():Promise<Workspace[]>; createWorkspace?(input:{name:string}):Promise<Workspace>; renameWorkspace?(id:string,name:string):Promise<Workspace>; deleteWorkspace?(id:string):Promise<Record<string,unknown>>; getWorkspaceStatus?(id:string):Promise<WorkspaceStatus>; migrateWorkspace?(id:string,input:{apply:boolean}):Promise<WorkspaceMigration>; getCurrentDocument?(workspaceId:string):Promise<CurrentDocument>; useDocument?(id:string,workspaceId:string):Promise<DocumentSummary>; renameDocument?(id:string,newId:string,workspaceId:string):Promise<DocumentSummary>; deleteDocument?(id:string,workspaceId:string):Promise<{deleted:string;current_document_id:string|null}>; getDocumentStatus?(documentId:string,workspaceId?:string):Promise<Record<string,unknown>>; getDocumentContext?(documentId:string):Promise<{document_id:string;topics:import("./models").DocumentContextTopic[]}>; setDocumentContext?(documentId:string,input:{topic:string;field?:string;value:string}):Promise<Record<string,unknown>>; getDocumentClassification?(documentId:string):Promise<{document_id:string;items:Array<Record<string,unknown>>}>; confirmDocumentClassification?(documentId:string,input:{relative_path:string;confirmed_role:"evidence"|"example"|"normative"}):Promise<Record<string,unknown>>; listDocumentSections?(documentId:string):Promise<DocumentSection[]>; getDocumentSection?(documentId:string,sectionId:string):Promise<DocumentSection>; updateDocumentSection?(documentId:string,sectionId:string,body:string,request?:string):Promise<Record<string,unknown>>; createDocument?(input:{workspaceId:string;documentId:string;template:string;title?:string}):Promise<Record<string,unknown>>; createRun?(input:{documentId:string;workspaceId:string;pipelineId?:string;format?:string}):Promise<Record<string,unknown>>; documentAction?(documentId:string,action:"prepare"|"build"|"verify"|"publish",workspaceId:string,format?:string):Promise<Record<string,unknown>>; cancelRun?(id:string):Promise<Record<string,unknown>>; retryRun?(id:string):Promise<Record<string,unknown>>; selectWorkspace?(id:string):Promise<Workspace>; importDocument?(file:File,workspace:Workspace,options?:{documentId?:string;template?:string;title?:string}):Promise<ImportResult>; artifactPreviewUrl?(runId:string,artifactId:string):string; downloadTranslation?(path:string):Promise<Blob>; streamProgress?(runId:string,onEvent:(event:{type:string;progress?:number;message?:string;run?:{id?:string;status?:string}})=>void,signal?:AbortSignal):Promise<void>; }
+import type { WorkspacesApi } from "./domains/workspaces";
+
+// The types components import come straight from the domain that owns them.
+export type { Capability, CapabilityCatalog } from "./domains/system";
+export type { Artifact, GraphQuery, GraphQueryResult, Status } from "./domains/review";
+export type { Template } from "./domains/templates";
+export type { DocumentRecord, Workspace, WorkspaceMigration, WorkspaceStatus } from "./domains/workspaces";
+
+/**
+ * Everything the UI can call, derived from the domains. Every member is optional because a server may not offer
+ * it (the capability catalogue says which), except the read models the review and authoring pages always load.
+ */
+export type ReviewApi =
+  Partial<AuthoringApi & DeliveryApi & PipelineApi & ReviewDomainApi & SystemApi & TemplatesApi & ToolsApi & WorkspacesApi>
+  & Pick<AuthoringApi, "listRevisions">
+  & Pick<ReviewDomainApi,
+    | "listFindings"
+    | "listArtifacts"
+    | "listBaselines"
+    | "getGraph"
+    | "getGraphQuery">
+  & Pick<TemplatesApi, "listTemplates">;

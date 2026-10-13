@@ -3,18 +3,19 @@ import { useSearchParams } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ErrorState } from "@/components/shared/ErrorState";
+import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import type { ContextPacked, ReviewFinding, ReviewResult } from "@/api/domains/authoring";
-import { ActionError, authoringKeys, errorText, useAction, useCapability, useSections } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys, useSections } from "./data";
 
-export function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; onOpenSection(id: string): void }) {
+function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; onOpenSection(id: string): void }) {
   const where = (finding: ReviewFinding) => [finding.section && `section ${finding.section}`, finding.file, finding.page != null && `page ${finding.page}`].filter(Boolean).join(" · ");
   return <section aria-label="Review findings" className="grid gap-3 rounded-lg border bg-card p-4">
     <div className="flex items-center gap-2"><h3 className="font-semibold">Review findings</h3><Badge variant={result.passed ? "secondary" : "destructive"}>{result.passed ? "Passed" : "Needs attention"}</Badge>
@@ -88,58 +89,56 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const stamp = useAction((id: string) => api.stampSection!(documentId, id, { by: by.trim(), ...(model.trim() ? { model: model.trim() } : {}) }), { success: result => `Stamped ${result.section_id} as ${result.authored_by}.`, onDone: () => setStampOpen(false) });
   const pack = useAction(() => api.packContext!(documentId, target.trim()), { success: result => `Packed context for ${result.target}.`, onDone: result => { setPacked(result); setPackOpen(false); } });
 
-  if (sections.isPending) return <Skeleton className="h-48 w-full" />;
-  if (sections.isError) return <ErrorState message={errorText(sections.error, "sections")} onRetry={() => void sections.refetch()} />;
-  if (items.length === 0) return <EmptyState title="No sections yet" description="Add sources and build the document structure first. Sections appear here once they exist." />;
-
-  return <div className="grid gap-6">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Sections</h2>
-      <div className="flex flex-wrap gap-2">
-        {can("review-document") && api.reviewDocument && <Button type="button" variant="outline" disabled={reviewDocument.isPending} onClick={() => reviewDocument.mutate(undefined)}>Review document</Button>}
-        {can("pack-context") && api.packContext && <Button type="button" variant="outline" onClick={() => { pack.reset(); setPackOpen(true); }}>Pack context</Button>}
-      </div></div>
-    <ActionError action={reviewDocument} what="review the document" />
-    <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
-      <nav aria-label="Sections"><ul className="grid gap-1">{items.map(item => <li key={item.id}>
-        <Button type="button" variant={item.id === activeId ? "secondary" : "ghost"} className="w-full justify-between" aria-current={item.id === activeId ? "true" : undefined} onClick={() => open(item.id)}>
-          <span>{item.id}</span>{dirty(item.id) && <Badge variant="outline">unsaved</Badge>}</Button></li>)}</ul></nav>
-      <div className="grid gap-3">
-        <Label htmlFor="section-body">Section body</Label>
-        <Textarea id="section-body" ref={editor} rows={14} value={body} onChange={event => activeId && setDrafts(current => ({ ...current, [activeId]: event.target.value }))} />
+  return <QueryBoundary query={sections} skeleton="h-48 w-full">{() => items.length === 0
+    ? <EmptyState title="No sections yet" description="Add sources and build the document structure first. Sections appear here once they exist." />
+    : <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Sections</h2>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" disabled={!activeId || !dirty(activeId) || save.isPending} onClick={() => save.mutate({ id: activeId!, text: body })}>{save.isPending ? "Saving…" : "Save section"}</Button>
-          {can("build-section") && api.buildSection && <Button type="button" variant="outline" disabled={build.isPending} onClick={() => build.mutate(activeId!)}>Build section</Button>}
-          {can("review-section") && api.reviewSection && <Button type="button" variant="outline" disabled={reviewSection.isPending} onClick={() => reviewSection.mutate(activeId!)}>Review section</Button>}
-          {can("stamp-section") && api.stampSection && <Button type="button" variant="outline" onClick={() => { stamp.reset(); setStampOpen(true); }}>Stamp section</Button>}
+          {can("review-document") && api.reviewDocument && <Button type="button" variant="outline" disabled={reviewDocument.isPending} onClick={() => reviewDocument.mutate(undefined)}>Review document</Button>}
+          {can("pack-context") && api.packContext && <Button type="button" variant="outline" onClick={() => { pack.reset(); setPackOpen(true); }}>Pack context</Button>}
+        </div></div>
+      <ActionError action={reviewDocument} what="review the document" />
+      <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
+        <nav aria-label="Sections"><ul className="grid gap-1">{items.map(item => <li key={item.id}>
+          <Button type="button" variant={item.id === activeId ? "secondary" : "ghost"} className="w-full justify-between" aria-current={item.id === activeId ? "true" : undefined} onClick={() => open(item.id)}>
+            <span>{item.id}</span>{dirty(item.id) && <Badge variant="outline">unsaved</Badge>}</Button></li>)}</ul></nav>
+        <div className="grid gap-3">
+          <Label htmlFor="section-body">Section body</Label>
+          <Textarea id="section-body" ref={editor} rows={14} value={body} onChange={event => activeId && setDrafts(current => ({ ...current, [activeId]: event.target.value }))} />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" disabled={!activeId || !dirty(activeId) || save.isPending} onClick={() => save.mutate({ id: activeId!, text: body })}>{save.isPending ? "Saving…" : "Save section"}</Button>
+            {can("build-section") && api.buildSection && <Button type="button" variant="outline" disabled={build.isPending} onClick={() => build.mutate(activeId!)}>Build section</Button>}
+            {can("review-section") && api.reviewSection && <Button type="button" variant="outline" disabled={reviewSection.isPending} onClick={() => reviewSection.mutate(activeId!)}>Review section</Button>}
+            {can("stamp-section") && api.stampSection && <Button type="button" variant="outline" onClick={() => { stamp.reset(); setStampOpen(true); }}>Stamp section</Button>}
+          </div>
+          <ActionError action={save} what="save the section" />
+          <ActionError action={build} what="build the section" />
+          <ActionError action={reviewSection} what="review the section" />
         </div>
-        <ActionError action={save} what="save the section" />
-        <ActionError action={build} what="build the section" />
-        <ActionError action={reviewSection} what="review the section" />
       </div>
-    </div>
-    {packed && <section aria-label="Packed context" className="rounded-lg border bg-card p-4"><h3 className="font-semibold">Context packed for {packed.target}</h3><ul className="mt-2 list-disc pl-5 text-sm">{packed.paths.map(path => <li key={path}>{path}</li>)}</ul></section>}
-    {review && <ReviewFindingsPanel result={review} onOpenSection={id => open(id, true)} />}
+      {packed && <section aria-label="Packed context" className="rounded-lg border bg-card p-4"><h3 className="font-semibold">Context packed for {packed.target}</h3><ul className="mt-2 list-disc pl-5 text-sm">{packed.paths.map(path => <li key={path}>{path}</li>)}</ul></section>}
+      {review && <ReviewFindingsPanel result={review} onOpenSection={id => open(id, true)} />}
 
-    <ConfirmActionDialog open={pending !== null} title="Discard unsaved changes?" description={`Your edits to ${activeId} have not been saved. Switching sections discards them.`} confirmLabel="Discard changes"
-      onOpenChange={next => { if (!next) setPending(null); }} onConfirm={() => { if (pending && activeId) { discard(activeId); apply(pending.id, pending.focus); } setPending(null); }} />
+      <ConfirmActionDialog open={pending !== null} title="Discard unsaved changes?" description={`Your edits to ${activeId} have not been saved. Switching sections discards them.`} confirmLabel="Discard changes"
+        onOpenChange={next => { if (!next) setPending(null); }} onConfirm={() => { if (pending && activeId) { discard(activeId); apply(pending.id, pending.focus); } setPending(null); }} />
 
-    <Dialog open={stampOpen} onOpenChange={setStampOpen}>
-      <DialogContent><DialogHeader><DialogTitle>Stamp section {activeId}</DialogTitle><DialogDescription>Records who authored this section and with which model.</DialogDescription></DialogHeader>
-        <form className="grid gap-3" onSubmit={event => { event.preventDefault(); stamp.mutate(activeId!); }}>
-          <div className="grid gap-1"><Label htmlFor="stamp-by">Stamped by</Label><Input id="stamp-by" value={by} onChange={event => setBy(event.target.value)} required /></div>
-          <div className="grid gap-1"><Label htmlFor="stamp-model">Model</Label><Input id="stamp-model" value={model} onChange={event => setModel(event.target.value)} /></div>
-          <ActionError action={stamp} what="stamp the section" />
-          <DialogFooter><Button type="button" variant="ghost" onClick={() => setStampOpen(false)}>Cancel</Button><Button type="submit" disabled={!by.trim() || stamp.isPending}>Stamp</Button></DialogFooter>
-        </form></DialogContent>
-    </Dialog>
+      <Dialog open={stampOpen} onOpenChange={setStampOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Stamp section {activeId}</DialogTitle><DialogDescription>Records who authored this section and with which model.</DialogDescription></DialogHeader>
+          <form className="grid gap-3" onSubmit={event => { event.preventDefault(); stamp.mutate(activeId!); }}>
+            <div className="grid gap-1"><Label htmlFor="stamp-by">Stamped by</Label><Input id="stamp-by" value={by} onChange={event => setBy(event.target.value)} required /></div>
+            <div className="grid gap-1"><Label htmlFor="stamp-model">Model</Label><Input id="stamp-model" value={model} onChange={event => setModel(event.target.value)} /></div>
+            <ActionError action={stamp} what="stamp the section" />
+            <DialogFooter><Button type="button" variant="ghost" onClick={() => setStampOpen(false)}>Cancel</Button><Button type="submit" disabled={!by.trim() || stamp.isPending}>Stamp</Button></DialogFooter>
+          </form></DialogContent>
+      </Dialog>
 
-    <Dialog open={packOpen} onOpenChange={setPackOpen}>
-      <DialogContent><DialogHeader><DialogTitle>Pack context</DialogTitle><DialogDescription>Use a section id, &quot;all&quot; for every section, or &quot;document&quot; for the whole document.</DialogDescription></DialogHeader>
-        <form className="grid gap-3" onSubmit={event => { event.preventDefault(); pack.mutate(undefined); }}>
-          <div className="grid gap-1"><Label htmlFor="pack-target">Target</Label><Input id="pack-target" value={target} onChange={event => setTarget(event.target.value)} required /></div>
-          <ActionError action={pack} what="pack the context" />
-          <DialogFooter><Button type="button" variant="ghost" onClick={() => setPackOpen(false)}>Cancel</Button><Button type="submit" disabled={!target.trim() || pack.isPending}>Pack</Button></DialogFooter>
-        </form></DialogContent>
-    </Dialog>
-  </div>;
+      <Dialog open={packOpen} onOpenChange={setPackOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Pack context</DialogTitle><DialogDescription>Use a section id, &quot;all&quot; for every section, or &quot;document&quot; for the whole document.</DialogDescription></DialogHeader>
+          <form className="grid gap-3" onSubmit={event => { event.preventDefault(); pack.mutate(undefined); }}>
+            <div className="grid gap-1"><Label htmlFor="pack-target">Target</Label><Input id="pack-target" value={target} onChange={event => setTarget(event.target.value)} required /></div>
+            <ActionError action={pack} what="pack the context" />
+            <DialogFooter><Button type="button" variant="ghost" onClick={() => setPackOpen(false)}>Cancel</Button><Button type="submit" disabled={!target.trim() || pack.isPending}>Pack</Button></DialogFooter>
+          </form></DialogContent>
+      </Dialog>
+    </div>}</QueryBoundary>;
 }
