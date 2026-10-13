@@ -34,15 +34,82 @@ describe("ReviewApiClient", () => {
 
   it("keeps workspace selection local and creates a workspace by name only", async () => {
     localStorage.clear();
-    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ id: "workspace-b", name: "B", root: "/managed/b" }));
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      return jsonResponse({ id: "workspace-b", name: "B", root: "/managed/b" });
+    });
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
 
     await client.createWorkspace({ name: "B" });
-    await client.selectWorkspace("workspace-b");
 
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ name: "B" });
-    expect(fetcher.mock.calls.some(call => new URL(call[0].toString()).pathname.endsWith("/select"))).toBe(false);
+    expect(fetcher.mock.calls.map(call => new URL(call[0].toString()).pathname)).toEqual([
+      "/v2/workspaces",
+      "/v2/workspaces/workspace-b/use",
+    ]);
     expect(localStorage.getItem("docs.review.workspace")).toBe("workspace-b");
+  });
+
+  it("returns the persisted workspace first when the server lists another workspace first", async () => {
+    localStorage.setItem("docs.review.workspace", "workspace-b");
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [
+      { id: "workspace-a", name: "A", root: "/a" },
+      { id: "workspace-b", name: "B", root: "/b" },
+    ] }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+
+    const result = await client.listWorkspaces();
+
+    expect(result.map(item => item.id)).toEqual(["workspace-b", "workspace-a"]);
+  });
+
+  it("uses canonical workspace and document lifecycle routes with explicit workspace scope", async () => {
+    const workspace = { id: "workspace-1", name: "Research", root: "/managed/research" };
+    const summary = { id: "field-notes", title: "Field notes", template: "documento-generico", active: true };
+    const calls: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input.toString());
+      calls.push({ url, init });
+      if (url.pathname === "/v2/workspaces" && init?.method === undefined) return jsonResponse({ items: [workspace] });
+      if (url.pathname.endsWith("/use") && url.pathname.startsWith("/v2/workspaces/")) return jsonResponse(workspace);
+      if (url.pathname.endsWith("/status") && url.pathname.startsWith("/v2/workspaces/")) return jsonResponse({ workspace, active: true });
+      if (url.pathname.endsWith("/migrate")) return jsonResponse({ source_workspace_id: workspace.id, detected_format: "legacy", ready: true, published: false, errors: [] });
+      if (url.pathname === "/v2/documents") return jsonResponse({ items: [summary] });
+      if (url.pathname === "/v2/current-document") return jsonResponse({ current_document_id: summary.id, document: summary });
+      if (url.pathname.endsWith("/use") && url.pathname.startsWith("/v2/documents/")) return jsonResponse(summary);
+      if (url.pathname === "/v2/documents/field-notes" && init?.method === "PATCH") return jsonResponse({ ...summary, id: "field-notes-renamed" });
+      if (url.pathname === "/v2/documents/field-notes" && init?.method === "DELETE") return jsonResponse({ deleted: summary.id, current_document_id: null });
+      if (url.pathname.endsWith("/status") && url.pathname.startsWith("/v2/documents/")) return jsonResponse({ document_id: summary.id, succeeded: true });
+      return jsonResponse({});
+    });
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+
+    await client.listWorkspaces();
+    await client.selectWorkspace(workspace.id);
+    await client.getWorkspaceStatus(workspace.id);
+    await client.migrateWorkspace(workspace.id, { apply: false });
+    await client.listDocuments(workspace.id);
+    await client.getCurrentDocument(workspace.id);
+    await client.useDocument(summary.id, workspace.id);
+    await client.renameDocument(summary.id, "field-notes-renamed", workspace.id);
+    await client.deleteDocument(summary.id, workspace.id);
+    await client.getDocumentStatus(summary.id, workspace.id);
+
+    expect(calls.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
+      "/v2/workspaces",
+      "/v2/workspaces/workspace-1/use",
+      "/v2/workspaces/workspace-1/status",
+      "/v2/workspaces/workspace-1/migrate",
+      "/v2/documents?workspace_id=workspace-1",
+      "/v2/current-document?workspace_id=workspace-1",
+      "/v2/documents/field-notes/use?workspace_id=workspace-1",
+      "/v2/documents/field-notes?workspace_id=workspace-1",
+      "/v2/documents/field-notes?workspace_id=workspace-1",
+      "/v2/documents/field-notes/status?workspace_id=workspace-1",
+    ]);
+    expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({ apply: false });
+    expect(JSON.parse(String(calls[7]?.init?.body))).toEqual({ new_id: "field-notes-renamed" });
+    expect(calls[8]?.init?.method).toBe("DELETE");
+    expect(localStorage.getItem("docs.review.workspace")).toBe(workspace.id);
   });
   it("retries transient startup connection failures before surfacing an error", async () => {
     let attempts = 0;

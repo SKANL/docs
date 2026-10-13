@@ -9,8 +9,13 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const workspace = await mkdtemp(join(tmpdir(), "docs-review-e2e-"));
 const apiPort = 8765;
 const proxyPort = 4175;
+const workspaceOnly = process.env.REVIEW_STUDIO_E2E_WORKSPACE_ONLY === "1";
 const apiBase = `http://127.0.0.1:${apiPort}`;
 const uv = process.platform === "win32" ? join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WinGet", "Packages", "astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe", "uv.exe") : "uv";
+const initialized = spawnSync(uv, ["run", "--no-sync", "--project", root, "python", "-m", "docs.cli.main", "doc", "init"], { cwd: workspace, encoding: "utf8", windowsHide: true, timeout: 30_000 });
+if (initialized.status !== 0) {
+  throw new Error(`could not initialize E2E workspace: ${initialized.stderr || initialized.stdout || initialized.error?.message || `exit ${initialized.status}`}`);
+}
 const child = spawn(uv, ["run", "--project", root, "python", "-m", "docs.sidecar", "--workspace", workspace, "--health-url", `${apiBase}/health`], { cwd: root, stdio: "inherit", windowsHide: true, env: { ...process.env, DOCS_SIDECAR_CORS_ORIGINS: "http://127.0.0.1:5173" } });
 child.on("error", error => { console.error(error); process.exit(1); });
 let proxy;
@@ -35,6 +40,7 @@ async function waitForHealth() {
   }
   throw new Error("real sidecar did not become healthy");
 }
+
 async function request(path, init = {}) {
   const response = await fetch(`${apiBase}${path}`, { ...init, headers: { "content-type": "application/json", ...(init.headers ?? {}) } });
   const body = await response.json();
@@ -46,6 +52,7 @@ async function startProxy() {
     const chunks = [];
     for await (const chunk of incoming) chunks.push(chunk);
     const response = await fetch(`${apiBase}${incoming.url}`, { method: incoming.method, headers: incoming.headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+    if (!response.ok) console.error(`E2E API ${incoming.method} ${incoming.url}: ${response.status} ${await response.clone().text()}`);
     outgoing.writeHead(response.status, Object.fromEntries(response.headers));
     outgoing.end(Buffer.from(await response.arrayBuffer()));
   });
@@ -56,16 +63,18 @@ await waitForHealth();
 const workspaces = await request("/v2/workspaces");
 const workspaceId = workspaces.items?.[0]?.id;
 if (!workspaceId) throw new Error("real sidecar did not create a workspace");
-await request(`/v2/documents/import/raw?workspace_id=${encodeURIComponent(workspaceId)}&document_id=browser-e2e&template=documento-generico&title=Real%20browser%20run`, { method: "POST", headers: { "content-type": "text/markdown", "x-docs-filename": "browser-e2e.md" }, body: `# REAL BROWSER RUN\n\nThis document is imported through the real API.` });
-await request(`/v2/documents/browser-e2e/prepare?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId }) });
-const run = await request(`/v2/runs?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId, document_id: "browser-e2e", pipeline_id: "document", format: "html", policy: "draft" }) });
-let terminal = false;
-for (let attempt = 0; attempt < 240; attempt += 1) {
-  const current = await request(`/v2/runs/${encodeURIComponent(run.id)}?workspace_id=${encodeURIComponent(workspaceId)}`);
-  if (["succeeded", "failed", "cancelled", "expired"].includes(current.status)) { if (current.status !== "succeeded") throw new Error(`real browser run ended as ${current.status}`); terminal = true; break; }
-  await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
+if (!workspaceOnly) {
+  await request(`/v2/documents/import/raw?workspace_id=${encodeURIComponent(workspaceId)}&document_id=browser-e2e&template=documento-generico&title=Real%20browser%20run`, { method: "POST", headers: { "content-type": "text/markdown", "x-docs-filename": "browser-e2e.md" }, body: `# REAL BROWSER RUN\n\nThis document is imported through the real API.` });
+  await request(`/v2/documents/browser-e2e/prepare?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId }) });
+  const run = await request(`/v2/runs?workspace_id=${encodeURIComponent(workspaceId)}`, { method: "POST", body: JSON.stringify({ workspace_id: workspaceId, document_id: "browser-e2e", pipeline_id: "document", format: "html", policy: "draft" }) });
+  let terminal = false;
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    const current = await request(`/v2/runs/${encodeURIComponent(run.id)}?workspace_id=${encodeURIComponent(workspaceId)}`);
+    if (["succeeded", "failed", "cancelled", "expired"].includes(current.status)) { if (current.status !== "succeeded") throw new Error(`real browser run ended as ${current.status}`); terminal = true; break; }
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 250));
+  }
+  if (!terminal) throw new Error("real browser run timed out");
 }
-if (!terminal) throw new Error("real browser run timed out");
 await startProxy();
-process.stdout.write(`real Review Studio fixture ready: ${run.id}`);
+process.stdout.write(workspaceOnly ? "real Review Studio workspace fixture ready" : "real Review Studio fixture ready");
 setInterval(() => {}, 1000);
