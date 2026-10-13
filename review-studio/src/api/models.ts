@@ -11,7 +11,7 @@ import type { WorkspacesApi } from "./domains/workspaces";
 export type { Capability, CapabilityCatalog } from "./domains/system";
 export type { Artifact, GraphQuery, GraphQueryResult, Status } from "./domains/review";
 export type { Template } from "./domains/templates";
-export type { DocumentRecord, Workspace, WorkspaceMigration, WorkspaceStatus } from "./domains/workspaces";
+export type { DocumentRecord, Workspace, WorkspaceStatus } from "./domains/workspaces";
 
 /**
  * Everything the UI can call, derived from the domains. Every member is optional because a server may not offer

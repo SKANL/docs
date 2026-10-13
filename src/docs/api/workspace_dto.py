@@ -41,19 +41,6 @@ class WorkspaceStatusResponse(WorkspaceDTO):
     active: bool
 
 
-class WorkspaceMigrateRequest(WorkspaceDTO):
-    apply: bool = False
-
-
-class WorkspaceMigrationResponse(WorkspaceDTO):
-    source_workspace_id: str
-    detected_format: str
-    ready: bool
-    published: bool
-    workspace: WorkspaceResponse | None = None
-    errors: list[str]
-
-
 def workspace_openapi_schemas() -> dict[str, dict[str, Any]]:
     """Return component schemas generated from the runtime DTO definitions."""
     page = WorkspacePage.model_json_schema(ref_template="#/components/schemas/{model}")
@@ -62,9 +49,6 @@ def workspace_openapi_schemas() -> dict[str, dict[str, Any]]:
     status = WorkspaceStatusResponse.model_json_schema(ref_template="#/components/schemas/{model}")
     status.pop("$defs", None)
     status["properties"]["workspace"] = {"$ref": "#/components/schemas/workspace"}
-    migration = WorkspaceMigrationResponse.model_json_schema(ref_template="#/components/schemas/{model}")
-    migration.pop("$defs", None)
-    migration["properties"]["workspace"] = {"anyOf": [{"$ref": "#/components/schemas/workspace"}, {"type": "null"}], "default": None}
     return {
         "workspace": WorkspaceResponse.model_json_schema(),
         "workspace_page": page,
@@ -72,16 +56,12 @@ def workspace_openapi_schemas() -> dict[str, dict[str, Any]]:
         "workspace_rename_request": WorkspaceRenameRequest.model_json_schema(),
         "workspace_delete_response": WorkspaceDeleteResponse.model_json_schema(),
         "workspace_status": status,
-        "workspace_migrate_request": WorkspaceMigrateRequest.model_json_schema(),
-        "workspace_migration": migration,
     }
 
 
 __all__ = [
     "WorkspaceCreateRequest",
     "WorkspaceDeleteResponse",
-    "WorkspaceMigrateRequest",
-    "WorkspaceMigrationResponse",
     "WorkspacePage",
     "WorkspaceRenameRequest",
     "WorkspaceResponse",

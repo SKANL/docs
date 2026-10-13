@@ -251,37 +251,27 @@ def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(
     assert body(deleted) == {"deleted": workspace["id"]}
 
 
-def test_workspace_lifecycle_use_status_and_migrate(tmp_path):
+def test_workspace_lifecycle_use_and_status(tmp_path):
     registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
-        managed_workspace_root=tmp_path / "managed",
     )
     workspace_id = workspace["id"]
 
     before = application.dispatch(Request("GET", f"/v2/workspaces/{workspace_id}/status"))
     selected = application.dispatch(Request("POST", f"/v2/workspaces/{workspace_id}/use"))
     after = application.dispatch(Request("GET", f"/v2/workspaces/{workspace_id}/status"))
-    inspected = application.dispatch(Request("POST", f"/v2/workspaces/{workspace_id}/migrate", body={}))
-    assert not (tmp_path / "managed").exists()
-    migrated = application.dispatch(Request("POST", f"/v2/workspaces/{workspace_id}/migrate", body={"apply": True}))
 
-    assert before.status == selected.status == after.status == inspected.status == migrated.status == 200
+    assert before.status == selected.status == after.status == 200
     assert body(before) == {"workspace": workspace, "active": False}
     assert body(selected) == workspace
     assert body(after) == {"workspace": workspace, "active": True}
-    assert body(inspected)["ready"] is True and body(inspected)["published"] is False
-    assert body(migrated)["published"] is True
-    new_workspace = body(migrated)["workspace"]
-    assert new_workspace["id"] != workspace_id
-    assert Path(new_workspace["root"]).parent == tmp_path / "managed"
-    assert registry.get(new_workspace["id"]) == new_workspace
 
 
 @pytest.mark.parametrize("method,action,body_value", [
-    ("POST", "use", None), ("GET", "status", None), ("POST", "migrate", {}),
+    ("POST", "use", None), ("GET", "status", None),
 ])
 def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, action, body_value):
     application = ApiApplication(
@@ -293,22 +283,9 @@ def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, act
     assert body(response)["error"]["code"] == "workspace_not_found"
 
 
-def test_workspace_migration_rejects_unknown_request_fields(tmp_path):
-    registry = open_workspace_registry(tmp_path / "registry.json")
-    workspace = registry.create("Source", tmp_path / "source")
-    application = ApiApplication(
-        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
-    )
-    response = application.dispatch(Request("POST", f"/v2/workspaces/{workspace['id']}/migrate", body={"destination": str(tmp_path / "outside")}))
-    assert response.status == 400
-    assert body(response)["error"]["code"] == "invalid_request"
-
-
 @pytest.mark.parametrize("method,action,allowed_scope", [
     ("POST", "use", "workspaces:read"),
     ("GET", "status", "workspaces:write"),
-    ("POST", "migrate", "workspaces:read"),
 ])
 def test_workspace_lifecycle_denies_insufficient_scope(tmp_path, method, action, allowed_scope):
     registry = open_workspace_registry(tmp_path / "registry.json")
@@ -642,6 +619,14 @@ def test_post_run_rejects_authenticated_principal_without_tenant_identity():
 
     assert response.status == 403
     assert body(response)["error"]["code"] == "missing_tenant_identity"
+
+
+def test_resource_without_tenant_metadata_is_not_owned():
+    application = app()
+    principal = Principal("user-1", frozenset(), tenant_id="tenant-a", organization_id="org-a")
+
+    assert application.is_owned({"id": "r1"}, principal) is False
+    assert application.is_owned({"tenant_id": "tenant-a", "organization_id": "org-a"}, principal) is True
 
 
 def test_post_run_rejects_foreign_document_reference():

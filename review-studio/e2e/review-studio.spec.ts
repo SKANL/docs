@@ -32,7 +32,7 @@ test("supports skip-link keyboard navigation and visible focus", async ({ page }
   await expect(page.getByRole("navigation", { name: "Task areas" })).toBeVisible();
 });
 
-test("selects a workspace and inspects migration through the shared lifecycle UI", async ({ page }) => {
+test("selects a workspace through the shared lifecycle UI", async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto("/#/configure/workspaces");
   await expect(page.getByRole("heading", { name: "Workspace and document control" })).toBeVisible();
@@ -53,26 +53,9 @@ test("selects a workspace and inspects migration through the shared lifecycle UI
   await renameWorkspace.getByRole("textbox", { name: "Workspace name" }).fill(renamed);
   await renameWorkspace.getByRole("button", { name: "Rename workspace" }).click();
   await expect(workspaceSelect).toContainText(renamed);
-
-  await page.getByRole("button", { name: "Review migration" }).click();
-  const migrationDialog = page.getByRole("dialog", { name: "Migrate workspace" });
-  await migrationDialog.getByRole("button", { name: "Inspect workspace" }).click();
-  await expect(migrationDialog.getByRole("region", { name: "Migration inspection" })).toBeVisible();
-  await expect(migrationDialog.getByText("Ready", { exact: true })).toBeVisible();
-  await migrationDialog.getByRole("button", { name: "Migrate workspace" }).click();
-  await expect(migrationDialog.getByText(/Workspace migrated:/)).toBeVisible();
-  await migrationDialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(workspaceSelect).toContainText(`${renamed} migrated`);
-
   await workspaceSelect.click();
   await page.getByRole("option", { name: originalWorkspaceName, exact: true }).click();
   await expect(workspaceSelect).toContainText(originalWorkspaceName);
-
-  await page.getByRole("button", { name: "Review migration" }).click();
-  const sourceMigrationDialog = page.getByRole("dialog", { name: "Migrate workspace" });
-  await sourceMigrationDialog.getByRole("button", { name: "Inspect workspace" }).click();
-  await expect(sourceMigrationDialog.getByRole("region", { name: "Migration inspection" })).toBeVisible();
-  await sourceMigrationDialog.getByRole("button", { name: "Cancel" }).click();
 });
 
 test("recovers from workspace rename errors and confirms workspace deletion", async ({ page }) => {
