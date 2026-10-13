@@ -71,7 +71,7 @@ describe("overview", () => {
 
     await waitFor(() => expect(screen.getByText("Current case")).toBeTruthy());
     expect(screen.getAllByText("run-new").length).toBeGreaterThan(0);
-    expect(screen.getByText("84%" )).toBeTruthy();
+    expect(await screen.findByText("84%")).toBeTruthy();
     expect(screen.queryByText(/northstar/i)).toBeNull();
     expect(screen.queryByText("run-2026-09-15-1432")).toBeNull();
   });
