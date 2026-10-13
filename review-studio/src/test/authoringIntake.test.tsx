@@ -79,7 +79,8 @@ describe("classification", () => {
       getDocumentClassification: async id => ({ document_id: id, items: [{ relative_path: "inbox/a.md", proposed_role: "evidence", confidence: 0.9 }] }),
       confirmDocumentClassification,
     }));
-    await userEvent.selectOptions(await screen.findByLabelText("Role for inbox/a.md"), "normative");
+    await userEvent.click(await screen.findByRole("combobox", { name: "Role for inbox/a.md" }));
+    await userEvent.click(await screen.findByRole("option", { name: "normative" }));
     await userEvent.click(screen.getByRole("button", { name: "Confirm role for inbox/a.md" }));
     await waitFor(() => expect(confirmDocumentClassification).toHaveBeenCalledWith("doc-1", { relative_path: "inbox/a.md", confirmed_role: "normative" }));
   });

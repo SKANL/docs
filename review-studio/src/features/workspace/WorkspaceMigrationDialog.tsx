@@ -6,7 +6,7 @@ type Props = { workspace: Workspace; open: boolean; pending: boolean; report: Wo
 
 export function WorkspaceMigrationDialog({ workspace, open, pending, report, error, migratedName, onOpenChange, onInspect, onMigrate }: Props) {
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent showCloseButton={false} aria-describedby="workspace-migration-description">
+    <DialogContent showCloseButton={false} aria-describedby="workspace-migration-description" className="max-h-[85vh] overflow-y-auto">
       <DialogHeader><DialogTitle>Migrate workspace</DialogTitle><DialogDescription id="workspace-migration-description">Inspect the existing workspace first. Migration publishes a new workspace copy and leaves the source unchanged.</DialogDescription></DialogHeader>
       <p className="text-sm text-muted-foreground">Source: <strong className="text-foreground">{workspace.name}</strong></p>
       {report && <section className="grid gap-2 rounded-md bg-muted p-3 text-sm" aria-label="Migration inspection">

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("renders real workspace, run, artifact, and provenance data", async ({ page }) => {
   await page.goto("/#/legacy/runs");
-  await expect(page.getByRole("row", { name: /[0-9a-f]{8}-[0-9a-f]{4}-/i })).toBeVisible();
+  await expect(page.getByRole("row", { name: /[0-9a-f]{8}-[0-9a-f]{4}-/i }).first()).toBeVisible();
   await expect(page.getByText(/Live progress|succeeded|passed|warnings/i).first()).toBeVisible();
   await page.getByRole("link", { name: "Artifact preview" }).click();
   await expect(page.getByRole("heading", { name: "Artifact & page preview" })).toBeVisible();

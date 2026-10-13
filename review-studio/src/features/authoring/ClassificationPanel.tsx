@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { errorText, ActionError, Unavailable, authoringKeys, useAction, useCapability, useClassification } from "./data";
 
 type Role = "evidence" | "example" | "normative";
@@ -27,8 +28,10 @@ function QueueRow({ documentId, item, canConfirm }: { documentId: string; item: 
     </div>
     {!item.confirmed_role && (canConfirm ? <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); confirm.mutate(undefined); }}>
       <div className="grid gap-1"><Label htmlFor={`role-${path}`}>Role for {path}</Label>
-        {/* ponytail: native select; Radix Select needs pointer-capture polyfills in jsdom. Swap to ui/select if tests grow them. */}
-        <select id={`role-${path}`} className="h-9 rounded-md border bg-background px-2 text-sm" value={role} onChange={event => setRole(event.target.value as Role)}>{roles.map(value => <option key={value}>{value}</option>)}</select></div>
+        <Select value={role} onValueChange={next => setRole(next as Role)}>
+          <SelectTrigger id={`role-${path}`} aria-label={`Role for ${path}`} className="w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>{roles.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+        </Select></div>
       <Button type="submit" disabled={confirm.isPending} aria-label={`Confirm role for ${path}`}>Confirm</Button>
     </form> : <Unavailable>Confirming roles is not available on this server.</Unavailable>)}
     <ActionError action={confirm} what="confirm the role" />

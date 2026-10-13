@@ -22,7 +22,7 @@ describe("section editor", () => {
   });
 
   it("never retries a failed save against a different section", async () => {
-    const updateDocumentSection = vi.fn<(doc: string, id: string, text: string) => Promise<object>>(async () => { throw new Error("Server unavailable"); });
+    const updateDocumentSection = vi.fn<(doc: string, id: string, text: string) => Promise<Record<string, unknown>>>(async () => { throw new Error("Server unavailable"); });
     openAuthoring("sections", makeApi({ updateDocumentSection }));
     const body = await screen.findByRole("textbox", { name: "Section body" });
     await userEvent.type(body, " edited");
