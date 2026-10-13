@@ -6,8 +6,8 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from docs.cli._shared import Deps
 from docs.cli.main import app
+from docs.composition import ApplicationComposition
 
 runner = CliRunner()
 
@@ -25,7 +25,7 @@ def ws(canonical_cli_workspace):
     (templates / "tesina.json").write_text(json.dumps(_TEMPLATE), encoding="utf-8")
     # `doc new` is Task 6 scope and doesn't exist yet — same deviation as
     # Tasks 1-3 (test_cli_core.py / test_cli_collection.py / test_cli_section.py).
-    Deps().documents.create("doc1", "tesina")
+    ApplicationComposition().documents.create("doc1", "tesina")
     return tmp_path
 
 

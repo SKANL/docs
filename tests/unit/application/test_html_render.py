@@ -53,7 +53,7 @@ def test_html_renderer_adapter_satisfies_document_renderer_port(service: Documen
 
 
 def test_html_renderer_adapter_resolves_via_registry_by_format(service):
-    from docs.cli._shared import resolve_renderer
+    from docs.composition import resolve_renderer
 
     registry = {"html": service}
     resolved = resolve_renderer(registry, "html")

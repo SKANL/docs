@@ -6,8 +6,8 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-from docs.cli._shared import Deps
 from docs.cli.main import app
+from docs.composition import ApplicationComposition
 
 runner = CliRunner()
 
@@ -35,7 +35,7 @@ def _new_doc(doc_id="doc1"):
     # command that doesn't exist yet. `DocumentService.create` also marks the
     # new document active (see
     # test_document_service.py::test_create_builds_workspace_and_sets_active).
-    Deps().documents.create(doc_id, "tesina")
+    ApplicationComposition().documents.create(doc_id, "tesina")
 
 
 def test_stamp_prints_iso_timestamp(workspace):

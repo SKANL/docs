@@ -24,7 +24,7 @@ class FakeS3:
             if current is None or current.get("ETag") != kwargs["IfMatch"]:
                 raise RuntimeError("PreconditionFailed")
         stored = dict(kwargs)
-        stored["ETag"] = json.loads(kwargs["Metadata"]["x20-blob"])["digest"]
+        stored["ETag"] = json.loads(kwargs["Metadata"]["runtime-blob"])["digest"]
         self.objects[(kwargs["Bucket"], kwargs["Key"])] = stored
 
     def get_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:
@@ -34,7 +34,7 @@ class FakeS3:
             "ContentLength": len(stored["Body"]),
             "ContentType": stored["ContentType"],
             "Metadata": stored["Metadata"],
-            "ETag": json.loads(stored["Metadata"]["x20-blob"])["digest"],
+            "ETag": json.loads(stored["Metadata"]["runtime-blob"])["digest"],
         }
 
 
@@ -57,7 +57,7 @@ def test_s3_blob_store_round_trips_blob_and_serializes_metadata_deterministicall
 
     assert store.get(blob.key) == (blob, b"hello")
     stored = client.objects[("docs", "tenant-a/reports/output.bin")]
-    assert stored["Metadata"]["x20-blob"] == json.dumps(blob.to_dict(), sort_keys=True, separators=(",", ":"))
+    assert stored["Metadata"]["runtime-blob"] == json.dumps(blob.to_dict(), sort_keys=True, separators=(",", ":"))
 
 
 def test_s3_blob_store_rejects_digest_and_size_mismatches_before_upload() -> None:

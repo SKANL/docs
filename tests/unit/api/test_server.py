@@ -12,8 +12,8 @@ from urllib.request import urlopen
 import pytest
 
 from docs.api.server import (
+    ApiTransport,
     TransportConfig,
-    X20Transport,
     _compose_application,
     create_app,
     create_server,
@@ -101,7 +101,7 @@ def test_public_production_composition_rejects_application_without_authenticatio
 
 
 def test_transport_rejects_request_bodies_over_configured_limit():
-    app = X20Transport(echo_app, TransportConfig(max_request_body=3))
+    app = ApiTransport(echo_app, TransportConfig(max_request_body=3))
 
     captured, body = invoke(app, body=b"four")
 
@@ -111,7 +111,7 @@ def test_transport_rejects_request_bodies_over_configured_limit():
 
 
 def test_transport_applies_cors_to_allowed_origin_and_rejects_other_origins():
-    app = X20Transport(echo_app, TransportConfig(cors_origins=("https://allowed.test",)))
+    app = ApiTransport(echo_app, TransportConfig(cors_origins=("https://allowed.test",)))
 
     allowed, _ = invoke(app, headers={"Origin": "https://allowed.test"})
     denied, denied_body = invoke(app, headers={"Origin": "https://blocked.test"})
@@ -122,7 +122,7 @@ def test_transport_applies_cors_to_allowed_origin_and_rejects_other_origins():
 
 
 def test_transport_cors_preflight_allows_delete_from_configured_origin():
-    app = X20Transport(echo_app, TransportConfig(cors_origins=("https://allowed.test",)))
+    app = ApiTransport(echo_app, TransportConfig(cors_origins=("https://allowed.test",)))
 
     response, _ = invoke(
         app,
@@ -146,7 +146,7 @@ def test_health_and_readiness_are_transport_endpoints():
         called = True
         return echo_app(environ, start_response)
 
-    transport = X20Transport(app, TransportConfig(), ready_check=lambda: False)
+    transport = ApiTransport(app, TransportConfig(), ready_check=lambda: False)
 
     health, health_body = invoke(transport, "/healthz")
     api_health, api_health_body = invoke(transport, "/health")
@@ -162,7 +162,7 @@ def test_health_and_readiness_are_transport_endpoints():
 
 
 def test_health_and_readiness_follow_configured_base_path():
-    transport = X20Transport(echo_app, TransportConfig(base_url="https://example.test/docs"))
+    transport = ApiTransport(echo_app, TransportConfig(base_url="https://example.test/docs"))
 
     health, health_body = invoke(transport, "/docs/healthz")
     readiness, readiness_body = invoke(transport, "/docs/readyz")
@@ -174,7 +174,7 @@ def test_health_and_readiness_follow_configured_base_path():
 
 
 def test_transport_preserves_request_id_and_adds_one_when_missing():
-    transport = X20Transport(echo_app, TransportConfig())
+    transport = ApiTransport(echo_app, TransportConfig())
 
     supplied, supplied_body = invoke(transport, headers={"X-Request-ID": "request-123"})
     generated, generated_body = invoke(transport)
@@ -186,7 +186,7 @@ def test_transport_preserves_request_id_and_adds_one_when_missing():
 
 
 def test_transport_dispatches_to_existing_wsgi_application_and_normalizes_errors():
-    transport = X20Transport(echo_app, TransportConfig())
+    transport = ApiTransport(echo_app, TransportConfig())
 
     captured, body = invoke(transport, "/v2/example", method="POST", body=b"payload")
 
@@ -197,7 +197,7 @@ def test_transport_dispatches_to_existing_wsgi_application_and_normalizes_errors
     def broken(environ, start_response):
         raise RuntimeError("secret token must not escape")
 
-    broken_response, broken_body = invoke(X20Transport(broken, TransportConfig()))
+    broken_response, broken_body = invoke(ApiTransport(broken, TransportConfig()))
     assert broken_response["status"].startswith("500")
     assert json_body(broken_body)["error"] == {
         "code": "internal_error",
@@ -213,7 +213,7 @@ def test_sse_response_has_event_content_type_and_keep_alive_length():
         start_response("200 OK", [("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache")])
         return [event]
 
-    captured, body = invoke(X20Transport(sse, TransportConfig()), "/v2/progress")
+    captured, body = invoke(ApiTransport(sse, TransportConfig()), "/v2/progress")
 
     assert captured["headers"]["Content-Type"] == "text/event-stream"
     assert captured["headers"]["Cache-Control"] == "no-cache"
@@ -229,7 +229,7 @@ def test_public_binding_requires_explicit_opt_in():
 
 
 def test_graceful_shutdown_stops_threading_server():
-    transport = X20Transport(echo_app, TransportConfig(mode="offline"))
+    transport = ApiTransport(echo_app, TransportConfig(mode="offline"))
     server = create_server(
         transport,
         TransportConfig(host="127.0.0.1", port=0, mode="offline"),
@@ -249,7 +249,7 @@ def test_graceful_shutdown_stops_threading_server():
 
 def test_once_server_handles_a_real_http_request_and_closes():
     server = create_server(
-        X20Transport(echo_app, TransportConfig(mode="offline")),
+        ApiTransport(echo_app, TransportConfig(mode="offline")),
         TransportConfig(port=0, mode="offline"),
     )
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
@@ -269,7 +269,7 @@ def test_once_server_handles_a_real_http_request_and_closes():
 
 def test_http_server_dispatches_delete_to_wsgi_application():
     server = create_server(
-        X20Transport(echo_app, TransportConfig(mode="offline")),
+        ApiTransport(echo_app, TransportConfig(mode="offline")),
         TransportConfig(port=0, mode="offline"),
     )
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
@@ -323,7 +323,7 @@ def test_wsgi_generators_are_not_eagerly_consumed():
         return events()
 
     captured = {}
-    result = X20Transport(streaming_app, TransportConfig())(
+    result = ApiTransport(streaming_app, TransportConfig())(
         {
             "REQUEST_METHOD": "GET",
             "PATH_INFO": "/v2/events",
@@ -343,7 +343,7 @@ def test_wsgi_generators_are_not_eagerly_consumed():
 
 def test_bodyless_wsgi_request_does_not_read_input():
     captured, body = invoke(
-        X20Transport(echo_app, TransportConfig()),
+        ApiTransport(echo_app, TransportConfig()),
         headers={},
     )
     assert captured["status"].startswith("200")
@@ -351,7 +351,7 @@ def test_bodyless_wsgi_request_does_not_read_input():
 
 
 def test_malformed_content_length_is_rejected_without_reading_input():
-    transport = X20Transport(echo_app, TransportConfig())
+    transport = ApiTransport(echo_app, TransportConfig())
     captured = {}
     result = transport(
         {
@@ -379,7 +379,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
 
     complete = RecordingInput(b"abc")
     captured = {}
-    result = X20Transport(echo_app, TransportConfig(max_request_body=3))(
+    result = ApiTransport(echo_app, TransportConfig(max_request_body=3))(
         {
             "REQUEST_METHOD": "POST",
             "PATH_INFO": "/v2/example",
@@ -394,7 +394,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
 
     short = RecordingInput(b"ab")
     captured = {}
-    result = X20Transport(echo_app, TransportConfig())(
+    result = ApiTransport(echo_app, TransportConfig())(
         {
             "REQUEST_METHOD": "POST",
             "PATH_INFO": "/v2/example",
@@ -408,7 +408,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
     assert json_body(b"".join(result))["error"]["code"] == "incomplete_request_body"
     assert short.sizes == [3]
 
-    transport = X20Transport(echo_app, TransportConfig())
+    transport = ApiTransport(echo_app, TransportConfig())
     captured = {}
     result = transport(
         {
@@ -424,7 +424,7 @@ def test_declared_body_is_read_once_with_exact_bound_and_short_body_is_rejected(
 
 
 def test_chunked_request_is_rejected_without_reading_the_body():
-    transport = X20Transport(echo_app, TransportConfig())
+    transport = ApiTransport(echo_app, TransportConfig())
     captured = {}
     result = transport(
         {
@@ -443,7 +443,7 @@ def test_chunked_request_is_rejected_without_reading_the_body():
 
 def test_shutdown_wait_is_bounded_by_configured_timeout():
     server = create_server(
-        X20Transport(
+        ApiTransport(
             echo_app,
             TransportConfig(graceful_shutdown_timeout=0.05, mode="offline"),
         ),
@@ -473,7 +473,7 @@ def test_http_handler_supplies_standard_wsgi_environ_keys():
         return [b"ok"]
 
     server = create_server(
-        X20Transport(app, TransportConfig(mode="offline")),
+        ApiTransport(app, TransportConfig(mode="offline")),
         TransportConfig(port=0, mode="offline"),
     )
     thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
@@ -508,7 +508,7 @@ def test_sse_streams_over_a_real_socket_without_buffering():
         return events()
 
     server = create_server(
-        X20Transport(streaming_app, TransportConfig(mode="offline")),
+        ApiTransport(streaming_app, TransportConfig(mode="offline")),
         TransportConfig(port=0, mode="offline"),
     )
     thread = threading.Thread(target=serve, args=(server,), daemon=True)
@@ -548,7 +548,7 @@ def test_closing_stream_result_closes_application_iterator():
         return Events()
 
     captured = {}
-    result = X20Transport(streaming_app, TransportConfig())(
+    result = ApiTransport(streaming_app, TransportConfig())(
         {"REQUEST_METHOD": "GET", "PATH_INFO": "/v2/events", "wsgi.input": io.BytesIO()},
         lambda status, headers, exc_info=None: captured.update(status=status, headers=dict(headers)),
     )
@@ -565,7 +565,7 @@ def test_transport_deduplicates_case_insensitive_default_headers():
         )
         return [b"ok"]
 
-    captured, body = invoke(X20Transport(app, TransportConfig()))
+    captured, body = invoke(ApiTransport(app, TransportConfig()))
     header_names = [name.lower() for name in captured["headers"]]
 
     assert body == b"ok"
@@ -580,7 +580,7 @@ def test_transport_generates_one_stable_request_id_and_replaces_duplicates():
         start_response("200 OK", [("x-request-id", "wrong"), ("X-Request-ID", "also-wrong")])
         return [environ["HTTP_X_REQUEST_ID"].encode()]
 
-    captured, body = invoke(X20Transport(app, TransportConfig()))
+    captured, body = invoke(ApiTransport(app, TransportConfig()))
     request_ids = [value for key, value in captured["headers"].items() if key.lower() == "x-request-id"]
 
     assert len(request_ids) == 1

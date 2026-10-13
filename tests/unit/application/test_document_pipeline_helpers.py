@@ -7,12 +7,14 @@ from docs.application.document_pipeline import (
     _available_files,
     _build_inputs,
     _capabilities_for,
-    _fallback_structural_audit,
     _renderer_capabilities,
+    _visual_capabilities,
+)
+from docs.application.document_pipeline_verifiers import (
+    _fallback_structural_audit,
     _verify_html_artifact,
     _verify_non_docx_artifact,
     _verify_readable_artifact,
-    _visual_capabilities,
 )
 from docs.domain.tool_capability import ToolCapability
 

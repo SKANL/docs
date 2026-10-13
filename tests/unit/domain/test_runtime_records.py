@@ -75,9 +75,9 @@ def test_from_dict_accepts_mapping_shapes(contract):
             "metadata": MappingProxyType({"nested": {"value": 1}}),
         }
 
-    value = contract.from_dict(MappingProxyType({"schema": "docs.x20/v1", **payload}))
+    value = contract.from_dict(MappingProxyType({"schema": "docs.runtime/v1", **payload}))
 
-    assert value.to_dict()["schema"] == "docs.x20/v1"
+    assert value.to_dict()["schema"] == "docs.runtime/v1"
 
 
 def test_contracts_are_versioned_and_json_serializable():
@@ -91,7 +91,7 @@ def test_contracts_are_versioned_and_json_serializable():
 
     for value in values:
         payload = value.to_dict()
-        assert payload["schema"] == "docs.x20/v1"
+        assert payload["schema"] == "docs.runtime/v1"
         assert json.loads(json.dumps(payload)) == payload
         assert type(value).from_dict(payload) == value
 
@@ -151,7 +151,7 @@ def test_job_and_lease_contracts_are_versioned():
 
     for value in (Job("job-1", {"run_id": "run-1"}), Lease("run-1", "worker-1", 30)):
         payload = value.to_dict()
-        assert payload["schema"] == "docs.x20/v1"
+        assert payload["schema"] == "docs.runtime/v1"
         assert type(value).from_dict(payload) == value
 
 
@@ -200,7 +200,7 @@ def test_in_memory_adapters_isolate_mutable_payloads():
     ],
 )
 def test_from_dict_rejects_invalid_shapes_and_values(contract, field, value):
-    payload = {"schema": "docs.x20/v1"}
+    payload = {"schema": "docs.runtime/v1"}
     if contract is Run:
         payload.update({"id": "run-1", "payload": {}})
     elif contract is Passport:
@@ -221,13 +221,13 @@ def test_from_dict_rejects_invalid_shapes_and_values(contract, field, value):
 
 def test_from_dict_rejects_non_exact_scalar_types_and_malformed_edges():
     with pytest.raises((TypeError, ValueError)):
-        Run.from_dict({"schema": "docs.x20/v1", "id": 7})
+        Run.from_dict({"schema": "docs.runtime/v1", "id": 7})
     with pytest.raises((TypeError, ValueError)):
-        Blob.from_dict({"schema": "docs.x20/v1", "key": "b", "digest": "d", "size_bytes": True})
+        Blob.from_dict({"schema": "docs.runtime/v1", "key": "b", "digest": "d", "size_bytes": True})
     with pytest.raises((TypeError, ValueError)):
-        Graph.from_dict({"schema": "docs.x20/v1", "nodes": ["run-1"], "edges": [["run-1", 7]]})
+        Graph.from_dict({"schema": "docs.runtime/v1", "nodes": ["run-1"], "edges": [["run-1", 7]]})
     with pytest.raises((TypeError, ValueError)):
-        Graph.from_dict({"schema": "docs.x20/v1", "nodes": ["run-1"], "edges": [("run-1", "run-2")]})
+        Graph.from_dict({"schema": "docs.runtime/v1", "nodes": ["run-1"], "edges": [("run-1", "run-2")]})
 
 
 @pytest.mark.parametrize(

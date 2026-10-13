@@ -11,15 +11,14 @@ from fakes.in_memory_runtime_stores import (
 )
 from PIL import Image
 
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.api.http import Request
 from docs.application.evidence_passport import EvidencePassportService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.provenance import ProvenanceLedger
-from docs.application.semantic_graph import SemanticGraphProjector
 from docs.domain.runtime_records import Artifact
-from docs.domain.semantic_graph import NormalizedSourceRecord
+from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
     PythonDocxImageMetadataAdapter,
 )
@@ -64,8 +63,8 @@ class _GraphStore:
         return self._graph
 
 
-def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_path: Path) -> None:
-    """Exercise the full X20 path with deterministic HTML QA fallback components."""
+def test_runtime_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_path: Path) -> None:
+    """Exercise the full runtime path with deterministic HTML QA fallback components."""
     template = {
         "type": "vertical",
         "title": "Vertical",
@@ -132,15 +131,17 @@ def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_p
     assert passport.passport.entries[0]["authorization"] == "[REDACTED]"
 
     graph_store = _GraphStore()
-    projection = SemanticGraphProjector(graph_store).project(
-        [NormalizedSourceRecord("document:vertical", "document", attributes={"entities": [{"id": "artifact:html", "label": "HTML"}], "edges": [{"target": "artifact:html", "relation": "renders"}]})]
+    graph_store.put(
+        SemanticGraph(
+            (SemanticNode("document:vertical", "document", "vertical"), SemanticNode("artifact:html", "artifact", "HTML")),
+            (SemanticEdge("document:vertical", "artifact:html", "renders"),),
+        )
     )
-    assert projection.graph is not None
     assert graph_store.get() is not None
 
     run_store = InMemoryRunStore()
     artifact_store = InMemoryArtifactStore()
-    application = X20Application(
+    application = ApiApplication(
         run_store=run_store,
         queue=InMemoryJobQueue(),
         passport_store=passport_store,

@@ -231,7 +231,7 @@ reach in this phase: base-14 fonts have no coverage for them.
 
 ### Pipeline stage sets
 
-#### Contract-driven pipeline X20
+#### Contract-driven pipeline
 
 The native runtime exposes `docs document build --json` and
 `docs document verify --json`. 
@@ -325,7 +325,7 @@ leaving the rest of the structure unchanged:
   "cover": {
     "mode": "generated",
     "variant": "academic",
-    "slots": {
+    "content": {
       "institution": "{{project.institution}}",
       "title": "{{title}}",
       "author": "{{project.author}}",
@@ -674,7 +674,7 @@ source checkout). There is exactly one place this guidance is written;
 editing this file is the only edit needed, and a packaging test in the
 harness's own suite asserts the installed copy never drifts from it.
 
-### Current X20 public contract
+### Current public contract
 
 Workspace initialization uses `doc init` and document creation uses `doc new`; the public pipeline command set is `source ingest`, `document prepare`, `document status`, `document plan`, `document build`, `document release`, `document verify`, `document inspect`, `document diff`, `document package`, and `document publish`. `document release` runs the complete verified build/package/publication pipeline for the active document. The full build pipeline writes verified requested formats under `output/current/` only when policy permits publication; `document-build` and verify run without publication. Package and publish take explicit destinations, while the managed release pipeline writes its package under `output/release/` and never falls back to an alternate pipeline.
 
@@ -682,6 +682,6 @@ Workspace initialization uses `doc init` and document creation uses `doc new`; t
 
 Policies are `draft`, `strict`, and `release`. Draft may warn for permitted optional capability gaps and cannot publish. Strict and release promote warnings and missing required capabilities to errors and permit publication only after verification. Capabilities are local executable checks injected through the composition root; plugins are not runtime dependencies.
 
-Publication requires a matching X20 manifest and verifiable X20 ledger attestation for the exact artifact bytes. The manifest must include SHA-256 identities for source/template/config/context, assets, and outputs, renderer versions, passed verification, and a provenance run. HTML and PDF have independent structural checks; non-DOCX verification is not a DOCX fallback. PDF is a derived, toolchain-dependent artifact and is not byte-deterministic.
+Publication requires a matching manifest and verifiable ledger attestation for the exact artifact bytes. The manifest must include SHA-256 identities for source/template/config/context, assets, and outputs, renderer versions, passed verification, and a provenance run. HTML and PDF have independent structural checks; non-DOCX verification is not a DOCX fallback. PDF is a derived, toolchain-dependent artifact and is not byte-deterministic.
 
-Current source inputs are `document.json`, section Markdown, resolved context, template/configuration, and assets. Rendered outputs, manifests, QA reports, packages, and published copies are derived artifacts. The separate X20 ledger records provenance only after successful stages.
+Current source inputs are `document.json`, section Markdown, resolved context, template/configuration, and assets. Rendered outputs, manifests, QA reports, packages, and published copies are derived artifacts. The separate ledger records provenance only after successful stages.

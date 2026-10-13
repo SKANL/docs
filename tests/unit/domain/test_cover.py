@@ -15,7 +15,7 @@ def test_cover_spec_resolves_declared_slots_and_defaults_deterministically():
     spec = CoverSpec(
         mode=CoverMode.GENERATED,
         variant=CoverVariant.ACADEMIC,
-        slots={"title": "{{title}}", "author": "{{project.author}}", "degree": "BSc"},
+        content={"title": "{{title}}", "author": "{{project.author}}", "degree": "BSc"},
     )
 
     resolved = resolve_cover_slots(spec, {"title": "Native Covers", "project": {"author": "Ada"}})
@@ -31,7 +31,7 @@ def test_generated_cover_html_escapes_slots_and_exposes_variant():
     from docs.domain.cover import render_cover_html
 
     html = render_cover_html(
-        CoverSpec(slots={"title": "{{title}}"}),
+        CoverSpec(content={"title": "{{title}}"}),
         {"title": "A < B"},
     )
 
@@ -48,7 +48,7 @@ def test_cover_provenance_records_variant_and_unresolved_slots():
             "cover": {
                 "mode": "generated",
                 "variant": "technical",
-                "slots": {"title": "{{title}}", "owner": "{{project.owner}}"},
+                "content": {"title": "{{title}}", "owner": "{{project.owner}}"},
             },
             "title": "Report",
         }
@@ -98,10 +98,9 @@ def test_missing_standard_cover_paths_produce_clear_findings():
     assert cover_findings(spec, {"title": "Report"}) == ["cover.missing_slot: author"]
 
 
-def test_cover_content_wins_over_current_slots_and_resolves_standard_sources():
+def test_cover_content_resolves_standard_sources():
     spec = CoverSpec(
         content={"title": "{{document.title}}", "author": "{{author.name}}"},
-        slots={"title": "current title", "author": "current author"},
     )
 
     resolved = resolve_cover_slots(

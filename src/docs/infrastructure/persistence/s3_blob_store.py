@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from docs.domain.runtime_records import Blob
 
-_MANIFEST_METADATA_KEY = "x20-blob"
+_MANIFEST_METADATA_KEY = "runtime-blob"
 
 
 class S3BlobStore:
@@ -121,7 +121,7 @@ class S3BlobStore:
     def put_conditional(self, blob: Blob, content: bytes, *, expected_digest: str | None) -> bool:
         """Atomically publish using S3's conditional write headers.
 
-        The public compare token remains the X20 content digest.  For an
+        The public compare token remains the runtime content digest.  For an
         existing object we first verify that digest and bind the actual remote
         ETag to ``IfMatch``; for a missing object ``IfNoneMatch=*`` prevents a
         competing creator from winning silently.
@@ -187,7 +187,7 @@ class S3BlobStore:
         metadata = response.get("Metadata") or {}
         manifest = metadata.get(_MANIFEST_METADATA_KEY) or metadata.get(_MANIFEST_METADATA_KEY.lower())
         if not isinstance(manifest, str):
-            raise ValueError("remote blob metadata is missing the x20 manifest")
+            raise ValueError("remote blob metadata is missing the runtime manifest")
         try:
             blob = Blob.from_dict(json.loads(manifest))
         except (TypeError, ValueError, json.JSONDecodeError) as exc:

@@ -177,7 +177,7 @@ def test_sections_index_is_the_single_shared_implementation():
 def test_structure_parts_inserts_generated_cover_before_sections():
     parts = structure_parts(
         {
-            "cover": {"mode": "generated", "variant": "academic", "slots": {"title": "{{title}}"}},
+            "cover": {"mode": "generated", "variant": "academic", "content": {"title": "{{title}}"}},
             "structure": [{"type": "toc"}, {"type": "sections"}],
         }
     )

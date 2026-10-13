@@ -36,8 +36,6 @@ class CoverSpec(BaseModel):
     page: dict[str, Any] = Field(default_factory=dict)
     visual: dict[str, Any] = Field(default_factory=dict)
     layout: dict[str, Any] = Field(default_factory=dict)
-    # Current alias retained for early generated-cover documents.
-    slots: dict[str, str] = Field(default_factory=dict)
 
 
 def _lookup(config: dict[str, Any], path: str) -> str:
@@ -99,9 +97,6 @@ def _resolve_value(value: Any, config: dict[str, Any]) -> str:
 def resolve_cover_slots(spec: CoverSpec, config: dict[str, Any]) -> dict[str, str]:
     """Resolve cover slots in declared insertion order without ambient state."""
     declared = dict(spec.content)
-    # `slots` is the pre-v2 spelling.  It can fill a slot omitted by the
-    # declarative block, but must never override an explicit v2 value.
-    declared.update({name: value for name, value in spec.slots.items() if name not in declared})
     if not declared:
         declared = {"title": "{{title}}"}
     return {name: _resolve_value(value, config) for name, value in declared.items()}

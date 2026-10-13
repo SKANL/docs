@@ -11,13 +11,14 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
-from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.package_service import PackageFile, PackagePublicationError, PackageService
 from docs.application.provenance import ProvenanceLedger
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import sha256_bytes
 from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.ports.transform_port import TransformPort
+from docs.domain.transform import TransformSpec
 
 
 class PublishPolicyDeniedError(PackagePublicationError):
@@ -87,9 +88,11 @@ class PackagePublicationService:
         *,
         archive_writer: PackageService,
         lock: Callable[[Path], AbstractContextManager[None]],
+        transform: TransformPort,
     ) -> None:
         self._archive_writer = archive_writer
         self._lock = lock
+        self._transform = transform
 
     def package(
         self,
@@ -137,7 +140,7 @@ class PackagePublicationService:
             (scratch / "artifact").write_bytes(prepared.source_bytes)
             (scratch / "manifest").write_bytes(prepared.manifest_bytes)
 
-        publication = AtomicTransform().run(
+        publication = self._transform.run(
             TransformSpec(
                 expected_outputs=("artifact", "manifest"),
                 destinations=(prepared.destination, destination_manifest),
@@ -192,7 +195,7 @@ class PackagePublicationService:
         self, source_dir: Path, *, allow_staging: bool, verify_attestation: bool
     ) -> tuple[PackageSourceFile, ...]:
         valid_source = source_dir.name == "current" and source_dir.parent.name == "output"
-        valid_staging = allow_staging and source_dir.name.startswith(".x20-package-") and source_dir.parent.name == "output"
+        valid_staging = allow_staging and source_dir.name.startswith(".docs-package-") and source_dir.parent.name == "output"
         if not (valid_source or valid_staging):
             raise PackagePublicationError("package requires an output/current source directory")
         if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):

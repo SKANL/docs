@@ -1,21 +1,21 @@
 # tests/integration/test_deps_ingest_wiring.py
 """Composition-root wiring for the PR6 ingest adapters (document-ingest
-spec: `Type-Based Ingest Routing`) — `Deps.ingest` must route every
+spec: `Type-Based Ingest Routing`) — `ApplicationComposition.ingest` must route every
 supported kind to a real adapter, not just the PR5 routing stubs."""
 from pathlib import Path
 
 from docs.application.ingest import IngestService
-from docs.cli._shared import Deps
+from docs.composition import ApplicationComposition
 from docs.domain.workspace import Workspace
 from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 from docs.infrastructure.ingest.opendataloader_pdf_adapter import OpendataloaderPdfAdapter
 from docs.infrastructure.ingest.pandoc_ingest_adapter import PandocIngestAdapter
 
 
-def _deps(canonical_workspace_root: Path) -> Deps:
+def _deps(canonical_workspace_root: Path) -> ApplicationComposition:
     tmp_path = canonical_workspace_root
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
-    return Deps(workspace)
+    return ApplicationComposition(workspace)
 
 
 def test_deps_builds_an_ingest_service(canonical_workspace_root: Path):
@@ -47,7 +47,7 @@ def test_deps_routes_md_and_txt_to_the_same_normalize_adapter_instance(canonical
 
 def test_deps_wires_pdf_render_adapter_when_toolchain_available(canonical_workspace_root: Path):
     # Item F, PR5: `pypdfium2`/`pillow` are real declared deps (pyproject.toml),
-    # so the guarded import in `Deps.__init__` must succeed here and wire a
+    # so the guarded import in `ApplicationComposition.__init__` must succeed here and wire a
     # real `Pdfium2PdfRenderAdapter` into `IngestService` -- not `None`.
     from docs.infrastructure.pdf.pdfium2_pdf_render_adapter import Pdfium2PdfRenderAdapter
 

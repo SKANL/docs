@@ -20,7 +20,7 @@ class SqliteIdempotencyStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_idempotency ("
+                "CREATE TABLE IF NOT EXISTS runtime_idempotency ("
                 "key TEXT PRIMARY KEY, expires_at REAL NOT NULL, status INTEGER NOT NULL, "
                 "body BLOB NOT NULL, headers TEXT NOT NULL"
                 ")"
@@ -37,12 +37,12 @@ class SqliteIdempotencyStore:
 
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT expires_at, status, body, headers FROM x20_idempotency WHERE key = ?", (key,)
+                "SELECT expires_at, status, body, headers FROM runtime_idempotency WHERE key = ?", (key,)
             ).fetchone()
             if row is None:
                 return None
             if float(row[0]) <= time.time():
-                connection.execute("DELETE FROM x20_idempotency WHERE key = ?", (key,))
+                connection.execute("DELETE FROM runtime_idempotency WHERE key = ?", (key,))
                 return None
         import json
 
@@ -53,7 +53,7 @@ class SqliteIdempotencyStore:
 
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_idempotency (key, expires_at, status, body, headers) VALUES (?, ?, ?, ?, ?) "
+                "INSERT INTO runtime_idempotency (key, expires_at, status, body, headers) VALUES (?, ?, ?, ?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET expires_at = excluded.expires_at, status = excluded.status, "
                 "body = excluded.body, headers = excluded.headers",
                 (

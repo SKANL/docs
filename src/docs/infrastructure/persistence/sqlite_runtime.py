@@ -45,33 +45,33 @@ class _SqliteStore:
     def _decode(value: str) -> _JSON:
         decoded = json.loads(value)
         if not isinstance(decoded, dict):
-            raise ValueError("stored X20 payload must be a JSON object")
+            raise ValueError("stored runtime payload must be a JSON object")
         if decoded.get("schema") != SCHEMA:
-            raise ValueError("unsupported stored X20 payload schema")
+            raise ValueError("unsupported stored runtime payload schema")
         return decoded
 
 
 class SqliteRunStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
-            connection.execute("CREATE TABLE IF NOT EXISTS x20_runs (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+            connection.execute("CREATE TABLE IF NOT EXISTS runtime_runs (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
 
     def put(self, run: Run) -> None:
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_runs (id, payload) VALUES (?, ?) "
+                "INSERT INTO runtime_runs (id, payload) VALUES (?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
                 (run.id, self._encode(run.to_dict())),
             )
 
     def get(self, run_id: str) -> Run | None:
         with self._read_connection() as connection:
-            row = connection.execute("SELECT payload FROM x20_runs WHERE id = ?", (run_id,)).fetchone()
+            row = connection.execute("SELECT payload FROM runtime_runs WHERE id = ?", (run_id,)).fetchone()
         return None if row is None else Run.from_dict(self._decode(row[0]))
 
     def list(self) -> _builtins.list[Run]:
         with self._read_connection() as connection:
-            rows = connection.execute("SELECT payload FROM x20_runs ORDER BY id").fetchall()
+            rows = connection.execute("SELECT payload FROM runtime_runs ORDER BY id").fetchall()
         return [Run.from_dict(self._decode(row[0])) for row in rows]
 
     def _read_connection(self) -> sqlite3.Connection:
@@ -93,20 +93,20 @@ class SqlitePassportStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_passports (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS runtime_passports (run_id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
             )
 
     def put(self, passport: Passport) -> None:
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_passports (run_id, payload) VALUES (?, ?) "
+                "INSERT INTO runtime_passports (run_id, payload) VALUES (?, ?) "
                 "ON CONFLICT(run_id) DO UPDATE SET payload = excluded.payload",
                 (passport.run_id, self._encode(passport.to_dict())),
             )
 
     def get(self, run_id: str) -> Passport | None:
         with self._connect() as connection:
-            row = connection.execute("SELECT payload FROM x20_passports WHERE run_id = ?", (run_id,)).fetchone()
+            row = connection.execute("SELECT payload FROM runtime_passports WHERE run_id = ?", (run_id,)).fetchone()
         return None if row is None else Passport.from_dict(self._decode(row[0]))
 
 
@@ -116,40 +116,36 @@ class SqliteFindingStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_findings (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payload TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS runtime_findings (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payload TEXT NOT NULL)"
             )
-            connection.execute("CREATE INDEX IF NOT EXISTS x20_findings_run_id ON x20_findings(run_id)")
+            connection.execute("CREATE INDEX IF NOT EXISTS runtime_findings_run_id ON runtime_findings(run_id)")
 
     def put(self, finding: dict[str, Any]) -> None:
         envelope = {"schema": SCHEMA, "finding": dict(finding)}
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_findings (id, run_id, payload) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                "INSERT INTO runtime_findings (id, run_id, payload) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
                 (str(finding["id"]), str(finding.get("run_id", "")), self._encode(envelope)),
             )
 
     @classmethod
     def _finding(cls, value: str) -> dict[str, Any]:
-        # Read old raw finding rows for compatibility, while all new rows use
-        # the same versioned envelope as the other X20 projections.
         decoded = json.loads(value)
         if not isinstance(decoded, dict):
             raise ValueError("stored finding payload must be a JSON object")
         if decoded.get("schema") == SCHEMA and isinstance(decoded.get("finding"), dict):
             return dict(decoded["finding"])
-        if "id" in decoded and "run_id" in decoded:
-            return decoded
         raise ValueError("unsupported stored finding payload schema")
 
     def list(self) -> _builtins.list[dict[str, Any]]:
         with self._connect() as connection:
-            rows = connection.execute("SELECT payload FROM x20_findings ORDER BY id").fetchall()
+            rows = connection.execute("SELECT payload FROM runtime_findings ORDER BY id").fetchall()
         return [self._finding(row[0]) for row in rows]
 
     def list_for_run(self, run_id: str) -> _builtins.list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT payload FROM x20_findings WHERE run_id = ? ORDER BY id", (run_id,)
+                "SELECT payload FROM runtime_findings WHERE run_id = ? ORDER BY id", (run_id,)
             ).fetchall()
         return [self._finding(row[0]) for row in rows]
 
@@ -158,32 +154,32 @@ class SqliteArtifactStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_artifacts (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payload TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS runtime_artifacts (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, payload TEXT NOT NULL)"
             )
-            connection.execute("CREATE INDEX IF NOT EXISTS x20_artifacts_run_id ON x20_artifacts (run_id)")
+            connection.execute("CREATE INDEX IF NOT EXISTS runtime_artifacts_run_id ON runtime_artifacts (run_id)")
 
     def put(self, artifact: Artifact) -> None:
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_artifacts (id, run_id, payload) VALUES (?, ?, ?) "
+                "INSERT INTO runtime_artifacts (id, run_id, payload) VALUES (?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET run_id = excluded.run_id, payload = excluded.payload",
                 (artifact.id, artifact.run_id, self._encode(artifact.to_dict())),
             )
 
     def get(self, artifact_id: str) -> Artifact | None:
         with self._connect() as connection:
-            row = connection.execute("SELECT payload FROM x20_artifacts WHERE id = ?", (artifact_id,)).fetchone()
+            row = connection.execute("SELECT payload FROM runtime_artifacts WHERE id = ?", (artifact_id,)).fetchone()
         return None if row is None else Artifact.from_dict(self._decode(row[0]))
 
     def list(self) -> _builtins.list[Artifact]:
         with self._connect() as connection:
-            rows = connection.execute("SELECT payload FROM x20_artifacts ORDER BY id").fetchall()
+            rows = connection.execute("SELECT payload FROM runtime_artifacts ORDER BY id").fetchall()
         return [Artifact.from_dict(self._decode(row[0])) for row in rows]
 
     def list_for_run(self, run_id: str) -> _builtins.list[Artifact]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT payload FROM x20_artifacts WHERE run_id = ? ORDER BY id", (run_id,)
+                "SELECT payload FROM runtime_artifacts WHERE run_id = ? ORDER BY id", (run_id,)
             ).fetchall()
         return [Artifact.from_dict(self._decode(row[0])) for row in rows]
 
@@ -192,20 +188,20 @@ class SqliteGraphStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_graph (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS runtime_graph (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)"
             )
 
     def put(self, graph: Graph) -> None:
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_graph (id, payload) VALUES (1, ?) "
+                "INSERT INTO runtime_graph (id, payload) VALUES (1, ?) "
                 "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
                 (self._encode(graph.to_dict()),),
             )
 
     def get(self) -> Graph:
         with self._connect() as connection:
-            row = connection.execute("SELECT payload FROM x20_graph WHERE id = 1").fetchone()
+            row = connection.execute("SELECT payload FROM runtime_graph WHERE id = 1").fetchone()
         return Graph() if row is None else Graph.from_dict(self._decode(row[0]))
 
 
@@ -215,7 +211,7 @@ class SqlitePublicationStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_publications (id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
+                "CREATE TABLE IF NOT EXISTS runtime_publications (id TEXT PRIMARY KEY, payload TEXT NOT NULL)"
             )
 
     def put(self, publication: dict[str, Any]) -> None:
@@ -225,7 +221,7 @@ class SqlitePublicationStore(_SqliteStore):
         envelope = {"schema": SCHEMA, "publication": dict(publication)}
         with self._connect() as connection:
             connection.execute(
-                "INSERT INTO x20_publications (id, payload) VALUES (?, ?) "
+                "INSERT INTO runtime_publications (id, payload) VALUES (?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
                 (identifier, self._encode(envelope)),
             )
@@ -238,14 +234,14 @@ class SqlitePublicationStore(_SqliteStore):
         envelope = {"schema": SCHEMA, "publication": dict(publication)}
         with self._connect() as connection:
             cursor = connection.execute(
-                "INSERT INTO x20_publications (id, payload) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
+                "INSERT INTO runtime_publications (id, payload) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
                 (identifier, self._encode(envelope)),
             )
         return cursor.rowcount == 1
 
     def list(self) -> _builtins.list[dict[str, Any]]:
         with self._connect() as connection:
-            rows = connection.execute("SELECT payload FROM x20_publications ORDER BY id").fetchall()
+            rows = connection.execute("SELECT payload FROM runtime_publications ORDER BY id").fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
             value = self._decode(row[0]).get("publication")
@@ -272,26 +268,26 @@ class SqliteJobQueue(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_jobs ("
+                "CREATE TABLE IF NOT EXISTS runtime_jobs ("
                 "id TEXT PRIMARY KEY, payload TEXT NOT NULL, claimed_by TEXT, claimed_until REAL"
                 ")"
             )
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_jobs_quarantine ("
+                "CREATE TABLE IF NOT EXISTS runtime_jobs_quarantine ("
                 "id TEXT PRIMARY KEY, payload TEXT NOT NULL, reason TEXT NOT NULL"
                 ")"
             )
-            connection.execute("CREATE TABLE IF NOT EXISTS x20_job_cancellations (run_id TEXT PRIMARY KEY)")
-            columns = {row[1] for row in connection.execute("PRAGMA table_info(x20_jobs)")}
+            connection.execute("CREATE TABLE IF NOT EXISTS runtime_job_cancellations (run_id TEXT PRIMARY KEY)")
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(runtime_jobs)")}
             if "claimed_until" not in columns:
-                connection.execute("ALTER TABLE x20_jobs ADD COLUMN claimed_until REAL")
-            connection.execute("CREATE INDEX IF NOT EXISTS x20_jobs_pending ON x20_jobs (claimed_by, id)")
+                connection.execute("ALTER TABLE runtime_jobs ADD COLUMN claimed_until REAL")
+            connection.execute("CREATE INDEX IF NOT EXISTS runtime_jobs_pending ON runtime_jobs (claimed_by, id)")
 
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         with self._connect() as connection:
             connection.execute(
-                "INSERT OR IGNORE INTO x20_jobs (id, payload, claimed_by) VALUES (?, ?, NULL)",
-                (job_id, self._encode({"schema": "docs.x20/v1", "id": job_id, "payload": payload})),
+                "INSERT OR IGNORE INTO runtime_jobs (id, payload, claimed_by) VALUES (?, ?, NULL)",
+                (job_id, self._encode({"schema": "docs.runtime/v1", "id": job_id, "payload": payload})),
             )
 
     def claim(self, worker_id: str) -> Job | None:
@@ -299,17 +295,17 @@ class SqliteJobQueue(_SqliteStore):
             connection.execute("BEGIN IMMEDIATE")
             now = self._clock()
             connection.execute(
-                "UPDATE x20_jobs SET claimed_by = NULL, claimed_until = NULL "
+                "UPDATE runtime_jobs SET claimed_by = NULL, claimed_until = NULL "
                 "WHERE claimed_by IS NOT NULL AND claimed_until <= ?",
                 (now,),
             )
             row = connection.execute(
-                "SELECT id, payload FROM x20_jobs WHERE claimed_by IS NULL ORDER BY rowid LIMIT 1"
+                "SELECT id, payload FROM runtime_jobs WHERE claimed_by IS NULL ORDER BY rowid LIMIT 1"
             ).fetchone()
             if row is None:
                 return None
             connection.execute(
-                "UPDATE x20_jobs SET claimed_by = ?, claimed_until = ? WHERE id = ? AND claimed_by IS NULL",
+                "UPDATE runtime_jobs SET claimed_by = ?, claimed_until = ? WHERE id = ? AND claimed_by IS NULL",
                 (worker_id, now + self.claim_ttl_seconds, row[0]),
             )
         try:
@@ -318,25 +314,25 @@ class SqliteJobQueue(_SqliteStore):
             with self._connect() as quarantine_connection:
                 quarantine_connection.execute("BEGIN IMMEDIATE")
                 quarantine_connection.execute(
-                    "INSERT OR REPLACE INTO x20_jobs_quarantine (id, payload, reason) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO runtime_jobs_quarantine (id, payload, reason) VALUES (?, ?, ?)",
                     (row[0], row[1], str(exc)),
                 )
-                quarantine_connection.execute("DELETE FROM x20_jobs WHERE id = ?", (row[0],))
+                quarantine_connection.execute("DELETE FROM runtime_jobs WHERE id = ?", (row[0],))
             raise
 
     def ack(self, job_id: str, worker_id: str) -> bool:
         with self._connect() as connection:
-            cursor = connection.execute("DELETE FROM x20_jobs WHERE id = ? AND claimed_by = ?", (job_id, worker_id))
+            cursor = connection.execute("DELETE FROM runtime_jobs WHERE id = ? AND claimed_by = ?", (job_id, worker_id))
         return cursor.rowcount == 1
 
     def cancel(self, run_id: str) -> bool:
         with self._connect() as connection:
-            cursor = connection.execute("INSERT OR IGNORE INTO x20_job_cancellations (run_id) VALUES (?)", (run_id,))
+            cursor = connection.execute("INSERT OR IGNORE INTO runtime_job_cancellations (run_id) VALUES (?)", (run_id,))
         return cursor.rowcount == 1
 
     def is_cancelled(self, run_id: str) -> bool:
         with self._connect() as connection:
-            row = connection.execute("SELECT 1 FROM x20_job_cancellations WHERE run_id = ?", (run_id,)).fetchone()
+            row = connection.execute("SELECT 1 FROM runtime_job_cancellations WHERE run_id = ?", (run_id,)).fetchone()
         return row is not None
 
 
@@ -344,7 +340,7 @@ class SqliteLeaseStore(_SqliteStore):
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS x20_leases ("
+                "CREATE TABLE IF NOT EXISTS runtime_leases ("
                 "resource TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at REAL NOT NULL"
                 ")"
             )
@@ -355,10 +351,10 @@ class SqliteLeaseStore(_SqliteStore):
         now = time.time()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute("DELETE FROM x20_leases WHERE resource = ? AND expires_at <= ?", (resource, now))
+            connection.execute("DELETE FROM runtime_leases WHERE resource = ? AND expires_at <= ?", (resource, now))
             try:
                 connection.execute(
-                    "INSERT INTO x20_leases (resource, owner, expires_at) VALUES (?, ?, ?)",
+                    "INSERT INTO runtime_leases (resource, owner, expires_at) VALUES (?, ?, ?)",
                     (resource, owner, now + ttl_seconds),
                 )
             except sqlite3.IntegrityError:
@@ -371,13 +367,13 @@ class SqliteLeaseStore(_SqliteStore):
         now = time.time()
         with self._connect() as connection:
             cursor = connection.execute(
-                "UPDATE x20_leases SET expires_at = ? WHERE resource = ? AND owner = ? AND expires_at > ?",
+                "UPDATE runtime_leases SET expires_at = ? WHERE resource = ? AND owner = ? AND expires_at > ?",
                 (now + ttl_seconds, resource, owner, now),
             )
         return cursor.rowcount == 1
 
     def release(self, resource: str, owner: str) -> bool:
         with self._connect() as connection:
-            cursor = connection.execute("DELETE FROM x20_leases WHERE resource = ? AND owner = ?", (resource, owner))
+            cursor = connection.execute("DELETE FROM runtime_leases WHERE resource = ? AND owner = ?", (resource, owner))
         return cursor.rowcount == 1
 

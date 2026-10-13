@@ -60,7 +60,7 @@ def test_pdf_renderer_adapter_satisfies_document_renderer_port():
 
 
 def test_pdf_renderer_adapter_resolves_via_registry_by_format():
-    from docs.cli._shared import resolve_renderer
+    from docs.composition import resolve_renderer
 
     service = PdfRendererAdapter(_FakeDocxRenderer(Path("x.docx")), _FakeQaRender())
     registry = {"pdf": service}

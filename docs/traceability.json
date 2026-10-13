@@ -8,7 +8,7 @@
   },
   "journey": {
     "status": "bounded-deterministic-vertical",
-    "test": "tests/integration/test_document_runtime_vertical_journey.py::test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run",
+    "test": "tests/integration/test_document_runtime_vertical_journey.py::test_runtime_vertical_journey_is_deterministic_from_template_ir_to_api_run",
     "proved": [
       "template compilation returns a 64-character IR hash",
       "a generated visual is cataloged, bound, and referenced by rendered HTML",

@@ -13,7 +13,7 @@ class RedisJobQueue:
         self,
         client: Any | None = None,
         *,
-        key: str = "docs.x20.jobs",
+        key: str = "docs.runtime.jobs",
         claim_ttl_seconds: float = 300.0,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -27,7 +27,7 @@ class RedisJobQueue:
         self.unavailable_reason: str | None = None
 
     @classmethod
-    def from_url(cls, url: str, *, key: str = "docs.x20.jobs") -> RedisJobQueue:
+    def from_url(cls, url: str, *, key: str = "docs.runtime.jobs") -> RedisJobQueue:
         try:
             import redis  # type: ignore[import-not-found]
         except ImportError as exc:
@@ -135,15 +135,15 @@ class RedisJobQueue:
         try:
             decoded = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ValueError("stored X20 job payload is not valid JSON") from exc
+            raise ValueError("stored runtime job payload is not valid JSON") from exc
         if not isinstance(decoded, dict) or decoded.get("schema") != SCHEMA:
-            raise ValueError("stored X20 job payload has an unsupported schema")
+            raise ValueError("stored runtime job payload has an unsupported schema")
         if type(decoded.get("id")) is not str or not decoded["id"] or type(decoded.get("payload")) is not dict:
-            raise ValueError("stored X20 job payload has an invalid object shape")
+            raise ValueError("stored runtime job payload has an invalid object shape")
         return Job.from_dict(decoded)
 
 
-_REDIS_CLAIM_SCRIPT = """-- x20 claim
+_REDIS_CLAIM_SCRIPT = """-- runtime claim
 local expired = redis.call('ZRANGEBYSCORE', KEYS[4], '-inf', ARGV[2])
 for _, id in ipairs(expired) do
   local payload = redis.call('HGET', KEYS[2], id)
@@ -155,7 +155,7 @@ end
 local payload = redis.call('LPOP', KEYS[1])
 while payload do
   local ok, decoded = pcall(cjson.decode, payload)
-  if ok and type(decoded) == 'table' and decoded.schema == 'docs.x20/v1' and type(decoded.id) == 'string' and decoded.id ~= '' and type(decoded.payload) == 'table' then
+  if ok and type(decoded) == 'table' and decoded.schema == 'docs.runtime/v1' and type(decoded.id) == 'string' and decoded.id ~= '' and type(decoded.payload) == 'table' then
     redis.call('HSET', KEYS[2], decoded.id, payload)
     redis.call('HSET', KEYS[3], decoded.id, ARGV[1])
     redis.call('ZADD', KEYS[4], tonumber(ARGV[2]) + tonumber(ARGV[3]), decoded.id)
@@ -167,7 +167,7 @@ end
 return nil
 """
 
-_REDIS_ACK_SCRIPT = """-- x20 ack
+_REDIS_ACK_SCRIPT = """-- runtime ack
 local owner = redis.call('HGET', KEYS[1], ARGV[1])
 if not owner or owner ~= ARGV[2] then return 0 end
 redis.call('HDEL', KEYS[1], ARGV[1])
@@ -176,7 +176,7 @@ redis.call('ZREM', KEYS[3], ARGV[1])
 return 1
 """
 
-_REDIS_QUARANTINE_SCRIPT = """-- x20 quarantine
+_REDIS_QUARANTINE_SCRIPT = """-- runtime quarantine
 local job_id = ARGV[1]
 local payload = ARGV[2]
 redis.call('RPUSH', KEYS[1] .. ':quarantine', payload)

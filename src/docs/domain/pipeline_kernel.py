@@ -123,11 +123,6 @@ class ArtifactRecord:
                 payload.pop(key)
         return _stable(payload)
 
-    @property
-    def artifact_id(self) -> str:
-        """Stable identifier used by callers that do not need the old name."""
-        return self.contract
-
     def to_json(self) -> str:
         return deterministic_json(self)
 

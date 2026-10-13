@@ -39,7 +39,7 @@ def test_build_format_selects_renderer_and_overrides_config_without_mutating_it(
     )
 
     assert outcome.succeeded
-    assert outcome.artifact == tmp_path / ".x20-html-scratch" / "guide.html"
+    assert outcome.artifact == tmp_path / ".docs-html-scratch" / "guide.html"
     assert renderer.calls[0][1]["output"] == {"format": "html", "quality": "high"}
     assert config["output"]["format"] == "docx"
 

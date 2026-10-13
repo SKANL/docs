@@ -1,4 +1,4 @@
-# src/docs/cli/commands/doc_app.py
+# src/docs/cli/commands/doc_crud_app.py
 """`doc` command group: CRUD for documents (isolated workspaces).
 
 Split out of cli/main.py (PR3 — CLI Composition Root Split); mounted with
@@ -15,8 +15,8 @@ import typer
 
 from docs.application.document_summary import build_document_summary
 from docs.application.templates import builtin_names, read_builtin
-from docs.application.workspaces import WorkspaceRegistry
-from docs.cli._shared import WORKSPACE_CONFIG_FILENAME, _ctx, emit_result
+from docs.cli._shared import _ctx, emit_result
+from docs.composition import WORKSPACE_CONFIG_FILENAME, open_workspace_registry
 from docs.domain.identity import pretty_json
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.workspace_config import resolve_workspace_roots
@@ -26,23 +26,23 @@ from docs.domain.workspace_format import (
     write_workspace_marker,
 )
 
-doc_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
+doc_crud_app = typer.Typer(help="CRUD de documentos (workspaces aislados).")
 
 
 def _activate_initialized_workspace() -> None:
     """Make ``doc init`` immediately usable by the durable run commands.
 
-    The file-based config is enough for the legacy document commands, but the
+    The file-based config is enough for the document commands, but the
     asynchronous pipeline also needs a selected registry entry for its SQLite
     state and local worker.  Registering the current directory here keeps a
     freshly initialized workspace consistent across both command families.
     """
-    registry = WorkspaceRegistry(Path.cwd() / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(Path.cwd() / ".docs" / "workspaces.json")
     item = registry.ensure("Local workspace", Path.cwd())
     registry.select(item["id"])
 
 
-@doc_app.command("init")
+@doc_crud_app.command("init")
 def doc_init(
     ctx: typer.Context,
     documents_dir: str = typer.Option("", "--documents-dir", help="Ruta de documents_dir a registrar (por defecto, la resuelta actualmente vía config/env)."),
@@ -106,7 +106,7 @@ def doc_init(
     print(f"documents_dir={documents_path}, templates_dir={templates_path}")
 
 
-@doc_app.command("new")
+@doc_crud_app.command("new")
 def doc_new(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"), template: str = typer.Option("", "--template"), title: str = typer.Option("", "--title")) -> None:
     """Crea un documento nuevo con su workspace aislado.
 
@@ -123,7 +123,7 @@ def doc_new(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"),
     print("Siguiente paso: `context status` y `context elicit` para llenar el contexto.")
 
 
-@doc_app.command("list")
+@doc_crud_app.command("list")
 def doc_list(ctx: typer.Context) -> None:
     """Lista los documentos registrados en el workspace."""
     deps, _ = _ctx(ctx)
@@ -137,14 +137,14 @@ def doc_list(ctx: typer.Context) -> None:
         print(f"{marker} {item.id}  [{item.template}]  {item.title}")
 
 
-@doc_app.command("current")
+@doc_crud_app.command("current")
 def doc_current(ctx: typer.Context) -> None:
     """Imprime el id del documento activo."""
     deps, _ = _ctx(ctx)
     print(deps.documents.current() or "(ninguno)")
 
 
-@doc_app.command("show")
+@doc_crud_app.command("show")
 def doc_show(ctx: typer.Context, doc_id: str = typer.Argument("", metavar="id")) -> None:
     """Imprime el `document.json` de un documento (por defecto, el activo)."""
     deps, _ = _ctx(ctx)
@@ -155,7 +155,7 @@ def doc_show(ctx: typer.Context, doc_id: str = typer.Argument("", metavar="id"))
     print(json.dumps(document.model_dump(), ensure_ascii=False, indent=2))
 
 
-@doc_app.command("use")
+@doc_crud_app.command("use")
 def doc_use(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id")) -> None:
     """Marca un documento como activo para los comandos siguientes."""
     deps, _ = _ctx(ctx)
@@ -163,7 +163,7 @@ def doc_use(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"))
     print(f"Documento activo: {doc_id}")
 
 
-@doc_app.command("rename")
+@doc_crud_app.command("rename")
 def doc_rename(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"), new_id: str = typer.Argument(...)) -> None:
     """Cambia el id de un documento y actualiza el registro."""
     deps, _ = _ctx(ctx)
@@ -171,7 +171,7 @@ def doc_rename(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id
     print(f"Renombrado: {doc_id} → {new_id}")
 
 
-@doc_app.command("delete")
+@doc_crud_app.command("delete")
 def doc_delete(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id"), yes: bool = typer.Option(False, "--yes")) -> None:
     """Elimina un documento y su workspace. Pide confirmación salvo que se pase `--yes`."""
     deps, _ = _ctx(ctx)
@@ -181,7 +181,7 @@ def doc_delete(ctx: typer.Context, doc_id: str = typer.Argument(..., metavar="id
     print(f"Documento `{doc_id}` eliminado.")
 
 
-@doc_app.command("status")
+@doc_crud_app.command("status")
 def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")) -> None:
     """Resumen retomable del documento activo (design.md item I): contexto
     lleno/faltante, secciones redactadas/scaffold/con hallazgos, ingesta,
@@ -195,7 +195,7 @@ def doc_status(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")
         emit_result(result, False)
 
 
-@doc_app.command("revise")
+@doc_crud_app.command("revise")
 def doc_revise(
     ctx: typer.Context,
     target: str = typer.Argument(..., metavar="id", help="Id de sección o de tema de contexto a revisar."),

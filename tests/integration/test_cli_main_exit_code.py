@@ -18,8 +18,8 @@ import json
 
 import pytest
 
-from docs.cli._shared import Deps
 from docs.cli.main import main
+from docs.composition import ApplicationComposition
 
 _TEMPLATE = {
     "type": "tesina",
@@ -58,5 +58,5 @@ def test_main_propagates_a_nonzero_nonone_exit_code(workspace, monkeypatch):
     # Closes the review coverage gap where only codes 0 and 1 were exercised
     # via main() -- the exact blind spot (CliRunner-only) that hid the bug.
     monkeypatch.setattr("shutil.which", lambda name: None)
-    Deps().documents.create("doc1", "tesina")
+    ApplicationComposition().documents.create("doc1", "tesina")
     assert main(["doctor", "--strict"]) == 2

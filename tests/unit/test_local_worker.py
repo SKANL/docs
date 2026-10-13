@@ -36,11 +36,11 @@ def test_local_worker_builds_and_runs_for_a_canonical_workspace(
         def run_until_stopped(self, iterations: int) -> None:
             calls.append(iterations)
 
-    monkeypatch.setattr("docs.local_worker._build_worker", lambda *args: Runner())
+    monkeypatch.setattr("docs.local_worker.build_worker", lambda *args: Runner())
 
     assert main(["--workspace-root", str(tmp_path), "--iterations", "2"]) == 0
     assert calls == [2]
-    assert (tmp_path / ".docs" / "x20.sqlite3").is_file()
+    assert (tmp_path / ".docs" / "runtime.sqlite3").is_file()
 
 
 def _declared_docs_worker_target() -> str:

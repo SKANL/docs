@@ -27,7 +27,7 @@ such as `document.title`, `author.name`, `organization.name`, `course.name`,
 `advisor.name`, `document.version`, `document.status`, `date`, and
 `custom.*`, while retaining current top-level and context aliases.
 
-`content` has precedence over the current `slots` block. Missing slots are
+Missing slots are
 reported during `compose-cover`; strict and release policies block them.
 Configured `logo` and `hero` files are validated for existence and dimensions
 before rendering. Relative assets resolve from `paths.assets_dir`, and valid

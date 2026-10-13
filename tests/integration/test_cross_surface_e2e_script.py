@@ -40,7 +40,7 @@ def test_cli_reads_the_same_persisted_document_and_run_records(tmp_path: Path) -
         {"workspace_id": "local", "document_id": "cross-surface", "format": "docx"},
         "2026-01-01T00:00:00+00:00",
     )
-    SqliteRunStore(tmp_path / ".docs" / "x20.sqlite3").put(run)
+    SqliteRunStore(tmp_path / ".docs" / "runtime.sqlite3").put(run)
 
     document = json.loads((tmp_path / "documents" / "cross-surface" / "document.json").read_text(encoding="utf-8"))
     cli_document = json.loads(run_cli_json(tmp_path, "doc", "show", "cross-surface"))

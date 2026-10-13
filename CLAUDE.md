@@ -27,7 +27,7 @@ contract now lives in `openspec/specs/`.
 - `src/docs/domain/` — pure logic + `ports/` (typing.Protocol interfaces)
 - `src/docs/application/` — services, depend on ports only
 - `src/docs/infrastructure/` — adapters (filesystem, python-docx, pandoc)
-- `src/docs/cli/` — Typer CLI; composition root in `cli/_shared.py` (Deps)
+- `src/docs/cli/` — Typer CLI; composition root is `composition.py` (`ApplicationComposition`)
 - `tests/unit/`, `tests/integration/` — mirror the src layers
 - `tests/architecture/` — repo-wide invariants (see "Mechanised invariants")
 
@@ -43,7 +43,7 @@ three share; never re-declare an artifact filename or extension set locally.
 
 - Dependency direction: cli → application → domain; infrastructure implements
   domain ports. Never import infrastructure from domain/application.
-- Adapters are wired only in the composition root (`cli/_shared.py`).
+- Adapters are wired only in the composition root (`composition.py`).
 - CLI user-facing strings are Spanish; code, comments, and docs are English.
 - A `# ponytail:` comment marks a deliberate simplification and names its
   ceiling plus the upgrade path, so a shortcut reads as intent rather than

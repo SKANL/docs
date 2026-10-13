@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.cli._shared import Deps
+from docs.composition import ApplicationComposition
 from docs.domain.docx_structure import structure_parts
 from docs.template_compiler import TemplateIR, source_template
 
@@ -53,7 +53,7 @@ def test_confirmed_cover_placement_is_usable_by_assembly(workspace):
     placement. Reproduces the verifier's exact check: call the REAL,
     unedited `structure_parts(config)` consumer directly against a resolved
     document config, after externally confirming a cover placement."""
-    deps = Deps()
+    deps = ApplicationComposition()
     deps.documents.create("doc1", "tesina")
     inbox_dir = deps.workspace.doc_root("doc1") / "inbox"
     _write_confirmed_cover_placement(inbox_dir)
@@ -78,7 +78,7 @@ def test_confirmed_cover_replaces_a_template_declared_cover_from_asset(workspace
     ]
     (templates / "conportada.json").write_text(json.dumps(template), encoding="utf-8")
 
-    deps = Deps()
+    deps = ApplicationComposition()
     deps.documents.create("doc3", "conportada")
     _write_confirmed_cover_placement(deps.workspace.doc_root("doc3") / "inbox")
 
@@ -90,7 +90,7 @@ def test_confirmed_cover_replaces_a_template_declared_cover_from_asset(workspace
 
 
 def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
-    deps = Deps()
+    deps = ApplicationComposition()
     deps.documents.create("doc2", "tesina")
 
     resolved = deps.resolve_context("doc2")
@@ -101,7 +101,7 @@ def test_no_confirmed_placement_leaves_default_structure_untouched(workspace):
 
 
 def test_template_resolution_compiles_ir_while_preserving_source_template(workspace):
-    deps = Deps()
+    deps = ApplicationComposition()
     deps.documents.create("doc-ir", "tesina")
 
     resolved = deps.resolve_context("doc-ir")
@@ -116,7 +116,7 @@ def test_source_template_without_section_contracts_still_resolves(workspace):
     legacy["section_contracts"] = {}
     (workspace / "templates" / "tesina.json").write_text(json.dumps(legacy), encoding="utf-8")
 
-    deps = Deps()
+    deps = ApplicationComposition()
     deps.documents.create("legacy-doc", "tesina")
 
     resolved = deps.resolve_context("legacy-doc")
@@ -135,7 +135,7 @@ def test_doc_root_and_inbox_dir_tokens_expand_in_template_paths(workspace):
     template["paths"] = {"manual_dir": "{inbox_dir}/guides/manual", "root": "{doc_root}"}
     (templates / "contokens.json").write_text(json.dumps(template), encoding="utf-8")
 
-    deps = Deps()
+    deps = ApplicationComposition()
     deps.documents.create("doc4", "contokens")
     doc_root = deps.workspace.doc_root("doc4")
 

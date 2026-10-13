@@ -1,4 +1,4 @@
-"""Compatibility helpers for CLI command adapters."""
+"""Helpers shared by the CLI command adapters."""
 
 from __future__ import annotations
 
@@ -8,19 +8,7 @@ from typing import Any
 
 import typer
 
-from docs.composition import WORKSPACE_CONFIG_FILENAME, ApplicationComposition, build_workspace, resolve_renderer
-
-__all__ = (
-    "WORKSPACE_CONFIG_FILENAME",
-    "Deps",
-    "LazyDependencies",
-    "_ctx",
-    "build_workspace",
-    "emit_result",
-    "resolve_renderer",
-)
-
-Deps = ApplicationComposition
+from docs.composition import ApplicationComposition
 
 
 class LazyDependencies:

@@ -254,7 +254,7 @@ def test_status_summary_exposes_generated_cover_variant_and_missing_slots(tmp_pa
             "cover": {
                 "mode": "generated",
                 "variant": "academic",
-                "slots": {"title": "{{title}}", "author": "{{project.author}}"},
+                "content": {"title": "{{title}}", "author": "{{project.author}}"},
             },
         }
     )

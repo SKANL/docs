@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
-from docs.application.atomic_transform import AtomicTransform
 from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import (
     FULL_STAGE_IDS,
@@ -19,6 +18,7 @@ from docs.application.stage_artifact_store import StageArtifactStore
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.transform.system_transform import AtomicTransform
 
 STAGE_IDS = (
     "resolve-config",

@@ -4,10 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.api.http import Request
-from docs.application.workspaces import WorkspaceRegistry
-from docs.composition import compose_application
+from docs.composition import compose_application, open_workspace_registry
 from docs.domain.workspace import Workspace
 
 
@@ -44,14 +43,14 @@ def stores():
 
 @pytest.fixture
 def api(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Docs", tmp_path / "ws")
 
     def services(root):
         root = Path(root)
         return compose_application(Workspace(root / "documents", root / "templates", root=root))
 
-    application = X20Application(
+    application = ApiApplication(
         **stores, workspace_registry=registry,
         document_service_factory=lambda root: services(root).documents,
         workspace_services_factory=services,

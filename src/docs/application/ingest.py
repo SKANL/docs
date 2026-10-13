@@ -18,7 +18,7 @@ from docs.application.ingest_names import (
     VECTOR_EXTENSIONS,
     guess_asset_kind,
 )
-from docs.application.inline_json_writer import InlineJsonWriter
+from docs.application.plain_json_writer import PlainJsonWriter
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.intake_report import render_intake_report
 from docs.domain.ports.content_probe_port import ContentProbePort
@@ -107,7 +107,7 @@ class IngestService:
     ) -> None:
         self.detector = detector
         self.handlers = dict(handlers)
-        self.writer: IngestArtifactWriter = writer or InlineJsonWriter()
+        self.writer: IngestArtifactWriter = writer or PlainJsonWriter()
         self.image_metadata = image_metadata
         # Item D, PR4: optional, injected exactly like `image_metadata`
         # (design.md ADR-D) -- `None` degrades to folder/filename-only

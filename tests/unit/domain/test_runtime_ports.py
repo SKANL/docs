@@ -13,7 +13,7 @@ from docs.domain.runtime_records import SCHEMA
 
 
 def test_public_port_contract_is_explicitly_versioned() -> None:
-    assert SCHEMA == "docs.x20/v1"
+    assert SCHEMA == "docs.runtime/v1"
 
 
 def test_runtime_ports_are_protocols() -> None:

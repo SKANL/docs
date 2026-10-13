@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from docs.application.inline_json_writer import InlineJsonWriter
+from docs.application.plain_json_writer import PlainJsonWriter
 from docs.domain.context import TopicStatus, is_prose_topic, missing_fields
 from docs.domain.markdown_text import clean_markdown_text
 from docs.domain.models.template import Template, Topic
@@ -163,7 +163,7 @@ class ContextService:
         here surfaced pre-emptively). No new ContextService dependency:
         `writer` defaults to the same atomic `IngestArtifactWriter`
         fallback `IngestService` uses when the composition root does not
-        inject one (`cli/_shared.py`/`Deps.__init__` passes the same real
+        inject one (`cli/_shared.py`/`ApplicationComposition.__init__` passes the same real
         `FilesystemIngestArtifactWriter` instance already wired to
         `IngestService`, ponytail: reuse, no new wiring)."""
         self._require_document(doc_id)
@@ -188,5 +188,5 @@ class ContextService:
             "context_gaps": context_gaps,
             "section_gaps": section_gaps,
         }
-        (writer or InlineJsonWriter()).write_json(Path(sections_dir) / "gap-report.json", report)
+        (writer or PlainJsonWriter()).write_json(Path(sections_dir) / "gap-report.json", report)
         return report

@@ -1,7 +1,7 @@
 # tests/integration/test_ingest_determinism.py
 """Determinism and idempotency across the full real-adapter wiring
 (document-ingest spec: `Deterministic and Idempotent Ingest`). Uses the
-same composition-root wiring as `Deps.ingest` (real `FiletypeDetectorAdapter`
+same composition-root wiring as `ApplicationComposition.ingest` (real `FiletypeDetectorAdapter`
 + real per-type adapters) rather than routing-only stubs, so this proves the
 end-to-end guarantee PR6 adds on top of PR5's routing infra."""
 from __future__ import annotations

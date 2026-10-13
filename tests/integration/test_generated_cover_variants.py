@@ -19,7 +19,7 @@ def _assemble(tmp_path, variant: str, output_name: str):
         "cover": {
             "mode": "generated",
             "variant": variant,
-            "slots": {
+            "content": {
                 "institution": "{{project.institution}}",
                 "title": "{{title}}",
                 "author": "{{project.author}}",

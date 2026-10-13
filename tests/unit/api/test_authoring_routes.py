@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.api.auth import Principal
 from docs.api.http import APIError, Request
 from docs.api.openapi import build_capability_catalog, build_openapi_document
 from docs.application.imports import ImportError
-from docs.application.workspaces import WorkspaceRegistry
+from docs.composition import open_workspace_registry
 
 NEW_COMMANDS = {
     "asset add": ("POST", "documents:write"),
@@ -219,9 +219,9 @@ def test_openapi_declares_every_authoring_route_with_scopes():
 
 
 def test_routes_report_unavailable_when_services_factory_missing(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "r.json")
+    registry = open_workspace_registry(tmp_path / "r.json")
     ws = registry.create("W", tmp_path / "w")
-    app = X20Application(
+    app = ApiApplication(
         **stores, workspace_registry=registry,
     )
     response = app.dispatch(Request("GET", f"/v2/documents/doc/assets?workspace_id={ws['id']}"))
@@ -300,19 +300,19 @@ def test_remove_asset_honours_the_kind_parameter(api):
 
 
 def test_unexpected_factory_failure_is_a_503_structured_error(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "r.json")
+    registry = open_workspace_registry(tmp_path / "r.json")
     ws = registry.create("W", tmp_path / "w")
 
     def broken(root):
         raise RuntimeError("compose failed")
 
-    app = X20Application(**stores, workspace_registry=registry, workspace_services_factory=broken)
+    app = ApiApplication(**stores, workspace_registry=registry, workspace_services_factory=broken)
     response = app.dispatch(Request("GET", f"/v2/documents/doc/assets?workspace_id={ws['id']}"))
     assert response.status == 503
 
 
 def test_a_slow_factory_for_one_root_does_not_block_another(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "r.json")
+    registry = open_workspace_registry(tmp_path / "r.json")
     started, release = threading.Event(), threading.Event()
 
     def factory(root):
@@ -321,7 +321,7 @@ def test_a_slow_factory_for_one_root_does_not_block_another(tmp_path, stores):
             assert release.wait(10)
         return object()
 
-    app = X20Application(**stores, workspace_registry=registry, workspace_services_factory=factory)
+    app = ApiApplication(**stores, workspace_registry=registry, workspace_services_factory=factory)
     slow = threading.Thread(target=app._workspace_services_for, args=(str(tmp_path / "slow"),))
     slow.start()
     try:

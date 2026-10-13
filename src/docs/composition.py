@@ -45,6 +45,7 @@ from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.domain.workspace_format import validate_workspace_layout, validate_workspace_marker
+from docs.infrastructure.atomic_write import atomic_write_text
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
@@ -69,6 +70,7 @@ from docs.infrastructure.persistence.json_repository import JsonDocumentReposito
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
+from docs.infrastructure.transform.system_transform import AtomicTransform
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 from docs.observability import ObservabilityPort, create_observability_from_env
 from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, source_template
@@ -121,7 +123,7 @@ def build_workspace() -> Workspace:
     # operating on the harness checkout's default documents/ directory.
     if config is None and not os.environ.get("DOCS_DOCUMENTS_DIR") and not os.environ.get("DOCS_TEMPLATES_DIR"):
         local_registry = Path.cwd() / ".docs" / "workspaces.json"
-        registry = WorkspaceRegistry(local_registry if local_registry.is_file() else None)
+        registry = open_workspace_registry(local_registry if local_registry.is_file() else None)
         active = registry.active()
         if active is not None:
             root = Path(str(active["root"])).resolve()
@@ -141,6 +143,11 @@ def build_workspace() -> Workspace:
 
 
 logger = logging.getLogger(__name__)
+
+
+def open_workspace_registry(registry_path: str | Path | None = None) -> WorkspaceRegistry:
+    """Open the workspace registry with the atomic file writer wired in."""
+    return WorkspaceRegistry(registry_path, write_text=atomic_write_text)
 
 
 def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
@@ -209,90 +216,95 @@ class ApplicationComposition:
         )
         validate_workspace_marker(self.workspace.root)
         self.observability: ObservabilityPort = observability or create_observability_from_env()
-        document_repo = JsonDocumentRepository(self.workspace)
-        evidence_repo = JsonEvidenceRepository()
-        section_repo = JsonSectionRepository(self.workspace)
-        source_repo = FilesystemSourceRepository()
-        context_repo = JsonContextRepository(self.workspace)
-        self.document_repository = document_repo
-        self.context_repository = context_repo
-        self.source_repository = source_repo
+        self._wire_repositories()
+        self._wire_core_services()
+        self._wire_renderers_and_quality()
+        self._wire_ingest()
+        self._wire_visuals()
+        self._wire_pdf_translation_tools()
+        self._wire_document_services()
+        self._wire_delivery()
 
-        asset_service = AssetService(FilesystemAssetRepository(), self.workspace)
-        evidence_service = EvidenceService(evidence_repo)
-        review_service = ReviewService(section_repo)
-        collection_service = CollectionService(source_repo, evidence_repo)
-        context_pack_service = ContextPackService(section_repo, evidence_repo, evidence_service, review_service)
-        tool_resolver = SystemToolResolverAdapter()
-        self.tool_resolver = tool_resolver
+    def _wire_repositories(self) -> None:
+        self.document_repository = JsonDocumentRepository(self.workspace)
+        self.evidence_repository = JsonEvidenceRepository()
+        self.section_repository = JsonSectionRepository(self.workspace)
+        self.source_repository = FilesystemSourceRepository()
+        self.context_repository = JsonContextRepository(self.workspace)
+
+    def _wire_core_services(self) -> None:
+        self.assets = AssetService(FilesystemAssetRepository(), self.workspace)
+        self.evidence = EvidenceService(self.evidence_repository)
+        self.review = ReviewService(self.section_repository)
+        self.collection = CollectionService(self.source_repository, self.evidence_repository)
+        self.context_pack = ContextPackService(
+            self.section_repository, self.evidence_repository, self.evidence, self.review
+        )
+        self.tool_resolver = SystemToolResolverAdapter()
         self.directory_guard = directory_handle_guard
         self.release_lock = owned_directory_lock
-        docx_assembly_service = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, tool_resolver)
-        html_renderer_service = HtmlRendererAdapter(tool_resolver, SubprocessPandocRunner())
+
+    def _wire_renderers_and_quality(self) -> None:
+        self.docx = DocxRendererAdapter(PythonDocxAssemblyAdapter(), self.assets, self.tool_resolver)
+        html_renderer = HtmlRendererAdapter(self.tool_resolver, SubprocessPandocRunner())
         # Stateless (no instance state) -- one instance shared by QaService's
         # existing visual-QA PDF render and PdfRendererAdapter's `--format
         # pdf` conversion, never two separate adapter instances for the same
-        # soffice subprocess call (item C-pdf, mirrors the content-probe
-        # single-instance pattern below).
+        # soffice subprocess call.
         libreoffice_qa_adapter = LibreOfficeQaAdapter()
-        pdf_renderer_service = PdfRendererAdapter(docx_assembly_service, libreoffice_qa_adapter)
+        pdf_renderer = PdfRendererAdapter(self.docx, libreoffice_qa_adapter)
         self.renderers: dict[str, DocumentRendererPort] = {
-            docx_assembly_service.output_format: docx_assembly_service,
-            html_renderer_service.output_format: html_renderer_service,
-            pdf_renderer_service.output_format: pdf_renderer_service,
+            self.docx.output_format: self.docx,
+            html_renderer.output_format: html_renderer,
+            pdf_renderer.output_format: pdf_renderer,
         }
-        format_audit_service = FormatAuditService(PythonDocxAuditAdapter())
-        render_verification_service = RenderVerificationService(RenderVerificationAdapter())
-        structural_audit_service = StructuralAuditService(StructuralAuditAdapter())
-        qa_service = QaService(
-            libreoffice_qa_adapter, format_audit_service, render_verification_service=render_verification_service
+        self.format_audit = FormatAuditService(PythonDocxAuditAdapter())
+        self.render_verification = RenderVerificationService(RenderVerificationAdapter())
+        self.structural_audit_service = StructuralAuditService(StructuralAuditAdapter())
+        self.qa = QaService(
+            libreoffice_qa_adapter, self.format_audit, render_verification_service=self.render_verification
         )
         # Stateless -- one instance shared by the doctor's manual auto-detect
-        # (item E) and ingest's content-based classification (item D, PR4),
-        # never a second port/adapter (design.md ADR-D).
-        content_probe_adapter = FilesystemContentProbeAdapter()
-        doctor_service = DoctorService(
-            evidence_repo, asset_service, tool_resolver, content_probe=content_probe_adapter
+        # and ingest's content-based classification, never a second adapter.
+        self._content_probe = FilesystemContentProbeAdapter()
+        self.doctor = DoctorService(
+            self.evidence_repository, self.assets, self.tool_resolver, content_probe=self._content_probe
         )
 
-        pandoc_ingest_adapter = PandocIngestAdapter(tool_resolver)
-        pdf_ingest_adapter = OpendataloaderPdfAdapter(tool_resolver)
+    def _wire_ingest(self) -> None:
+        pandoc_ingest_adapter = PandocIngestAdapter(self.tool_resolver)
         md_ingest_adapter = MdNormalizeAdapter()
         self.markdown_normalizer = md_ingest_adapter
         self.atomic_file_writer = AtomicFileAdapter()
         ingest_handlers: dict[str, SourceIngestPort] = {
             "docx": pandoc_ingest_adapter,
             "odt": pandoc_ingest_adapter,
-            "pdf": pdf_ingest_adapter,
+            "pdf": OpendataloaderPdfAdapter(self.tool_resolver),
             "md": md_ingest_adapter,
             "txt": md_ingest_adapter,
         }
-        # Item F, PR5: guarded import -- pypdfium2/pillow are optional
-        # toolchain deps (doctor's `pdf_page_render` capability check, item
-        # L). Missing -> `None`, IngestService degrades to WARN + skip
-        # (design.md ADR-F), never a hard dependency for the whole CLI.
+        # pypdfium2/pillow are optional toolchain deps (doctor's
+        # `pdf_page_render` capability check). Missing -> `None`, and
+        # IngestService degrades to WARN + skip, never a hard dependency.
         try:
             from docs.infrastructure.pdf.pdfium2_pdf_render_adapter import Pdfium2PdfRenderAdapter
 
-            pdf_render_adapter = Pdfium2PdfRenderAdapter()
-        except Exception:
-            pdf_render_adapter = None
+            self.pdf_render: Any = Pdfium2PdfRenderAdapter()
+        except Exception as exc:
+            logger.debug("PDF page renderer no registrado: %s", exc)
+            self.pdf_render = None
 
         # `resvg` is an OPTIONAL, PATH-resolved external toolchain (never a
-        # pip/npm dependency of this project) -- construction never touches
-        # `resvg` itself (resolution happens lazily inside `rasterize()`), so
-        # this is always wired; a missing `resvg` degrades per-visual at
-        # render time (WARN+skip, Slice 5), never at `Deps()` construction
-        # (mirrors the mermaid-renderer guard shape above for
-        # defense-in-depth against an unexpected import failure). Built here
-        # (rather than alongside the other visual-generation adapters below)
-        # so `self.ingest` can reuse the SAME instance for standalone-SVG
-        # figure cataloging -- no second rasterizer/adapter instance.
+        # pip/npm dependency) -- construction never touches `resvg` itself
+        # (resolution happens lazily inside `rasterize()`); a missing `resvg`
+        # degrades per visual at render time. Built here so `self.ingest`
+        # reuses the SAME instance for standalone-SVG figure cataloging.
         try:
             from docs.infrastructure.visuals.resvg_rasterizer_adapter import ResvgRasterizerAdapter
 
-            self.svg_rasterizer: Any = ResvgRasterizerAdapter(tool_resolver)
-        except Exception:
+            self.svg_rasterizer: Any = ResvgRasterizerAdapter(self.tool_resolver)
+        except Exception as exc:
+            logger.debug("SVG rasterizer no registrado: %s", exc)
             self.svg_rasterizer = None
 
         self.ingest = IngestService(
@@ -300,16 +312,15 @@ class ApplicationComposition:
             ingest_handlers,
             writer=FilesystemIngestArtifactWriter(),
             image_metadata=PythonDocxImageMetadataAdapter(),
-            content_probe=content_probe_adapter,
-            pdf_render=pdf_render_adapter,
+            content_probe=self._content_probe,
+            pdf_render=self.pdf_render,
             svg_rasterizer=self.svg_rasterizer,
         )
 
-        # matplotlib is a hard declared dependency (pyproject.toml), but the
-        # import is still guarded (mirrors the pypdfium2 guard above): if it
-        # ever fails to import, the "chart" renderer is simply absent from
-        # the registry rather than crashing `Deps()` construction (design.md
-        # Migration/Rollout: additive/opt-in, never a hard `Deps()` failure).
+    def _wire_visuals(self) -> None:
+        # Every renderer is optional: an import failure removes that renderer
+        # from the registry instead of failing composition. Degrading is
+        # correct, swallowing silently is not, so each failure leaves a trace.
         self.visual_renderers: dict[str, Any] = {}
         try:
             from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
@@ -317,37 +328,22 @@ class ApplicationComposition:
             chart_renderer = ChartSvgRenderer()
             self.visual_renderers[chart_renderer.type] = chart_renderer
         except Exception as exc:
-            # Degrading is correct (the renderer is optional), swallowing
-            # silently is not: without a trace, a genuinely broken renderer
-            # is indistinguishable from an uninstalled one. `docs doctor`
-            # reports availability; this records WHY.
             logger.debug("visual renderer no registrado: %s", exc)
 
-        # `mmdc` is an OPTIONAL, PATH-resolved external toolchain (never a
-        # pip/npm dependency of this project) -- unlike the chart renderer,
-        # construction never touches `mmdc` itself (resolution happens lazily
-        # inside `render()`), so this is always registered; a missing `mmdc`
-        # degrades per-visual at render time (WARN+skip, Slice 5), never at
-        # `Deps()` construction (mirrors the pypdfium2/matplotlib guard
-        # shape above for defense-in-depth against an unexpected import
-        # failure).
+        # `mmdc` is an OPTIONAL, PATH-resolved external toolchain; resolution
+        # happens lazily inside `render()`, so the renderer is always registered
+        # and a missing `mmdc` degrades per visual at render time.
         try:
             from docs.infrastructure.visuals.mermaid_svg_renderer import MermaidSvgRenderer
 
-            mermaid_renderer = MermaidSvgRenderer(tool_resolver)
+            mermaid_renderer = MermaidSvgRenderer(self.tool_resolver)
             self.visual_renderers[mermaid_renderer.type] = mermaid_renderer
         except Exception as exc:
             logger.debug("visual renderer no registrado: %s", exc)
 
-        # Slice 5b (on-demand-visual-generation): composition-root wiring of
-        # the `generate-visuals` pipeline stage. Reuses the SAME
-        # `visual_renderers` registry and `svg_rasterizer` built above (no
-        # second registry) and the EXISTING `PythonDocxImageMetadataAdapter`
-        # (no new dims port, mirrors `ingest.py`'s reuse). Guarded like the
-        # renderer/rasterizer blocks above for defense-in-depth -- a missing
-        # renderer degrades per visual to WARN+skip. Without a rasterizer,
-        # the stage is unavailable and StageProvider reports it as skipped;
-        # composition construction still succeeds.
+        # The `generate-visuals` pipeline stage reuses the SAME registry and
+        # rasterizer built above. Without a rasterizer the stage is
+        # unavailable and StageProvider reports it as skipped.
         self.generate_visuals_service: Any = None
         if self.svg_rasterizer is not None:
             try:
@@ -358,14 +354,14 @@ class ApplicationComposition:
                     writer=FilesystemIngestArtifactWriter(),
                     file_writer=self.atomic_file_writer,
                 )
-            except Exception:
-                self.generate_visuals_service = None
+            except Exception as exc:
+                logger.debug("generate-visuals no disponible: %s", exc)
 
-        # `document-translate` adapters. Guarded like every block above: both
-        # `pypdfium2` and `pdf-inspector` are declared dependencies, but an
-        # import failure must cost the TRANSLATE command, not every command
-        # in the CLI. `None` here means `docs translate` reports why it
-        # cannot run; nothing else notices.
+    def _wire_pdf_translation_tools(self) -> None:
+        # `document-translate` adapters. Both `pypdfium2` and `pdf-inspector`
+        # are declared dependencies, but an import failure must cost the
+        # TRANSLATE command, not every command in the CLI. `None` means
+        # `docs translate` reports why it cannot run.
         self.pdf_classifier: Any = None
         self.pdf_text_editor: Any = None
         try:
@@ -382,39 +378,22 @@ class ApplicationComposition:
             # would otherwise reach the page as empty boxes.
             self.pdf_text_editor = Pypdfium2TextEditAdapter(DejaVuFontSource())
         except Exception as exc:
-            # Degrading is correct, swallowing silently is not: without a
-            # trace, a genuinely broken adapter looks identical to an
-            # uninstalled one.
             logger.debug("adaptadores de traduccion no registrados: %s", exc)
 
-        # The renderer used to MEASURE layout preservation. Reuses the same
-        # `pdf_render_adapter` built above -- one instance, no second
-        # rasterizer for the same job.
-        self.pdf_render: Any = pdf_render_adapter
-
-
-        self.assets = asset_service
-        self.evidence = evidence_service
-        self.review = review_service
-        self.collection = collection_service
-        self.context_pack = context_pack_service
-        self.docx = docx_assembly_service
-        self.format_audit = format_audit_service
-        self.render_verification = render_verification_service
-        self.qa = qa_service
-        self.doctor = doctor_service
-        self.documents = DocumentService(document_repo, self.workspace)
-        self.corrections = CorrectionsService(section_repo, evidence_repo)
-        self.context = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
-        self.section = SectionService(review_service, evidence_service, context_repo)
-        self.status = StatusService(section_repo, self.context, review_service, document_repo)
-        self.revision = RevisionService(section_repo, review_service, self.context, evidence_repo)
+    def _wire_document_services(self) -> None:
+        self.documents = DocumentService(self.document_repository, self.workspace)
+        self.corrections = CorrectionsService(self.section_repository, self.evidence_repository)
+        self.context = ContextService(self.context_repository, self.document_repository, ContextMarkdownAdapter())
+        self.section = SectionService(self.review, self.evidence, self.context_repository)
+        self.status = StatusService(self.section_repository, self.context, self.review, self.document_repository)
+        self.revision = RevisionService(self.section_repository, self.review, self.context, self.evidence_repository)
         self.history = RunHistoryService(self.workspace)
-        self.run_recorder = RunRecorderService(self.workspace, source_repo)
+        self.run_recorder = RunRecorderService(self.workspace, self.source_repository)
         self.verification = DocumentVerificationService(
-            review_service, evidence_repo, format_audit_service, qa_service
+            self.review, self.evidence_repository, self.format_audit, self.qa
         )
-        self.structural_audit_service = structural_audit_service
+
+    def _wire_delivery(self) -> None:
         self.artifact_reports = ArtifactReportService()
         self.package_publications = PackagePublicationService(
             archive_writer=PackageService(
@@ -424,6 +403,7 @@ class ApplicationComposition:
                 assert_directory_identity=assert_directory_identity,
             ),
             lock=owned_directory_lock,
+            transform=AtomicTransform(),
         )
         self.rules_manifest_state = _rules_manifest_state
 
@@ -573,7 +553,6 @@ class ApplicationComposition:
         run_start: Any = None,
     ) -> Any:
         """Assemble the document pipeline at the canonical composition root."""
-        from docs.application.atomic_transform import AtomicTransform
         from docs.application.pipeline_service import PipelineService, PublicationSpec
 
         return PipelineService(
@@ -605,7 +584,7 @@ class ApplicationComposition:
             raise RuntimeError("No hay documento activo. Usa `doc new <id>` o `doc use <id>`.")
         document = self.document_repository.read_document(doc_id)      # Document (extra allowed)
         template = self.document_repository.load_template(document.template)
-        _compile_template_compat(template)
+        _try_compile_template(template)
         merged = _deep_merge(template.model_dump(), document.model_dump())
         merged = _expand_tokens(merged, _standard_tokens(self.workspace, self.workspace.doc_root(doc_id)))
         paths = dict(merged.get("paths", {}))
@@ -618,7 +597,7 @@ class ApplicationComposition:
             structure_parts(merged), Path(paths["inbox_dir"])
         )
         resolved_template = Template.model_validate(merged)
-        resolved_template_ir = _compile_template_compat(resolved_template)
+        resolved_template_ir = _try_compile_template(resolved_template)
         return ResolvedContext(
             doc_id=doc_id,
             config=merged,
@@ -627,11 +606,15 @@ class ApplicationComposition:
         )
 
 
-def _compile_template_compat(template: Template) -> TemplateIR | None:
-    """Compile when possible without rejecting existing source templates."""
+def _try_compile_template(template: Template) -> TemplateIR | None:
+    """Compile the template IR; return None (and warn) when it does not compile.
+
+    A template that does not compile still resolves as its source template, so
+    the document stays usable; the warning keeps that degradation visible."""
     try:
         return compile_template(template)
-    except TemplateCompilationError:
+    except TemplateCompilationError as exc:
+        logger.warning("template IR unavailable, using the source template: %s", exc)
         return None
 
 

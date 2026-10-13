@@ -4,15 +4,9 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import os
 import shutil
-import subprocess
-import sys
-import tempfile
 import uuid
 from collections.abc import Mapping
-from contextlib import contextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,26 +25,35 @@ from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineRequest
 from docs.application.provenance import ProvenanceLedger
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
-from docs.application.workspaces import WorkspaceRegistry
+from docs.cli.commands.document_batch import BatchTransaction
+from docs.cli.commands.document_release import promote_release_candidate
+from docs.cli.commands.document_run import (
+    durable_evidence_stores,
+    queue_run,
+    run_inline,
+    run_status,
+    spawn_detached_worker,
+    wait_for_run,
+)
 from docs.cli.commands.source_app import run_source_command
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import pretty_json, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
-from docs.domain.runtime_records import Run
-from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
-from docs.infrastructure.persistence.sqlite_runtime import (
-    SqliteArtifactStore,
-    SqliteFindingStore,
-    SqliteJobQueue,
-    SqlitePassportStore,
-    SqliteRunStore,
-)
+from docs.infrastructure.locking import owned_directory_lock
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
-_BATCH_OUTPUT_PATHS = (Path("output") / "current", Path("output") / "release")
+_STAGE_DIMENSIONS = {
+    "editorial-review": ReviewDimension.EDITORIAL,
+    "evidence-review": ReviewDimension.EVIDENCE,
+    "consistency-review": ReviewDimension.CONSISTENCY,
+    "structural-audit": ReviewDimension.STRUCTURAL,
+    "accessibility-review": ReviewDimension.ACCESSIBILITY,
+    "visual-review": ReviewDimension.VISUAL,
+    "reproducibility-check": ReviewDimension.REPRODUCIBILITY,
+}
 
 
 def _source_mime_type(filename: str) -> str:
@@ -62,38 +65,188 @@ def _source_mime_type(filename: str) -> str:
     return known.get(Path(filename).suffix.lower()) or mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
 
-def _promote_release_candidate(
-    document_root: Path, document_id: str, *, allow_consumed_candidate: bool = False
-) -> None:
-    """Commit the package only after its format publication has succeeded."""
-    release_dir = document_root / "output" / "release"
-    candidate = release_dir / f".{document_id}.zip.candidate"
-    destination = release_dir / f"{document_id}.zip"
-    if not candidate.is_file() or candidate.is_symlink():
-        if allow_consumed_candidate and destination.is_file() and not destination.is_symlink():
-            # The publication transaction already committed this exact destination.
-            # A concurrent/older final ZIP is never accepted because this path is only
-            # used after the transaction has reported success.
-            return
-        raise RuntimeError("package-release completed without a safe release candidate")
-    if any(path.is_symlink() for path in (release_dir, *release_dir.parents)):
-        raise RuntimeError("release directory must not be symlinked")
-    candidate_identity = os.stat(candidate, follow_symlinks=False)
-    candidate_hash = sha256_file(candidate)
-    with _package_lock(destination):
-        parent_identity = _directory_identity(release_dir)
-        _assert_directory_identity(release_dir, parent_identity, operation="release publication")
-        current = os.stat(candidate, follow_symlinks=False)
-        if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
-            candidate_identity.st_dev,
-            candidate_identity.st_ino,
-            candidate_identity.st_size,
-            candidate_identity.st_mtime_ns,
-        ) or sha256_file(candidate) != candidate_hash:
-            raise RuntimeError("release candidate changed before publication")
-        with directory_handle_guard(release_dir):
-            os.replace(candidate, destination)
-        _assert_directory_identity(release_dir, parent_identity, operation="release publication")
+def _requested_formats(ctx: typer.Context, formats: list[str] | None) -> list[str]:
+    if formats is not None:
+        return formats
+    resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
+    configured_format: str | None = None
+    if isinstance(resolved.config, Mapping):
+        output_config = resolved.config.get("output")
+        if isinstance(output_config, Mapping):
+            output_format = output_config.get("format")
+            if isinstance(output_format, str):
+                configured_format = output_format
+    return [configured_format or "docx"]
+
+
+def _boundary_external_artifacts(
+    ctx: typer.Context,
+    service: Any,
+    pipeline_id: str,
+    output_format: str,
+    manifest_path: Path | None,
+) -> set[str] | frozenset[str] | None:
+    """Contracts a package/publish run starts from instead of recomputing.
+
+    The package sub-pipeline starts from the persisted, verified build boundary
+    loaded by create_document_pipeline_service.  The package service performs
+    the artifact/manifest/provenance check; these contracts only tell the
+    runtime that the boundary is intentionally supplied from the previous build.
+    """
+    if pipeline_id not in {"document-package", "document-publish"}:
+        return None
+    required = service.registry.resolve(pipeline_id).definition.external_artifacts
+    if pipeline_id == "document-package":
+        return required
+    source_manifest = manifest_path
+    if source_manifest is None:
+        resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
+        source_artifact = resolved.config.get("paths", {}).get("output_draft_dir")
+        source_manifest = (
+            Path(source_artifact).parent / "current" / f"{resolved.doc_id}.{output_format}.manifest.json"
+            if isinstance(source_artifact, str)
+            else None
+        )
+    try:
+        if source_manifest is None:
+            raise ValueError("publish manifest is unavailable")
+        manifest_data = json.loads(source_manifest.read_text(encoding="utf-8"))
+        records = manifest_data.get("verification", {}).get("stage_artifacts", [])
+        return {
+            record["contract"]
+            for record in records
+            if isinstance(record, Mapping) and isinstance(record.get("contract"), str)
+        }
+    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+        return set()
+
+
+def _restrict_to_dimensions(report_payload: dict[str, Any], dimensions: list[ReviewDimension]) -> None:
+    """Keep only the review stages of the requested dimensions, in place."""
+    selected = set(dimensions)
+    execution = report_payload.get("execution")
+    if isinstance(execution, dict):
+        results = execution.get("results", [])
+        if isinstance(results, list):
+            execution["results"] = [
+                item
+                for item in results
+                if isinstance(item, dict)
+                and isinstance(item.get("stage"), str)
+                and _STAGE_DIMENSIONS.get(item["stage"]) in selected
+            ]
+            report_payload["succeeded"] = all(item.get("ok", False) for item in execution["results"])
+    report_payload["dimensions"] = [dimension.value for dimension in dimensions]
+
+
+def _promote_published_build(
+    ctx: typer.Context,
+    item: dict[str, Any],
+    *,
+    pipeline_id: str,
+    output_format: str,
+    provenance_run_id: str | None,
+    artifact_path: Path | None,
+    manifest_path: Path | None,
+) -> Path | None:
+    """Promote the release candidate of a successful build; return the attested manifest, if any."""
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
+    resolved_root = deps.workspace.doc_root(resolved.doc_id)
+    promote_release_candidate(resolved_root, resolved.doc_id, allow_consumed_candidate=True)
+    draft_dir = resolved.config.get("paths", {}).get("output_draft_dir")
+    if not (
+        pipeline_id == "document"
+        and artifact_path is None
+        and manifest_path is None
+        and isinstance(draft_dir, str)
+    ):
+        return None
+    artifact = Path(draft_dir).parent / "current" / f"{resolved.doc_id}.{output_format}"
+    if not artifact.is_file():
+        return None
+    ledger = ProvenanceLedger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
+    recorded = ledger.load_attestation(provenance_run_id or "")
+    if recorded is None:
+        raise RuntimeError("missing pre-publication build attestation")
+    BuildManifest.from_dict(recorded.get("manifest", recorded))
+    attested = artifact.with_suffix(artifact.suffix + ".manifest.json")
+    if not attested.is_file():
+        raise RuntimeError("missing atomic build manifest sidecar")
+    item["manifest"] = str(attested)
+    return attested
+
+
+def _run_format(
+    ctx: typer.Context,
+    command: str,
+    output_format: str,
+    policy: PipelineMode | None,
+    dimensions: list[ReviewDimension] | None,
+    pipeline_id: str,
+    artifact_path: Path | None,
+    manifest_path: Path | None,
+) -> tuple[dict[str, Any], Path | None]:
+    """Execute the pipeline for one format; return its report item and the manifest path to carry forward."""
+    selected_policy = PipelinePolicy(policy) if policy is not None else None
+    can_publish = selected_policy is None or selected_policy.can_publish()
+    provenance_run_id = f"cli-build-{output_format}-{uuid.uuid4().hex}" if command == "build" else None
+    service = ctx.obj["deps"].create_document_pipeline_service(
+        output_format,
+        selected_policy,
+        document=ctx.obj.get("doc", ""),
+        pipeline_id=pipeline_id,
+        provenance_run_id=provenance_run_id,
+        artifact_path=artifact_path,
+        manifest_path=manifest_path,
+    )
+    external_artifacts = _boundary_external_artifacts(ctx, service, pipeline_id, output_format, manifest_path)
+    report = service.execute(
+        PipelineRequest(
+            run_id=provenance_run_id or f"cli-{command}-{output_format}",
+            publish=command == "build" and pipeline_id in {"document", "document-publish"} and can_publish,
+            pipeline_id=pipeline_id,
+            external_artifacts=(tuple(external_artifacts) if external_artifacts is not None else None),
+        )
+    )
+    report_payload = report.to_dict()
+    if dimensions:
+        _restrict_to_dimensions(report_payload, dimensions)
+    item: dict[str, Any] = {
+        "command": command,
+        "integration": "workspace",
+        "format": output_format,
+        "report": report_payload,
+    }
+    if (
+        command == "build"
+        and pipeline_id in {"document", "document-publish", "document-package"}
+        and bool(report_payload.get("succeeded"))
+        and can_publish
+    ):
+        attested = _promote_published_build(
+            ctx,
+            item,
+            pipeline_id=pipeline_id,
+            output_format=output_format,
+            provenance_run_id=provenance_run_id,
+            artifact_path=artifact_path,
+            manifest_path=manifest_path,
+        )
+        manifest_path = attested or manifest_path
+    return item, manifest_path
+
+
+def _report_results(command: str, reports: list[dict[str, Any]], json_output: bool) -> None:
+    payload = reports[0] if len(reports) == 1 else reports
+    if json_output:
+        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+    else:
+        for item in reports:
+            typer.echo(f"v2 {command} ({item['format']}): workspace integration")
+            typer.echo(json.dumps(item["report"], indent=2, sort_keys=True))
+    if not all(item["report"].get("succeeded", False) for item in reports):
+        raise typer.Exit(code=1)
 
 
 def _run(
@@ -108,10 +261,11 @@ def _run(
     manifest_path: Path | None = None,
     _batch_lock_held: bool = False,
 ) -> None:
-    if command == "build" and not _batch_lock_held:
-        resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
-        root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-        with owned_directory_lock(root / "runs" / ".x20-batch.lock"):
+    deps = ctx.obj["deps"]
+    resolved = deps.resolve_context(ctx.obj.get("doc", "")) if command == "build" else None
+    if resolved is not None and not _batch_lock_held:
+        root = deps.workspace.doc_root(resolved.doc_id)
+        with owned_directory_lock(root / "runs" / ".docs-batch.lock"):
             return _run(
                 ctx,
                 command,
@@ -124,321 +278,30 @@ def _run(
                 manifest_path,
                 _batch_lock_held=True,
             )
-    selected_document = ctx.obj.get("doc", "")
-    if formats is None:
-        resolved = ctx.obj["deps"].resolve_context(selected_document)
-        configured_format: str | None = None
-        if isinstance(resolved.config, Mapping):
-            output_config = resolved.config.get("output")
-            if isinstance(output_config, Mapping):
-                output_format = output_config.get("format")
-                if isinstance(output_format, str):
-                    configured_format = output_format
-        requested = [configured_format or "docx"]
-    else:
-        requested = formats
+    requested = _requested_formats(ctx, formats)
+    transaction = (
+        BatchTransaction.begin(resolved.doc_id, deps.workspace.doc_root(resolved.doc_id))
+        if resolved is not None
+        else None
+    )
     reports: list[dict[str, Any]] = []
-    batch_backup: Path | None = None
-    batch_root: Path | None = None
-    batch_journal: Path | None = None
-    if command == "build":
-        resolved_for_backup = ctx.obj["deps"].resolve_context(selected_document)
-        batch_root = ctx.obj["deps"].workspace.doc_root(resolved_for_backup.doc_id)
-        batch_root.mkdir(parents=True, exist_ok=True)
-        batch_journal = _batch_journal_path(batch_root)
-        _recover_batch_transaction(batch_journal, _lock_held=True)
-        batch_backup = Path(tempfile.mkdtemp(prefix=".x20-batch-", dir=batch_root))
-        batch_paths = _BATCH_OUTPUT_PATHS
-        for relative in batch_paths:
-            current = batch_root / relative
-            if current.exists() and not current.is_symlink():
-                shutil.copytree(current, batch_backup / relative)
-        _write_batch_journal(batch_journal, batch_root, batch_backup, batch_paths)
-
-    def restore_batch() -> None:
-        if batch_journal is not None:
-            _recover_batch_transaction(batch_journal, _lock_held=True)
-
     try:
         for output_format in requested:
-            selected_policy = PipelinePolicy(policy) if policy is not None else None
-            provenance_run_id = f"cli-build-{output_format}-{uuid.uuid4().hex}" if command == "build" else None
-            service = ctx.obj["deps"].create_document_pipeline_service(
-                output_format,
-                selected_policy,
-                document=selected_document,
-                pipeline_id=pipeline_id,
-                provenance_run_id=provenance_run_id,
-                artifact_path=artifact_path,
-                manifest_path=manifest_path,
+            item, manifest_path = _run_format(
+                ctx, command, output_format, policy, dimensions, pipeline_id, artifact_path, manifest_path
             )
-            external_artifacts: set[str] | frozenset[str] | None = None
-            if pipeline_id in {"document-package", "document-publish"}:
-                # The package sub-pipeline starts from the persisted, verified
-                # build boundary loaded by create_document_pipeline_service.  The package
-                # service performs the artifact/manifest/provenance check;
-                # these contracts only tell the runtime that the boundary is
-                # intentionally supplied from the previous build.
-                required = service.registry.resolve(pipeline_id).definition.external_artifacts
-                if pipeline_id == "document-package":
-                    external_artifacts = required
-                else:
-                    source_manifest = manifest_path
-                    if source_manifest is None:
-                        resolved = ctx.obj["deps"].resolve_context(selected_document)
-                        source_artifact = resolved.config.get("paths", {}).get("output_draft_dir")
-                        source_manifest = (
-                            Path(source_artifact).parent
-                            / "current"
-                            / f"{resolved.doc_id}.{output_format}.manifest.json"
-                            if isinstance(source_artifact, str)
-                            else None
-                        )
-                    try:
-                        if source_manifest is None:
-                            raise ValueError("publish manifest is unavailable")
-                        manifest_data = json.loads(source_manifest.read_text(encoding="utf-8"))
-                        records = manifest_data.get("verification", {}).get("stage_artifacts", [])
-                        external_artifacts = {
-                            record["contract"]
-                            for record in records
-                            if isinstance(record, Mapping) and isinstance(record.get("contract"), str)
-                        }
-                    except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
-                        external_artifacts = set()
-            report = service.execute(
-                PipelineRequest(
-                    run_id=provenance_run_id or f"cli-{command}-{output_format}",
-                    publish=command == "build"
-                    and pipeline_id in {"document", "document-publish"}
-                    and (selected_policy is None or selected_policy.can_publish()),
-                    pipeline_id=pipeline_id,
-                    external_artifacts=(tuple(external_artifacts) if external_artifacts is not None else None),
-                )
-            )
-            report_payload = report.to_dict()
-            if dimensions:
-                stage_dimensions = {
-                    "editorial-review": ReviewDimension.EDITORIAL,
-                    "evidence-review": ReviewDimension.EVIDENCE,
-                    "consistency-review": ReviewDimension.CONSISTENCY,
-                    "structural-audit": ReviewDimension.STRUCTURAL,
-                    "accessibility-review": ReviewDimension.ACCESSIBILITY,
-                    "visual-review": ReviewDimension.VISUAL,
-                    "reproducibility-check": ReviewDimension.REPRODUCIBILITY,
-                }
-                selected = set(dimensions)
-                execution = report_payload.get("execution")
-                if isinstance(execution, dict):
-                    results = execution.get("results", [])
-                    if isinstance(results, list):
-                        execution["results"] = [
-                            item
-                            for item in results
-                            if isinstance(item, dict)
-                            and isinstance(item.get("stage"), str)
-                            and stage_dimensions.get(item["stage"]) in selected
-                        ]
-                        report_payload["succeeded"] = all(item.get("ok", False) for item in execution["results"])
-                report_payload["dimensions"] = [dimension.value for dimension in dimensions]
-            item: dict[str, Any] = {
-                "command": command,
-                "integration": "workspace",
-                "format": output_format,
-                "report": report_payload,
-            }
-            if (
-                command == "build"
-                and pipeline_id in {"document", "document-publish", "document-package"}
-                and bool(report_payload.get("succeeded"))
-                and (selected_policy is None or selected_policy.can_publish())
-            ):
-                resolved = ctx.obj["deps"].resolve_context(selected_document)
-                _promote_release_candidate(
-                    ctx.obj["deps"].workspace.doc_root(resolved.doc_id),
-                    resolved.doc_id,
-                    allow_consumed_candidate=True,
-                )
-                draft_dir = resolved.config.get("paths", {}).get("output_draft_dir")
-                resolved_root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-                if (
-                    pipeline_id == "document"
-                    and artifact_path is None
-                    and manifest_path is None
-                    and isinstance(draft_dir, str)
-                ):
-                    artifact = Path(draft_dir).parent / "current" / f"{resolved.doc_id}.{output_format}"
-                    if artifact.is_file():
-                        ledger = ProvenanceLedger(
-                            resolved_root / "runs" / "provenance.json", trusted_root=resolved_root
-                        )
-                        recorded = ledger.load_attestation(provenance_run_id or "")
-                        if recorded is None:
-                            raise RuntimeError("missing pre-publication build attestation")
-                        BuildManifest.from_dict(recorded.get("manifest", recorded))
-                        manifest_path = artifact.with_suffix(artifact.suffix + ".manifest.json")
-                        if not manifest_path.is_file():
-                            raise RuntimeError("missing atomic build manifest sidecar")
-                        item["manifest"] = str(manifest_path)
-            if batch_journal is not None:
-                _record_batch_outputs(batch_journal, resolved_for_backup.doc_id, output_format)
+            if transaction is not None:
+                transaction.record(output_format)
             reports.append(item)
     except Exception:
         # Recovery failure must leave the journal and backups for a retry.
-        restore_batch()
+        if transaction is not None:
+            transaction.restore()
         raise
     else:
-        if batch_backup is not None and not all(item["report"].get("succeeded", False) for item in reports):
-            restore_batch()
-        if batch_journal is not None and batch_journal.exists():
-            batch_journal.unlink()
-            if batch_backup is not None:
-                shutil.rmtree(batch_backup)
-    payload = reports[0] if len(reports) == 1 else reports
-    if json_output:
-        typer.echo(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    else:
-        for item in reports:
-            typer.echo(f"v2 {command} ({item['format']}): workspace integration")
-            typer.echo(json.dumps(item["report"], indent=2, sort_keys=True))
-    if not all(item["report"].get("succeeded", False) for item in reports):
-        raise typer.Exit(code=1)
-
-
-def _batch_journal_path(root: Path) -> Path:
-    return root / "runs" / "x20-batch-transaction.json"
-
-
-def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[Path, ...]) -> None:
-    journal.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema": "docs.batch/v1",
-        "root": str(root.resolve()),
-        "backup": str(backup.resolve()),
-        "paths": [path.as_posix() for path in paths],
-        "expected": {path.as_posix(): _batch_snapshot(root / path) for path in paths},
-        "saved": {path.as_posix(): _batch_snapshot(backup / path) for path in paths},
-    }
-    temporary = journal.with_name(f".{journal.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), encoding="utf-8")
-    os.replace(temporary, journal)
-
-
-def _batch_snapshot(directory: Path) -> dict[str, list[object]]:
-    if any(
-        path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0)
-        for path in (directory, *directory.parents)
-    ):
-        raise RuntimeError("batch recovery refuses redirected paths")
-    if not directory.exists():
-        return {}
-    if not directory.is_dir():
-        raise RuntimeError("batch recovery output path must be a directory")
-    snapshot: dict[str, list[object]] = {}
-    for path in sorted(directory.rglob("*")):
-        if path.is_symlink() or (path.exists() and getattr(path.lstat(), "st_reparse_tag", 0) != 0):
-            raise RuntimeError("batch recovery refuses redirected paths")
-        if path.is_file():
-            identity = path.stat()
-            snapshot[path.relative_to(directory).as_posix()] = [
-                sha256_file(path),
-                identity.st_dev,
-                identity.st_ino,
-                identity.st_size,
-                identity.st_mtime_ns,
-                identity.st_ctime_ns,
-            ]
-        elif not path.is_dir():
-            raise RuntimeError("batch recovery refuses non-regular paths")
-    return snapshot
-
-
-def _record_batch_outputs(journal: Path, doc_id: str, output_format: str) -> None:
-    """Record only the known publication paths, never adopt unrelated outputs.
-
-    A crash before this checkpoint fails closed: publication ownership cannot
-    be inferred from a current batch journal or from unrecorded output bytes.
-    """
-    payload = json.loads(journal.read_text(encoding="utf-8"))
-    owned = {
-        "output/current": (f"{doc_id}.{output_format}", f"{doc_id}.{output_format}.manifest.json"),
-        "output/release": (f"{doc_id}.zip",),
-    }
-    for relative, names in owned.items():
-        current = _batch_snapshot(Path(payload["root"]) / relative)
-        for name in names:
-            if name in current:
-                payload["expected"][relative][name] = current[name]
-    temporary = journal.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
-    os.replace(temporary, journal)
-
-
-def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> None:
-    if not journal.exists():
-        return
-    if not _lock_held:
-        with owned_directory_lock(journal.parent / ".x20-batch.lock"):
-            return _recover_batch_transaction(journal, _lock_held=True)
-    payload = json.loads(journal.read_text(encoding="utf-8"))
-    root = journal.parent.parent.resolve()
-    backup = Path(payload["backup"])
-    paths = _BATCH_OUTPUT_PATHS
-    if (
-        Path(payload["root"]).resolve() != root
-        or journal.resolve() != _batch_journal_path(root)
-        or backup.parent.resolve() != root
-        or not backup.name.startswith(".x20-batch-")
-        or payload.get("paths") != [path.as_posix() for path in paths]
-    ):
-        raise RuntimeError("batch recovery path scope is invalid")
-    if not isinstance(payload.get("expected"), dict) or not isinstance(payload.get("saved"), dict):
-        raise RuntimeError("batch recovery ownership unavailable; preserve journal for manual recovery")
-    _batch_snapshot(backup)  # Validate all backup paths before touching any output.
-
-    def checked_snapshot(relative: Path) -> dict[str, list[object]]:
-        key = relative.as_posix()
-        current = _batch_snapshot(root / relative)
-        expected = payload["expected"][key]
-        saved = payload["saved"][key]
-        for name in current.keys() | expected.keys() | saved.keys():
-            value = current.get(name)
-            previous = saved.get(name)
-            if value == expected.get(name) or (value is not None and previous is not None and value[0] == previous[0]):
-                continue
-            if value is None and previous is None:  # Already removed on a previous recovery attempt.
-                continue
-            raise RuntimeError(f"batch recovery output changed concurrently: {relative / name}")
-        return current
-
-    for relative in paths:
-        if _batch_snapshot(backup / relative) != payload["saved"][relative.as_posix()]:
-            raise RuntimeError("batch recovery backup changed")
-        checked_snapshot(relative)
-    # Copy first. A failed copy never removes a live output or consumes backups.
-    with tempfile.TemporaryDirectory(prefix=".x20-batch-restore-", dir=root) as temporary:
-        staged = Path(temporary)
-        for relative in paths:
-            saved_dir = backup / relative
-            if saved_dir.exists():
-                shutil.copytree(saved_dir, staged / relative)
-        for relative in paths:
-            current = checked_snapshot(relative)
-            saved = payload["saved"][relative.as_posix()]
-            for name in sorted(current.keys() | saved.keys()):
-                checked_snapshot(relative)
-                target = root / relative / name
-                if name in saved:
-                    if name in current and current[name][0] == saved[name][0]:
-                        continue
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with directory_handle_guard(target.parent):
-                        os.replace(staged / relative / name, target)
-                else:
-                    target.unlink(missing_ok=True)
-    # Only a fully restored transaction can retire its recovery evidence.
-    journal.unlink()
-    shutil.rmtree(backup)
+        if transaction is not None:
+            transaction.finish(succeeded=all(item["report"].get("succeeded", False) for item in reports))
+    _report_results(command, reports, json_output)
 
 
 @document_app.command("release")
@@ -582,171 +445,29 @@ def run_document(
     selected_policy = policy or (PipelineMode.strict if strict else PipelineMode.release)
     if watch and not async_run:
         raise typer.BadParameter("--watch requires --async")
-    if async_run:
-        if len(formats or ["docx"]) != 1:
-            raise typer.BadParameter("--async supports exactly one --format")
-        deps = ctx.obj["deps"]
-        resolved = deps.resolve_context(ctx.obj.get("doc", ""))
-        workspace_root = deps.workspace.documents_dir.parent.resolve()
-        registry_path = workspace_root / ".docs" / "workspaces.json"
-        # A document configured by this cwd must never fall back to the
-        # process-wide active workspace. That fallback can enqueue a run for a
-        # different project and makes the detached worker fail against the
-        # wrong document. Use the workspace-local registry unless the caller
-        # explicitly supplied DOCS_WORKSPACE_REGISTRY.
-        registry = WorkspaceRegistry(
-            registry_path
-            if registry_path.is_file()
-            else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
-        )
-        active = registry.active()
-        if active is None:
-            raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
-        workspace_root = Path(str(active["root"])).resolve()
-        state = workspace_root / ".docs" / "x20.sqlite3"
-        run_id = str(uuid.uuid4())
-        payload = {
-            "run_id": run_id,
-            "document_id": resolved.doc_id,
-            "workspace_id": active["id"],
-            "pipeline_id": "document",
-            "format": (formats or ["docx"])[0],
-            "policy": selected_policy.value,
-        }
-        SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
-        SqliteJobQueue(state).enqueue(run_id, payload)
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        worker_env = os.environ.copy()
-        source_root = Path(__file__).resolve().parents[4]
-        worker_env["PYTHONPATH"] = os.pathsep.join(
-            part for part in (os.fspath(source_root), worker_env.get("PYTHONPATH")) if part
-        )
-        worker_log = workspace_root / ".docs" / "worker.log"
-        # Windows keeps redirected handles alive across a detached process
-        # boundary more aggressively than POSIX. The durable run/passport is
-        # the authoritative structured record; avoid holding the workspace
-        # log open after the worker exits so temporary workspaces and clean
-        # shutdowns are actually removable. POSIX keeps the diagnostic file.
-        worker_output = subprocess.DEVNULL if os.name == "nt" else worker_log.open("ab")
-        subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "docs.local_worker",
-                "--workspace-root",
-                os.fspath(workspace_root),
-            ],
-            cwd=os.fspath(workspace_root),
-            stdin=subprocess.DEVNULL,
-            stdout=worker_output,
-            stderr=worker_output,
-            env=worker_env,
-            # The worker is intentionally detached from the CLI, but it must
-            # not inherit unrelated descriptors (especially on Windows). An
-            # inherited log handle keeps temporary workspaces locked after a
-            # successful run and makes clean shutdown impossible.
-            close_fds=True,
-            creationflags=creationflags,
-            start_new_session=True,
-        )
-        if hasattr(worker_output, "close"):
-            worker_output.close()
-        if watch:
-            import time
-
-            store = SqliteRunStore(state)
-            while True:
-                item = store.get(run_id)
-                if item is None:
-                    raise typer.BadParameter(f"Run disappeared: {run_id}")
-                if item.status in {"succeeded", "completed", "failed", "cancelled", "expired"}:
-                    break
-                time.sleep(0.25)
-        queued_run = SqliteRunStore(state).get(run_id)
-        result = {
-            "id": run_id,
-            "status": queued_run.status if queued_run is not None else "queued",
-        }
-        typer.echo(json.dumps(result, sort_keys=True) if json_output else f"{run_id}\t{result['status']}")
-        return
-    # Synchronous execution uses the same durable worker path as async runs.
-    # This keeps the CLI's two modes semantically identical: both create a
-    # real Run, execute the real pipeline, and persist passport/evidence.
     if len(formats or ["docx"]) != 1:
-        raise typer.BadParameter("--sync supports exactly one --format")
-    deps = ctx.obj["deps"]
-    resolved = deps.resolve_context(ctx.obj.get("doc", ""))
-    workspace_root = deps.workspace.documents_dir.parent.resolve()
-    registry_path = workspace_root / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(
-        registry_path
-        if registry_path.is_file()
-        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
+        raise typer.BadParameter("--async supports exactly one --format" if async_run else "--sync supports exactly one --format")
+    # Both modes create a real Run and execute the real pipeline through the
+    # durable worker, so passport/evidence are persisted identically.
+    queued = queue_run(ctx.obj["deps"], ctx.obj.get("doc", ""), (formats or ["docx"])[0], selected_policy)
+    if async_run:
+        spawn_detached_worker(queued.workspace_root)
+        if watch:
+            wait_for_run(queued)
+        status = run_status(queued, "queued")
+    else:
+        status = run_inline(queued)
+    typer.echo(
+        json.dumps({"id": queued.run_id, "status": status}, sort_keys=True)
+        if json_output
+        else f"{queued.run_id}\t{status}"
     )
-    active = registry.active()
-    if active is None:
-        raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
-    workspace_root = Path(str(active["root"])).resolve()
-    state = workspace_root / ".docs" / "x20.sqlite3"
-    run_id = str(uuid.uuid4())
-    payload = {
-        "run_id": run_id,
-        "document_id": resolved.doc_id,
-        "workspace_id": active["id"],
-        "pipeline_id": "document",
-        "format": (formats or ["docx"])[0],
-        "policy": selected_policy.value,
-    }
-    SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
-    SqliteJobQueue(state).enqueue(run_id, payload)
-    # Import lazily to avoid making the CLI composition root depend on the
-    # sidecar at import time; the worker composition remains the single
-    # implementation of execution and evidence finalization.
-    from docs.infrastructure.persistence.sqlite_runtime import (
-        SqliteFindingStore,
-        SqlitePublicationStore,
-    )
-    from docs.sidecar import _build_worker
-
-    worker = _build_worker(
-        workspace_root,
-        SqliteJobQueue(state),
-        state,
-        SqliteRunStore(state),
-        SqlitePassportStore(state),
-        SqliteArtifactStore(state),
-        SqliteFindingStore(state),
-        SqlitePublicationStore(state),
-    )
-    worker_result = worker.run_once()
-    if worker_result is None:
-        raise typer.BadParameter(f"Unable to claim synchronous run: {run_id}")
-    final = SqliteRunStore(state).get(run_id)
-    status = final.status if final is not None else worker_result.state
-    output = {"id": run_id, "status": status}
-    typer.echo(json.dumps(output, sort_keys=True) if json_output else f"{run_id}\t{status}")
-
-
-def _durable_evidence_stores(ctx: typer.Context):
-    deps = ctx.obj["deps"]
-    root = deps.workspace.documents_dir.parent.resolve()
-    registry_path = root / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(
-        registry_path
-        if registry_path.is_file()
-        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
-    )
-    active = registry.active()
-    if active is not None:
-        root = Path(str(active["root"])).resolve()
-    state = root / ".docs" / "x20.sqlite3"
-    return SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state)
 
 
 @document_app.command("passport")
 def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
     """Show the immutable evidence passport for a durable run."""
-    passport_store, _, _ = _durable_evidence_stores(ctx)
+    passport_store, _, _ = durable_evidence_stores(ctx.obj["deps"])
     passport = passport_store.get(run_id)
     if passport is None:
         raise typer.BadParameter(f"Passport not found for run: {run_id}")
@@ -761,7 +482,7 @@ def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer
 @document_app.command("evidence")
 def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
     """Show the passport and all findings/artifacts produced by a durable run."""
-    passport_store, artifact_store, finding_store = _durable_evidence_stores(ctx)
+    passport_store, artifact_store, finding_store = durable_evidence_stores(ctx.obj["deps"])
     passport = passport_store.get(run_id)
     if passport is None:
         raise typer.BadParameter(f"Evidence not found for run: {run_id}")
@@ -838,23 +559,6 @@ def verify(
 
 def _artifact_payload(ctx: typer.Context, path: Path) -> dict[str, object]:
     return ctx.obj["deps"].artifact_reports.inspect(path)
-
-
-def _directory_identity(path: Path) -> tuple[int, int]:
-    identity = os.stat(path, follow_symlinks=False)
-    return identity.st_dev, identity.st_ino
-
-
-def _assert_directory_identity(path: Path, expected: tuple[int, int], *, operation: str) -> None:
-    if _directory_identity(path) != expected or path.is_symlink() or not path.is_dir():
-        raise typer.BadParameter(f"package output parent changed during {operation}: {path}")
-
-
-@contextmanager
-def _package_lock(output: Path):
-    """Serialize existing release-package merge and publication transactions."""
-    with owned_directory_lock(output.with_name(output.name + ".lock")):
-        yield
 
 
 @document_app.command("baseline")

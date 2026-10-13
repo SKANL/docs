@@ -76,43 +76,6 @@ class SourceProvenance:
 
 
 @dataclass(frozen=True)
-class NormalizedSourceRecord:
-    """Generic source boundary shared by all graph-producing adapters."""
-
-    source_id: str
-    source_type: str
-    content: str = ""
-    attributes: Mapping[str, Any] = field(default_factory=dict)
-    locator: str = ""
-
-    def __post_init__(self) -> None:
-        _required_text(self.source_id, "source_id")
-        _required_text(self.source_type, "source_type")
-        if type(self.content) is not str or type(self.locator) is not str:
-            raise ValueError("content and locator must be strings")
-        object.__setattr__(self, "attributes", _freeze(self.attributes))
-
-    @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> NormalizedSourceRecord:
-        return cls(
-            source_id=_required_text(value.get("source_id"), "source_id"),
-            source_type=_required_text(value.get("source_type", "source"), "source_type"),
-            content=value.get("content", ""),
-            attributes=value.get("attributes", {}),
-            locator=value.get("locator", ""),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "source_id": self.source_id,
-            "source_type": self.source_type,
-            "content": self.content,
-            "attributes": _thaw(self.attributes),
-            "locator": self.locator,
-        }
-
-
-@dataclass(frozen=True)
 class SemanticNode:
     id: str
     kind: str

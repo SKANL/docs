@@ -3,7 +3,7 @@ import json
 from docs.api.openapi import build_openapi_document, canonical_json
 
 
-def test_x20_catalog_covers_canonical_v2_resources() -> None:
+def test_runtime_catalog_covers_canonical_v2_resources() -> None:
     document = build_openapi_document()
     routes = {(method.upper(), path) for path, item in document["paths"].items() for method in item}
 
@@ -86,7 +86,7 @@ def test_builder_returns_independent_documents() -> None:
     first = build_openapi_document()
     first["info"]["title"] = "changed"
 
-    assert build_openapi_document()["info"]["title"] == "X20 API"
+    assert build_openapi_document()["info"]["title"] == "Docs API"
 
 
 def test_graph_query_modes_are_documented() -> None:
@@ -148,11 +148,11 @@ def test_import_job_and_stage_are_versioned_contracts() -> None:
     assert "expired" in schemas["status"]["enum"]
 
 
-def test_run_schema_matches_the_docs_x20_contract_shape() -> None:
+def test_run_schema_matches_the_docs_runtime_contract_shape() -> None:
     run = build_openapi_document()["components"]["schemas"]["run"]
 
     assert set(run["properties"]) == {"schema", "id", "status", "payload", "created_at"}
-    assert run["properties"]["schema"]["const"] == "docs.x20/v1"
+    assert run["properties"]["schema"]["const"] == "docs.runtime/v1"
     assert run["properties"]["payload"] == {"type": "object"}
     assert "document_id" not in run["properties"]
 

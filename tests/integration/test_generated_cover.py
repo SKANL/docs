@@ -18,7 +18,7 @@ def test_assemble_composes_generated_academic_cover_from_declarative_slots(tmp_p
         "cover": {
             "mode": "generated",
             "variant": "academic",
-            "slots": {
+            "content": {
                 "institution": "{{project.institution}}",
                 "title": "{{title}}",
                 "author": "{{project.author}}",

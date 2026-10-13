@@ -14,7 +14,7 @@ from .infrastructure.persistence.sqlite_runtime import (
     SqlitePublicationStore,
     SqliteRunStore,
 )
-from .sidecar import _build_worker
+from .sidecar.worker import build_worker
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -25,14 +25,14 @@ def main(argv: list[str] | None = None) -> int:
     root = args.workspace_root.expanduser().resolve()
     validate_workspace_layout(root, root / "documents", root / "templates")
     validate_workspace_marker(root)
-    state = root / ".docs" / "x20.sqlite3"
+    state = root / ".docs" / "runtime.sqlite3"
     queue = SqliteJobQueue(state)
     run_store = SqliteRunStore(state)
     passport_store = SqlitePassportStore(state)
     artifact_store = SqliteArtifactStore(state)
     findings_store = SqliteFindingStore(state)
     publication_store = SqlitePublicationStore(state)
-    runner = _build_worker(
+    runner = build_worker(
         root,
         queue,
         state,

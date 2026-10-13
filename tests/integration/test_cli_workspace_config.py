@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from docs.application.workspaces import WorkspaceRegistry
-from docs.cli._shared import build_workspace
 from docs.cli.main import app
+from docs.composition import build_workspace, open_workspace_registry
 from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 
 runner = CliRunner()
@@ -49,7 +48,7 @@ def test_build_workspace_default_when_nothing_set(tmp_path, monkeypatch):
     _canonical_workspace(tmp_path)
     monkeypatch.delenv("DOCS_DOCUMENTS_DIR", raising=False)
     monkeypatch.delenv("DOCS_TEMPLATES_DIR", raising=False)
-    # Isolate the persistent X20 workspace registry from the developer's
+    # Isolate the persistent runtime workspace registry from the developer's
     # selected workspace; this test exercises cwd-relative defaults.
     monkeypatch.setenv("DOCS_WORKSPACE_REGISTRY", str(tmp_path / "registry.json"))
 
@@ -125,7 +124,7 @@ def test_workspace_commands_use_doc_init_cwd_registry(tmp_path, monkeypatch):
 def test_workspace_commands_fall_back_to_configured_registry(tmp_path, monkeypatch):
     configured_registry = tmp_path / "configured-registry.json"
     external_workspace = tmp_path / "external"
-    registry = WorkspaceRegistry(configured_registry)
+    registry = open_workspace_registry(configured_registry)
     workspace = registry.create("External", external_workspace)
     registry.select(workspace["id"])
     monkeypatch.chdir(tmp_path)

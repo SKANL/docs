@@ -6,7 +6,7 @@ from pathlib import Path
 
 from docs.api.openapi import build_openapi_document
 from docs.application.pipeline_service import FULL_STAGE_IDS
-from docs.cli.commands.document_app import _BATCH_OUTPUT_PATHS, _record_batch_outputs, _write_batch_journal
+from docs.cli.commands.document_batch import _BATCH_OUTPUT_PATHS, _record_batch_outputs, _write_batch_journal
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 CURRENT_PUBLIC_DOCS = (
@@ -56,7 +56,7 @@ def test_public_stage_order_matches_full_stage_ids() -> None:
 def _runtime_output_contract(tmp_path: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
     root = tmp_path / "document"
     root.mkdir()
-    journal = root / "runs" / "x20-batch-transaction.json"
+    journal = root / "runs" / "batch-transaction.json"
     backup = root / "backup"
     _write_batch_journal(journal, root, backup, _BATCH_OUTPUT_PATHS)
     before = json.loads(journal.read_text(encoding="utf-8"))["expected"]

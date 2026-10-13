@@ -1,4 +1,4 @@
-# Docs Harness X20 CI
+# Docs Harness CI
 
 The repository's GitHub Actions workflows are the source of truth for continuous verification. They run on pushes to `main`, pull requests, and manual dispatch.
 
@@ -25,7 +25,7 @@ uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=70
 uv run pytest tests/architecture -q
 ```
 
-For X20 behavior, add focused checks:
+For behavior, add focused checks:
 
 ```bash
 uv run pytest tests/integration/test_v2_source_commands.py tests/integration/test_v2_cli.py tests/integration/test_v2_artifact_commands.py -q

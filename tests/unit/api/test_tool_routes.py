@@ -11,6 +11,7 @@ import pytest
 
 from docs.api.auth import Principal
 from docs.api.openapi import build_capability_catalog, build_openapi_document
+from docs.api.route_policy import required_scope
 from docs.application.imports import ImportError
 from docs.application.templates import builtin_names
 from docs.application.translate import TranslateReport, UntranslatablePdfError
@@ -531,4 +532,4 @@ def test_translation_output_missing_file_is_404_and_scope_is_documents_read(api)
     response = api("GET", "/v2/translations/output?path=artifacts/translations/none.pdf")
     assert response.status == 404 and code(response) == "output_not_found"
     assert "/v2/translations/output" in build_openapi_document()["paths"]
-    assert api.app._required_scope("GET", "/v2/translations/output") == "documents:read"
+    assert required_scope("GET", "/v2/translations/output") == "documents:read"

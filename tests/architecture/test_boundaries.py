@@ -106,46 +106,6 @@ def test_pipeline_kernel_contains_no_nondeterministic_timestamp_calls() -> None:
     assert not violations, "pipeline_kernel must not read wall-clock time:\n" + "\n".join(violations)
 
 
-def test_application_atomic_transform_does_not_import_system_boundaries_directly() -> None:
-    """The v2 application native port must not own process or filesystem mechanics."""
-    path = SRC_ROOT / "application" / "atomic_transform.py"
-    tree = _parse(path)
-    violations: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name in {"os", "subprocess", "tempfile"} or alias.name.startswith(("os.", "subprocess.", "tempfile.")):
-                    violations.append(f"{_display(node)} imports {alias.name}")
-        elif isinstance(node, ast.ImportFrom) and node.module and (
-            node.module in {"os", "subprocess", "tempfile"} or node.module.startswith(("os.", "subprocess.", "tempfile."))
-        ):
-            violations.append(f"{_display(node)} imports from {node.module}")
-
-    assert not violations, "application atomic transform must not import process or filesystem boundary modules:\n" + "\n".join(violations)
-
-def test_application_provenance_is_a_thin_reexport_without_persistence_imports() -> None:
-    """Filesystem, hashing, and JSON ledger mechanics live in infrastructure."""
-    path = SRC_ROOT / "application" / "provenance.py"
-    tree = _parse(path)
-    forbidden_modules = {"hashlib", "json", "os", "tempfile"}
-    violations: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = alias.name.split(".")[0]
-                if root in forbidden_modules:
-                    violations.append(f"{_display(node)} imports {alias.name}")
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            root = node.module.split(".")[0]
-            if root in forbidden_modules:
-                violations.append(f"{_display(node)} imports from {node.module}")
-
-    assert not violations, (
-        "application provenance must re-export infrastructure behavior rather than own persistence mechanics:\\n"
-        + "\\n".join(violations)
-    )
-
-
 def test_source_pipeline_uses_ports_instead_of_dynamic_infrastructure_imports() -> None:
     """Source orchestration must depend on ports, not import adapters at runtime."""
     path = SRC_ROOT / "application" / "source_pipeline.py"
@@ -166,7 +126,8 @@ def test_source_pipeline_uses_ports_instead_of_dynamic_infrastructure_imports() 
 
 def test_pipeline_wiring_receives_infrastructure_collaborators_from_composition() -> None:
     """Pipeline application services may use ports, never import adapters."""
-    for name in ("pipeline_assembly.py", "document_pipeline.py"):
+    names = ("pipeline_assembly.py", *_pipeline_sources())
+    for name in names:
         source = (SRC_ROOT / "application" / name).read_text(encoding="utf-8")
         assert "docs.infrastructure" not in source, (
             f"application/{name} must receive infrastructure collaborators "
@@ -174,48 +135,54 @@ def test_pipeline_wiring_receives_infrastructure_collaborators_from_composition(
         )
 
 
+def _pipeline_sources() -> dict[str, str]:
+    """Source text of the document pipeline module and its stage-group siblings."""
+    app = SRC_ROOT / "application"
+    return {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted(app.glob("document_pipeline*.py"))
+    }
+
+
 def test_document_pipeline_owns_native_review_and_release_handlers() -> None:
     """The application pipeline, not the CLI adapter, owns these stage fallbacks."""
-    path = SRC_ROOT / "application" / "document_pipeline.py"
-    source = path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=str(path))
+    sources = _pipeline_sources()
     functions = {
         node.name
-        for node in ast.walk(tree)
+        for name, source in sources.items()
+        for node in ast.walk(ast.parse(source, filename=name))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert {
-        "_native_document_review",
-        "_native_package_release",
-    } <= functions
+    assert {"document_review", "native_package_release"} <= functions
     assert "_write_package_archive" not in functions
-    assert "deps.package_publications.package" in source
-    assert '"package-release": stage_provider.operation("package_release") or _native_package_release' in source
-    assert '"evidence-review": _review_stage_operation(' in source
-    assert '"consistency-review": _review_stage_operation(' in source
+    assert "deps.package_publications.package" in sources["document_pipeline_publish.py"]
+    main = sources["document_pipeline.py"]
+    assert 'self.stage_provider.operation("package_release")' in main
+    assert "or publish_stages.native_package_release" in main
+    assert '"evidence-review": self._review_stage_operation(' in main
+    assert '"consistency-review": self._review_stage_operation(' in main
+    review_tree = ast.parse(sources["document_pipeline_review.py"])
     review_stage = next(
         node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_review_stage"
+        for node in ast.walk(review_tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "review_stage"
     )
     assert any(
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "run_stage"
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "review_stage_service"
         for node in ast.walk(review_stage)
     )
 
-    assert "explicit_stages = assemble_explicit_stage_operations(" in source
-    assert '"visual_review": _native_visual_review' in source
+    assert "explicit_stages = assemble_explicit_stage_operations(" in main
+    assert '"visual_review": review.visual_review' in main
 
 
 def test_document_pipeline_keeps_audit_and_verify_fallbacks_callable() -> None:
-    source = (SRC_ROOT / "application" / "document_pipeline.py").read_text(encoding="utf-8")
-    assert 'return lambda: _review_stage(stage)' in source
-    assert '"structural-audit": _review_stage_operation("structural-audit", audit)' in source
-    assert '"editorial-review": _review_stage_operation("editorial-review", verify)' in source
+    source = _pipeline_sources()["document_pipeline.py"]
+    assert "return lambda: self.review.review_stage(stage)" in source
+    assert '"structural-audit": self._review_stage_operation("structural-audit", build_stages.audit)' in source
+    assert '"editorial-review": self._review_stage_operation("editorial-review", build_stages.verify)' in source
 
 
 def test_v2_composition_does_not_reach_through_current_pipeline_aggregate():
@@ -227,10 +194,10 @@ def test_v2_composition_does_not_reach_through_current_pipeline_aggregate():
 def test_cli_api_and_worker_share_the_application_composition_boundary() -> None:
     """Process bootstraps must use the package composition, not local service assembly."""
     cli_source = (SRC_ROOT / "cli" / "main.py").read_text(encoding="utf-8")
-    api_source = (SRC_ROOT / "sidecar.py").read_text(encoding="utf-8")
+    api_source = (SRC_ROOT / "sidecar" / "document_actions.py").read_text(encoding="utf-8")
     worker_source = (SRC_ROOT / "workers" / "composition.py").read_text(encoding="utf-8")
 
     assert "from docs.composition import compose_application" in cli_source
-    assert "from .composition import compose_application" in api_source
+    assert "from docs.composition import ApplicationComposition, compose_application" in api_source
     assert "from docs.composition import ApplicationComposition" in worker_source
     assert "application: ApplicationComposition" in worker_source

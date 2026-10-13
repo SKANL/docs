@@ -18,6 +18,7 @@ from docs.application.package_service import PackageService
 from docs.cli.commands import document_app
 from docs.domain.artifacts import ArtifactRef, BuildManifest
 from docs.domain.pipeline_policy import PipelineMode
+from docs.infrastructure.transform.system_transform import AtomicTransform
 
 
 def _service() -> PackagePublicationService:
@@ -29,6 +30,7 @@ def _service() -> PackagePublicationService:
             assert_directory_identity=lambda _path, _expected, *, operation: None,
         ),
         lock=lambda _path: nullcontext(),
+        transform=AtomicTransform(),
     )
 
 
@@ -147,7 +149,9 @@ def test_package_rejects_a_source_member_change_before_archive_write(
 ) -> None:
     writes: list[object] = []
     archive_writer = SimpleNamespace(write=lambda *_args, **_kwargs: writes.append("write"))
-    service = PackagePublicationService(archive_writer=archive_writer, lock=lambda _path: nullcontext())
+    service = PackagePublicationService(
+        archive_writer=archive_writer, lock=lambda _path: nullcontext(), transform=AtomicTransform()
+    )
     source_dir = tmp_path / "output" / "current"
     source_dir.mkdir(parents=True)
     source = source_dir / "artifact.pdf"

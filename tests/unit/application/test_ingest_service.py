@@ -209,7 +209,7 @@ def test_pdf_render_toolchain_absent_skips_gracefully_and_warns(tmp_path: Path, 
     service = IngestService(
         _FakeDetector({"diagram.pdf": "pdf"}),
         {"pdf": _FakePdfHandler(with_media=False)},
-        pdf_render=None,  # toolchain absent, exactly as `Deps` degrades it
+        pdf_render=None,  # toolchain absent, exactly as `ApplicationComposition` degrades it
     )
 
     report = service.ingest_inbox(inbox, tmp_path / "sections", assets_dir=tmp_path / "assets")

@@ -6,9 +6,11 @@ the package or browser executable is unavailable.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 from urllib.request import url2pathname
 
 from docs.domain.artifacts import RenderProfile, VerificationFinding
@@ -16,55 +18,7 @@ from docs.domain.identity import sha256_file
 
 BROWSER_TIMEOUT_MS = 10_000
 
-
-class PlaywrightHtmlBrowserQa:
-    def verify(
-        self, path: Path, profile: RenderProfile, preview_dir: Path | None
-    ) -> list[VerificationFinding]:
-        import playwright.sync_api as playwright_api  # type: ignore[import-not-found]
-
-        sync_playwright = playwright_api.sync_playwright
-        PlaywrightError = getattr(playwright_api, "Error", Exception)
-
-        findings: list[VerificationFinding] = []
-        target_url = path.resolve().as_uri()
-        target = urlparse(target_url)
-        local_root = path.resolve().parent
-
-        def restrict_resources(route: Any) -> None:
-            request = urlparse(route.request.url)
-            same_origin = target.scheme != "file" and request.scheme == target.scheme and request.netloc == target.netloc
-            local_path = Path(url2pathname(request.path))
-            if request.scheme == "file" and request.path.startswith("/" ) and len(request.path) > 3 and request.path[2] == ":":
-                local_path = Path(url2pathname(request.path[1:]))
-            local_file = request.scheme == "file" and local_path.resolve().is_relative_to(local_root)
-            if same_origin or local_file:
-                route.continue_()
-            else:
-                route.abort()
-
-        try:
-            with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
-                try:
-                    context = browser.new_context(
-                        java_script_enabled=False,
-                        service_workers="block",
-                        accept_downloads=False,
-                    )
-                    try:
-                        page = context.new_page()
-                        try:
-                            page.set_default_timeout(BROWSER_TIMEOUT_MS)
-    
-                            page.route("**/*", restrict_resources)
-                            page.goto(target_url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
-                            if preview_dir is not None:
-                                preview_dir.mkdir(parents=True, exist_ok=True)
-                            for width, height in profile.browser_viewports:
-                                page.set_viewport_size({"width": width, "height": height})
-                                metrics = page.evaluate(
-                                    """() => ({
+_PAGE_METRICS_SCRIPT = """() => ({
                                   viewportWidth: window.innerWidth,
                                   viewportHeight: window.innerHeight,
                                   scrollWidth: document.documentElement.scrollWidth,
@@ -119,75 +73,154 @@ class PlaywrightHtmlBrowserQa:
                                     return overlaps;
                                   })(),
                                 })"""
-                                )
-                                if metrics["scrollWidth"] > metrics["viewportWidth"]:
-                                    findings.append(VerificationFinding(
-                                        code="render.browser.horizontal_overflow",
-                                        message=f"Browser viewport {width}×{height} has horizontal overflow.",
-                                        severity="warning", dimension="visual", evidence=metrics,
-                                    ))
-                                if metrics["scrollHeight"] > metrics["viewportHeight"] * 8:
-                                    findings.append(VerificationFinding(
-                                        code="render.browser.excessive_height",
-                                        message=f"Browser viewport {width}×{height} produces unusually tall content.",
-                                        severity="warning", dimension="visual", evidence=metrics,
-                                    ))
-                                if not metrics["visibleText"]:
-                                    findings.append(VerificationFinding(
-                                        code="render.browser.blank",
-                                        message=f"Browser viewport {width}×{height} has no visible text.",
-                                        severity="warning" if profile.allow_blank_pages else "error", dimension="visual",
-                                    ))
-                                if metrics["missingAlt"]:
-                                    findings.append(VerificationFinding(
-                                        "accessibility.html.alt",
-                                        f"Browser found {metrics['missingAlt']} visible image(s) without alt text.",
-                                        dimension="accessibility",
-                                    ))
-                                browser_metrics = (
-                                    ("accessibility.html.focus", metrics.get("missingFocusIndicators", 0),
-                                     "Browser found visible focusable element(s) without a visible focus indicator.", "accessibility"),
-                                    ("accessibility.html.landmarks", len(metrics.get("missingLandmarks", [])),
-                                     "Browser found required landmark(s) missing or not visible.", "accessibility"),
-                                    ("accessibility.html.inaccessible", metrics.get("inaccessibleContent", 0),
-                                     "Browser found visible interactive content without an accessible name or with aria-hidden focusability.", "accessibility"),
-                                    ("render.browser.broken_image", metrics.get("brokenImages", 0),
-                                     "Browser found visible image(s) that did not load.", "visual"),
-                                    ("render.browser.unloaded_font", metrics.get("unloadedFonts", 0),
-                                     "Browser found font face(s) that did not finish loading.", "visual"),
-                                    ("render.browser.clipping", metrics.get("clippedElements", 0),
-                                     "Browser found visible content clipped by an ancestor.", "visual"),
-                                    ("render.browser.overlap", metrics.get("overlappingElements", 0),
-                                     "Browser found intersecting visible layout boxes; inspect for unintended overlap.", "visual"),
-                                )
-                                for code, count, message, dimension in browser_metrics:
-                                    if count:
-                                        findings.append(VerificationFinding(
-                                            code, f"{message} Count: {count}.", "warning",
-                                            dimension=dimension, evidence={"count": count, "viewport": [width, height]},
-                                        ))
-                                screenshot = None
-                                if preview_dir is not None:
-                                    screenshot = preview_dir / f"{profile.preview_stem or path.stem}-browser-{width}x{height}.png"
-                                    page.screenshot(path=screenshot, full_page=True, timeout=BROWSER_TIMEOUT_MS)
-                                evidence = {"viewport": [width, height], **metrics}
-                                if screenshot is not None:
-                                    evidence.update({
-                                        "screenshot_path": screenshot.resolve().as_posix(),
-                                        "screenshot_sha256": sha256_file(screenshot),
-                                        "screenshot_size_bytes": screenshot.stat().st_size,
-                                    })
-                                findings.append(VerificationFinding(
-                                    code="render.browser.checked",
-                                    message=f"Browser viewport {width}×{height} checked; computed layout evidence collected.",
-                                    severity="info", dimension="visual", evidence=evidence,
-                                ))
-                        finally:
-                            page.close()
-                    finally:
-                        context.close()
-                finally:
-                    browser.close()
+
+
+def _resource_gate(target: ParseResult, local_root: Path) -> Callable[[Any], None]:
+    """Route handler that only lets same-origin or document-local files load."""
+
+    def restrict_resources(route: Any) -> None:
+        request = urlparse(route.request.url)
+        same_origin = target.scheme != "file" and request.scheme == target.scheme and request.netloc == target.netloc
+        local_path = Path(url2pathname(request.path))
+        if request.scheme == "file" and request.path.startswith("/" ) and len(request.path) > 3 and request.path[2] == ":":
+            local_path = Path(url2pathname(request.path[1:]))
+        local_file = request.scheme == "file" and local_path.resolve().is_relative_to(local_root)
+        if same_origin or local_file:
+            route.continue_()
+        else:
+            route.abort()
+
+    return restrict_resources
+
+
+@contextmanager
+def _isolated_page(playwright: Any) -> Iterator[Any]:
+    """Yield a script-less, download-less page and always release the browser."""
+    browser = playwright.chromium.launch(headless=True)
+    try:
+        context = browser.new_context(
+            java_script_enabled=False,
+            service_workers="block",
+            accept_downloads=False,
+        )
+        try:
+            page = context.new_page()
+            try:
+                yield page
+            finally:
+                page.close()
+        finally:
+            context.close()
+    finally:
+        browser.close()
+
+
+def _viewport_findings(
+    metrics: dict[str, Any], width: int, height: int, profile: RenderProfile
+) -> list[VerificationFinding]:
+    findings: list[VerificationFinding] = []
+    if metrics["scrollWidth"] > metrics["viewportWidth"]:
+        findings.append(VerificationFinding(
+            code="render.browser.horizontal_overflow",
+            message=f"Browser viewport {width}×{height} has horizontal overflow.",
+            severity="warning", dimension="visual", evidence=metrics,
+        ))
+    if metrics["scrollHeight"] > metrics["viewportHeight"] * 8:
+        findings.append(VerificationFinding(
+            code="render.browser.excessive_height",
+            message=f"Browser viewport {width}×{height} produces unusually tall content.",
+            severity="warning", dimension="visual", evidence=metrics,
+        ))
+    if not metrics["visibleText"]:
+        findings.append(VerificationFinding(
+            code="render.browser.blank",
+            message=f"Browser viewport {width}×{height} has no visible text.",
+            severity="warning" if profile.allow_blank_pages else "error", dimension="visual",
+        ))
+    if metrics["missingAlt"]:
+        findings.append(VerificationFinding(
+            "accessibility.html.alt",
+            f"Browser found {metrics['missingAlt']} visible image(s) without alt text.",
+            dimension="accessibility",
+        ))
+    browser_metrics = (
+        ("accessibility.html.focus", metrics.get("missingFocusIndicators", 0),
+         "Browser found visible focusable element(s) without a visible focus indicator.", "accessibility"),
+        ("accessibility.html.landmarks", len(metrics.get("missingLandmarks", [])),
+         "Browser found required landmark(s) missing or not visible.", "accessibility"),
+        ("accessibility.html.inaccessible", metrics.get("inaccessibleContent", 0),
+         "Browser found visible interactive content without an accessible name or with aria-hidden focusability.", "accessibility"),
+        ("render.browser.broken_image", metrics.get("brokenImages", 0),
+         "Browser found visible image(s) that did not load.", "visual"),
+        ("render.browser.unloaded_font", metrics.get("unloadedFonts", 0),
+         "Browser found font face(s) that did not finish loading.", "visual"),
+        ("render.browser.clipping", metrics.get("clippedElements", 0),
+         "Browser found visible content clipped by an ancestor.", "visual"),
+        ("render.browser.overlap", metrics.get("overlappingElements", 0),
+         "Browser found intersecting visible layout boxes; inspect for unintended overlap.", "visual"),
+    )
+    for code, count, message, dimension in browser_metrics:
+        if count:
+            findings.append(VerificationFinding(
+                code, f"{message} Count: {count}.", "warning",
+                dimension=dimension, evidence={"count": count, "viewport": [width, height]},
+            ))
+    return findings
+
+
+def _checked_finding(
+    metrics: dict[str, Any], width: int, height: int, screenshot: Path | None
+) -> VerificationFinding:
+    evidence = {"viewport": [width, height], **metrics}
+    if screenshot is not None:
+        evidence.update({
+            "screenshot_path": screenshot.resolve().as_posix(),
+            "screenshot_sha256": sha256_file(screenshot),
+            "screenshot_size_bytes": screenshot.stat().st_size,
+        })
+    return VerificationFinding(
+        code="render.browser.checked",
+        message=f"Browser viewport {width}×{height} checked; computed layout evidence collected.",
+        severity="info", dimension="visual", evidence=evidence,
+    )
+
+
+def _inspect_viewport(
+    page: Any, path: Path, profile: RenderProfile, preview_dir: Path | None, width: int, height: int
+) -> list[VerificationFinding]:
+    page.set_viewport_size({"width": width, "height": height})
+    metrics = page.evaluate(_PAGE_METRICS_SCRIPT)
+    findings = _viewport_findings(metrics, width, height, profile)
+    screenshot = None
+    if preview_dir is not None:
+        screenshot = preview_dir / f"{profile.preview_stem or path.stem}-browser-{width}x{height}.png"
+        page.screenshot(path=screenshot, full_page=True, timeout=BROWSER_TIMEOUT_MS)
+    findings.append(_checked_finding(metrics, width, height, screenshot))
+    return findings
+
+
+class PlaywrightHtmlBrowserQa:
+    def verify(
+        self, path: Path, profile: RenderProfile, preview_dir: Path | None
+    ) -> list[VerificationFinding]:
+        import playwright.sync_api as playwright_api  # type: ignore[import-not-found]
+
+        sync_playwright = playwright_api.sync_playwright
+        PlaywrightError = getattr(playwright_api, "Error", Exception)
+
+        findings: list[VerificationFinding] = []
+        target_url = path.resolve().as_uri()
+        gate = _resource_gate(urlparse(target_url), path.resolve().parent)
+
+        try:
+            with sync_playwright() as playwright, _isolated_page(playwright) as page:
+                page.set_default_timeout(BROWSER_TIMEOUT_MS)
+                page.route("**/*", gate)
+                page.goto(target_url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+                if preview_dir is not None:
+                    preview_dir.mkdir(parents=True, exist_ok=True)
+                for width, height in profile.browser_viewports:
+                    findings.extend(_inspect_viewport(page, path, profile, preview_dir, width, height))
         except PlaywrightError as exc:
             findings.append(VerificationFinding(
                 code="render.browser.exception",
