@@ -153,7 +153,7 @@ def test_bridge_does_not_duplicate_an_existing_link():
 def test_vocabulary_ignores_non_python_sources():
     """A `docs` node from pyproject.toml is a package name, not a code symbol.
 
-    Sampling the first real run linked `plans/roadmap.md :: Completed` to the
+    Sampling the first real run linked a roadmap section to the
     `docs` entry of pyproject.toml. Config files must not feed the vocabulary.
     """
     graph = {
@@ -438,15 +438,8 @@ def test_main_reports_files_the_graph_names_but_the_tree_lacks(
 # --- provenance: the standing contract vs. the archaeology --------------------
 
 
-def test_plans_are_excluded_because_the_migration_they_describe_is_finished():
-    # Measured before this rule existed: 1577 of 2405 bridge edges (66%) came
-    # from `plans/`, 746 from archived changes, and 25 from the STANDING
-    # contract. So `graphify explain <symbol>` answered "why does this exist"
-    # with a 2026-06 slice plan for a monolith migration that
-    # `plans/roadmap.md` itself declares complete -- and which two later SDD
-    # changes have since refactored past.
-    assert provenance_tier("plans/2026-06-19-slice-1-foundations.md") is None
-    assert provenance_tier("plans/roadmap.md") is None
+def test_unlisted_markdown_emits_no_edges():
+    assert provenance_tier("notes/roadmap.md") is None
 
 
 def test_the_standing_contract_is_tier_contract():
@@ -455,25 +448,24 @@ def test_the_standing_contract_is_tier_contract():
     assert provenance_tier("CLAUDE.md") == "contract"
 
 
-def test_archived_changes_and_design_docs_are_tier_rationale():
+def test_archived_changes_are_tier_rationale():
     # Archived SDD changes are the ADR record CLAUDE.md calls a "full audit
     # trail" -- superseded as a PLAN, still true as a REASON.
     assert provenance_tier("openspec/changes/archive/2026-07-06-x/design.md") == "rationale"
-    assert provenance_tier("specs/2026-06-19-harness-migration-hexagonal-design.md") == "rationale"
 
 
 def test_every_emitted_edge_carries_its_provenance_tier():
     graph = {
         "nodes": [
             _document_node("h-spec", "openspec/specs/document-render/spec.md", 1),
-            _document_node("h-plan", "plans/2026-06-19-slice-1-foundations.md", 1),
+            _document_node("h-plan", "notes/slice-1.md", 1),
             _code_node("c1", "HtmlRendererAdapter", "src/docs/application/html_render.py"),
         ],
         "links": [],
     }
     sections = {
         ("openspec/specs/document-render/spec.md", 1): "Uses `HtmlRendererAdapter`.",
-        ("plans/2026-06-19-slice-1-foundations.md", 1): "Also names `HtmlRendererAdapter`.",
+        ("notes/slice-1.md", 1): "Also names `HtmlRendererAdapter`.",
     }
 
     edges = bridge_edges(graph, sections)

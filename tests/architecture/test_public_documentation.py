@@ -14,9 +14,6 @@ CURRENT_PUBLIC_DOCS = (
     REPOSITORY_ROOT / "AGENTS.md",
     *sorted((REPOSITORY_ROOT / "docs").glob("*.md")),
 )
-MIGRATION_HISTORY_API_CONTRACT = (
-    REPOSITORY_ROOT / "docs" / "superpowers" / "specs" / "2026-09-21-api-v2-contract.md"
-)
 
 
 def _read_current_public_docs() -> dict[Path, str]:
@@ -140,13 +137,6 @@ def test_current_api_docs_use_only_v2_routes() -> None:
     assert "/v1/" not in current_guidance
     assert documented_prefixes == {"/v2"}
     assert all(any(path.startswith(prefix + "/") for path in openapi_paths) for prefix in documented_prefixes)
-
-    historical_contracts = tuple(
-        path
-        for path in sorted((REPOSITORY_ROOT / "docs" / "superpowers" / "specs").rglob("*.md"))
-        if "/v1/" in path.read_text(encoding="utf-8")
-    )
-    assert historical_contracts == (MIGRATION_HISTORY_API_CONTRACT,)
 
 
 def test_ci_and_qa_docs_match_workflow_coverage_and_toolchain_contract() -> None:

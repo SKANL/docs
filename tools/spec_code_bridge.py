@@ -89,26 +89,16 @@ def backticked_symbols(text: str) -> set[str]:
 #
 #   contract  -- the STANDING agreement. `graphify explain` should lead here.
 #   rationale -- superseded as a plan, still true as a REASON: archived SDD
-#                changes (the "full audit trail" CLAUDE.md points at) and the
-#                founding design docs.
-#   (skipped) -- `plans/` is the 15-slice playbook for migrating a 3951-line
-#                monolith. `plans/roadmap.md` declares that migration
-#                finished, and two later SDD changes refactored past the code
-#                shape those slices describe. It measured 1577 of 2405 bridge
-#                edges (66%) against 25 from the standing contract, so it was
-#                not adding history to the graph -- it was outvoting the
-#                contract 63:1 on every question.
+#                changes (the "full audit trail" CLAUDE.md points at).
+#   (skipped) -- everything else emits no edges.
 _CONTRACT_PREFIXES = ("openspec/specs/",)
 _CONTRACT_FILES = ("AGENTS.md", "CLAUDE.md")
-_RATIONALE_PREFIXES = ("openspec/changes/", "specs/")
-_SKIPPED_PREFIXES = ("plans/",)
+_RATIONALE_PREFIXES = ("openspec/changes/",)
 
 
 def provenance_tier(source_file: str) -> str | None:
     """Classify one markdown file, or return None to emit no edges from it."""
     normalized = str(source_file).replace("\\", "/").lstrip("./")
-    if normalized.startswith(_SKIPPED_PREFIXES):
-        return None
     if normalized in _CONTRACT_FILES or normalized.startswith(_CONTRACT_PREFIXES):
         return "contract"
     if normalized.startswith(_RATIONALE_PREFIXES):
