@@ -154,6 +154,14 @@ describe("delivery: history and gating", () => {
     expect(screen.queryByRole("button", { name: "Start release run" })).toBeNull();
   });
 
+  it("does not load the publication history when its capability is missing", async () => {
+    const listPublicationHistory = vi.fn(async () => []);
+    const { api } = deliveryApi({ listPublicationHistory, getCapabilities: async () => deliveryCatalog("publications.list") });
+    open(api);
+    expect(await screen.findByText("Publication history is not available on this server.")).toBeTruthy();
+    expect(listPublicationHistory).not.toHaveBeenCalled();
+  });
+
   it("asks for a document first when none is current", async () => {
     const { api } = deliveryApi({ getCurrentDocument: async () => ({ current_document_id: null, document: null }) });
     open(api);

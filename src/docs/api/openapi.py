@@ -67,7 +67,7 @@ def _schemas() -> dict[str, Any]:
         "baseline": _item_schema("baseline", {"id": {"type": "string"}, "name": {"type": "string"}, "status": _ref("status"), "created_at": {"type": "string", "format": "date-time"}}),
         "plugin": _item_schema("plugin", {"id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "enabled": {"type": "boolean"}}),
         "capability": _item_schema("capability", {
-            "id": {"type": "string"}, "cli_command": {"type": "string"},
+            "id": {"type": "string"}, "cli_command": {"type": ["string", "null"]},
             "route": {"type": ["string", "null"]},
             "scopes": {"type": "array", "items": {"type": "string"}},
             "surface": {"type": "string", "enum": ["web+desktop", "cli"]},
@@ -115,6 +115,21 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "template list": "GET /v2/templates",
     "document passport": "GET /v2/runs/{run_id}/passport",  # same payload `document passport` prints
     **available_cli_routes(),
+}
+
+
+# Read surfaces the Review Studio renders that have no CLI command of their own (the CLI reads them from
+# disk).  They get a capability id in the `platform` group so every rendered surface is gated by the catalogue.
+_PLATFORM_READS: dict[str, tuple[str, str]] = {
+    "findings.list": ("GET /v2/findings", "S4"),
+    "artifacts.list": ("GET /v2/artifacts", "S4"),
+    "artifacts.show": ("GET /v2/artifacts/{artifact_id}", "S4"),
+    "baselines.list": ("GET /v2/baselines", "S4"),
+    "graph.read": ("GET /v2/graph", "S4"),
+    "plugins.list": ("GET /v2/plugins", "S6"),
+    "plugins.show": ("GET /v2/plugins/{plugin_id}", "S6"),
+    "publications.list": ("GET /v2/publications", "S5"),
+    "revisions.list": ("GET /v2/revisions", "S2"),
 }
 
 
@@ -196,6 +211,14 @@ def build_capability_catalog() -> dict[str, Any]:
         if command in _EXCLUDED_CLI_COMMANDS and route is None:
             entry |= {"status": "excluded", "surface": "cli", "reason": _EXCLUDED_CLI_COMMANDS[command]}
         groups.setdefault(group, []).append(entry)
+    groups["platform"] = []
+    for capability_id, (route, slice_id) in _PLATFORM_READS.items():
+        method, path = route.split(" ", 1)
+        groups["platform"].append({
+            "id": capability_id, "cli_command": None, "route": route,
+            "scopes": list(paths[path][method.lower()].get("x-rbac-scopes", [])), "surface": "web+desktop",
+            "slice": slice_id, "status": "available",
+        })
     return {"groups": [{"id": group, "capabilities": items} for group, items in groups.items()]}
 
 

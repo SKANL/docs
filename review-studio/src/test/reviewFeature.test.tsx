@@ -112,6 +112,15 @@ describe("artifacts and previews", () => {
   });
 });
 
+describe("capability-gated read surfaces", () => {
+  it.each([["findings", "findings.list", "listFindings"], ["artifacts", "artifacts.list", "listArtifacts"], ["baselines", "baselines.list", "listBaselines"], ["graph", "graph.read", "getGraph"]])("does not load %s when the server does not list the capability", async (tab, id, method) => {
+    const load = vi.fn(async () => []);
+    openReview(`/review/${tab}`, makeReviewApi({ getCapabilities: async () => reviewCatalog(id), [method]: load }));
+    expect(await screen.findByText(/is not available on this server/)).toBeTruthy();
+    expect(load).not.toHaveBeenCalled();
+  });
+});
+
 describe("baseline promotion", () => {
   const open = async (api = makeReviewApi()) => {
     openReview("/review/evidence/run-1", api);

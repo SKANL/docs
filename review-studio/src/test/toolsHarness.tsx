@@ -9,7 +9,7 @@ const cap = (id: string, status: Capability["status"] = "available"): Capability
 export const toolCapabilityIds = [
   "template.list", "template.show", "template.use", "template.create", "template.init", "template.validate", "doctor", "explain",
   "collect-sources", "collect-issues", "collect-code-evidence", "build-rules", "build-ledger", "review-rules", "build-docx", "format-audit-docx", "translate",
-  "doc.show", "doc.status", "document.import", "source.ingest",
+  "doc.show", "doc.status", "document.import", "source.ingest", "plugins.list", "plugins.show",
 ];
 export const toolsCatalog = (...missing: string[]) => ({ groups: [{ id: "tools", capabilities: toolCapabilityIds.map(id => cap(id, missing.includes(id) ? "planned" : "available")) }] });
 

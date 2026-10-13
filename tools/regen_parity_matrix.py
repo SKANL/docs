@@ -52,7 +52,7 @@ def _row(capability: dict, ui: dict) -> str:
 
 def render() -> str:
     ui = json.loads(UI_DATA.read_text(encoding="utf-8"))
-    rows = [_row(c, ui) for g in build_capability_catalog()["groups"] for c in g["capabilities"]]
+    rows = [_row(c, ui) for g in build_capability_catalog()["groups"] for c in g["capabilities"] if c["cli_command"] is not None]
     return PREAMBLE + "\n".join([HEADER, "|" + " --- |" * 7, *rows]) + "\n"
 
 
