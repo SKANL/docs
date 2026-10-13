@@ -60,7 +60,105 @@ def _schemas() -> dict[str, Any]:
         "revision": _item_schema("revision", {"id": {"type": "string"}, "message": {"type": "string"}, "author": {"type": "string"}, "status": _ref("status")}),
         "baseline": _item_schema("baseline", {"id": {"type": "string"}, "name": {"type": "string"}, "status": _ref("status"), "created_at": {"type": "string", "format": "date-time"}}),
         "plugin": _item_schema("plugin", {"id": {"type": "string"}, "name": {"type": "string"}, "version": {"type": "string"}, "enabled": {"type": "boolean"}}),
+        "capability": _item_schema("capability", {
+            "id": {"type": "string"}, "cli_command": {"type": "string"},
+            "route": {"type": ["string", "null"]},
+            "scopes": {"type": "array", "items": {"type": "string"}},
+            "surface": {"type": "string", "enum": ["web+desktop"]},
+            "slice": {"type": "string"},
+            "status": {"type": "string", "enum": ["available", "planned"]},
+        }),
+        "capability_group": _item_schema("capability_group", {
+            "id": {"type": "string"},
+            "capabilities": {"type": "array", "items": _ref("capability")},
+        }),
+        "capability_catalog": _item_schema("capability_catalog", {
+            "groups": {"type": "array", "items": _ref("capability_group")},
+        }),
     }
+
+
+# Only routes with equivalent, implemented application behavior are advertised.
+# Other CLI commands remain visible as planned inventory, never executable UI actions.
+_AVAILABLE_CLI_ROUTES: dict[str, str] = {
+    "workspace list": "GET /v2/workspaces",
+    "workspace create": "POST /v2/workspaces",
+    "workspace rename": "PATCH /v2/workspaces/{workspace_id}",
+    "doc list": "GET /v2/documents",
+    "doc show": "GET /v2/documents/{document_id}",
+    "context status": "GET /v2/documents/{document_id}/context",
+    "context set": "POST /v2/documents/{document_id}/context",
+    "document status": "GET /v2/documents/{document_id}/status",
+    "document prepare": "POST /v2/documents/{document_id}/prepare",
+    "document build": "POST /v2/documents/{document_id}/build",
+    "document verify": "POST /v2/documents/{document_id}/verify",
+    "run list": "GET /v2/runs",
+    "run show": "GET /v2/runs/{run_id}",
+    "run cancel": "POST /v2/runs/{run_id}/cancel",
+    "run retry": "POST /v2/runs/{run_id}/retry",
+    "template list": "GET /v2/templates",
+}
+
+
+def _cli_commands() -> list[str]:
+    """Enumerate leaf commands from Typer metadata, not a second CLI list."""
+    from typer.main import get_command
+
+    from docs.cli.main import app
+
+    def walk(group: Any, prefix: str = "") -> list[str]:
+        result = []
+        for name, command in group.commands.items():
+            full_name = f"{prefix} {name}".strip()
+            result.extend(walk(command, full_name) if hasattr(command, "commands") else [full_name])
+        return result
+
+    return sorted(walk(get_command(app)))
+
+
+def _slice_for(command: str) -> str:
+    group, _, action = command.partition(" ")
+    if command in {"guide", "explain", "doctor", "stamp"}:
+        return "S0"
+    if group == "workspace" or (group == "doc" and action != "revise"):
+        return "S1"
+    if group in {"asset", "context", "source"} or command in {
+        "doc revise", "build-section", "pack-context", "review-section",
+        "review-document", "stamp-section", "document ingest", "document classify",
+    }:
+        return "S2"
+    if group == "run" or command in {
+        "document plan", "document prepare", "document run", "document build", "document verify",
+    }:
+        return "S3"
+    if command in {"document evidence", "document passport", "document baseline", "document inspect", "document diff", "qa-docx", "apply-corrections"}:
+        return "S4"
+    if command in {"document package", "document publish", "document release"}:
+        return "S5"
+    return "S6"
+
+
+def build_capability_catalog() -> dict[str, Any]:
+    """Return all current CLI commands, advertising only exact API-backed operations."""
+    paths = build_openapi_document()["paths"]
+    commands = _cli_commands()
+    stale = set(_AVAILABLE_CLI_ROUTES) - set(commands)
+    if stale:
+        raise ValueError(f"Capability mappings reference missing CLI commands: {sorted(stale)}")
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for command in commands:
+        group = command.split(" ", 1)[0] if " " in command else "core"
+        route = _AVAILABLE_CLI_ROUTES.get(command)
+        scopes: list[str] = []
+        if route is not None:
+            method, path = route.split(" ", 1)
+            scopes = list(paths[path][method.lower()].get("x-rbac-scopes", []))
+        groups.setdefault(group, []).append({
+            "id": command.replace(" ", "."), "cli_command": command,
+            "route": route, "scopes": scopes, "surface": "web+desktop",
+            "slice": _slice_for(command), "status": "available" if route else "planned",
+        })
+    return {"groups": [{"id": group, "capabilities": items} for group, items in groups.items()]}
 
 
 def build_openapi_document() -> dict[str, Any]:
@@ -91,6 +189,9 @@ def build_openapi_document() -> dict[str, Any]:
         },
     }
     paths: dict[str, Any] = {
+        "/v2/capabilities": {
+            "get": _operation("Get capability catalog", _json_response(_ref("capability_catalog"))),
+        },
         "/v2/workspaces": {
             "get": _operation("List workspaces", _json_response(_ref("workspace_page")), scopes=("workspaces:read",)),
             "post": _operation("Create workspace", _json_response(_ref("workspace")), request=_ref("workspace_create_request"), scopes=("workspaces:write",), success_status=201),

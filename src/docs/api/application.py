@@ -26,7 +26,7 @@ from docs.observability import ObservabilityPort, create_observability_from_env
 from .auth import AuthError, bearer_auth
 from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
-from .openapi import build_openapi_document, canonical_json
+from .openapi import build_capability_catalog, build_openapi_document, canonical_json
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
@@ -132,6 +132,7 @@ class X20Application:
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
         self._static_routes = {
+            ("GET", "/v2/capabilities"),
             ("GET", "/v2/graph"),
             ("GET", "/v2/documents"),
             ("GET", "/v2/findings"),
@@ -151,6 +152,7 @@ class X20Application:
             ("POST", "/v2/runs"),
         }
         self._validate_initial_route_collisions()
+        self._register_owned_route("GET", "/v2/capabilities", lambda _: Response.json(build_capability_catalog()))
         self._register_owned_route("GET", "/v2/graph", self._graph)
         self._register_owned_route("GET", "/v2/documents", self._documents)
         self._register_owned_route("GET", "/v2/findings", self._findings)

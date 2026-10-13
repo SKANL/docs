@@ -215,3 +215,14 @@ def test_openapi_declares_only_the_v2_public_route_prefix() -> None:
 
     assert paths
     assert {path.split("/", 2)[1] for path in paths} == {"v2"}
+
+
+def test_capability_discovery_has_a_versioned_openapi_response() -> None:
+    document = build_openapi_document()
+    operation = document["paths"]["/v2/capabilities"]["get"]
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/capability_catalog"
+    }
+    assert document["components"]["schemas"]["capability"]["required"] == [
+        "id", "cli_command", "route", "scopes", "surface", "slice", "status"
+    ]
