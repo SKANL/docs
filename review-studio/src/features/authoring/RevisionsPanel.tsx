@@ -59,12 +59,12 @@ export function RevisionsPanel({ documentId }: { documentId: string }) {
   const api = useApi();
   const can = useCapability();
   const [reviseOpen, setReviseOpen] = useState(false);
-  const list = useQuery({ queryKey: authoringKeys.revisions(), queryFn: () => api.listRevisions() });
+  const list = useQuery({ queryKey: authoringKeys.revisions(), queryFn: () => api.listRevisions(), enabled: can("revisions.list") });
   const open = useAction((id: string) => api.getRevision!(id).then(detail => ({ id, detail })), { success: result => `Loaded revision ${result.id}.` });
   return <div className="grid gap-6">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Revisions</h2>
       {can("doc.revise") && api.reviseDocument ? <Button type="button" onClick={() => setReviseOpen(true)}>Revise document</Button> : <Unavailable>Revising is not available on this server.</Unavailable>}</div>
-    {list.isPending ? <Skeleton className="h-24 w-full" /> : list.isError ? <ErrorState message={errorText(list.error, "revisions")} onRetry={() => void list.refetch()} />
+    {!can("revisions.list") ? <Unavailable>Revisions are not available on this server.</Unavailable> : list.isPending ? <Skeleton className="h-24 w-full" /> : list.isError ? <ErrorState message={errorText(list.error, "revisions")} onRetry={() => void list.refetch()} />
       : list.data.length === 0 ? <EmptyState title="No revisions yet" description="Saving a section or revising the document records a revision here." />
       : <ol aria-label="Revision timeline" className="grid gap-3 border-l pl-4">{list.data.map(item => <li key={item.id} className="grid gap-1">
         <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.message}</span><Badge variant="outline">{item.status}</Badge></div>

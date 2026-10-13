@@ -24,6 +24,7 @@ from docs.application.classification_queue import (
 )
 from docs.application.document_summary import build_document_summary
 from docs.application.imports import ImportError, SourceImportService
+from docs.application.source_inventory import list_document_sources
 from docs.domain.ports.document_repository import DocumentNotFoundError
 
 from . import authoring_dto as dto
@@ -159,6 +160,13 @@ class AuthoringRoutes(RouteSupport):
         return Response.json(dto.AssetListResponse(
             document_id=document_id, kind=kind, items=[dto.AssetItem(name=n) for n in names],
         ).model_dump())
+
+    def list_sources(self, request: Request, document_id: str) -> Response:
+        _, deps = self._open(request, document_id)
+        paths = self._resolve(deps, document_id).config.get("paths", {})
+        found = list_document_sources(deps.workspace.doc_root(document_id), paths)
+        items = [dto.SourceInventoryItem(**item) for item in found]
+        return Response.json(dto.SourceInventoryResponse(document_id=document_id, items=items).model_dump())
 
     def add_asset(self, request: Request, document_id: str) -> Response:
         data = self._body(request, dto.AssetAddRequest)

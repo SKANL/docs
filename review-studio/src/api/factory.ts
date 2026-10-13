@@ -55,6 +55,7 @@ function remoteApi(client: ReviewApiClient): ReviewApi {
     selectWorkspace: id => client.selectWorkspace(id),
     importDocument: (file, workspace, options) => client.importDocument(file, workspace, options),
     artifactPreviewUrl: (runId, artifactId) => client.artifactPreviewUrl(runId, artifactId),
+    downloadTranslation: path => client.downloadTranslation(path),
     streamProgress: (runId, onEvent, signal) => client.streamProgress(runId, onEvent, signal),
   };
 }

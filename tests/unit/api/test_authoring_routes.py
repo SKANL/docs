@@ -372,3 +372,28 @@ def test_import_with_a_path_outside_the_root_is_not_a_500(api, monkeypatch, tmp_
     response = api("POST", "/v2/documents/doc/imports", {"filename": "a.md", "content_base64": b64(b"# A\n")})
     assert response.status == 201, response.body
     assert body(response)["path"] == f"documents/doc/inbox/{Path(body(response)['path']).name}"
+
+
+def test_source_inventory_counts_inbox_and_ingested_sources(api):
+    inbox = api.doc_root / "inbox"
+    (inbox / "assets").mkdir(parents=True, exist_ok=True)
+    (inbox / "assets" / "logo.png").write_bytes(b"png")
+    (inbox / "_classification-queue.json").write_text("{}", encoding="utf-8")
+    (inbox / "notes.md").write_text("raw", encoding="utf-8")
+    converted = api.doc_root / "sections" / "ingested"
+    converted.mkdir(parents=True, exist_ok=True)
+    (converted / "brief-docx-1a2b3c4d.md").write_text("converted", encoding="utf-8")
+
+    response = api("GET", "/v2/documents/doc/sources")
+    assert response.status == 200, response.body
+    data = body(response)
+    assert data["document_id"] == "doc"
+    assert data["items"] == [
+        {"name": "brief-docx-1a2b3c4d.md", "path": "sections/ingested/brief-docx-1a2b3c4d.md", "state": "ingested"},
+        {"name": "notes.md", "path": "inbox/notes.md", "state": "inbox"},
+    ]
+    assert str(api.ws_root) not in response.body.decode()
+
+
+def test_source_inventory_of_an_untouched_document_is_empty(api):
+    assert body(api("GET", "/v2/documents/doc/sources"))["items"] == []

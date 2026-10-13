@@ -6,6 +6,21 @@ const jsonResponse = (body: unknown, init: ResponseInit = {}) => new Response(JS
 
 describe("ReviewApiClient", () => {
   beforeEach(() => { localStorage.setItem("docs.review.workspace", "workspace-1"); });
+  it("downloads a translation as a Blob with the Bearer header", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("%PDF", { status: 200, headers: { "content-type": "application/pdf" } }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", accessToken: "token-123", fetch: fetcher });
+    const blob = await client.downloadTranslation("artifacts/translations/a b.es.pdf");
+    expect(blob.size).toBe(4);
+    expect(fetcher.mock.calls[0]?.[0].toString()).toBe("https://review.test/v2/translations/output?path=artifacts%2Ftranslations%2Fa+b.es.pdf&workspace_id=workspace-1");
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ headers: { Authorization: "Bearer token-123" } });
+  });
+
+  it("surfaces a failed translation download as an ApiError", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ error: { code: "output_not_found", message: "gone" } }, { status: 404 }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+    await expect(client.downloadTranslation("artifacts/translations/x.pdf")).rejects.toMatchObject({ code: "output_not_found", status: 404 });
+  });
+
   it("normalizes configured API origins to the canonical v2 surface", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [] }));
     const client = new ReviewApiClient({ baseUrl: "https://review.test/v1", fetch: fetcher });

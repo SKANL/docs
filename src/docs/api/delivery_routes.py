@@ -127,7 +127,10 @@ class DeliveryRoutes(RouteSupport):
         artifact_sha, manifest_sha = _sha(prepared.source_bytes), _sha(prepared.manifest_bytes)
         destination_rel = self._rel(ws, result.artifact)
         record_id = "pub-" + _sha(f"{document_id}\0{destination_rel}\0{artifact_sha}\0{manifest_sha}".encode())[:16]
-        self._record(request, data.workspace_id, record_id, document_id, destination_rel, artifact_sha, prepared)
+        self._record(
+            request, data.workspace_id, record_id, document_id, destination_rel, artifact_sha, prepared,
+            policy=policy.value, warnings=list(result.warnings),
+        )
         return Response.json(dto.PublicationResponse(
             id=record_id, document_id=document_id, format=fmt, policy=policy.value,
             source=self._rel(ws, source), destination=destination_rel, manifest=self._rel(ws, result.manifest),
@@ -138,7 +141,7 @@ class DeliveryRoutes(RouteSupport):
 
     def _record(
         self, request: Request, body_workspace: str | None, record_id: str, document_id: str,
-        destination: str, artifact_sha: str, prepared: Any,
+        destination: str, artifact_sha: str, prepared: Any, *, policy: str, warnings: list[str],
     ) -> None:
         """Project the publication once; a repeat of identical evidence never rewrites the record."""
         store = self._publications()
@@ -151,6 +154,7 @@ class DeliveryRoutes(RouteSupport):
             "environment": "local", "artifact": document_id, "destination": destination,
             "artifact_sha256": artifact_sha, "published_at": datetime.now(UTC).isoformat(),
             "approver": principal.subject if principal is not None else "local", "status": "passed",
+            "policy": policy, "warnings": warnings,
         }
         if principal is not None and principal.tenant_id and principal.organization_id:
             record.update(tenant_id=principal.tenant_id, organization_id=principal.organization_id)

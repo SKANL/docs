@@ -58,10 +58,28 @@ def _cli_commands(group, prefix="") -> set[str]:
     return commands
 
 
-def _capabilities():
+def _all_capabilities():
     builder = getattr(openapi, "build_capability_catalog", None)
     assert callable(builder), "S0.1 must expose a capability catalogue builder"
     return [item for group in builder()["groups"] for item in group["capabilities"]]
+
+
+def _capabilities():
+    """The CLI-mirroring rows; read surfaces with no CLI command live in the `platform` group."""
+    return [item for item in _all_capabilities() if item["cli_command"] is not None]
+
+
+PLATFORM_READS = {
+    "findings.list", "artifacts.list", "artifacts.show", "baselines.list", "graph.read",
+    "plugins.list", "plugins.show", "publications.list", "revisions.list", "sources.list",
+}
+
+
+def test_read_surfaces_without_a_cli_command_have_their_own_capability_ids():
+    group = next(g for g in openapi.build_capability_catalog()["groups"] if g["id"] == "platform")
+    assert {c["id"] for c in group["capabilities"]} == PLATFORM_READS
+    assert all(c["cli_command"] is None and c["status"] == "available" and c["route"] for c in group["capabilities"])
+    assert {c["id"] for c in _all_capabilities()} >= PLATFORM_READS
 
 
 def test_every_registered_cli_command_has_exactly_one_capability_and_matrix_row():
@@ -91,7 +109,7 @@ def test_available_capabilities_have_real_registered_routes_and_matching_scopes(
         graph_store=None,
     )
     paths = openapi.build_openapi_document()["paths"]
-    for capability in _capabilities():
+    for capability in _all_capabilities():
         assert {"id", "cli_command", "route", "scopes", "surface", "slice", "status"} <= capability.keys()
         if capability["status"] != "available":
             assert capability["route"] is None

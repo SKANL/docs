@@ -96,6 +96,17 @@ class ClassificationResponse(AuthoringDTO):
     items: list[dict[str, Any]]
 
 
+class SourceInventoryItem(AuthoringDTO):
+    name: str
+    path: str
+    state: str  # "inbox" (not ingested yet) or "ingested"
+
+
+class SourceInventoryResponse(AuthoringDTO):
+    document_id: str
+    items: list[SourceInventoryItem]
+
+
 class ContextRequestsResponse(AuthoringDTO):
     document_id: str
     path: str
