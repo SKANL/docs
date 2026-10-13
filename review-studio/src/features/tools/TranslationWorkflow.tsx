@@ -16,12 +16,12 @@ import { ToolCard } from "./ToolCard";
 
 const label: Record<TranslateResult["status"], string> = { translated: "Translated", unavailable: "Unavailable", untranslatable: "Untranslatable" };
 
-function Outcome({ result, href }: { result: TranslateResult; href?: string }) {
+function Outcome({ result, onDownload }: { result: TranslateResult; onDownload?: () => void }) {
   if (result.status !== "translated") return <ErrorState title={label[result.status]} message={result.message ?? "The server gave no reason."} />;
   return <section role="status" aria-label="Translation result" className="grid gap-2 rounded-md border p-3">
     <div className="flex items-center gap-2"><Badge variant="secondary">{label.translated}</Badge>{result.line && <span className="text-sm">{result.line}</span>}</div>
     <Facts rows={[["Source", result.source ?? undefined], ["Translated PDF", result.output ?? undefined], ["Pending blocks (provenance)", result.pending ?? undefined], ...(result.report ? scalarRows(result.report) : [])]} />
-    {href && <a href={href} download className="w-fit text-sm font-medium underline underline-offset-4">Download translated PDF</a>}
+    {onDownload && <Button type="button" variant="outline" size="sm" className="w-fit" onClick={onDownload}>Download translated PDF</Button>}
   </section>;
 }
 
@@ -35,6 +35,17 @@ export function TranslationWorkflow() {
   const [sourceLang, setSourceLang] = useState("auto");
   const artifacts = useQuery({ queryKey: ["tools", "pdf-artifacts"], queryFn: async () => (await api.listArtifacts()).filter(item => item.name.toLowerCase().endsWith(".pdf")) });
   const run = useMutation({ mutationFn: (input: TranslateInput) => api.translatePdf!(input) });
+
+  const save = useMutation({ mutationFn: async (path: string) => {
+    const url = URL.createObjectURL(await api.downloadTranslation!(path));
+    try {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = path.split("/").pop() ?? "translation.pdf";
+      link.click();
+    } finally { URL.revokeObjectURL(url); }
+  } });
+  const download = (path: string) => save.mutate(path);
 
   async function submit(overwrite: boolean) {
     const base = { to: to.trim(), sourceLang: sourceLang.trim() || "auto", overwrite };
@@ -63,7 +74,8 @@ export function TranslationWorkflow() {
       <Button type="submit" className="w-fit" disabled={!ready || run.isPending} aria-label="Run Translate PDF">{run.isPending ? "Translating…" : "Run"}</Button>
     </form>
     {!exists && <ActionError action={run} what="translate the PDF" />}
-    {run.data && <Outcome result={run.data} href={run.data.output ? api.translationOutputUrl?.(run.data.output) : undefined} />}
+    <ActionError action={save} what="download the translation" />
+    {run.data && <Outcome result={run.data} onDownload={run.data.output && api.downloadTranslation ? () => void download(run.data!.output!) : undefined} />}
     <ConfirmActionDialog open={exists} title="Replace the existing translation?" description="A translation with this name already exists. Running again overwrites that file."
       confirmLabel="Replace translation" pending={run.isPending} onOpenChange={open => { if (!open) run.reset(); }}
       onConfirm={() => { if (run.variables) run.mutate({ ...run.variables, overwrite: true }); }} />

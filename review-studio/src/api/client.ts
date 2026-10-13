@@ -384,9 +384,16 @@ export class ReviewApiClient {
     return url.toString();
   }
 
-  translationOutputUrl(path: string): string {
-    if (!this.selectedWorkspaceId) throw new ApiConfigurationError("Select a workspace before downloading a translation.");
-    return this.previewUrl(`translations/output?path=${encodeURIComponent(path)}&workspace_id=${encodeURIComponent(this.selectedWorkspaceId)}`);
+  /** The translated PDF as a Blob, fetched with the same Bearer header as every other request. */
+  async downloadTranslation(path: string): Promise<Blob> {
+    const workspaceId = await this.workspaceId();
+    const query = new URLSearchParams({ path, workspace_id: workspaceId });
+    const request = withSignal(undefined, this.timeoutMs);
+    try {
+      const response = await this.requestFetch(joinUrl(this.baseUrl, `translations/output?${query}`), { signal: request.signal, headers: { Accept: "application/pdf", ...(this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {}) } });
+      if (!response.ok) throw await errorFromResponse(response);
+      return await response.blob();
+    } finally { request.cancel(); }
   }
 
   async streamProgress(runId: string, onEvent: (event: ProgressEvent) => void, signal?: AbortSignal): Promise<void> {

@@ -152,18 +152,23 @@ describe("translation workflow", () => {
     expect(result.textContent).toContain("3/4 blocks");
   });
 
-  it("links the translated PDF to the scoped download route", async () => {
+  it("downloads the translated PDF through the authenticated client", async () => {
     const translatePdf = vi.fn(async () => ({ status: "translated", source: "manual.pdf", output: "artifacts/translations/manual.es.pdf" }));
-    const translationOutputUrl = vi.fn((path: string) => `https://review.test/v2/translations/output?path=${path}`);
-    openAt("/tools", toolsApi({ translatePdf, translationOutputUrl }));
+    const downloadTranslation = vi.fn(async () => new Blob(["%PDF"]));
+    const create = vi.fn(() => "blob:t"), revoke = vi.fn();
+    Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    openAt("/tools", toolsApi({ translatePdf, downloadTranslation }));
     const region = await card("Translate PDF");
     await userEvent.click(await within(region).findByRole("combobox", { name: "PDF artifact" }));
     await userEvent.click(await screen.findByRole("option", { name: "manual.pdf" }));
     await userEvent.type(within(region).getByRole("textbox", { name: "Target language" }), "es");
     await userEvent.click(within(region).getByRole("button", { name: "Run Translate PDF" }));
-    const link = await within(region).findByRole("link", { name: "Download translated PDF" });
-    expect(link.getAttribute("href")).toBe("https://review.test/v2/translations/output?path=artifacts/translations/manual.es.pdf");
-    expect(translationOutputUrl).toHaveBeenCalledWith("artifacts/translations/manual.es.pdf");
+    await userEvent.click(await within(region).findByRole("button", { name: "Download translated PDF" }));
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith("blob:t"));
+    expect(downloadTranslation).toHaveBeenCalledWith("artifacts/translations/manual.es.pdf");
+    expect(click).toHaveBeenCalledTimes(1);
+    click.mockRestore();
   });
 
   it("uploads a PDF with a source language", async () => {
