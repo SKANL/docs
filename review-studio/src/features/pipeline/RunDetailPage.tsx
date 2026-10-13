@@ -13,7 +13,7 @@ import { useAction } from "@/lib/actions";
 import { useActiveContext } from "@/app/active-context";
 import { useCapability } from "@/lib/capability-registry";
 import { isTerminalStatus, toRunRecord } from "@/api/domains/pipeline";
-import { RunStatusBadge } from "./RunStatusBadge";
+import { RunStatusBadge } from "@/components/shared/StatusBadge";
 import { useRunStream } from "./useRunStream";
 
 const POLL_MS = 2_000;

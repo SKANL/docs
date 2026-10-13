@@ -13,7 +13,8 @@ import { Unavailable } from "@/components/shared/Unavailable";
 import { useCapability } from "@/lib/capability-registry";
 import type { EvidenceBundle } from "@/api/domains/review";
 import { BaselinePromotionDialog } from "./BaselinePromotionDialog";
-import { Digest, Facts, SeverityBadge, reviewKeys, toFindingRow } from "./data";
+import { Digest, Facts } from "@/components/shared/Facts";
+import { SeverityBadge, reviewKeys, toFindingRow } from "./data";
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
 const count = (value: unknown) => Array.isArray(value) ? value.length : 0;

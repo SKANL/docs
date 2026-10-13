@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { Facts, SeverityBadge, reviewKeys, toFindingRow, type FindingRow } from "./data";
+import { Facts } from "@/components/shared/Facts";
+import { SeverityBadge, reviewKeys, toFindingRow, type FindingRow } from "./data";
 
 /** Where a finding came from and where to go next: its run's evidence, and the section to fix. */
 export function FindingDetail({ finding }: { finding: FindingRow }) {

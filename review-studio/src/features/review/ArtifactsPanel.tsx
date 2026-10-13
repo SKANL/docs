@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { Artifact } from "@/api/models";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCapability } from "@/lib/capability-registry";
-import { Digest, Facts, reviewKeys } from "./data";
+import { Digest, Facts } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 import { ArtifactPreview, InspectionPanel } from "./inspection";
 
 function ArtifactDetail({ workspaceId, artifact }: { workspaceId: string | null; artifact: Artifact }) {

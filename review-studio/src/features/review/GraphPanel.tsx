@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { reviewKeys, scalarRows } from "./data";
+import { scalarRows } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 
 const queries: Array<{ query: GraphQuery; label: string; idLabel?: string }> = [
   { query: "claims_without_evidence", label: "Claims without evidence" },

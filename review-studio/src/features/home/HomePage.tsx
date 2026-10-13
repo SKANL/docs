@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveContext } from "@/app/active-context";
-import { RunStatusBadge } from "@/features/pipeline/RunStatusBadge";
+import { RunStatusBadge } from "@/components/shared/StatusBadge";
 
 const none = <p className="text-sm text-muted-foreground">Nothing reported yet.</p>;
 

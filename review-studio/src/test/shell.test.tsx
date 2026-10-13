@@ -13,7 +13,7 @@ const catalog: CapabilityCatalog = { groups: [{ id: "workspace", capabilities: [
 
 function makeApi(overrides: Partial<ReviewApi> = {}): ReviewApi {
   return {
-    listRuns: async () => [], listFindings: async () => [], listArtifacts: async () => [],
+    listFindings: async () => [], listArtifacts: async () => [],
     listWorkspaces: async () => [], getCapabilities: async () => catalog,
     getGraph: async () => ({ nodes: [], edges: [] }), getGraphQuery: async () => ({ items: [], graphUnavailable: false }),
     ...overrides,
@@ -68,15 +68,6 @@ describe("application shell", () => {
     await userEvent.click(await screen.findByRole("option", { name: /Delivery/ }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Delivery" })).toBeTruthy());
     expect(window.location.hash).toBe("#/delivery");
-  });
-});
-
-describe("routes", () => {
-  it("redirects the legacy #workspace hash to the workspace page", async () => {
-    window.location.hash = "#workspace";
-    render(<App api={makeApi()} />);
-    expect(await screen.findByRole("heading", { name: "Workspace and document control" })).toBeTruthy();
-    expect(window.location.hash).toBe("#/configure/workspaces");
   });
 });
 

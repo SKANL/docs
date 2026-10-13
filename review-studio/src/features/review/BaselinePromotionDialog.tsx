@@ -7,7 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ActionError, useAction } from "@/lib/actions";
-import { Digest, reviewKeys } from "./data";
+import { Digest } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 
 /**
  * Promote a run's rendered pages to a baseline. Replacing an existing baseline is a separate,

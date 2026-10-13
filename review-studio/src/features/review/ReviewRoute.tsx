@@ -23,7 +23,7 @@ const tabs = [["findings", "Findings"], ["artifacts", "Artifacts"], ["evidence",
 const gate: Record<string, string> = { findings: "findings.list", artifacts: "artifacts.list", baselines: "baselines.list", graph: "graph.read" };
 
 /** `/review/:tab/:id`: the id is a finding, an artifact, or a run depending on the tab. */
-export function QualityRoute() {
+export function ReviewRoute() {
   const { tab = "findings", id } = useParams();
   const navigate = useNavigate();
   const active = useActiveContext();

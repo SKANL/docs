@@ -5,12 +5,13 @@ import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-import { Facts, reviewKeys, scalarRows } from "./data";
+import { Facts, scalarRows } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 
 function BaselineDetail({ workspaceId, id, onClose }: { workspaceId: string | null; id: string; onClose(): void }) {
   const api = useApi();

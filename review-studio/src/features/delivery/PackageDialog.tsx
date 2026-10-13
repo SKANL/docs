@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActionError, useAction } from "@/lib/actions";
 import { useCapability } from "@/lib/capability-registry";
-import { Facts } from "@/features/quality/data";
+import { Facts } from "@/components/shared/Facts";
 import type { PackageInput } from "@/api/domains/delivery";
 import { deliveryKeys } from "./data";
 

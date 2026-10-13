@@ -7,7 +7,8 @@ import type { Artifact } from "@/api/models";
 import type { ArtifactReport } from "@/api/domains/review";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { Digest, Facts, reviewKeys } from "./data";
+import { Digest, Facts } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 
 /** The structured inspect report for one artifact: where it lives, what it is, and its digest. */
 export const reportRows = (report: ArtifactReport): Array<[string, React.ReactNode]> => [

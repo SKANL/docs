@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useActiveContext } from "@/app/active-context";
 import { useCapability } from "@/lib/capability-registry";
-import { Facts } from "@/features/quality/data";
+import { Facts } from "@/components/shared/Facts";
 import type { PublicationResult } from "@/api/domains/delivery";
 import { CopyDigest } from "./data";
 import { PackageDialog } from "./PackageDialog";

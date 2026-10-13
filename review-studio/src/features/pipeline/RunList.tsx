@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useCapability } from "@/lib/capability-registry";
 import { Unavailable } from "@/components/shared/Unavailable";
 import { isTerminalStatus } from "@/api/domains/pipeline";
-import { RunStatusBadge } from "./RunStatusBadge";
+import { RunStatusBadge } from "@/components/shared/StatusBadge";
 
 const statuses = ["all", "queued", "running", "succeeded", "failed", "cancelled"];
 const PAGE_SIZE = 20;

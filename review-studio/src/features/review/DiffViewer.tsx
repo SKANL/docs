@@ -12,7 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ActionError, useAction } from "@/lib/actions";
 import { Unavailable } from "@/components/shared/Unavailable";
 import { useCapability } from "@/lib/capability-registry";
-import { Facts, reviewKeys } from "./data";
+import { Facts } from "@/components/shared/Facts";
+import { reviewKeys } from "./data";
 import { reportRows } from "./inspection";
 
 const SHOWN_LINES = 200;

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActionError } from "@/lib/actions";
 import { fileToBase64 } from "@/lib/files";
-import { Facts, scalarRows } from "@/features/quality/data";
+import { Facts, scalarRows } from "@/components/shared/Facts";
 import type { TranslateInput, TranslateResult } from "@/api/domains/tools";
 import { ToolCard } from "./ToolCard";
 
