@@ -675,13 +675,12 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     findings_store = evidence_stores.finding()
     publication_store = evidence_stores.publication()
 
-    def create_document(workspace_root: str, document_id: str, template: str, title: str) -> dict[str, Any]:
+    def document_service_factory(workspace_root: str) -> Any:
         from .composition import compose_application
         from .domain.workspace import Workspace
 
         deps = compose_application(Workspace(Path(workspace_root) / "documents", Path(workspace_root) / "templates"))
-        document = deps.documents.create(document_id, template, title)
-        return document.model_dump()
+        return deps.documents
 
     def document_action(workspace_root: str, document_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
         from .composition import compose_application
@@ -868,7 +867,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
         document_store=_FilesystemDocumentStore(config.workspace, registry),
         workspace_registry=registry,
         managed_workspace_root=config.workspace / ".docs" / "workspaces",
-        document_creator=create_document,
+        document_service_factory=document_service_factory,
         document_action=document_action,
         document_context_reader=read_document_context,
         document_context_writer=set_document_context,

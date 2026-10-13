@@ -7,7 +7,7 @@ import json
 import logging
 import mimetypes
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -16,23 +16,40 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from docs.application.documents import DocumentService
 from docs.application.graph_queries import GraphQueryService
 from docs.application.imports import ImportError, SourceImportService
 from docs.application.status_reader import StatusReader
+from docs.application.workspace_migration import (
+    WorkspaceMigrationError,
+    WorkspaceMigrationInspector,
+    WorkspaceMigrationPublisher,
+)
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.domain.ports.document_repository import DocumentExistsError, DocumentNotFoundError
 from docs.domain.runtime_records import Run
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
+from .document_dto import (
+    DocumentCreateRequest,
+    DocumentCurrentResponse,
+    DocumentDeleteResponse,
+    DocumentRenameRequest,
+    DocumentSummaryDTO,
+)
 from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_capability_catalog, build_openapi_document, canonical_json
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
+    WorkspaceMigrateRequest,
+    WorkspaceMigrationResponse,
     WorkspacePage,
     WorkspaceRenameRequest,
     WorkspaceResponse,
+    WorkspaceStatusResponse,
 )
 
 _LOG = logging.getLogger("docs.api.application")
@@ -87,7 +104,7 @@ class X20Application:
         workspace_registry: WorkspaceRegistry | None = None,
         managed_workspace_root: str | Path | None = None,
         import_service: SourceImportService | None = None,
-        document_creator: Any = None,
+        document_service_factory: Callable[[str], DocumentService] | None = None,
         document_action: Any = None,
         document_context_reader: Any = None,
         document_context_writer: Any = None,
@@ -114,6 +131,8 @@ class X20Application:
         self.findings = findings
         self.router = router or Router(idempotency_persistence=idempotency_persistence)
         self._route_lock = threading.RLock()
+        self._document_service_lock = threading.RLock()
+        self._document_services: dict[str, DocumentService] = {}
         self._auth = auth
         self.observability = observability or create_observability_from_env()
         self.workspace_registry = workspace_registry
@@ -123,7 +142,7 @@ class X20Application:
             else workspace_registry.path.parent / "workspaces" if workspace_registry is not None else None
         )
         self.import_service = import_service or SourceImportService()
-        self.document_creator = document_creator
+        self.document_service_factory = document_service_factory
         self.document_action = document_action
         self.document_context_reader = document_context_reader
         self.document_context_writer = document_context_writer
@@ -135,6 +154,7 @@ class X20Application:
             ("GET", "/v2/capabilities"),
             ("GET", "/v2/graph"),
             ("GET", "/v2/documents"),
+            ("GET", "/v2/current-document"),
             ("GET", "/v2/findings"),
             ("GET", "/v2/openapi.json"),
             ("GET", "/v2/baselines"),
@@ -155,6 +175,7 @@ class X20Application:
         self._register_owned_route("GET", "/v2/capabilities", lambda _: Response.json(build_capability_catalog()))
         self._register_owned_route("GET", "/v2/graph", self._graph)
         self._register_owned_route("GET", "/v2/documents", self._documents)
+        self._register_owned_route("GET", "/v2/current-document", self._current_document)
         self._register_owned_route("GET", "/v2/findings", self._findings)
         self._register_owned_route("GET", "/v2/openapi.json", lambda _: self._openapi())
         self._register_owned_route("GET", "/v2/baselines", self._baselines)
@@ -266,6 +287,7 @@ class X20Application:
             ("POST", "/v2/workspaces"): "workspaces:write",
             ("GET", "/v2/graph"): "graph:read",
             ("GET", "/v2/documents"): "documents:read",
+            ("GET", "/v2/current-document"): "documents:read",
             ("POST", "/v2/documents"): "documents:write",
             ("POST", "/v2/documents/import"): "documents:write",
             ("POST", "/v2/documents/import/raw"): "documents:write",
@@ -291,9 +313,17 @@ class X20Application:
                 return "workspaces:write"
             if len(parts) == 3 and method == "DELETE":
                 return "workspaces:write"
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return "workspaces:read"
+            if len(parts) == 4 and parts[3] in {"use", "migrate"} and method == "POST":
+                return "workspaces:write"
         if parts[:2] == ["v2", "documents"] and len(parts) in {3, 4, 5}:
             if len(parts) == 3 and method == "GET":
                 return "documents:read"
+            if len(parts) == 3 and method in {"PATCH", "DELETE"}:
+                return "documents:write"
+            if len(parts) == 4 and parts[3] == "use" and method == "POST":
+                return "documents:write"
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
                 return "documents:read"
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
@@ -369,6 +399,8 @@ class X20Application:
         if parts[:2] == ["v2", "documents"]:
             return (
                 (len(parts) == 3 and method == "GET")
+                or (len(parts) == 3 and method in {"PATCH", "DELETE"})
+                or (len(parts) == 4 and parts[3] == "use" and method == "POST")
                 or (len(parts) == 4 and parts[3] == "runs" and method == "GET")
                 or (len(parts) == 4 and parts[3] == "revisions" and method == "POST")
                 or (len(parts) == 4 and parts[3] in {"prepare", "build", "verify", "publish"} and method == "POST")
@@ -407,6 +439,12 @@ class X20Application:
         if parts[:2] == ["v2", "documents"]:
             if len(parts) == 3 and method == "GET":
                 return lambda request: self._document(resource_id, request)
+            if len(parts) == 3 and method == "PATCH":
+                return lambda request: self._rename_document(resource_id, request)
+            if len(parts) == 3 and method == "DELETE":
+                return lambda request: self._delete_document(resource_id, request)
+            if len(parts) == 4 and parts[3] == "use" and method == "POST":
+                return lambda request: self._use_document(resource_id, request)
             if len(parts) == 4 and parts[3] == "runs" and method == "GET":
                 return lambda request: self._document_runs(resource_id, request)
             if len(parts) == 4 and parts[3] == "revisions" and method == "POST":
@@ -434,6 +472,12 @@ class X20Application:
                 return lambda request: self._rename_workspace(workspace_id, request)
             if len(parts) == 3 and method == "DELETE":
                 return lambda request: self._delete_workspace(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "use" and method == "POST":
+                return lambda request: self._use_workspace(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "status" and method == "GET":
+                return lambda request: self._workspace_status(workspace_id, request)
+            if len(parts) == 4 and parts[3] == "migrate" and method == "POST":
+                return lambda request: self._migrate_workspace(workspace_id, request)
             return None
         if parts[:2] == ["v2", "plugins"]:
             if len(parts) == 3 and method == "GET":
@@ -618,25 +662,88 @@ class X20Application:
         return Response.json(result, 201)
 
     def _create_document(self, request: Request) -> Response:
-        if self.document_creator is None:
-            raise APIError("document_creation_unavailable", "Document creation is not configured", 501)
-        data = request.json(object_only=True)
-        workspace_id = str(data.get("workspace_id", ""))
-        if self.workspace_registry is None:
-            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
         try:
-            workspace = self._resolve_workspace(workspace_id)
-            result = self.document_creator(
-                workspace["root"],
-                str(data.get("document_id", "")),
-                str(data.get("template", "documento-generico")),
-                str(data.get("title", "")),
-            )
-        except WorkspaceRegistryError as exc:
-            raise APIError(str(exc), "Workspace not found", 404) from exc
+            data = DocumentCreateRequest.model_validate(request.json(object_only=True))
+        except ValidationError as exc:
+            raise APIError("invalid_request", "Invalid document creation request", 400) from exc
+        service = self._document_service(data.workspace_id)
+        try:
+            service.create(data.document_id, data.template, data.title)
+        except DocumentExistsError as exc:
+            raise APIError("document_exists", str(exc), 409) from exc
         except (ValueError, OSError, KeyError) as exc:
-            raise APIError("document_creation_failed", str(exc), 400) from exc
-        return Response.json(result, 201)
+            raise APIError("invalid_document_request", str(exc), 400) from exc
+        return Response.json(self._document_summary(service, data.document_id), 201)
+
+    def _document_service(self, workspace_id: str) -> DocumentService:
+        if not workspace_id:
+            raise APIError("workspace_required", "workspace_id is required", 400)
+        workspace = self._resolve_workspace(workspace_id)
+        if self.document_service_factory is None:
+            raise APIError("document_lifecycle_unavailable", "Document lifecycle service is not configured", 501)
+        workspace_root = str(Path(str(workspace["root"])).expanduser().resolve())
+        with self._document_service_lock:
+            cached = self._document_services.get(workspace_root)
+            if cached is not None:
+                return cached
+            try:
+                service = self.document_service_factory(workspace_root)
+            except (OSError, ValueError, KeyError) as exc:
+                raise APIError("document_lifecycle_unavailable", str(exc), 503) from exc
+            self._document_services[workspace_root] = service
+            return service
+
+    @staticmethod
+    def _document_summary(service: DocumentService, document_id: str) -> dict[str, Any]:
+        summary = next((item for item in service.list() if item.id == document_id), None)
+        if summary is None:
+            raise APIError("document_not_found", "Document not found", 404)
+        return DocumentSummaryDTO(
+            id=summary.id,
+            title=summary.title,
+            template=summary.template,
+            created_at=summary.created_at,
+            active=service.current() == summary.id,
+        ).model_dump()
+
+    def _use_document(self, document_id: str, request: Request) -> Response:
+        service = self._document_service(str(request.query.get("workspace_id", "")))
+        try:
+            service.use(document_id)
+        except DocumentNotFoundError as exc:
+            raise APIError("document_not_found", "Document not found", 404) from exc
+        except ValueError as exc:
+            raise APIError("invalid_document_id", str(exc), 400) from exc
+        return Response.json(self._document_summary(service, document_id))
+
+    def _rename_document(self, document_id: str, request: Request) -> Response:
+        try:
+            data = DocumentRenameRequest.model_validate(request.json(object_only=True))
+        except ValidationError as exc:
+            raise APIError("invalid_request", "Invalid document rename request", 400) from exc
+        service = self._document_service(str(request.query.get("workspace_id", "")))
+        try:
+            service.rename(document_id, data.new_id)
+        except DocumentNotFoundError as exc:
+            raise APIError("document_not_found", "Document not found", 404) from exc
+        except DocumentExistsError as exc:
+            raise APIError("document_exists", str(exc), 409) from exc
+        except ValueError as exc:
+            raise APIError("invalid_document_id", str(exc), 400) from exc
+        return Response.json(self._document_summary(service, data.new_id))
+
+    def _delete_document(self, document_id: str, request: Request) -> Response:
+        service = self._document_service(str(request.query.get("workspace_id", "")))
+        try:
+            service.delete(document_id)
+        except DocumentNotFoundError as exc:
+            raise APIError("document_not_found", "Document not found", 404) from exc
+        except ValueError as exc:
+            raise APIError("invalid_document_id", str(exc), 400) from exc
+        return Response.json(DocumentDeleteResponse(
+            deleted=document_id,
+            current_document_id=service.current() or None,
+        ).model_dump())
 
     def _document_action(self, document_id: str, action: str, request: Request) -> Response:
         data = request.json(object_only=True) if request.body else {}
@@ -793,6 +900,59 @@ class X20Application:
         except WorkspaceRegistryError as exc:
             raise APIError(str(exc), "Workspace not found", 404) from exc
         return Response.json(WorkspaceDeleteResponse(deleted=workspace_id).model_dump(mode="json"))
+
+    def _use_workspace(self, workspace_id: str, request: Request) -> Response:
+        del request
+        if self.workspace_registry is None:
+            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
+        self._resolve_workspace(workspace_id)
+        item = self.workspace_registry.select(workspace_id)
+        return Response.json(self._workspace_response(item))
+
+    def _workspace_status(self, workspace_id: str, request: Request) -> Response:
+        del request
+        item = self._resolve_workspace(workspace_id)
+        assert self.workspace_registry is not None
+        active = self.workspace_registry.active()
+        response = WorkspaceStatusResponse(
+            workspace=WorkspaceResponse.model_validate(item),
+            active=active is not None and active["id"] == workspace_id,
+        )
+        return Response.json(response.model_dump(mode="json"))
+
+    def _migrate_workspace(self, workspace_id: str, request: Request) -> Response:
+        item = self._resolve_workspace(workspace_id)
+        try:
+            data = WorkspaceMigrateRequest.model_validate(request.json(object_only=True) if request.body else {})
+        except ValidationError as exc:
+            raise APIError("invalid_request", "Request body does not match workspace contract", 400) from exc
+        if self.managed_workspace_root is None:
+            raise APIError("workspace_root_not_configured", "Managed workspace root is not configured", 503)
+        destination = self.managed_workspace_root / uuid4().hex
+        report = WorkspaceMigrationInspector().inspect(item["root"], destination=destination)
+        if data.apply and not report.ready:
+            raise APIError("migration_source_not_ready", "Workspace migration source is not ready", 409)
+        published_workspace = None
+        if data.apply:
+            self.managed_workspace_root.mkdir(parents=True, exist_ok=True)
+            try:
+                publication = WorkspaceMigrationPublisher().publish(item["root"], destination)
+                assert self.workspace_registry is not None
+                name = f"{item['name'][:48]} migrated {uuid4().hex[:8]}"
+                published_workspace = WorkspaceResponse.model_validate(
+                    self.workspace_registry.create(name, publication.destination)
+                )
+            except WorkspaceMigrationError as exc:
+                raise APIError(exc.code, exc.code, 409) from exc
+        response = WorkspaceMigrationResponse(
+            source_workspace_id=workspace_id,
+            detected_format=report.detected_format,
+            ready=report.ready,
+            published=data.apply,
+            workspace=published_workspace,
+            errors=[error.code for error in report.errors],
+        )
+        return Response.json(response.model_dump(mode="json"))
 
     def _run(self, run_id: str, request: Request) -> Response:
         run = self._owned_run(run_id, request)
@@ -1014,31 +1174,30 @@ class X20Application:
         workspace_id = request.query.get("workspace_id") if hasattr(request, "query") else None
         if not workspace_id:
             raise APIError("workspace_required", "workspace_id is required", 400)
-        if self.workspace_registry is None:
-            raise APIError("workspace_not_configured", "Workspace registry is not configured", 503)
-        if workspace_id and hasattr(self.document_store, "list_for_workspace"):
-            try:
-                workspace = self._resolve_workspace(workspace_id)
-            except WorkspaceRegistryError as exc:
-                raise APIError(str(exc), "Workspace not found", 404) from exc
-            items = self.document_store.list_for_workspace(workspace["root"])
-        elif workspace_id:
-            try:
-                workspace = self._resolve_workspace(workspace_id)
-            except WorkspaceRegistryError as exc:
-                raise APIError(str(exc), "Workspace not found", 404) from exc
-            documents = Path(str(workspace["root"])) / "documents"
-            items = []
-            for manifest in sorted(documents.glob("*/document.json")):
-                try:
-                    items.append(json.loads(manifest.read_text(encoding="utf-8")))
-                except (OSError, json.JSONDecodeError):
-                    continue
-        else:
-            items = self.document_store.list() if self.document_store is not None else list(self.documents)
+        service = self._document_service(str(workspace_id))
+        active_id = service.current()
+        items = [
+            DocumentSummaryDTO(
+                id=item.id,
+                title=item.title,
+                template=item.template,
+                created_at=item.created_at,
+                active=item.id == active_id,
+            ).model_dump()
+            for item in service.list()
+        ]
         if request.principal is not None:
             items = [item for item in items if self._is_owned(item, request.principal)]
         return self._page(self._filter(items, request.query), request, "documents")
+
+    def _current_document(self, request: Request) -> Response:
+        service = self._document_service(str(request.query.get("workspace_id", "")))
+        document_id = service.current() or None
+        summary = self._document_summary(service, document_id) if document_id else None
+        return Response.json(DocumentCurrentResponse(
+            current_document_id=document_id,
+            document=summary,
+        ).model_dump())
 
     def _findings(self, request: Request) -> Response:
         items = self.findings_store.list() if self.findings_store is not None else list(self.findings)

@@ -26,7 +26,7 @@ def test_api_document_creation_composes_the_requested_workspace(
 ) -> None:
     from docs.api.http import Request
     from docs.application.workspaces import WorkspaceRegistry
-    from docs.domain.models.document import Document
+    from docs.domain.models.document import DocumentSummary
 
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
@@ -38,8 +38,24 @@ def test_api_document_creation_composes_the_requested_workspace(
     calls: list[Workspace] = []
 
     class Documents:
-        def create(self, document_id: str, template: str, title: str) -> Document:
-            return Document(id=document_id, title=title, template=template)
+        def __init__(self) -> None:
+            self.items: list[DocumentSummary] = []
+            self.active_id = ""
+
+        def create(self, document_id: str, template: str, title: str) -> None:
+            self.items.append(DocumentSummary(
+                id=document_id,
+                title=title,
+                template=template,
+                created_at="2026-01-01T00:00:00",
+            ))
+            self.active_id = document_id
+
+        def list(self) -> list[DocumentSummary]:
+            return self.items
+
+        def current(self) -> str:
+            return self.active_id
 
     class Composition:
         documents = Documents()
@@ -265,6 +281,53 @@ def test_sidecar_runs_endpoint_reads_workspace_backed_store(tmp_path: Path) -> N
         with urllib.request.urlopen(url, timeout=2) as response:
             assert response.status == 200
             assert json.load(response)["items"][0]["id"] == "run-1"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+
+def test_sidecar_wsgi_routes_document_use_with_workspace_query(tmp_path: Path) -> None:
+    config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
+    server = build_server(config)
+    application = server._docs_application.application
+    workspace_id = application.workspace_registry.list()[0]["id"]
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+
+    def post(path: str, payload: dict[str, str]) -> tuple[int, dict[str, Any]]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{server.server_address[1]}{path}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=3)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    try:
+        status, created = post(
+            "/v2/documents",
+            {
+                "workspace_id": workspace_id,
+                "document_id": "wsgi-lifecycle",
+                "template": "documento-generico",
+                "title": "WSGI lifecycle",
+            },
+        )
+        assert status == 201
+
+        status, selected = post(
+            f"/v2/documents/{created['id']}/use?workspace_id={workspace_id}",
+            {},
+        )
+
+        assert status == 200, selected
+        assert selected["id"] == "wsgi-lifecycle"
+        assert selected["active"] is True
     finally:
         server.shutdown()
         thread.join(timeout=2)

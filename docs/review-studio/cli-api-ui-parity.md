@@ -33,16 +33,16 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs context set` | `POST /v2/documents/{document_id}/context` | available | Planned shared web+desktop action; no S0.1 UI | S2 | `documents:write` |
 | `docs context show` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
 | `docs context status` | `GET /v2/documents/{document_id}/context` | available | Planned shared web+desktop action; no S0.1 UI | S2 | `documents:read` |
-| `docs doc current` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs doc delete` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs doc current` | `GET /v2/current-document` | available | Workspace page (`#workspace`): active document | S1 | `documents:read` |
+| `docs doc delete` | `DELETE /v2/documents/{document_id}` | available | Workspace page (`#workspace`): delete confirmation | S1 | `documents:write` |
 | `docs doc init` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs doc list` | `GET /v2/documents` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `documents:read` |
-| `docs doc new` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs doc rename` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs doc list` | `GET /v2/documents` | available | Workspace page (`#workspace`): document list | S1 | `documents:read` |
+| `docs doc new` | `POST /v2/documents` | available | Workspace page (`#workspace`): create document dialog | S1 | `documents:write` |
+| `docs doc rename` | `PATCH /v2/documents/{document_id}` | available | Workspace page (`#workspace`): rename document dialog | S1 | `documents:write` |
 | `docs doc revise` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
-| `docs doc show` | `GET /v2/documents/{document_id}` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `documents:read` |
+| `docs doc show` | `GET /v2/documents/{document_id}` | available | Not exposed yet (API only) | S1 | `documents:read` |
 | `docs doc status` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs doc use` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs doc use` | `POST /v2/documents/{document_id}/use` | available | Workspace page (`#workspace`): select document | S1 | `documents:write` |
 | `docs document baseline` | — | planned | Planned shared web+desktop action; no S0.1 UI | S4 | — |
 | `docs document build` | `POST /v2/documents/{document_id}/build` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs document classify` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
@@ -58,13 +58,13 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs document publish` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
 | `docs document release` | — | planned | Planned shared web+desktop action; no S0.1 UI | S5 | — |
 | `docs document run` | — | planned | Planned shared web+desktop action; no S0.1 UI | S3 | — |
-| `docs document status` | `GET /v2/documents/{document_id}/status` | available | Planned shared web+desktop action; no S0.1 UI | S6 | `documents:read` |
+| `docs document status` | `GET /v2/documents/{document_id}/status` | available | Workspace page (`#workspace`): document status panel | S6 | `documents:read` |
 | `docs document verify` | `POST /v2/documents/{document_id}/verify` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs run cancel` | `POST /v2/runs/{run_id}/cancel` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:write` |
 | `docs run list` | `GET /v2/runs` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
 | `docs run retry` | `POST /v2/runs/{run_id}/retry` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:write` |
 | `docs run show` | `GET /v2/runs/{run_id}` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
-| `docs run watch` | `GET /v2/runs/{run_id}/progress` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
+| `docs run watch` | — | planned | Planned shared web+desktop action; no S0.1 UI | S3 | — |
 | `docs source ingest` | — | planned | Planned shared web+desktop action; no S0.1 UI | S2 | — |
 | `docs template create` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs template init` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
@@ -72,10 +72,10 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs template show` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs template use` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
 | `docs template validate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs workspace create` | `POST /v2/workspaces` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
-| `docs workspace delete` | `DELETE /v2/workspaces/{workspace_id}` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
-| `docs workspace list` | `GET /v2/workspaces` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:read` |
-| `docs workspace migrate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs workspace rename` | `PATCH /v2/workspaces/{workspace_id}` | available | Planned shared web+desktop action; no S0.1 UI | S1 | `workspaces:write` |
-| `docs workspace status` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
-| `docs workspace use` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs workspace create` | `POST /v2/workspaces` | available | Workspace page (`#workspace`): create dialog | S1 | `workspaces:write` |
+| `docs workspace delete` | `DELETE /v2/workspaces/{workspace_id}` | available | Workspace page (`#workspace`): delete confirmation | S1 | `workspaces:write` |
+| `docs workspace list` | `GET /v2/workspaces` | available | Workspace page (`#workspace`): switcher | S1 | `workspaces:read` |
+| `docs workspace migrate` | `POST /v2/workspaces/{workspace_id}/migrate` | available | Workspace page (`#workspace`): migration dialog | S1 | `workspaces:write` |
+| `docs workspace rename` | `PATCH /v2/workspaces/{workspace_id}` | available | Workspace page (`#workspace`): rename dialog | S1 | `workspaces:write` |
+| `docs workspace status` | `GET /v2/workspaces/{workspace_id}/status` | available | Workspace page (`#workspace`): migration status | S1 | `workspaces:read` |
+| `docs workspace use` | `POST /v2/workspaces/{workspace_id}/use` | available | Workspace page (`#workspace`): switcher selection | S1 | `workspaces:write` |

@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.request import Request as URLRequest
 from urllib.request import urlopen
 
 import pytest
@@ -118,6 +119,23 @@ def test_transport_applies_cors_to_allowed_origin_and_rejects_other_origins():
     assert allowed["headers"]["access-control-allow-origin"] == "https://allowed.test"
     assert denied["status"].startswith("403")
     assert json_body(denied_body)["error"]["code"] == "cors_denied"
+
+
+def test_transport_cors_preflight_allows_delete_from_configured_origin():
+    app = X20Transport(echo_app, TransportConfig(cors_origins=("https://allowed.test",)))
+
+    response, _ = invoke(
+        app,
+        "/v2/documents/document-1?workspace_id=workspace-1",
+        method="OPTIONS",
+        headers={
+            "Origin": "https://allowed.test",
+            "Access-Control-Request-Method": "DELETE",
+        },
+    )
+
+    assert response["status"].startswith("204")
+    assert "DELETE" in response["headers"]["access-control-allow-methods"]
 
 
 def test_health_and_readiness_are_transport_endpoints():
@@ -244,6 +262,26 @@ def test_once_server_handles_a_real_http_request_and_closes():
         assert body["method"] == "GET"
         assert body["path"] == "/v2/example"
         assert body["body"] == ""
+
+    thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+def test_http_server_dispatches_delete_to_wsgi_application():
+    server = create_server(
+        X20Transport(echo_app, TransportConfig(mode="offline")),
+        TransportConfig(port=0, mode="offline"),
+    )
+    thread = threading.Thread(target=serve, args=(server,), kwargs={"once": True}, daemon=True)
+    thread.start()
+
+    request = URLRequest(
+        f"http://127.0.0.1:{server.server_address[1]}/v2/example",
+        method="DELETE",
+    )
+    with urlopen(request) as response:
+        assert response.status == 200
+        assert json_body(response.read())["method"] == "DELETE"
 
     thread.join(timeout=2)
     assert not thread.is_alive()

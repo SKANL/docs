@@ -398,8 +398,14 @@ class Router:
                 start_response(f"{response.status} {_REASON.get(response.status, '')}", list(response.headers.items()))
                 return [response.body]
             headers = {k[5:].replace("_", "-"): str(v) for k, v in environ.items() if k.startswith("HTTP_")}
+            path = str(environ.get("PATH_INFO", "/"))
+            query = str(environ.get("QUERY_STRING", ""))
             request = Request(
-                str(environ.get("REQUEST_METHOD", "GET")), str(environ.get("PATH_INFO", "/")), headers, body, environ
+                str(environ.get("REQUEST_METHOD", "GET")),
+                f"{path}?{query}" if query else path,
+                headers,
+                body,
+                environ,
             )
             response = self.dispatch(request)
         start_response(f"{response.status} {_REASON.get(response.status, '')}", list(response.headers.items()))

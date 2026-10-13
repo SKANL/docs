@@ -8,7 +8,6 @@ from docs.api.openapi import build_openapi_document
 from docs.application.pipeline_service import FULL_STAGE_IDS
 from docs.cli.commands.document_app import _BATCH_OUTPUT_PATHS, _record_batch_outputs, _write_batch_journal
 
-
 REPOSITORY_ROOT = Path(__file__).parents[2]
 CURRENT_PUBLIC_DOCS = (
     REPOSITORY_ROOT / "README.md",
@@ -26,10 +25,14 @@ def _read_current_public_docs() -> dict[Path, str]:
 
 def _extract_declared_stage_list(document: str) -> tuple[str, ...]:
     patterns = (
-        r"Its 23-stage `FULL_STAGE_IDS` inventory is: (?P<stages>.+?)\. "
-        r"The shared composition",
-        r"`FULL_STAGE_IDS` is the authoritative 23-stage order: (?P<stages>.+?)\. "
-        r"Stages not wired",
+        (
+            r"Its 23-stage `FULL_STAGE_IDS` inventory is: (?P<stages>.+?)\. "
+            r"The shared composition"
+        ),
+        (
+            r"`FULL_STAGE_IDS` is the authoritative 23-stage order: (?P<stages>.+?)\. "
+            r"Stages not wired"
+        ),
     )
     for pattern in patterns:
         match = re.search(pattern, document, re.DOTALL)
