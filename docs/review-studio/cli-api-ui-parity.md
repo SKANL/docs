@@ -35,20 +35,20 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs context status` | `GET /v2/documents/{document_id}/context` | available | Planned shared web+desktop action; no S0.1 UI | S2 | `documents:read` |
 | `docs doc current` | `GET /v2/current-document` | available | Workspace page (`#workspace`): active document | S1 | `documents:read` |
 | `docs doc delete` | `DELETE /v2/documents/{document_id}` | available | Workspace page (`#workspace`): delete confirmation | S1 | `documents:write` |
-| `docs doc init` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs doc init` | — | excluded | Excluded (CLI only): Bootstraps the process current directory (writes docs.config.json and registers it as the local workspace); over HTTP a workspace is created with POST /v2/workspaces. | S1 | — |
 | `docs doc list` | `GET /v2/documents` | available | Workspace page (`#workspace`): document list | S1 | `documents:read` |
 | `docs doc new` | `POST /v2/documents` | available | Workspace page (`#workspace`): create document dialog | S1 | `documents:write` |
 | `docs doc rename` | `PATCH /v2/documents/{document_id}` | available | Workspace page (`#workspace`): rename document dialog | S1 | `documents:write` |
 | `docs doc revise` | `POST /v2/documents/{document_id}/revisions` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs doc show` | `GET /v2/documents/{document_id}` | available | Not exposed yet (API only) | S1 | `documents:read` |
-| `docs doc status` | — | planned | Planned shared web+desktop action; no S0.1 UI | S1 | — |
+| `docs doc status` | `GET /v2/documents/{document_id}/summary` | available | Not exposed yet (API only) | S1 | `documents:read` |
 | `docs doc use` | `POST /v2/documents/{document_id}/use` | available | Workspace page (`#workspace`): select document | S1 | `documents:write` |
 | `docs document baseline` | `POST /v2/baselines/promotions` | available | Not exposed yet (API only) | S4 | `baselines:write` |
 | `docs document build` | `POST /v2/documents/{document_id}/build` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `documents:write` |
 | `docs document classify` | `POST /v2/documents/{document_id}/classification` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs document diff` | `POST /v2/artifacts/diff` | available | Not exposed yet (API only) | S4 | `artifacts:read` |
 | `docs document evidence` | `GET /v2/runs/{run_id}/evidence` | available | Not exposed yet (API only) | S4 | `passport:read` |
-| `docs document import` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
+| `docs document import` | `POST /v2/documents/{document_id}/imports` | available | Not exposed yet (API only) | S6 | `documents:write` |
 | `docs document ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
 | `docs document inspect` | `GET /v2/artifacts/{artifact_id}/inspect` | available | Not exposed yet (API only) | S4 | `artifacts:read` |
 | `docs document package` | `POST /v2/documents/{document_id}/package` | available | Not exposed yet (API only) | S5 | `documents:write` |
@@ -66,12 +66,12 @@ This S0.1 inventory is derived from registered Typer leaf-command metadata. A ca
 | `docs run show` | `GET /v2/runs/{run_id}` | available | Planned shared web+desktop action; no S0.1 UI | S3 | `runs:read` |
 | `docs run watch` | `GET /v2/runs/{run_id}/progress` | available | Not exposed yet (API only) | S3 | `runs:read` |
 | `docs source ingest` | `POST /v2/documents/{document_id}/ingest` | available | Not exposed yet (API only) | S2 | `documents:write` |
-| `docs template create` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs template init` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
+| `docs template create` | `POST /v2/templates` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs template init` | `POST /v2/templates` | available | Not exposed yet (API only) | S6 | `documents:write` |
 | `docs template list` | `GET /v2/templates` | available | Planned shared web+desktop action; no S0.1 UI | S6 | `documents:read` |
-| `docs template show` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs template use` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
-| `docs template validate` | — | planned | Planned shared web+desktop action; no S0.1 UI | S6 | — |
+| `docs template show` | `GET /v2/templates/{template_name}` | available | Not exposed yet (API only) | S6 | `documents:read` |
+| `docs template use` | `POST /v2/templates/{template_name}/use` | available | Not exposed yet (API only) | S6 | `documents:write` |
+| `docs template validate` | `POST /v2/templates/{template_name}/validate` | available | Not exposed yet (API only) | S6 | `documents:read` |
 | `docs workspace create` | `POST /v2/workspaces` | available | Workspace page (`#workspace`): create dialog | S1 | `workspaces:write` |
 | `docs workspace delete` | `DELETE /v2/workspaces/{workspace_id}` | available | Workspace page (`#workspace`): delete confirmation | S1 | `workspaces:write` |
 | `docs workspace list` | `GET /v2/workspaces` | available | Workspace page (`#workspace`): switcher | S1 | `workspaces:read` |
