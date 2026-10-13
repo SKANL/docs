@@ -84,10 +84,7 @@ SCANNED_CONFIG_KEYS: dict[str, Any] = {
         "subjective_terms": {},
     },
     "output": {
-        "body_name": {},
-        "draft_name": {},
         "format": {},
-        "html_name": {},
     },
     "visual_qa": {
         "browser_viewports": {},
@@ -176,6 +173,9 @@ DYNAMICALLY_READ_KEYS: dict[str, tuple[str, ...]] = {
         "pandoc_bin", "pandoc_fallbacks",
         "resvg_bin", "resvg_fallbacks",
     ),
+    # `application/output_names._resolve` receives the key as a parameter, one
+    # call boundary away from the `.get()`. Pinned by tests/unit/application/test_output_names.py.
+    "output": ("body_name", "draft_name", "html_name"),
 }
 
 
