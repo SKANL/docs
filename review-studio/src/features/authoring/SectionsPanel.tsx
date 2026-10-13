@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -33,7 +34,9 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const api = useApi();
   const can = useCapability();
   const sections = useSections(documentId);
-  const [selected, setSelected] = useState<string | null>(null);
+  // `?section=` lets a review finding open the section it points at.
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<string | null>(params.get("section"));
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<{ id: string; focus: boolean } | null>(null);
   const [review, setReview] = useState<ReviewResult | null>(null);

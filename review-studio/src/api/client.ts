@@ -1,5 +1,6 @@
 import { createAuthoringApi, type AuthoringApi, type RevisionInput } from "./domains/authoring";
 import { createPipelineApi, type PipelineApi } from "./domains/pipeline";
+import { createQualityApi, type QualityApi } from "./domains/review";
 import type {
   Artifact,
   Baseline,
@@ -189,6 +190,8 @@ export class ReviewApiClient {
   readonly authoring: AuthoringApi = createAuthoringApi((path, init) => this.scopedRequest(path, init));
   /** Plan, run and paged run list. */
   readonly pipeline: PipelineApi = createPipelineApi((path, init) => this.scopedRequest(path, init));
+  /** Evidence, baseline promotion, inspect, diff, qa-docx and corrections. */
+  readonly quality: QualityApi = createQualityApi((path, init) => this.scopedRequest(path, init));
   private readonly requestFetch: typeof globalThis.fetch;
   private readonly timeoutMs: number;
   private readonly accessToken?: string;
