@@ -31,7 +31,7 @@ def _stores(ctx: typer.Context):
     active = registry.active()
     if active is not None:
         root = Path(str(active["root"])).resolve()
-    state = root / ".docs" / "x20.sqlite3"
+    state = root / ".docs" / "runtime.sqlite3"
     return SqliteRunStore(state), SqliteJobQueue(state)
 
 

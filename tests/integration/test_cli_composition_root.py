@@ -54,7 +54,7 @@ _EXPECTED_GROUPS = {
     "doc": {"current", "delete", "init", "list", "new", "rename", "revise", "show", "status", "use"},
     "asset": {"add", "list", "rm"},
     "context": {"elicit", "ingest", "rm", "set", "show", "status"},
-    # X20 end-to-end workspace and durable-run surfaces.
+    # runtime end-to-end workspace and durable-run surfaces.
     "workspace": {"list", "create", "use", "rename", "delete", "status", "migrate"},
     # `retry` is the durable retry operation for failed/cancelled runs.
     "run": {"list", "show", "cancel", "retry", "watch"},

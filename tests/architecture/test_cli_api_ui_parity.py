@@ -8,7 +8,7 @@ from pathlib import Path
 from typer.main import get_command
 
 from docs.api import openapi
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.cli.main import app as cli_app
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,7 +104,7 @@ def test_every_registered_cli_command_has_exactly_one_capability_and_matrix_row(
 
 
 def test_available_capabilities_have_real_registered_routes_and_matching_scopes():
-    application = X20Application(
+    application = ApiApplication(
         run_store=None, queue=None, passport_store=None, artifact_store=None,
         graph_store=None,
     )
@@ -125,7 +125,7 @@ def test_available_capabilities_have_real_registered_routes_and_matching_scopes(
 def test_capability_catalog_http_route_returns_the_declared_catalog():
     from docs.api.http import Request
 
-    application = X20Application(
+    application = ApiApplication(
         run_store=None, queue=None, passport_store=None, artifact_store=None,
         graph_store=None,
     )

@@ -227,7 +227,7 @@ def _build_inputs(root: Path) -> tuple[Path, ...]:
                 and not path.is_symlink()
                 and not any(part in excluded for part in path.relative_to(root).parts)
                 and not any(
-                    part.startswith((".x20-", ".atomic-"))
+                    part.startswith((".docs-", ".atomic-"))
                     for part in path.relative_to(root).parts
                 )
             ),
@@ -610,7 +610,7 @@ def create_document_pipeline_service(
         renderer = state.get("renderer")
         if not isinstance(artifact, Path) or renderer is None:
             return False, "reproducibility check has no rendered artifact"
-        scratch_dir = Path(tempfile.mkdtemp(prefix=".x20-repro-", dir=initial_root))
+        scratch_dir = Path(tempfile.mkdtemp(prefix=".docs-repro-", dir=initial_root))
         scratch_dirs.append(scratch_dir)
         try:
             rebuilt = renderer.build(
@@ -676,7 +676,7 @@ def create_document_pipeline_service(
         # attested artifact, so repeatable --format builds accumulate one
         # release archive instead of replacing it format by format.
         with deps.release_lock(destination):
-            staging = Path(tempfile.mkdtemp(prefix=".x20-package-", dir=source_dir.parent))
+            staging = Path(tempfile.mkdtemp(prefix=".docs-package-", dir=source_dir.parent))
             try:
                 for existing in sorted(source_dir.iterdir(), key=lambda path: path.name):
                     if existing.is_symlink() or not existing.is_file():

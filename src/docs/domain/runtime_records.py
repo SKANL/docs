@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, ClassVar
 
-SCHEMA = "docs.x20/v1"
+SCHEMA = "docs.runtime/v1"
 
 
 def _freeze(value: Any) -> Any:

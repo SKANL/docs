@@ -20,7 +20,7 @@ from .server import TransportConfig
 
 
 def build_application(config: TransportConfig):
-    """Build the real X20 application used by the remote API entrypoint.
+    """Build the real runtime application used by the remote API entrypoint.
 
     Configure ``workspace`` in the docs-api JSON and provide
     ``DOCS_API_TOKENS`` as a comma-separated list of ``token`` or

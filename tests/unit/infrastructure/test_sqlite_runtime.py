@@ -18,7 +18,7 @@ from docs.infrastructure.persistence.sqlite_runtime import (
 
 
 def test_sqlite_stores_round_trip_contracts_and_survive_reopen(tmp_path: Path) -> None:
-    db = tmp_path / "x20.sqlite3"
+    db = tmp_path / "runtime.sqlite3"
     run = Run("run-1", status="running", payload={"attempt": 1}, created_at="2026-09-16T00:00:00Z")
     passport = Passport("run-1", entries=({"artifact": "a-1"},))
     artifact = Artifact("a-1", "run-1", "report", "digest", metadata={"page": 1})
@@ -50,12 +50,12 @@ def test_sqlite_decoding_rejects_non_object_and_wrong_schema_payloads(tmp_path: 
     SqliteRunStore(db)
     with sqlite3.connect(db) as connection:
         connection.execute(
-            "INSERT INTO x20_runs (id, payload) VALUES (?, ?)",
+            "INSERT INTO runtime_runs (id, payload) VALUES (?, ?)",
             ("list", json.dumps(["not", "an", "object"])),
         )
         connection.execute(
-            "INSERT INTO x20_runs (id, payload) VALUES (?, ?)",
-            ("version", json.dumps({"schema": "docs.x20/v2", "id": "version"})),
+            "INSERT INTO runtime_runs (id, payload) VALUES (?, ?)",
+            ("version", json.dumps({"schema": "docs.runtime/v2", "id": "version"})),
         )
 
     with pytest.raises(ValueError, match="JSON object"):
@@ -111,15 +111,15 @@ def test_sqlite_queue_quarantines_malformed_claim_and_removes_it(tmp_path: Path)
     queue = SqliteJobQueue(db)
     with sqlite3.connect(db) as connection:
         connection.execute(
-            "INSERT INTO x20_jobs (id, payload, claimed_by) VALUES (?, ?, NULL)",
+            "INSERT INTO runtime_jobs (id, payload, claimed_by) VALUES (?, ?, NULL)",
             ("bad", "not-json"),
         )
 
     with pytest.raises(ValueError):
         queue.claim("worker-1")
     with sqlite3.connect(db) as connection:
-        assert connection.execute("SELECT 1 FROM x20_jobs WHERE id = 'bad'").fetchone() is None
-        assert connection.execute("SELECT payload FROM x20_jobs_quarantine WHERE id = 'bad'").fetchone() == (
+        assert connection.execute("SELECT 1 FROM runtime_jobs WHERE id = 'bad'").fetchone() is None
+        assert connection.execute("SELECT payload FROM runtime_jobs_quarantine WHERE id = 'bad'").fetchone() == (
             "not-json",
         )
     assert queue.claim("worker-1") is None

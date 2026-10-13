@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.api.auth import Principal
 from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
@@ -81,7 +81,7 @@ def document_lifecycle_app(tmp_path):
             root=workspace_root,
         )).documents
 
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
         document_service_factory=document_service_factory,
@@ -110,7 +110,7 @@ def test_document_lifecycle_routes_use_canonical_service_and_persist_active_sele
     current_after_rename = application.dispatch(Request("GET", f"/v2/current-document?workspace_id={workspace_id}"))
     deleted = application.dispatch(Request("DELETE", f"/v2/documents/renamed?workspace_id={workspace_id}"))
 
-    restarted = X20Application(
+    restarted = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
         document_service_factory=application.document_service_factory,
@@ -167,7 +167,7 @@ ALL_SCOPES = frozenset({
 
 
 def app(router=None):
-    return X20Application(
+    return ApiApplication(
         run_store=Runs(),
         queue=Queue(),
         passport_store=Passports(),
@@ -184,7 +184,7 @@ def test_application_rejects_preexisting_dynamic_route_collision_at_construction
     router.route("GET", "/v2/runs/r1")(lambda _: Response.json({"owner": "other"}))
 
     with pytest.raises(ValueError, match="GET /v2/runs/r1"):
-        X20Application(
+        ApiApplication(
             run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
             graph_store=Graphs(), router=router,
         )
@@ -212,7 +212,7 @@ def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_pa
     root = tmp_path / "workspace"
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     workspace = registry.create("Workspace", root)
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
     )
@@ -227,7 +227,7 @@ def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_pa
 
 def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(tmp_path):
     registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
         managed_workspace_root=tmp_path / "managed-workspaces",
@@ -254,7 +254,7 @@ def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(
 def test_workspace_lifecycle_use_status_and_migrate(tmp_path):
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
         managed_workspace_root=tmp_path / "managed",
@@ -284,7 +284,7 @@ def test_workspace_lifecycle_use_status_and_migrate(tmp_path):
     ("POST", "use", None), ("GET", "status", None), ("POST", "migrate", {}),
 ])
 def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, action, body_value):
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=WorkspaceRegistry(tmp_path / "registry.json"),
     )
@@ -296,7 +296,7 @@ def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, act
 def test_workspace_migration_rejects_unknown_request_fields(tmp_path):
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
     )
@@ -313,7 +313,7 @@ def test_workspace_migration_rejects_unknown_request_fields(tmp_path):
 def test_workspace_lifecycle_denies_insufficient_scope(tmp_path, method, action, allowed_scope):
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
     )
@@ -328,7 +328,7 @@ def test_workspace_use_is_reachable_through_wsgi(tmp_path):
 
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
     )
@@ -349,7 +349,7 @@ def test_workspace_use_is_reachable_through_wsgi(tmp_path):
     ("PATCH", "/v2/workspaces/missing", {"name": 1}),
 ])
 def test_workspace_transport_dtos_reject_unknown_fields_and_non_string_names(tmp_path, method, path, payload):
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=WorkspaceRegistry(tmp_path / "registry.json"),
         managed_workspace_root=tmp_path / "managed-workspaces",
@@ -364,7 +364,7 @@ def test_workspace_transport_dtos_reject_unknown_fields_and_non_string_names(tmp
 def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root(tmp_path):
     registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
     managed_root = tmp_path / "managed-workspaces"
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry, managed_workspace_root=managed_root,
     )
@@ -389,7 +389,7 @@ def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root
 def test_workspace_content_routes_fail_closed_without_explicit_workspace(tmp_path, method, path):
     registry = WorkspaceRegistry(tmp_path / "registry.json")
     registry.create("Workspace", tmp_path / "workspace")
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
     )
@@ -413,7 +413,7 @@ def test_document_collection_rejects_invalid_workspace_before_reading_store(tmp_
     workspace = registry.create("Workspace", tmp_path / "workspace")
     Path(workspace["root"], "workspace.json").unlink()
     documents = WorkspaceDocuments()
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), document_store=documents, workspace_registry=registry,
     )
@@ -433,7 +433,7 @@ def test_create_run_rejects_invalid_workspace_before_writing_or_enqueuing(tmp_pa
     Path(workspace["root"], "workspace.json").write_text(
         '{"schema":"docs.workspace/v2"}', encoding="utf-8"
     )
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
     )
@@ -486,7 +486,7 @@ def section_app(tmp_path, revision_service=None):
     (document_root / "sections").mkdir(parents=True)
     (document_root / "document.json").write_text('{"id":"d1","title":"D1"}', encoding="utf-8")
     (document_root / "sections" / "intro.md").write_text("Original", encoding="utf-8")
-    return X20Application(
+    return ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), documents=[{"id": "d1"}], workspace_registry=registry,
         revision_service=revision_service,
@@ -576,7 +576,7 @@ def test_auth_refresh_preserves_unrelated_router_routes():
         return Response.json({"owner": "other"})
 
     router.route("GET", "/v2/other")(unrelated)
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), router=router,
     )
@@ -1161,13 +1161,13 @@ def test_application_bearer_challenge_is_returned_for_missing_credentials():
     ],
 )
 def test_application_scope_policy_covers_owned_routes(method, path, scope):
-    assert X20Application._required_scope(method, path) == scope
+    assert ApiApplication._required_scope(method, path) == scope
 
 
 def test_application_scope_policy_does_not_overmatch_dynamic_routes():
-    assert X20Application._required_scope("GET", "/v2/runs/r1/unknown") is None
-    assert X20Application._required_scope("GET", "/v2/documents/d1/revisions") is None
-    assert X20Application._required_scope("GET", "/v2/openapi.json") is None
+    assert ApiApplication._required_scope("GET", "/v2/runs/r1/unknown") is None
+    assert ApiApplication._required_scope("GET", "/v2/documents/d1/revisions") is None
+    assert ApiApplication._required_scope("GET", "/v2/openapi.json") is None
     assert app().dispatch(Request("GET", "/v2/runs//passport")).status == 404
 
 
@@ -1209,7 +1209,7 @@ def test_run_progress_is_exposed_as_sse():
         ("GET", "/v2/plugins"),
     ],
 )
-def test_x20_resource_routes_exist(method, path):
+def test_runtime_resource_routes_exist(method, path):
     application = app()
     if path.startswith("/v2/runs/"):
         application.run_store.put(Run("r1", payload={"document_id": "d1"}))
@@ -1217,7 +1217,7 @@ def test_x20_resource_routes_exist(method, path):
     assert (method, path) in application._dynamic_routes or (method, path) in application._registered_route_keys()
 
 
-def test_x20_resource_routes_are_safe_for_missing_resources():
+def test_runtime_resource_routes_are_safe_for_missing_resources():
     application = app()
 
     assert application.dispatch(Request("GET", "/v2/documents/missing")).status == 404
@@ -1242,7 +1242,7 @@ class Plugins:
 
 def test_baselines_and_plugins_use_existing_read_store_contracts():
     baselines = Baselines()
-    application = X20Application(
+    application = ApiApplication(
         run_store=Runs(),
         queue=Queue(),
         passport_store=Passports(),
@@ -1292,7 +1292,7 @@ class SemanticGraphs:
 
 
 def semantic_app():
-    return X20Application(
+    return ApiApplication(
         run_store=Runs(),
         queue=Queue(),
         passport_store=Passports(),

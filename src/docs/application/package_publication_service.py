@@ -192,7 +192,7 @@ class PackagePublicationService:
         self, source_dir: Path, *, allow_staging: bool, verify_attestation: bool
     ) -> tuple[PackageSourceFile, ...]:
         valid_source = source_dir.name == "current" and source_dir.parent.name == "output"
-        valid_staging = allow_staging and source_dir.name.startswith(".x20-package-") and source_dir.parent.name == "output"
+        valid_staging = allow_staging and source_dir.name.startswith(".docs-package-") and source_dir.parent.name == "output"
         if not (valid_source or valid_staging):
             raise PackagePublicationError("package requires an output/current source directory")
         if any(path.is_symlink() for path in (source_dir, *source_dir.parents)):

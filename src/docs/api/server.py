@@ -1,4 +1,4 @@
-"""Standard-library deployment transport for the X20 WSGI application."""
+"""Standard-library deployment transport for the runtime WSGI application."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ class _ClosingIterator:
 
 @dataclass(frozen=True)
 class TransportConfig:
-    """Deployment-only settings; X20 routing and authentication stay in the app."""
+    """Deployment-only settings; runtime routing and authentication stay in the app."""
 
     host: str = "127.0.0.1"
     port: int = 8000
@@ -138,8 +138,8 @@ class TransportConfig:
         return "/" if normalized == "/" else normalized.rstrip("/")
 
 
-class X20Transport:
-    """Bounded WSGI middleware around an existing :class:`X20Application`."""
+class ApiTransport:
+    """Bounded WSGI middleware around an existing :class:`ApiApplication`."""
 
     def __init__(
         self,
@@ -170,7 +170,7 @@ class X20Transport:
             elif path == "/healthz":
                 response = Response.json({"status": "ok"})
             # The local sidecar owns `/health` and must be able to report
-            # workspace configuration errors. The remote X20 application has
+            # workspace configuration errors. The remote runtime application has
             # no health_path attribute, so it receives the transport-level
             # compatibility response below.
             elif path == "/health" and getattr(self.application, "health_path", None) != "/health":
@@ -384,7 +384,7 @@ class X20Transport:
 
     @staticmethod
     def _request_id(environ: Mapping[str, Any]) -> str:
-        supplied = X20Transport._header(environ, "x-request-id")
+        supplied = ApiTransport._header(environ, "x-request-id")
         return supplied if supplied and _REQUEST_ID.fullmatch(supplied) else uuid4().hex
 
     @staticmethod
@@ -415,7 +415,7 @@ class GracefulHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], transport: X20Transport) -> None:
+    def __init__(self, address: tuple[str, int], transport: ApiTransport) -> None:
         self.transport = transport
         self.shutdown_timeout = transport.config.graceful_shutdown_timeout
         self.shutdown_requested = False
@@ -458,22 +458,22 @@ def create_app(
     config: TransportConfig | Mapping[str, Any] | None = None,
     *,
     ready_check: Callable[[], bool] | None = None,
-) -> X20Transport:
+) -> ApiTransport:
     """Build the same transport for embedded/offline and remote deployments."""
     resolved = config if isinstance(config, TransportConfig) else TransportConfig.from_mapping(config or {})
     _require_production_auth(application, resolved)
-    return X20Transport(application, resolved, ready_check=ready_check)
+    return ApiTransport(application, resolved, ready_check=ready_check)
 
 
 def create_server(
     application: Callable[..., Any], config: TransportConfig | Mapping[str, Any] | None = None
 ) -> GracefulHTTPServer:
-    if isinstance(application, X20Transport):
+    if isinstance(application, ApiTransport):
         resolved = application.config if config is None else (
             config if isinstance(config, TransportConfig) else TransportConfig.from_mapping(config)
         )
         _require_production_auth(application.application, resolved)
-        transport = application if resolved == application.config else X20Transport(
+        transport = application if resolved == application.config else ApiTransport(
             application.application, resolved, ready_check=application.ready_check
         )
     else:
@@ -650,7 +650,7 @@ def _compose_application(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="docs-api", description="Serve an existing X20 WSGI application")
+    parser = argparse.ArgumentParser(prog="docs-api", description="Serve an existing runtime WSGI application")
     parser.add_argument("--config", type=Path, required=True, help="JSON deployment configuration")
     parser.add_argument("--host")
     parser.add_argument("--port", type=int)

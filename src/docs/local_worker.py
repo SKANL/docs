@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.workspace_root.expanduser().resolve()
     validate_workspace_layout(root, root / "documents", root / "templates")
     validate_workspace_marker(root)
-    state = root / ".docs" / "x20.sqlite3"
+    state = root / ".docs" / "runtime.sqlite3"
     queue = SqliteJobQueue(state)
     run_store = SqliteRunStore(state)
     passport_store = SqlitePassportStore(state)

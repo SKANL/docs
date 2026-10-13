@@ -56,7 +56,7 @@ def test_public_stage_order_matches_full_stage_ids() -> None:
 def _runtime_output_contract(tmp_path: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
     root = tmp_path / "document"
     root.mkdir()
-    journal = root / "runs" / "x20-batch-transaction.json"
+    journal = root / "runs" / "batch-transaction.json"
     backup = root / "backup"
     _write_batch_journal(journal, root, backup, _BATCH_OUTPUT_PATHS)
     before = json.loads(journal.read_text(encoding="utf-8"))["expected"]

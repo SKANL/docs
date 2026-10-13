@@ -1,4 +1,4 @@
-"""Desktop sidecar entrypoint for the local X20 API."""
+"""Desktop sidecar entrypoint for the local Docs API."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from uuid import uuid4
 
 from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
 
-from .api.application import X20Application
+from .api.application import ApiApplication
 from .api.http import Response, Router
 from .api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from .application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
@@ -98,7 +98,7 @@ class _PerRoot(Generic[_Store]):
 
 
 def _state_path(root: Path) -> Path:
-    return root / ".docs" / "x20.sqlite3"
+    return root / ".docs" / "runtime.sqlite3"
 
 
 class _FilesystemDocumentStore:
@@ -258,7 +258,7 @@ class _WorkspaceRunStore:
     def path(self) -> Path:
         if self.fallback_root is None:
             raise AttributeError("workspace run store has no fallback path")
-        return self.fallback_root / ".docs" / "x20.sqlite3"
+        return self.fallback_root / ".docs" / "runtime.sqlite3"
 
     def _all(self) -> list[SqliteRunStore]:
         return [self._store(root) for root in self.roots.all_roots()]
@@ -296,7 +296,7 @@ class _WorkspaceJobQueue:
     def path(self) -> Path:
         if self.fallback_root is None:
             raise AttributeError("workspace queue has no fallback path")
-        return self.fallback_root / ".docs" / "x20.sqlite3"
+        return self.fallback_root / ".docs" / "runtime.sqlite3"
 
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         workspace_id = payload.get("workspace_id")
@@ -370,7 +370,7 @@ class _WorkspacePassportStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
 
     def put(self, value: Passport) -> None:
         self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[0].put(value)
@@ -385,7 +385,7 @@ class _WorkspaceArtifactStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
 
     def put(self, value: Artifact) -> None:
         self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[1].put(value)
@@ -410,7 +410,7 @@ class _WorkspaceFindingStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
 
     def put(self, value: dict[str, Any]) -> None:
         self.parent._stores_for_root(self.parent._root_for_run(str(value.get("run_id", ""))))[2].put(value)
@@ -428,7 +428,7 @@ class _WorkspacePublicationStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "x20.sqlite3"
+        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
 
     def put(self, value: dict[str, Any]) -> None:
         run_id = str(value.get("run_id", ""))
@@ -543,7 +543,7 @@ class SidecarConfig:
 class _HealthApplication:
     def __init__(
         self,
-        application: X20Application | None,
+        application: ApiApplication | None,
         health_path: str,
         protocol: str,
         *,
@@ -672,7 +672,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
     plugin_registry.discover([config.workspace / "plugins"])
     if registry.active() is None:
         registry.select(configured_workspace["id"])
-    state_path = config.workspace / ".docs" / "x20.sqlite3"
+    state_path = config.workspace / ".docs" / "runtime.sqlite3"
     run_store = _WorkspaceRunStore(registry, config.workspace)
     queue = _WorkspaceJobQueue(registry, config.workspace)
     evidence_stores = _WorkspaceEvidenceStores(registry, run_store, config.workspace)
@@ -839,7 +839,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             root = str(active["root"])
         return document_context(root, document_id)
 
-    application = X20Application(
+    application = ApiApplication(
         run_store=run_store,
         queue=queue,
         passport_store=passport_store,
@@ -892,7 +892,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
 def _worker_process_main(workspace: Path) -> None:
     root = Path(workspace).resolve()
     registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
-    state_path = root / ".docs" / "x20.sqlite3"
+    state_path = root / ".docs" / "runtime.sqlite3"
     queue = _WorkspaceJobQueue(registry, root)
     run_store = _WorkspaceRunStore(registry, root)
     evidence = _WorkspaceEvidenceStores(registry, run_store, root)

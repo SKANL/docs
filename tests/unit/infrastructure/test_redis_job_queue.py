@@ -20,7 +20,7 @@ def test_redis_queue_drops_malformed_payload_without_poison_loop() -> None:
         def eval(self, script: str, numkeys: int, *args: object) -> object:
             del numkeys, args
             self.scripts.append(script)
-            if script.startswith("-- x20 claim"):
+            if script.startswith("-- runtime claim"):
                 return [0, self.payload]
             raise AssertionError("unexpected script")
 
@@ -42,7 +42,7 @@ def test_redis_queue_rejects_non_positive_claim_ttl() -> None:
 
 
 def test_redis_queue_quarantines_job_that_fails_contract_decoding(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = json.dumps({"schema": "docs.x20/v1", "id": "job-1", "payload": {}}).encode()
+    payload = json.dumps({"schema": "docs.runtime/v1", "id": "job-1", "payload": {}}).encode()
 
     class Redis:
         def __init__(self) -> None:
@@ -51,9 +51,9 @@ def test_redis_queue_quarantines_job_that_fails_contract_decoding(monkeypatch: p
         def eval(self, script: str, numkeys: int, *args: object) -> object:
             del numkeys
             self.scripts.append(script)
-            if script.startswith("-- x20 claim"):
+            if script.startswith("-- runtime claim"):
                 return [1, payload, "job-1"] if len(self.scripts) == 1 else None
-            if script.startswith("-- x20 quarantine"):
+            if script.startswith("-- runtime quarantine"):
                 assert args[-2:] == ("job-1", payload)
                 return 1
             raise AssertionError("unexpected script")
@@ -68,7 +68,7 @@ def test_redis_queue_quarantines_job_that_fails_contract_decoding(monkeypatch: p
     with pytest.raises(ValueError, match="malformed"):
         queue.claim("worker-1")
 
-    assert any(script.startswith("-- x20 quarantine") for script in client.scripts)
+    assert any(script.startswith("-- runtime quarantine") for script in client.scripts)
 
 
 def test_redis_quarantine_script_removes_claim_without_decoding_raw_payload() -> None:
@@ -198,7 +198,7 @@ def test_redis_queue_claim_reclaim_and_ack_use_atomic_scripts() -> None:
 
         def eval(self, script: str, numkeys: int, *args: object) -> object:
             self.scripts.append(script)
-            if script.startswith("-- x20 claim"):
+            if script.startswith("-- runtime claim"):
                 key, payload_key, owner_key, expiry_key = (cast(str, value) for value in args[:4])
                 worker_id = cast(str, args[4])
                 now = float(cast(float, args[5]))
@@ -221,7 +221,7 @@ def test_redis_queue_claim_reclaim_and_ack_use_atomic_scripts() -> None:
                 self.hashes.setdefault(owner_key, {})[job_id] = worker_id.encode()
                 self.expiry.setdefault(expiry_key, {})[job_id] = now + ttl
                 return payload
-            if script.startswith("-- x20 ack"):
+            if script.startswith("-- runtime ack"):
                 owner_key, payload_key, expiry_key, job_id, worker_id = (cast(str, value) for value in args)
                 del numkeys
                 owner = self.hashes.get(owner_key, {}).get(job_id)

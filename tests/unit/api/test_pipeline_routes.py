@@ -7,7 +7,7 @@ import pytest
 
 from docs.api.auth import Principal
 from docs.api.openapi import build_capability_catalog, build_openapi_document
-from docs.api.server import TransportConfig, X20Transport
+from docs.api.server import TransportConfig, ApiTransport
 from docs.domain.runtime_records import Run
 
 NEW_COMMANDS = {
@@ -253,7 +253,7 @@ def test_progress_streams_through_the_wsgi_transport(api):
     def start_response(status, headers, exc_info=None):
         captured["status"], captured["headers"] = status, dict(headers)
 
-    chunks = list(X20Transport(api.app, TransportConfig())(environ, start_response))
+    chunks = list(ApiTransport(api.app, TransportConfig())(environ, start_response))
     assert captured["status"].startswith("200") and captured["headers"]["Transfer-Encoding"] == "chunked"
     assert [kind(chunk) for chunk in chunks] == ["progress", "terminal"]
 

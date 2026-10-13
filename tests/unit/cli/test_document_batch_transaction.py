@@ -22,7 +22,7 @@ def test_batch_transaction_recovery_uses_the_paths_written_to_its_journal(tmp_pa
     journal = _batch_journal_path(document_root)
 
     def write_journal() -> None:
-        backup = document_root / ".x20-batch-backup"
+        backup = document_root / ".docs-batch-backup"
         for relative in paths:
             source = document_root / relative
             destination = backup / relative

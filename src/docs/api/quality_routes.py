@@ -54,7 +54,7 @@ class QualityRoutes(RouteSupport):
         host: Any,
     ) -> None:
         super().__init__(workspace_root=workspace_root, services_for=services_for)
-        self._host = host  # the X20Application: run/artifact/passport/finding stores + ownership
+        self._host = host  # the ApiApplication: run/artifact/passport/finding stores + ownership
 
     # -- shared resolution ---------------------------------------------------
     @staticmethod

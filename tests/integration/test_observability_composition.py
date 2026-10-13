@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from docs import composition as application_composition
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.cli._shared import Deps
 from docs.domain.workspace import Workspace
 from docs.workers import composition
@@ -48,7 +48,7 @@ def test_api_composition_invokes_environment_observability_factory(monkeypatch):
         lambda: marker,
     )
 
-    application = X20Application(**_api_kwargs())
+    application = ApiApplication(**_api_kwargs())
 
     assert application.observability is marker
 

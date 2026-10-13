@@ -1,4 +1,4 @@
-"""HTTP facade for the X20 document evidence ports."""
+"""HTTP facade for the runtime document evidence ports."""
 
 from __future__ import annotations
 
@@ -80,8 +80,8 @@ def _dict(value: Any) -> Any:
 _output_format = output_format
 
 
-class X20Application:
-    """Compose X20 ports behind the versioned local HTTP API."""
+class ApiApplication:
+    """Compose runtime ports behind the versioned local HTTP API."""
 
     def __init__(
         self,
@@ -1716,7 +1716,7 @@ class X20Application:
             result = getter(value)
             if result is not None:
                 return result
-        for item in X20Application._store_items(store, "list"):
+        for item in ApiApplication._store_items(store, "list"):
             data = _dict(item)
             if any(str(data.get(key, "")) == value for key in keys):
                 return item

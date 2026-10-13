@@ -601,11 +601,11 @@ def test_sidecar_lists_a_real_workspace_baseline(tmp_path: Path) -> None:
 def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None:
     application = build_application(SidecarConfig(workspace=tmp_path))
 
-    assert application.application.run_store.path == tmp_path / ".docs" / "x20.sqlite3"
-    assert application.application.queue.path == tmp_path / ".docs" / "x20.sqlite3"
-    assert application.application.passport_store.path == tmp_path / ".docs" / "x20.sqlite3"
-    assert application.application.artifact_store.path == tmp_path / ".docs" / "x20.sqlite3"
-    assert application.application.graph_store.path == tmp_path / ".docs" / "x20.sqlite3"
+    assert application.application.run_store.path == tmp_path / ".docs" / "runtime.sqlite3"
+    assert application.application.queue.path == tmp_path / ".docs" / "runtime.sqlite3"
+    assert application.application.passport_store.path == tmp_path / ".docs" / "runtime.sqlite3"
+    assert application.application.artifact_store.path == tmp_path / ".docs" / "runtime.sqlite3"
+    assert application.application.graph_store.path == tmp_path / ".docs" / "runtime.sqlite3"
 
 
 def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:

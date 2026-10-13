@@ -1,4 +1,4 @@
-"""Port-driven worker orchestration for X20 jobs.
+"""Port-driven worker orchestration for runtime jobs.
 
 The service deliberately knows nothing about persistence or rendering details;
 those concerns are supplied as ports (small objects with the methods used

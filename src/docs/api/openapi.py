@@ -1,4 +1,4 @@
-"""Deterministic, dependency-free OpenAPI contract for the X20 API."""
+"""Deterministic, dependency-free OpenAPI contract for the Docs API."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def _schemas() -> dict[str, Any]:
         "section": _item_schema("section", {"id": {"type": "string"}, "filename": {"type": "string"}, "body": {"type": "string"}}),
         "import_job": _item_schema("import_job", {"id": {"type": "string"}, "document_id": {"type": "string"}, "filename": {"type": "string"}, "path": {"type": "string"}, "mime_type": {"type": "string"}, "size": {"type": "integer", "minimum": 1}, "sha256": {"type": "string"}, "deduplicated": {"type": "boolean"}}),
         "stage": _item_schema("stage", {"name": {"type": "string"}, "status": _ref("status"), "progress": {"type": "number"}, "started_at": {"type": ["string", "null"], "format": "date-time"}, "finished_at": {"type": ["string", "null"], "format": "date-time"}}),
-        "run": _item_schema("run", {"schema": {"type": "string", "const": "docs.x20/v1"}, "id": {"type": "string"}, "status": _ref("status"), "payload": {"type": "object"}, "created_at": {"type": "string", "format": "date-time"}}),
+        "run": _item_schema("run", {"schema": {"type": "string", "const": "docs.runtime/v1"}, "id": {"type": "string"}, "status": _ref("status"), "payload": {"type": "object"}, "created_at": {"type": "string", "format": "date-time"}}),
         "finding": _item_schema("finding", {"id": {"type": "string"}, "run_id": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "status": _ref("status"), "message": {"type": "string"}}),
         "passport": _item_schema("passport", {"id": {"type": "string"}, "run_id": {"type": "string"}, "coverage": {"type": "number"}, "attestations": {"type": "integer"}}),
         "graph": _item_schema("graph", {"nodes": {"type": "array", "items": {"type": "object"}}, "edges": {"type": "array", "items": {"type": "object"}}}),
@@ -225,7 +225,7 @@ def build_capability_catalog() -> dict[str, Any]:
 
 
 def build_openapi_document() -> dict[str, Any]:
-    """Return a fresh OpenAPI 3.1 document for the complete X20 contract."""
+    """Return a fresh OpenAPI 3.1 document for the complete runtime contract."""
     def page(item_name: str) -> dict[str, Any]:
         return _json_response(
             {
@@ -510,7 +510,7 @@ def build_openapi_document() -> dict[str, Any]:
     schemas.update(workspace_openapi_schemas())
     schemas.update(document_openapi_schemas())
     schemas.update(component_schemas())
-    return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "X20 API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": schemas}}
+    return {"openapi": "3.1.0", "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema", "info": {"title": "Docs API", "version": "2.0.0"}, "servers": [{"url": "/"}], "security": [{"bearerAuth": []}], "paths": paths, "components": {"securitySchemes": {"bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}}, "schemas": schemas}}
 
 
 __all__ = ["build_openapi_document", "canonical_json"]

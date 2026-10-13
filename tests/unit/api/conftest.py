@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.api.http import Request
 from docs.application.workspaces import WorkspaceRegistry
 from docs.composition import compose_application
@@ -51,7 +51,7 @@ def api(tmp_path, stores):
         root = Path(root)
         return compose_application(Workspace(root / "documents", root / "templates", root=root))
 
-    application = X20Application(
+    application = ApiApplication(
         **stores, workspace_registry=registry,
         document_service_factory=lambda root: services(root).documents,
         workspace_services_factory=services,

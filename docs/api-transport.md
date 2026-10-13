@@ -1,14 +1,14 @@
-# X20 API transport
+# Docs API transport
 
 `docs-api` is a standard-library deployment wrapper around the existing
-`X20Application` WSGI callable. It does not own business routes or replace
+`ApiApplication` WSGI callable. It does not own business routes or replace
 application authentication.
 
 ## Configuration and CLI
 
 Create a JSON file containing an importable application factory. The factory
 receives the same `TransportConfig` used by the transport and returns an
-`X20Application` (or any compatible WSGI callable):
+`ApiApplication` (or any compatible WSGI callable):
 
 ```json
 {
@@ -36,13 +36,13 @@ docs-api --config api.json --host 127.0.0.1 --port 0 --once
 Non-loopback binding is refused unless `allow_public_bind` is true in the
 configuration or `--allow-public-bind` is passed explicitly. Put TLS,
 authentication policy, and rate limiting at the reverse proxy as appropriate;
-the X20 application still enforces its own business-route authentication.
+the application still enforces its own business-route authentication.
 
 ## Endpoints and proxying
 
 `/healthz` is a transport liveness check and `/readyz` reports the configured
 readiness callback. They are the only transport-owned paths; all other paths,
-including `/v2/*`, go to `X20Application`. If `base_url` includes a path (for
+including `/v2/*`, go to `ApiApplication`. If `base_url` includes a path (for
 example `/docs`), the endpoints and application are served below that prefix.
 
 The adapter validates `Content-Length` before dispatch, rejects unsupported

@@ -11,7 +11,7 @@ from fakes.in_memory_runtime_stores import (
 )
 from PIL import Image
 
-from docs.api.application import X20Application
+from docs.api.application import ApiApplication
 from docs.api.http import Request
 from docs.application.evidence_passport import EvidencePassportService
 from docs.application.generate_visuals import GenerateVisualsService
@@ -64,8 +64,8 @@ class _GraphStore:
         return self._graph
 
 
-def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_path: Path) -> None:
-    """Exercise the full X20 path with deterministic HTML QA fallback components."""
+def test_runtime_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_path: Path) -> None:
+    """Exercise the full runtime path with deterministic HTML QA fallback components."""
     template = {
         "type": "vertical",
         "title": "Vertical",
@@ -140,7 +140,7 @@ def test_x20_vertical_journey_is_deterministic_from_template_ir_to_api_run(tmp_p
 
     run_store = InMemoryRunStore()
     artifact_store = InMemoryArtifactStore()
-    application = X20Application(
+    application = ApiApplication(
         run_store=run_store,
         queue=InMemoryJobQueue(),
         passport_store=passport_store,

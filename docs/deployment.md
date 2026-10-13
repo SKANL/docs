@@ -77,7 +77,7 @@ workspace:
 docs-worker --workspace-root <path> [--iterations N]
 ```
 
-It records queue and run state in `<workspace>/.docs/x20.sqlite3`. This is a
+It records queue and run state in `<workspace>/.docs/runtime.sqlite3`. This is a
 single-host boundary: run the worker against local workspace storage and do not
 claim Redis, S3/blob storage, cross-host queues, distributed leases, or
 multi-worker coordination from this entry point. `docs.workers.cli` remains an
@@ -85,7 +85,7 @@ injectable library boundary; it is not the installed worker executable.
 
 Back up the workspace's source inputs, `runs/`, passport storage, and the local
 SQLite state together. Rendered artifacts are replaceable; provenance and
-passport records are not. Publish only artifacts that have a matching X20
+passport records are not. Publish only artifacts that have a matching
 manifest and verifiable attestation (`docs/provenance.md`).
 
 ## Release checks

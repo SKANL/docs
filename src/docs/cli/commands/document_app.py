@@ -111,7 +111,7 @@ def _run(
     if command == "build" and not _batch_lock_held:
         resolved = ctx.obj["deps"].resolve_context(ctx.obj.get("doc", ""))
         root = ctx.obj["deps"].workspace.doc_root(resolved.doc_id)
-        with owned_directory_lock(root / "runs" / ".x20-batch.lock"):
+        with owned_directory_lock(root / "runs" / ".docs-batch.lock"):
             return _run(
                 ctx,
                 command,
@@ -147,7 +147,7 @@ def _run(
         batch_root.mkdir(parents=True, exist_ok=True)
         batch_journal = _batch_journal_path(batch_root)
         _recover_batch_transaction(batch_journal, _lock_held=True)
-        batch_backup = Path(tempfile.mkdtemp(prefix=".x20-batch-", dir=batch_root))
+        batch_backup = Path(tempfile.mkdtemp(prefix=".docs-batch-", dir=batch_root))
         batch_paths = _BATCH_OUTPUT_PATHS
         for relative in batch_paths:
             current = batch_root / relative
@@ -306,7 +306,7 @@ def _run(
 
 
 def _batch_journal_path(root: Path) -> Path:
-    return root / "runs" / "x20-batch-transaction.json"
+    return root / "runs" / "batch-transaction.json"
 
 
 def _write_batch_journal(journal: Path, root: Path, backup: Path, paths: tuple[Path, ...]) -> None:
@@ -378,7 +378,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
     if not journal.exists():
         return
     if not _lock_held:
-        with owned_directory_lock(journal.parent / ".x20-batch.lock"):
+        with owned_directory_lock(journal.parent / ".docs-batch.lock"):
             return _recover_batch_transaction(journal, _lock_held=True)
     payload = json.loads(journal.read_text(encoding="utf-8"))
     root = journal.parent.parent.resolve()
@@ -388,7 +388,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
         Path(payload["root"]).resolve() != root
         or journal.resolve() != _batch_journal_path(root)
         or backup.parent.resolve() != root
-        or not backup.name.startswith(".x20-batch-")
+        or not backup.name.startswith(".docs-batch-")
         or payload.get("paths") != [path.as_posix() for path in paths]
     ):
         raise RuntimeError("batch recovery path scope is invalid")
@@ -416,7 +416,7 @@ def _recover_batch_transaction(journal: Path, *, _lock_held: bool = False) -> No
             raise RuntimeError("batch recovery backup changed")
         checked_snapshot(relative)
     # Copy first. A failed copy never removes a live output or consumes backups.
-    with tempfile.TemporaryDirectory(prefix=".x20-batch-restore-", dir=root) as temporary:
+    with tempfile.TemporaryDirectory(prefix=".docs-batch-restore-", dir=root) as temporary:
         staged = Path(temporary)
         for relative in paths:
             saved_dir = backup / relative
@@ -603,7 +603,7 @@ def run_document(
         if active is None:
             raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
         workspace_root = Path(str(active["root"])).resolve()
-        state = workspace_root / ".docs" / "x20.sqlite3"
+        state = workspace_root / ".docs" / "runtime.sqlite3"
         run_id = str(uuid.uuid4())
         payload = {
             "run_id": run_id,
@@ -687,7 +687,7 @@ def run_document(
     if active is None:
         raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
     workspace_root = Path(str(active["root"])).resolve()
-    state = workspace_root / ".docs" / "x20.sqlite3"
+    state = workspace_root / ".docs" / "runtime.sqlite3"
     run_id = str(uuid.uuid4())
     payload = {
         "run_id": run_id,
@@ -739,7 +739,7 @@ def _durable_evidence_stores(ctx: typer.Context):
     active = registry.active()
     if active is not None:
         root = Path(str(active["root"])).resolve()
-    state = root / ".docs" / "x20.sqlite3"
+    state = root / ".docs" / "runtime.sqlite3"
     return SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state)
 
 
