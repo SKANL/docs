@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 type Props = {
@@ -12,10 +13,13 @@ type Props = {
   onConfirm(): void;
 };
 
-/** Destructive confirmation. Radix restores focus to the control that opened it. */
+/** Destructive confirmation. It has no Radix Trigger (the parent controls `open`), so it remembers the opener and refocuses it on close. */
 export function ConfirmActionDialog({ open, title, description, confirmLabel, pending = false, error, onOpenChange, onConfirm }: Props) {
+  const opener = useRef<HTMLElement | null>(null);
   return <AlertDialog open={open} onOpenChange={onOpenChange}>
-    <AlertDialogContent>
+    <AlertDialogContent
+      onOpenAutoFocus={() => { opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; }}
+      onCloseAutoFocus={event => { event.preventDefault(); opener.current?.focus(); }}>
       <AlertDialogHeader><AlertDialogTitle>{title}</AlertDialogTitle><AlertDialogDescription>{description}</AlertDialogDescription></AlertDialogHeader>
       {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
       <AlertDialogFooter>
