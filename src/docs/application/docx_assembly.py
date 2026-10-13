@@ -12,6 +12,7 @@ from docs.domain.docx_structure import sections_index, structure_parts
 from docs.domain.figure_binding import BoundFigure
 from docs.domain.ports.docx_assembly_port import DocxAssemblyPort
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
+from docs.domain.tool_capability import ToolUnavailableError
 
 
 class DocxRendererAdapter:
@@ -92,11 +93,11 @@ class DocxRendererAdapter:
     def build(self, doc_id: str, config: dict[str, Any], output: Path | None = None) -> Path:
         pandoc = self.tool_resolver.resolve_pandoc(config.get("paths", {}))
         if not pandoc:
-            raise RuntimeError("Pandoc no está disponible en PATH. Instálalo y vuelve a ejecutar `build-docx`.")
+            raise ToolUnavailableError("Pandoc no está disponible en PATH. Instálalo y vuelve a ejecutar `build-docx`.")
 
         existing_sections = resolve_existing_section_paths(config)
         if not existing_sections:
-            raise RuntimeError("No hay secciones Markdown para ensamblar. Ejecuta `build-section resumen` primero.")
+            raise ToolUnavailableError("No hay secciones Markdown para ensamblar. Ejecuta `build-section resumen` primero.")
 
         output_dir = Path(config["paths"]["output_draft_dir"])
         output_dir.mkdir(parents=True, exist_ok=True)

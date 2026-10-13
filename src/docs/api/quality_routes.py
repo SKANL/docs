@@ -215,7 +215,10 @@ class QualityRoutes(RouteSupport):
                 raise APIError("invalid_artifact", "Artifact is not a .docx", 400)
             return docx
         name = deps.docx._draft_docx_name(resolved.doc_id, resolved.config)
-        docx = (Path(resolved.config["paths"]["output_draft_dir"]) / name).resolve()
+        draft_dir = Path(resolved.config["paths"]["output_draft_dir"])
+        if not draft_dir.is_absolute():  # never resolve against the process cwd
+            draft_dir = Path(deps.workspace.doc_root(document_id)) / draft_dir
+        docx = (draft_dir / name).resolve()
         try:
             docx.relative_to(root_path)
         except ValueError as exc:

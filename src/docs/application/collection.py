@@ -10,6 +10,7 @@ from docs.domain.context_index_files import is_context_content_filename
 from docs.domain.markdown_text import clean_markdown_text
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.source_repository import SourceRepository
+from docs.domain.tool_capability import ToolUnavailableError
 
 _TEXT_SUFFIXES = {".md", ".txt", ".json", ".yaml", ".yml"}
 _SOURCE_EXCERPT_LENGTH = 900
@@ -122,11 +123,11 @@ class CollectionService:
     def collect_issues(self, config: dict[str, Any], repo_root: Path) -> Path:
         gh = self.source_repository.find_executable("gh")
         if not gh:
-            raise RuntimeError("GitHub CLI `gh` no está disponible. Instálalo o exporta issues a JSON.")
+            raise ToolUnavailableError("GitHub CLI `gh` no está disponible. Instálalo o exporta issues a JSON.")
         remote = self.source_repository.detect_github_remote(repo_root)
         repo = extract_github_repo(remote)
         if not repo:
-            raise RuntimeError("No se pudo detectar el repositorio GitHub desde `git remote get-url origin`.")
+            raise ToolUnavailableError("No se pudo detectar el repositorio GitHub desde `git remote get-url origin`.")
         raw = self.source_repository.run_gh_issue_list(gh, repo)
         issues = parse_gh_issues(raw)
         manifest_path = Path(config["paths"]["issues_manifest"])

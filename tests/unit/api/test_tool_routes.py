@@ -11,10 +11,12 @@ import pytest
 
 from docs.api.auth import Principal
 from docs.api.openapi import build_capability_catalog, build_openapi_document
+from docs.application.imports import ImportError
 from docs.application.templates import builtin_names
 from docs.application.translate import TranslateReport, UntranslatablePdfError
 from docs.domain.review import Issue, ReviewResult
 from docs.domain.runtime_records import Artifact, Run
+from docs.domain.tool_capability import ToolUnavailableError
 
 NEW_COMMANDS = {
     "collect-sources": ("POST", "/v2/documents/{document_id}/collect-sources", "documents:write"),
@@ -228,7 +230,7 @@ class FakeDocx:
     def build(self, doc_id, config, output=None):
         self.calls.append(output)
         if self.fail:
-            raise RuntimeError(self.fail)
+            raise self.fail
         target = output or Path(config["paths"]["output_draft_dir"]) / "doc-draft.docx"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"docx")
@@ -258,7 +260,7 @@ def test_build_docx_rejects_outputs_outside_the_workspace(api, monkeypatch, tmp_
 
 
 def test_build_docx_toolchain_failure_is_a_structured_result(api, monkeypatch):
-    monkeypatch.setattr(deps_of(api), "docx", FakeDocx(fail="Pandoc no está disponible"))
+    monkeypatch.setattr(deps_of(api), "docx", FakeDocx(fail=ToolUnavailableError("Pandoc no está disponible")))
     response = api("POST", "/v2/documents/doc/build-docx", {})
     assert response.status == 200, response.body
     data = body(response)
@@ -465,3 +467,37 @@ def test_sidecar_serves_the_tool_routes_over_real_wsgi(canonical_workspace_root)
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+# -- H1: narrowed degradation, overwrite guard, stable import code ------------------
+def test_an_unexpected_runtime_error_is_not_reported_as_a_degraded_tool(api, monkeypatch):
+    monkeypatch.setattr(deps_of(api), "docx", FakeDocx(fail=RuntimeError("kaboom")))
+    response = api("POST", "/v2/documents/doc/build-docx", {})
+    assert response.status == 500, response.body
+
+
+def test_translate_refuses_to_overwrite_an_existing_output_unless_asked(api, monkeypatch):
+    service = FakeTranslateService()
+    install_translate(api, monkeypatch, service)
+    first = api("POST", "/v2/translations", {**pdf_upload(), "to": "en"})
+    assert first.status == 200, first.body
+    out = api.ws_root / "artifacts" / "translations" / "book.en.pdf"
+    out.write_bytes(b"%PDF precious")
+    again = api("POST", "/v2/translations", {**pdf_upload(), "to": "en"})
+    assert again.status == 409 and code(again) == "output_exists"
+    assert out.read_bytes() == b"%PDF precious" and len(service.calls) == 1
+    forced = api("POST", "/v2/translations", {**pdf_upload(), "to": "en", "overwrite": True})
+    assert forced.status == 200, forced.body
+    assert out.read_bytes() == b"%PDF translated"
+
+
+def test_translate_upload_error_code_is_stable(api, monkeypatch):
+    install_translate(api, monkeypatch, FakeTranslateService())
+
+    def odd(*args, **kwargs):
+        raise ImportError("quota /tmp/secret exceeded")
+
+    monkeypatch.setattr(api.app._tools._import, "decode_upload", odd)
+    response = api("POST", "/v2/translations", {**pdf_upload(), "to": "en"})
+    assert response.status == 400 and code(response) == "invalid_source"
+    assert "secret" not in response.body.decode()

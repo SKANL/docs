@@ -124,7 +124,7 @@ class WorkspaceMigrationInspector:
         {".cache", "cache", "caches", "output", "package", "packages", "qa", "scratch", "temp", "tmp"}
     )
     _PRESERVED_DOCUMENT_ROOTS = frozenset(
-        {"assets", "context", "evidence", "inbox", "manifests", "revisions", "sections"}
+        {"assets", "context", "corrections", "evidence", "inbox", "manifests", "revisions", "sections"}
     )
 
     def inspect(
@@ -320,6 +320,9 @@ class WorkspaceMigrationInspector:
             return replace(record, disposition="preserved")
         if document_relative == ("runs", "provenance.json"):
             return replace(record, disposition="preserved")
+        if document_relative[0] == "runs":
+            # Per-run history records and the batch lock are runtime output.
+            return replace(record, disposition="excluded")
         return record
 
     @staticmethod

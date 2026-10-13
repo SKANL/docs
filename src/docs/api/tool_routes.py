@@ -24,10 +24,11 @@ from docs.application.imports import ImportError, SourceImportService
 from docs.application.templates import TemplateService, builtin_names
 from docs.application.translate import UntranslatablePdfError
 from docs.domain.issue_codes import ISSUE_CODE_FAMILIES, ISSUE_CODES
+from docs.domain.tool_capability import ToolUnavailableError
 from docs.domain.translation_sidecars import translation_sidecars
 
 from . import authoring_dto as dto
-from .authoring_routes import RouteSupport
+from .authoring_routes import RouteSupport, _import_error
 from .http import APIError, Request, Response
 from .quality_routes import QualityRoutes
 
@@ -121,7 +122,7 @@ class ToolRoutes(RouteSupport):
         repo_root = self._repo_root(root, resolved.config, requested) if repo else root
         try:
             written = run(deps, resolved, repo_root)
-        except RuntimeError as exc:  # a missing tool or remote, not a server fault
+        except ToolUnavailableError as exc:  # a missing tool or remote, not a server fault
             return Response.json(dto.ToolFileResponse(
                 document_id=document_id, path=None, degraded=True, message=self._clean(str(exc), root),
             ).model_dump())
@@ -174,7 +175,7 @@ class ToolRoutes(RouteSupport):
             output.parent.mkdir(parents=True, exist_ok=True)
         try:
             built = deps.docx.build(resolved.doc_id, resolved.config, output)
-        except RuntimeError as exc:  # no pandoc, no sections to assemble: a result, not a server error
+        except ToolUnavailableError as exc:  # no pandoc, no sections to assemble: a result, not a server error
             return Response.json(dto.DocxBuildResponse(
                 document_id=document_id, built=False, docx=None, message=self._clean(str(exc), root),
             ).model_dump())
@@ -216,7 +217,7 @@ class ToolRoutes(RouteSupport):
                 try:
                     name, content = self._import.decode_upload(str(data.filename), str(data.content_base64))
                 except ImportError as exc:
-                    raise APIError(str(exc), str(exc), 400) from exc
+                    raise _import_error(exc) from exc
                 source, label = staging / name, name
             if source.suffix.lower() != ".pdf":
                 raise APIError("invalid_source", "The source must be a PDF", 400)
@@ -226,6 +227,8 @@ class ToolRoutes(RouteSupport):
                     raise APIError("output_not_permitted", f"Output must be inside {_TRANSLATIONS.as_posix()}", 400)
             else:
                 destination = root / _TRANSLATIONS / f"{source.stem}.{data.to}.pdf"
+            if destination.exists() and not data.overwrite:
+                raise APIError("output_exists", "The output already exists; pass overwrite: true to replace it", 409)
             if data.artifact_id is None:
                 staging.mkdir(parents=True)
                 source.write_bytes(content)

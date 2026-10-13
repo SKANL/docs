@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from docs.api.auth import Principal
+from docs.api.http import Request
 from docs.api.openapi import build_capability_catalog, build_openapi_document
 from docs.domain.runtime_records import Artifact, Passport, Run
 
@@ -374,3 +375,39 @@ def test_openapi_and_catalogue_declare_every_quality_command():
         assert paths[path][method.lower()]["x-rbac-scopes"] == [scope], command
         assert catalogue[command]["status"] == "available", command
         assert catalogue[command]["route"] == f"{method} {path}", command
+
+
+def test_relative_draft_dir_is_anchored_to_the_document_not_the_process_cwd(api, monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    deps = api.app._workspace_services_for(str(api.ws_root.resolve()))
+    draft = api.doc_root / "output" / "draft"
+    draft.mkdir(parents=True, exist_ok=True)
+    name = deps.docx._draft_docx_name("doc", {})
+    (draft / name).write_bytes(b"docx")
+    resolved = SimpleNamespace(doc_id="doc", config={"paths": {"output_draft_dir": "output/draft"}})
+    monkeypatch.setattr(deps.docx, "_draft_docx_name", lambda doc_id, config: name)
+
+    found = api.app._quality.docx_input(
+        None, api.ws_root.resolve(), deps, resolved, "doc", None, None,
+    )
+
+    assert found == (draft / name).resolve()
+
+
+def test_run_ownership_uses_the_explicit_workspace_of_the_request(api):
+    other = api.app.workspace_registry.create("Other", api.ws_root.parent / "ws2")
+    seed_run(api)
+    ok = api.app.dispatch(Request(
+        "GET", f"/v2/runs/r1/evidence?workspace_id={api.wid}",
+    ))
+    assert ok.status == 200, ok.body
+    wrong = api.app.dispatch(Request(
+        "GET", f"/v2/runs/r1/evidence?workspace_id={other['id']}",
+    ))
+    assert wrong.status == 404
+    missing = api.app.dispatch(Request("GET", "/v2/runs/r1/evidence"))
+    assert missing.status == 400

@@ -153,3 +153,31 @@ def test_unknown_document_is_404_for_section_routes(api):
     assert api("POST", "/v2/documents/ghost/review").status == 404
     missing_ws = api.app.dispatch(Request("POST", f"/v2/documents/doc/sections/{SECTION}/build"))
     assert missing_ws.status == 400
+
+
+@pytest.mark.parametrize("exc", [ValueError("bad"), KeyError("k"), OSError("disk")])
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("review_section", f"/v2/documents/doc/sections/{SECTION}/review", {}),
+        ("review_document", "/v2/documents/doc/review", {}),
+        ("stamp_section", f"/v2/documents/doc/sections/{SECTION}/stamp", {"by": "ada"}),
+    ],
+)
+def test_review_and_stamp_map_service_errors_to_structured_400(api, monkeypatch, exc, method, path, payload):
+    from docs.application.review import ReviewService
+
+    def boom(*args, **kwargs):
+        raise exc
+
+    monkeypatch.setattr(ReviewService, method, boom)
+    response = api("POST", path, payload)
+    assert response.status == 400, response.body
+    assert body(response)["error"]["code"] in {"review_failed", "stamp_failed"}
+
+
+def test_stamp_timestamp_comes_from_the_shared_authoring_clock(api, monkeypatch):
+    build(api)
+    monkeypatch.setattr("docs.api.section_routes.authoring_timestamp", lambda: "2026-01-02T03:04:05")
+    data = body(api("POST", f"/v2/documents/doc/sections/{SECTION}/stamp", {"by": "ada"}))
+    assert data["stamped_at"] == "2026-01-02T03:04:05"

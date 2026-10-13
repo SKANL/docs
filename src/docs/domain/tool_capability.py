@@ -13,6 +13,14 @@ if TYPE_CHECKING:
     from docs.domain.pipeline_policy import PipelinePolicy
 
 
+class ToolUnavailableError(RuntimeError):
+    """A tool, remote, or input the operation needs is absent (not a fault).
+
+    Surfaces such as the HTTP API report this as a degraded result; any other
+    `RuntimeError` is an unexpected failure and stays a server error.
+    """
+
+
 class CapabilityPolicyState(StrEnum):
     """Whether a declared capability is optional or required by a pipeline."""
 

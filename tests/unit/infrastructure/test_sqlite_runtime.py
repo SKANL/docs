@@ -143,3 +143,12 @@ def test_sqlite_lease_store_enforces_owner_and_expiry(tmp_path: Path) -> None:
     assert leases.renew("run-1", "worker-1", 60) is True
     assert leases.release("run-1", "worker-2") is False
     assert leases.release("run-1", "worker-1") is True
+
+
+def test_publication_put_if_absent_keeps_the_first_record(tmp_path):
+    from docs.infrastructure.persistence.sqlite_runtime import SqlitePublicationStore
+
+    store = SqlitePublicationStore(tmp_path / "x.sqlite3")
+    assert store.put_if_absent({"id": "p1", "published_at": "first"}) is True
+    assert store.put_if_absent({"id": "p1", "published_at": "second"}) is False
+    assert [item["published_at"] for item in store.list()] == ["first"]

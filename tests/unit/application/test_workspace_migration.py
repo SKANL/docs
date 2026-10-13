@@ -154,3 +154,25 @@ def test_publisher_requires_an_absent_separate_destination(tmp_path: Path) -> No
 
     with pytest.raises(WorkspaceMigrationError, match="destination_must_be_separate"):
         WorkspaceMigrationPublisher().publish(source, source)
+
+
+def test_runtime_records_of_a_pipeline_run_are_not_unknown(tmp_path: Path) -> None:
+    _write_current_workspace(tmp_path)
+    doc = tmp_path / "documents" / "report"
+    (doc / "runs").mkdir()
+    (doc / "runs" / "2026-01-01T00-00-00Z-build.json").write_text("{}", encoding="utf-8")
+    (doc / "runs" / ".x20-batch.lock").write_text("", encoding="utf-8")
+    (doc / "corrections" / "inbox").mkdir(parents=True)
+    (doc / "corrections" / "applied.json").write_text("[]", encoding="utf-8")
+    (doc / "corrections" / "inbox" / "fix.json").write_text("{}", encoding="utf-8")
+    (doc / "output" / "release").mkdir(parents=True)
+    (doc / "output" / "release" / "report.docx").write_bytes(b"docx")
+    (tmp_path / ".docs").mkdir()
+    (tmp_path / ".docs" / "x20.sqlite3-wal").write_bytes(b"wal")
+    (tmp_path / "artifacts").mkdir()
+    (tmp_path / "artifacts" / "blob").write_bytes(b"b")
+
+    report = WorkspaceMigrationInspector().inspect(tmp_path)
+
+    assert [record.path for record in report.unknown] == []
+    assert report.ready

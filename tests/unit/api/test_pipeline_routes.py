@@ -106,6 +106,16 @@ def test_invalid_run_requests_enqueue_nothing(api, payload):
     assert api.app.queue.jobs == []
 
 
+def test_run_without_a_workspace_is_rejected_so_no_null_workspace_is_queued(api):
+    # H1 item 2: the only wiring resolves a workspace from query/body or fails
+    # closed, so a queued payload can never carry workspace_id=None.
+    from docs.api.http import Request
+
+    response = api.app.dispatch(Request("POST", "/v2/documents/doc/run", body={}))
+    assert response.status == 400 and body(response)["error"]["code"] == "workspace_required"
+    assert api.app.queue.jobs == []
+
+
 def test_run_for_a_missing_document_is_404(api):
     assert api("POST", "/v2/documents/ghost/run", {}).status == 404
     assert api.app.queue.jobs == []
@@ -198,6 +208,27 @@ def test_progress_once_keeps_the_single_frame_contract(api):
     put_run(api, "r1")
     response = api("GET", "/v2/runs/r1/progress?once=1")
     assert response.stream is None and response.body.startswith(b"id: r1\nevent: progress\n")
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", ""])
+def test_progress_once_falsey_values_stream(api, value):
+    put_run(api, "r1")
+    response = api("GET", f"/v2/runs/r1/progress?once={value}")
+    assert response.stream is not None
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes"])
+def test_progress_once_truthy_values_return_one_frame(api, value):
+    put_run(api, "r1")
+    assert api("GET", f"/v2/runs/r1/progress?once={value}").stream is None
+
+
+def test_run_payload_progress_cannot_change_in_place(api):
+    # H1 item 3: change detection may keep the previous progress mapping
+    # because Run freezes its payload, so in-place updates are impossible.
+    run = put_run(api, "r1", progress={"stage": "a", "percent": 1})
+    with pytest.raises(TypeError):
+        run.payload["progress"]["percent"] = 2
 
 
 def test_progress_of_a_foreign_run_is_rejected_before_any_frame(api):

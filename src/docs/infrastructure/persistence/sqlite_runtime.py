@@ -230,6 +230,19 @@ class SqlitePublicationStore(_SqliteStore):
                 (identifier, self._encode(envelope)),
             )
 
+    def put_if_absent(self, publication: dict[str, Any]) -> bool:
+        """Insert once; a concurrent or repeated identical publication keeps the first record."""
+        identifier = str(publication.get("id", ""))
+        if not identifier:
+            raise ValueError("publication id is required")
+        envelope = {"schema": SCHEMA, "publication": dict(publication)}
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO x20_publications (id, payload) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
+                (identifier, self._encode(envelope)),
+            )
+        return cursor.rowcount == 1
+
     def list(self) -> _builtins.list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute("SELECT payload FROM x20_publications ORDER BY id").fetchall()
