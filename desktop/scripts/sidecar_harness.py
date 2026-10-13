@@ -65,8 +65,9 @@ class Sidecar:
 
 
 @contextmanager
-def running_sidecar(prefix: str, *, health_timeout: float = 20, log: bool = False, keep: bool = False) -> Iterator[Sidecar]:
+def running_sidecar(prefix: str, *, health_timeout: float = 60, log: bool = False, keep: bool = False) -> Iterator[Sidecar]:
     """Start the packaged sidecar on a free port in a scratch workspace and stop its whole tree on exit."""
+    # ponytail: 60s covers a cold one-file sidecar (measured ~21s on Windows: PyInstaller extraction plus Defender scan); 20s flaked.
     executable = sidecar_executable()
     root = Path(tempfile.mkdtemp(prefix=prefix))
     workspace = root / "workspace"  # created by the sidecar, never pre-made
