@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from docs.application.atomic_transform import AtomicTransform
 from docs.application.pipeline_service import (
     PipelineRequest,
     PipelineService,
@@ -20,6 +19,7 @@ from docs.domain.pipeline_kernel import (
 )
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.transform.system_transform import AtomicTransform
 
 
 def _service(definition, handlers, capabilities, ledger, policy=None):

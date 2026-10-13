@@ -12,7 +12,7 @@ from docs.api.auth import Principal
 from docs.api.http import APIError, Request
 from docs.api.openapi import build_capability_catalog, build_openapi_document
 from docs.application.imports import ImportError
-from docs.application.workspaces import WorkspaceRegistry
+from docs.composition import open_workspace_registry
 
 NEW_COMMANDS = {
     "asset add": ("POST", "documents:write"),
@@ -219,7 +219,7 @@ def test_openapi_declares_every_authoring_route_with_scopes():
 
 
 def test_routes_report_unavailable_when_services_factory_missing(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "r.json")
+    registry = open_workspace_registry(tmp_path / "r.json")
     ws = registry.create("W", tmp_path / "w")
     app = ApiApplication(
         **stores, workspace_registry=registry,
@@ -300,7 +300,7 @@ def test_remove_asset_honours_the_kind_parameter(api):
 
 
 def test_unexpected_factory_failure_is_a_503_structured_error(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "r.json")
+    registry = open_workspace_registry(tmp_path / "r.json")
     ws = registry.create("W", tmp_path / "w")
 
     def broken(root):
@@ -312,7 +312,7 @@ def test_unexpected_factory_failure_is_a_503_structured_error(tmp_path, stores):
 
 
 def test_a_slow_factory_for_one_root_does_not_block_another(tmp_path, stores):
-    registry = WorkspaceRegistry(tmp_path / "r.json")
+    registry = open_workspace_registry(tmp_path / "r.json")
     started, release = threading.Event(), threading.Event()
 
     def factory(root):

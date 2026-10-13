@@ -20,6 +20,7 @@ from typing import Any, Generic, TypeVar
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from docs.composition import open_workspace_registry
 from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
 
 from .api.application import ApiApplication
@@ -651,7 +652,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
             config.protocol,
             workspace_error="workspace_not_configured",
         )
-    registry = WorkspaceRegistry(config.workspace / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(config.workspace / ".docs" / "workspaces.json")
     try:
         configured_workspace = registry.ensure("Local workspace", config.workspace)
     except WorkspaceRegistryError as exc:
@@ -891,7 +892,7 @@ def build_application(config: SidecarConfig) -> _HealthApplication:
 
 def _worker_process_main(workspace: Path) -> None:
     root = Path(workspace).resolve()
-    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(root / ".docs" / "workspaces.json")
     state_path = root / ".docs" / "runtime.sqlite3"
     queue = _WorkspaceJobQueue(registry, root)
     run_store = _WorkspaceRunStore(registry, root)
@@ -923,7 +924,7 @@ def _build_worker(
     from .domain.workspace import Workspace
 
     root = workspace.resolve()
-    registry = WorkspaceRegistry(root / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(root / ".docs" / "workspaces.json")
 
     class Runtime:
         def __init__(self, pipeline_id: str) -> None:

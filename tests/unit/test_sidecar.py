@@ -25,13 +25,13 @@ def test_api_document_creation_composes_the_requested_workspace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from docs.api.http import Request
-    from docs.application.workspaces import WorkspaceRegistry
+    from docs.composition import open_workspace_registry
     from docs.domain.models.document import DocumentSummary
 
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     registry_path = tmp_path / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(registry_path)
+    registry = open_workspace_registry(registry_path)
     first = registry.create("First", first_root)
     second = registry.create("Second", second_root)
     registry.select(first["id"])
@@ -84,12 +84,12 @@ def test_api_context_reads_compose_each_requested_workspace_without_leakage(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from docs.api.http import Request
-    from docs.application.workspaces import WorkspaceRegistry
+    from docs.composition import open_workspace_registry
 
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     registry_path = tmp_path / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(registry_path)
+    registry = open_workspace_registry(registry_path)
     first = registry.create("First", first_root)
     second = registry.create("Second", second_root)
     registry.select(first["id"])
@@ -609,14 +609,14 @@ def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None
 
 
 def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
-    from docs.application.workspaces import WorkspaceRegistry
+    from docs.composition import open_workspace_registry
 
     config = SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path)
     server = build_server(config)
     thread = threading.Thread(target=run, args=(server,), daemon=True)
     thread.start()
     try:
-        workspace_id = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json").list()[0]["id"]
+        workspace_id = open_workspace_registry(tmp_path / ".docs" / "workspaces.json").list()[0]["id"]
         url = f"http://127.0.0.1:{server.server_address[1]}/v2/graph?workspace_id={workspace_id}"
         with urllib.request.urlopen(url, timeout=2) as response:
             assert json.load(response) == {"nodes": [], "edges": []}
@@ -627,10 +627,10 @@ def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
 
 def test_filesystem_stores_follow_the_selected_workspace_and_ignore_invalid_manifests(tmp_path: Path) -> None:
     """The sidecar reads each canonical workspace boundary, never process cwd state."""
-    from docs.application.workspaces import WorkspaceRegistry
+    from docs.composition import open_workspace_registry
     from docs.sidecar import _FilesystemDocumentStore, _FilesystemTemplateStore
 
-    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     first_root, second_root = tmp_path / "first", tmp_path / "second"
     registry.create("First", first_root)
     second = registry.create("Second", second_root)
@@ -660,10 +660,10 @@ def test_filesystem_stores_follow_the_selected_workspace_and_ignore_invalid_mani
 
 
 def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_baselines(tmp_path: Path) -> None:
-    from docs.application.workspaces import WorkspaceRegistry
+    from docs.composition import open_workspace_registry
     from docs.sidecar import _WorkspaceJsonCollectionStore
 
-    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     workspace = registry.create("Workspace", tmp_path / "workspace")
     registry.select(workspace["id"])
     root = Path(workspace["root"])
@@ -691,10 +691,11 @@ def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_b
 
 
 def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> None:
-    from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+    from docs.application.workspaces import WorkspaceRegistryError
+    from docs.composition import open_workspace_registry
     from docs.sidecar import _WorkspaceRunStore
 
-    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     workspace = registry.create("Workspace", tmp_path / "workspace")
     (Path(workspace["root"]) / "workspace.json").unlink()
 
@@ -703,10 +704,10 @@ def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> No
 
 
 def test_workspace_runtime_and_evidence_stores_keep_records_in_the_run_workspace(tmp_path: Path) -> None:
-    from docs.application.workspaces import WorkspaceRegistry
+    from docs.composition import open_workspace_registry
     from docs.sidecar import _WorkspaceEvidenceStores, _WorkspaceJobQueue, _WorkspaceRunStore
 
-    registry = WorkspaceRegistry(tmp_path / ".docs" / "workspaces.json")
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
     first = registry.create("First", tmp_path / "first")
     second = registry.create("Second", tmp_path / "second")
     runs = _WorkspaceRunStore(registry, tmp_path)

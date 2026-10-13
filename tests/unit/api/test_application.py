@@ -10,8 +10,7 @@ from docs.api.auth import Principal
 from docs.api.http import APIError, Request, Response, Router
 from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
-from docs.application.workspaces import WorkspaceRegistry
-from docs.composition import compose_application
+from docs.composition import compose_application, open_workspace_registry
 from docs.domain.runtime_records import Artifact, Graph, Passport, Run
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 from docs.domain.workspace import Workspace
@@ -70,7 +69,7 @@ def body(response):
 
 def document_lifecycle_app(tmp_path):
     root = tmp_path / "document-workspace"
-    registry = WorkspaceRegistry(tmp_path / "workspace-registry.json")
+    registry = open_workspace_registry(tmp_path / "workspace-registry.json")
     workspace = registry.create("Documents", root)
 
     def document_service_factory(workspace_root):
@@ -210,7 +209,7 @@ def test_application_exposes_only_the_v2_openapi_endpoint():
 
 def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_path):
     root = tmp_path / "workspace"
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Workspace", root)
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -226,7 +225,7 @@ def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_pa
 
 
 def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(tmp_path):
-    registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
+    registry = open_workspace_registry(tmp_path / "state" / "registry.json")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
         graph_store=Graphs(), workspace_registry=registry,
@@ -252,7 +251,7 @@ def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(
 
 
 def test_workspace_lifecycle_use_status_and_migrate(tmp_path):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -286,7 +285,7 @@ def test_workspace_lifecycle_use_status_and_migrate(tmp_path):
 def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, action, body_value):
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=WorkspaceRegistry(tmp_path / "registry.json"),
+        graph_store=Graphs(), workspace_registry=open_workspace_registry(tmp_path / "registry.json"),
     )
     response = application.dispatch(Request(method, f"/v2/workspaces/missing/{action}", body=body_value))
     assert response.status == 404
@@ -294,7 +293,7 @@ def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, act
 
 
 def test_workspace_migration_rejects_unknown_request_fields(tmp_path):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -311,7 +310,7 @@ def test_workspace_migration_rejects_unknown_request_fields(tmp_path):
     ("POST", "migrate", "workspaces:read"),
 ])
 def test_workspace_lifecycle_denies_insufficient_scope(tmp_path, method, action, allowed_scope):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -326,7 +325,7 @@ def test_workspace_lifecycle_denies_insufficient_scope(tmp_path, method, action,
 def test_workspace_use_is_reachable_through_wsgi(tmp_path):
     import io
 
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -351,7 +350,7 @@ def test_workspace_use_is_reachable_through_wsgi(tmp_path):
 def test_workspace_transport_dtos_reject_unknown_fields_and_non_string_names(tmp_path, method, path, payload):
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=WorkspaceRegistry(tmp_path / "registry.json"),
+        graph_store=Graphs(), workspace_registry=open_workspace_registry(tmp_path / "registry.json"),
         managed_workspace_root=tmp_path / "managed-workspaces",
     )
 
@@ -362,7 +361,7 @@ def test_workspace_transport_dtos_reject_unknown_fields_and_non_string_names(tmp
 
 
 def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root(tmp_path):
-    registry = WorkspaceRegistry(tmp_path / "state" / "registry.json")
+    registry = open_workspace_registry(tmp_path / "state" / "registry.json")
     managed_root = tmp_path / "managed-workspaces"
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -387,7 +386,7 @@ def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root
     ("GET", "/v2/templates"), ("GET", "/v2/graph"),
 ])
 def test_workspace_content_routes_fail_closed_without_explicit_workspace(tmp_path, method, path):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     registry.create("Workspace", tmp_path / "workspace")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
@@ -409,7 +408,7 @@ def test_document_collection_rejects_invalid_workspace_before_reading_store(tmp_
             self.calls.append(root)
             return []
 
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Workspace", tmp_path / "workspace")
     Path(workspace["root"], "workspace.json").unlink()
     documents = WorkspaceDocuments()
@@ -428,7 +427,7 @@ def test_document_collection_rejects_invalid_workspace_before_reading_store(tmp_
 
 
 def test_create_run_rejects_invalid_workspace_before_writing_or_enqueuing(tmp_path):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Workspace", tmp_path / "workspace")
     Path(workspace["root"], "workspace.json").write_text(
         '{"schema":"docs.workspace/v2"}', encoding="utf-8"
@@ -479,7 +478,7 @@ def test_openapi_documents_owned_document_scope_operations():
 
 def section_app(tmp_path, revision_service=None):
     root = tmp_path / "workspace"
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     workspace = registry.create("Sections", root)
     registry.select(workspace["id"])
     document_root = root / "documents" / "d1"

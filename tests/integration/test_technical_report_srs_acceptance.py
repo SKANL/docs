@@ -36,7 +36,7 @@ def _canonical_workspace_root(canonical_workspace_root: Path) -> None:
 
 
 def _resolved_config(tmp_path: Path) -> dict:
-    """Mirrors `Deps.resolve_context`'s shape: the template's own declared
+    """Mirrors `ApplicationComposition.resolve_context`'s shape: the template's own declared
     `paths` merged with computed, always-present per-document paths."""
     raw = json.loads(_FIXTURE.read_text(encoding="utf-8"))
     sections_dir = tmp_path / "sections"

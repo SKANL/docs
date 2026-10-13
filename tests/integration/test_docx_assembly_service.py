@@ -104,7 +104,7 @@ def test_docx_renderer_adapter_satisfies_document_renderer_port(service: Documen
 
 
 def test_docx_renderer_adapter_resolves_via_registry_by_format(asset_service):
-    from docs.cli._shared import resolve_renderer
+    from docs.composition import resolve_renderer
 
     adapter = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
     registry = {"docx": adapter}
@@ -113,7 +113,7 @@ def test_docx_renderer_adapter_resolves_via_registry_by_format(asset_service):
 
 
 def test_resolve_renderer_raises_clear_error_on_unregistered_format(asset_service):
-    from docs.cli._shared import resolve_renderer
+    from docs.composition import resolve_renderer
 
     adapter = DocxRendererAdapter(PythonDocxAssemblyAdapter(), asset_service, SystemToolResolverAdapter())
     registry = {"docx": adapter}

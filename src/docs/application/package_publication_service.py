@@ -11,13 +11,14 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
-from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.package_service import PackageFile, PackagePublicationError, PackageService
 from docs.application.provenance import ProvenanceLedger
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import sha256_bytes
 from docs.domain.paths import PathEscapeError, require_within
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.ports.transform_port import TransformPort
+from docs.domain.transform import TransformSpec
 
 
 class PublishPolicyDeniedError(PackagePublicationError):
@@ -87,9 +88,11 @@ class PackagePublicationService:
         *,
         archive_writer: PackageService,
         lock: Callable[[Path], AbstractContextManager[None]],
+        transform: TransformPort,
     ) -> None:
         self._archive_writer = archive_writer
         self._lock = lock
+        self._transform = transform
 
     def package(
         self,
@@ -137,7 +140,7 @@ class PackagePublicationService:
             (scratch / "artifact").write_bytes(prepared.source_bytes)
             (scratch / "manifest").write_bytes(prepared.manifest_bytes)
 
-        publication = AtomicTransform().run(
+        publication = self._transform.run(
             TransformSpec(
                 expected_outputs=("artifact", "manifest"),
                 destinations=(prepared.destination, destination_manifest),

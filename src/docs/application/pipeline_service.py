@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from docs.application.atomic_transform import AtomicTransform, TransformSpec
 from docs.application.pipeline_executor import PipelineReport, StageHandler, _PipelineExecutor
 from docs.application.pipeline_registry import PipelinePlanner, PipelineRegistry
 from docs.application.provenance import ProvenanceLedger
@@ -22,7 +21,9 @@ from docs.domain.pipeline_kernel import (
     deterministic_json,
 )
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
+from docs.domain.ports.transform_port import TransformPort
 from docs.domain.tool_capability import ToolCapabilityRegistry
+from docs.domain.transform import TransformSpec
 from docs.observability import ObservabilityPort
 
 StageOperation = Callable[[], tuple[bool, str] | StageResult]
@@ -118,7 +119,7 @@ class PipelineService:
         publication: PublicationSpec,
         capabilities: ToolCapabilityRegistry,
         ledger: ProvenanceLedger,
-        atomic_transform: AtomicTransform,
+        atomic_transform: TransformPort,
         policy: PipelinePolicy | None = None,
         run_id_sink: Callable[[str], None] | None = None,
         excluded_stages: frozenset[str] = frozenset(),

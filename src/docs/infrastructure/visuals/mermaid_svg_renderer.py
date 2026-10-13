@@ -30,7 +30,7 @@ class MermaidSvgRenderer:
     `mmdc` (optional toolchain, mirrors `pandoc_ingest_adapter.py`'s
     `RuntimeError`) or a failing conversion raises a clean, catchable error
     so the generate-visuals stage (Slice 5) can WARN+skip it -- never crashes
-    `Deps()` construction."""
+    `ApplicationComposition()` construction."""
 
     type = "mermaid"
 

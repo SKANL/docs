@@ -75,7 +75,7 @@ def test_document_classify_updates_the_requested_keyed_entry(monkeypatch, tmp_pa
         },
     }
     queue_path.write_text(json.dumps(original, indent=2) + "\n", encoding="utf-8")
-    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    monkeypatch.setattr("docs.cli.main.compose_application", lambda: deps)
 
     result = CliRunner().invoke(
         app,
@@ -118,7 +118,7 @@ def test_document_classify_does_not_conflate_duplicate_basenames(monkeypatch, tm
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    monkeypatch.setattr("docs.cli.main.compose_application", lambda: deps)
 
     result = CliRunner().invoke(
         app,

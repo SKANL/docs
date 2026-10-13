@@ -6,9 +6,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from docs.application.workspaces import WorkspaceRegistry
-from docs.cli._shared import build_workspace
 from docs.cli.main import app
+from docs.composition import build_workspace, open_workspace_registry
 from docs.domain.workspace_format import WorkspaceFormatError, write_workspace_marker
 
 runner = CliRunner()
@@ -125,7 +124,7 @@ def test_workspace_commands_use_doc_init_cwd_registry(tmp_path, monkeypatch):
 def test_workspace_commands_fall_back_to_configured_registry(tmp_path, monkeypatch):
     configured_registry = tmp_path / "configured-registry.json"
     external_workspace = tmp_path / "external"
-    registry = WorkspaceRegistry(configured_registry)
+    registry = open_workspace_registry(configured_registry)
     workspace = registry.create("External", external_workspace)
     registry.select(workspace["id"])
     monkeypatch.chdir(tmp_path)

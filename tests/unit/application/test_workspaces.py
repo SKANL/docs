@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.application.workspaces import WorkspaceRegistryError
+from docs.composition import open_workspace_registry
 
 CURRENT_UNVERSIONED = (
     Path(__file__).resolve().parents[2]
@@ -17,8 +18,8 @@ CURRENT_UNVERSIONED = (
 def test_registry_persists_create_and_active_selection(tmp_path: Path) -> None:
     registry_path = tmp_path / "registry.json"
     root = tmp_path / "workspace"
-    first = WorkspaceRegistry(registry_path).create("Primary", root)
-    registry = WorkspaceRegistry(registry_path)
+    first = open_workspace_registry(registry_path).create("Primary", root)
+    registry = open_workspace_registry(registry_path)
 
     assert registry.list() == [first]
     assert registry.select(first["id"]) == first
@@ -27,7 +28,7 @@ def test_registry_persists_create_and_active_selection(tmp_path: Path) -> None:
 
 def test_registry_construction_and_read_do_not_create_missing_parent(tmp_path: Path) -> None:
     registry_path = tmp_path / "missing" / "registry.json"
-    registry = WorkspaceRegistry(registry_path)
+    registry = open_workspace_registry(registry_path)
 
     assert not registry_path.parent.exists()
     assert registry.list() == []
@@ -37,13 +38,13 @@ def test_registry_construction_and_read_do_not_create_missing_parent(tmp_path: P
 def test_registry_first_write_creates_missing_parent(tmp_path: Path) -> None:
     registry_path = tmp_path / "missing" / "registry.json"
 
-    WorkspaceRegistry(registry_path).create("Primary", tmp_path / "workspace")
+    open_workspace_registry(registry_path).create("Primary", tmp_path / "workspace")
 
     assert registry_path.is_file()
 
 
 def test_registry_rejects_invalid_name_and_duplicate(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     registry.create("Primary", tmp_path / "one")
     with pytest.raises(WorkspaceRegistryError, match="invalid_workspace_name"):
         registry.create("../escape", tmp_path / "two")
@@ -52,7 +53,7 @@ def test_registry_rejects_invalid_name_and_duplicate(tmp_path: Path) -> None:
 
 
 def test_registry_delete_clears_active_workspace(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "one")
     registry.select(item["id"])
     registry.delete(item["id"])
@@ -64,7 +65,7 @@ def test_registry_delete_clears_active_workspace(tmp_path: Path) -> None:
 
 
 def test_registry_renames_without_changing_root_or_id(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "one")
 
     renamed = registry.rename(item["id"], "Renamed")
@@ -76,7 +77,7 @@ def test_registry_renames_without_changing_root_or_id(tmp_path: Path) -> None:
 
 
 def test_registry_provisions_isolated_workspace_layout(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "one")
 
     expected = {"documents", "templates", "assets", "runs", "artifacts", "baselines", "passports", ".docs"}
@@ -84,7 +85,7 @@ def test_registry_provisions_isolated_workspace_layout(tmp_path: Path) -> None:
 
 
 def test_registry_seeds_builtin_templates_for_new_workspace(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "one")
 
     templates = Path(item["root"]) / "templates"
@@ -94,7 +95,7 @@ def test_registry_seeds_builtin_templates_for_new_workspace(tmp_path: Path) -> N
 
 
 def test_registry_repairs_templates_when_selecting_existing_empty_workspace(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "one")
     for template in (Path(item["root"]) / "templates").glob("*.json"):
         template.unlink()
@@ -117,7 +118,7 @@ def test_workspace_registry_rejects_malformed_json_without_mutating_source(tmp_p
     registry_path.write_bytes(original)
 
     with pytest.raises(WorkspaceRegistryError, match="workspace_registry_unreadable"):
-        WorkspaceRegistry(registry_path).list()
+        open_workspace_registry(registry_path).list()
 
     assert registry_path.read_bytes() == original
 
@@ -125,7 +126,7 @@ def test_workspace_registry_rejects_malformed_json_without_mutating_source(tmp_p
 def test_registry_create_writes_the_canonical_workspace_marker(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
 
-    WorkspaceRegistry(tmp_path / "registry.json").create("Primary", root)
+    open_workspace_registry(tmp_path / "registry.json").create("Primary", root)
 
     assert (root / "workspace.json").read_text(encoding="utf-8") == (
         '{"schema":"docs.workspace/v1"}\n'
@@ -143,7 +144,7 @@ def test_registry_rejects_unversioned_workspace_without_mutating_it(tmp_path: Pa
     }
 
     with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
-        WorkspaceRegistry(registry_path).create("Legacy", root)
+        open_workspace_registry(registry_path).create("Legacy", root)
 
     after = {
         path.relative_to(root): path.read_bytes()
@@ -159,7 +160,7 @@ def test_registry_select_rejects_invalid_marker_before_mutating_registry_or_root
     tmp_path: Path,
 ) -> None:
     registry_path = tmp_path / "registry.json"
-    registry = WorkspaceRegistry(registry_path)
+    registry = open_workspace_registry(registry_path)
     item = registry.create("Primary", tmp_path / "workspace")
     registry_before = registry_path.read_bytes()
     marker = Path(item["root"]) / "workspace.json"
@@ -193,13 +194,13 @@ def test_registry_active_rejects_missing_marker_before_creating_workspace_layout
     )
 
     with pytest.raises(WorkspaceRegistryError, match="workspace_marker_missing"):
-        WorkspaceRegistry(registry_path).active()
+        open_workspace_registry(registry_path).active()
 
     assert not root.exists()
 
 
 def test_registry_resolve_returns_only_a_valid_canonical_workspace(tmp_path: Path) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "workspace")
 
     assert registry.resolve(item["id"]) == item
@@ -208,7 +209,7 @@ def test_registry_resolve_returns_only_a_valid_canonical_workspace(tmp_path: Pat
 def test_registry_resolve_rejects_missing_marker_without_mutating_root(
     tmp_path: Path,
 ) -> None:
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
+    registry = open_workspace_registry(tmp_path / "registry.json")
     item = registry.create("Primary", tmp_path / "workspace")
     root = Path(item["root"])
     (root / "workspace.json").unlink()

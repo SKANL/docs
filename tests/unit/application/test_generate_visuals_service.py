@@ -547,16 +547,16 @@ def test_write_failure_warns_and_skips_never_raises(tmp_path, capsys, monkeypatc
     # WARN+skip THAT visual, never abort the whole run -- generate() never
     # raises (review WARNING: the atomic write was outside the per-visual
     # try/except).
-    from docs.application.inline_json_writer import InlineJsonWriter
+    from docs.application.plain_json_writer import PlainJsonWriter
 
-    original_write = InlineJsonWriter.write_bytes
+    original_write = PlainJsonWriter.write_bytes
 
     def _boom(self, path, data):
         if path.suffix in {".svg", ".png"}:
             raise OSError("disk full")
         original_write(self, path, data)
 
-    monkeypatch.setattr(InlineJsonWriter, "write_bytes", _boom)
+    monkeypatch.setattr(PlainJsonWriter, "write_bytes", _boom)
     sections_dir = tmp_path / "sections"
     assets_dir = tmp_path / "assets"
     _write_specs(sections_dir, [{"label": "a", "type": "chart", "source": "s", "caption": "A"}])
@@ -685,7 +685,7 @@ def test_failed_rerun_preserves_existing_valid_outputs(tmp_path):
 
 
 def test_png_publish_failure_rolls_back_svg_and_preserves_existing_pair(tmp_path, monkeypatch):
-    from docs.application.inline_json_writer import InlineJsonWriter
+    from docs.application.plain_json_writer import PlainJsonWriter
 
     sections_dir = tmp_path / "sections"
     assets_dir = tmp_path / "assets"
@@ -696,14 +696,14 @@ def test_png_publish_failure_rolls_back_svg_and_preserves_existing_pair(tmp_path
 
     figures_dir = assets_dir / "figures"
     before = {path.name: path.read_bytes() for path in figures_dir.iterdir()}
-    original_write = InlineJsonWriter.write_bytes
+    original_write = PlainJsonWriter.write_bytes
 
     def fail_png_publish(self, path: Path, data: bytes) -> None:
         if path.suffix == ".png":
             raise OSError("PNG publish failed")
         original_write(self, path, data)
 
-    monkeypatch.setattr(InlineJsonWriter, "write_bytes", fail_png_publish)
+    monkeypatch.setattr(PlainJsonWriter, "write_bytes", fail_png_publish)
 
     result = _service(
         {"chart": FakeRenderer(type="chart", svg="<svg><circle/></svg>")}, FakeRasterizer()

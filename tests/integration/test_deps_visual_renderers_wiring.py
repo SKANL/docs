@@ -5,22 +5,22 @@
 this file with `"mermaid"`."""
 from pathlib import Path
 
-from docs.cli._shared import Deps
+from docs.composition import ApplicationComposition
 from docs.domain.workspace import Workspace
 from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
 from docs.infrastructure.visuals.mermaid_svg_renderer import MermaidSvgRenderer
 from docs.infrastructure.visuals.resvg_rasterizer_adapter import ResvgRasterizerAdapter
 
 
-def _deps(canonical_workspace_root: Path) -> Deps:
+def _deps(canonical_workspace_root: Path) -> ApplicationComposition:
     tmp_path = canonical_workspace_root
     workspace = Workspace(documents_dir=tmp_path / "documents", templates_dir=tmp_path / "templates")
-    return Deps(workspace)
+    return ApplicationComposition(workspace)
 
 
 def test_deps_wires_a_chart_renderer_when_matplotlib_available(canonical_workspace_root: Path):
     # matplotlib is a real declared dependency (pyproject.toml), so the
-    # guarded import in `Deps.__init__` must succeed here and register a
+    # guarded import in `ApplicationComposition.__init__` must succeed here and register a
     # real `ChartSvgRenderer` under `"chart"` -- never absent.
     deps = _deps(canonical_workspace_root)
     assert isinstance(deps.visual_renderers["chart"], ChartSvgRenderer)

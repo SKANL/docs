@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.figure_resolver import read_json_fail_open
-from docs.application.inline_json_writer import InlineJsonWriter
+from docs.application.plain_json_writer import PlainJsonWriter
 from docs.domain import figure_binding, figure_catalog
 from docs.domain.figure_catalog import FigureEntry
 from docs.domain.ingest_naming import sha256_hex
@@ -231,7 +231,7 @@ class GenerateVisualsService:
         self.visual_renderers = dict(visual_renderers)
         self.svg_rasterizer = svg_rasterizer
         self.image_metadata = image_metadata
-        self.writer: IngestArtifactWriter = writer or InlineJsonWriter()
+        self.writer: IngestArtifactWriter = writer or PlainJsonWriter()
         self.file_writer = file_writer
 
     def generate(self, sections_dir: Path, assets_dir: Path) -> GenerateVisualsResult:

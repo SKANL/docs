@@ -16,30 +16,15 @@ from typing import Any
 
 from docs.domain.identity import sha256_file
 from docs.domain.paths import require_within
+from docs.domain.transform import (
+    DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    TransformCallable,
+    TransformResult,
+    TransformSpec,
+)
 from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
-TransformCallable = Callable[[Path], None]
 SubprocessAdapter = Callable[..., Any]
-DEFAULT_COMMAND_TIMEOUT_SECONDS = 60
-
-
-@dataclass(frozen=True)
-class TransformSpec:
-    """Inputs and publication contract for one transform."""
-
-    expected_outputs: tuple[str, ...]
-    destinations: tuple[Path, ...]
-    command: tuple[str, ...] | None = None
-    warn_on_failure: bool = False
-    timeout_seconds: float = DEFAULT_COMMAND_TIMEOUT_SECONDS
-
-
-@dataclass(frozen=True)
-class TransformResult:
-    ok: bool
-    outputs: tuple[Path, ...] = ()
-    warnings: tuple[str, ...] = ()
-    error: str | None = None
 
 
 @dataclass(frozen=True)

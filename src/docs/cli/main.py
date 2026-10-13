@@ -22,7 +22,7 @@ from docs.cli.commands.asset_app import asset_app
 from docs.cli.commands.collection_app import collection_app
 from docs.cli.commands.context_app import context_app
 from docs.cli.commands.core_app import core_app
-from docs.cli.commands.doc_app import doc_app
+from docs.cli.commands.doc_crud_app import doc_crud_app
 from docs.cli.commands.document_app import document_app
 from docs.cli.commands.docx_app import docx_app
 from docs.cli.commands.run_app import run_app
@@ -33,9 +33,6 @@ from docs.cli.commands.translate_app import translate_app
 from docs.cli.commands.workspace_app import workspace_app
 from docs.composition import compose_application
 
-# Compatibility injection seam for existing command tests.
-Deps = compose_application
-
 app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Arnés multi-documento para Word.")
 
 
@@ -43,7 +40,7 @@ app = typer.Typer(add_completion=False, pretty_exceptions_enable=False, help="Ar
 def _root(ctx: typer.Context, doc: str = typer.Option("", "--doc", help="ID del documento (por defecto, el activo).")) -> None:
     # One lazy composition per invocation. Bootstrap commands such as
     # ``doc init`` intentionally run before ordinary workspace validation.
-    ctx.obj = {"deps": LazyDependencies(Deps), "doc": doc}
+    ctx.obj = {"deps": LazyDependencies(compose_application), "doc": doc}
 
 
 # Flat concern modules: mounted without a `name` so their commands stay
@@ -59,7 +56,7 @@ app.add_typer(run_app, name="run")
 
 # Named group modules: mounted with the same group name they already had.
 app.add_typer(template_app, name="template")
-app.add_typer(doc_app, name="doc")
+app.add_typer(doc_crud_app, name="doc")
 app.add_typer(asset_app, name="asset")
 app.add_typer(context_app, name="context")
 app.add_typer(document_app, name="document")

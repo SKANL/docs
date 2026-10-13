@@ -45,6 +45,7 @@ from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.domain.workspace_format import validate_workspace_layout, validate_workspace_marker
+from docs.infrastructure.atomic_write import atomic_write_text
 from docs.infrastructure.audit.structural_audit_adapter import StructuralAuditAdapter
 from docs.infrastructure.docx.deterministic_zip import normalize_docx_zip_timestamps
 from docs.infrastructure.docx.libreoffice_qa_adapter import LibreOfficeQaAdapter
@@ -69,6 +70,7 @@ from docs.infrastructure.persistence.json_repository import JsonDocumentReposito
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
+from docs.infrastructure.transform.system_transform import AtomicTransform
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 from docs.observability import ObservabilityPort, create_observability_from_env
 from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, source_template
@@ -121,7 +123,7 @@ def build_workspace() -> Workspace:
     # operating on the harness checkout's default documents/ directory.
     if config is None and not os.environ.get("DOCS_DOCUMENTS_DIR") and not os.environ.get("DOCS_TEMPLATES_DIR"):
         local_registry = Path.cwd() / ".docs" / "workspaces.json"
-        registry = WorkspaceRegistry(local_registry if local_registry.is_file() else None)
+        registry = open_workspace_registry(local_registry if local_registry.is_file() else None)
         active = registry.active()
         if active is not None:
             root = Path(str(active["root"])).resolve()
@@ -141,6 +143,11 @@ def build_workspace() -> Workspace:
 
 
 logger = logging.getLogger(__name__)
+
+
+def open_workspace_registry(registry_path: str | Path | None = None) -> WorkspaceRegistry:
+    """Open the workspace registry with the atomic file writer wired in."""
+    return WorkspaceRegistry(registry_path, write_text=atomic_write_text)
 
 
 def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
@@ -282,7 +289,7 @@ class ApplicationComposition:
         # pip/npm dependency of this project) -- construction never touches
         # `resvg` itself (resolution happens lazily inside `rasterize()`), so
         # this is always wired; a missing `resvg` degrades per-visual at
-        # render time (WARN+skip, Slice 5), never at `Deps()` construction
+        # render time (WARN+skip, Slice 5), never at `ApplicationComposition()` construction
         # (mirrors the mermaid-renderer guard shape above for
         # defense-in-depth against an unexpected import failure). Built here
         # (rather than alongside the other visual-generation adapters below)
@@ -308,8 +315,8 @@ class ApplicationComposition:
         # matplotlib is a hard declared dependency (pyproject.toml), but the
         # import is still guarded (mirrors the pypdfium2 guard above): if it
         # ever fails to import, the "chart" renderer is simply absent from
-        # the registry rather than crashing `Deps()` construction (design.md
-        # Migration/Rollout: additive/opt-in, never a hard `Deps()` failure).
+        # the registry rather than crashing `ApplicationComposition()` construction (design.md
+        # Migration/Rollout: additive/opt-in, never a hard `ApplicationComposition()` failure).
         self.visual_renderers: dict[str, Any] = {}
         try:
             from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
@@ -328,7 +335,7 @@ class ApplicationComposition:
         # construction never touches `mmdc` itself (resolution happens lazily
         # inside `render()`), so this is always registered; a missing `mmdc`
         # degrades per-visual at render time (WARN+skip, Slice 5), never at
-        # `Deps()` construction (mirrors the pypdfium2/matplotlib guard
+        # `ApplicationComposition()` construction (mirrors the pypdfium2/matplotlib guard
         # shape above for defense-in-depth against an unexpected import
         # failure).
         try:
@@ -424,6 +431,7 @@ class ApplicationComposition:
                 assert_directory_identity=assert_directory_identity,
             ),
             lock=owned_directory_lock,
+            transform=AtomicTransform(),
         )
         self.rules_manifest_state = _rules_manifest_state
 
@@ -573,7 +581,6 @@ class ApplicationComposition:
         run_start: Any = None,
     ) -> Any:
         """Assemble the document pipeline at the canonical composition root."""
-        from docs.application.atomic_transform import AtomicTransform
         from docs.application.pipeline_service import PipelineService, PublicationSpec
 
         return PipelineService(
@@ -605,7 +612,7 @@ class ApplicationComposition:
             raise RuntimeError("No hay documento activo. Usa `doc new <id>` o `doc use <id>`.")
         document = self.document_repository.read_document(doc_id)      # Document (extra allowed)
         template = self.document_repository.load_template(document.template)
-        _compile_template_compat(template)
+        _try_compile_template(template)
         merged = _deep_merge(template.model_dump(), document.model_dump())
         merged = _expand_tokens(merged, _standard_tokens(self.workspace, self.workspace.doc_root(doc_id)))
         paths = dict(merged.get("paths", {}))
@@ -618,7 +625,7 @@ class ApplicationComposition:
             structure_parts(merged), Path(paths["inbox_dir"])
         )
         resolved_template = Template.model_validate(merged)
-        resolved_template_ir = _compile_template_compat(resolved_template)
+        resolved_template_ir = _try_compile_template(resolved_template)
         return ResolvedContext(
             doc_id=doc_id,
             config=merged,
@@ -627,11 +634,15 @@ class ApplicationComposition:
         )
 
 
-def _compile_template_compat(template: Template) -> TemplateIR | None:
-    """Compile when possible without rejecting existing source templates."""
+def _try_compile_template(template: Template) -> TemplateIR | None:
+    """Compile the template IR; return None (and warn) when it does not compile.
+
+    A template that does not compile still resolves as its source template, so
+    the document stays usable; the warning keeps that degradation visible."""
     try:
         return compile_template(template)
-    except TemplateCompilationError:
+    except TemplateCompilationError as exc:
+        logger.warning("template IR unavailable, using the source template: %s", exc)
         return None
 
 

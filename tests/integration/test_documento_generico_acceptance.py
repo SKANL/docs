@@ -26,7 +26,7 @@ _FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "templates" / "doc
 
 
 def _resolved_config(tmp_path: Path) -> dict:
-    """Mirrors the shape `Deps.resolve_context` produces: the template's own
+    """Mirrors the shape `ApplicationComposition.resolve_context` produces: the template's own
     declared `paths` (here: `{}`) merged with computed, always-present
     per-document paths."""
     raw = json.loads(_FIXTURE.read_text(encoding="utf-8"))

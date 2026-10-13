@@ -31,8 +31,8 @@ from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineRequest
 from docs.application.provenance import ProvenanceLedger
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
-from docs.application.workspaces import WorkspaceRegistry
 from docs.cli.commands.source_app import run_source_command
+from docs.composition import open_workspace_registry
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import pretty_json, sha256_file
 from docs.domain.normative import resolve_normative_settings
@@ -594,7 +594,7 @@ def run_document(
         # different project and makes the detached worker fail against the
         # wrong document. Use the workspace-local registry unless the caller
         # explicitly supplied DOCS_WORKSPACE_REGISTRY.
-        registry = WorkspaceRegistry(
+        registry = open_workspace_registry(
             registry_path
             if registry_path.is_file()
             else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
@@ -678,7 +678,7 @@ def run_document(
     resolved = deps.resolve_context(ctx.obj.get("doc", ""))
     workspace_root = deps.workspace.documents_dir.parent.resolve()
     registry_path = workspace_root / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(
+    registry = open_workspace_registry(
         registry_path
         if registry_path.is_file()
         else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
@@ -731,7 +731,7 @@ def _durable_evidence_stores(ctx: typer.Context):
     deps = ctx.obj["deps"]
     root = deps.workspace.documents_dir.parent.resolve()
     registry_path = root / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(
+    registry = open_workspace_registry(
         registry_path
         if registry_path.is_file()
         else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")

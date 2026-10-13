@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 import docs.infrastructure.transform.system_transform as atomic_module
-from docs.application.atomic_transform import AtomicTransform, TransformResult, TransformSpec
+from docs.domain.transform import TransformResult, TransformSpec
+from docs.infrastructure.transform.system_transform import AtomicTransform
 
 
 def test_callable_transform_publishes_non_empty_outputs_and_cleans_scratch(tmp_path: Path) -> None:

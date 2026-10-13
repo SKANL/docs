@@ -4,12 +4,12 @@ import threading
 
 import pytest
 
-from docs.application.workspaces import WorkspaceRegistry
+from docs.composition import open_workspace_registry
 
 
 def test_concurrent_instances_on_one_registry_file_never_fail(tmp_path):
     path = tmp_path / ".docs" / "workspaces.json"
-    writer, reader = WorkspaceRegistry(path), WorkspaceRegistry(path)
+    writer, reader = open_workspace_registry(path), open_workspace_registry(path)
     workspace = writer.create("Concurrent", tmp_path / "ws")
     errors: list[BaseException] = []
     stop = threading.Event()
@@ -27,7 +27,7 @@ def test_concurrent_instances_on_one_registry_file_never_fail(tmp_path):
     try:
         for index in range(150):
             try:
-                WorkspaceRegistry(path).rename(workspace["id"], f"Concurrent {index}")
+                open_workspace_registry(path).rename(workspace["id"], f"Concurrent {index}")
             except BaseException as exc:
                 errors.append(exc)
     finally:
@@ -35,12 +35,12 @@ def test_concurrent_instances_on_one_registry_file_never_fail(tmp_path):
         for thread in threads:
             thread.join()
     assert errors == []
-    assert WorkspaceRegistry(path).get(workspace["id"])["name"] == "Concurrent 149"
+    assert open_workspace_registry(path).get(workspace["id"])["name"] == "Concurrent 149"
 
 
 def test_a_failed_write_leaves_no_temporary_file(tmp_path, monkeypatch):
     path = tmp_path / ".docs" / "workspaces.json"
-    registry = WorkspaceRegistry(path)
+    registry = open_workspace_registry(path)
     registry.create("Original", tmp_path / "ws")
 
     def explode(*_args, **_kwargs):

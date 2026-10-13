@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from importlib import import_module
+from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
 from threading import RLock
@@ -42,7 +42,13 @@ def _lock_for(path: Path) -> RLock:
 
 
 class WorkspaceRegistry:
-    def __init__(self, registry_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        registry_path: str | Path | None = None,
+        *,
+        write_text: Callable[[Path, str], None],
+    ) -> None:
+        self._write_text = write_text
         configured = registry_path or os.environ.get("DOCS_WORKSPACE_REGISTRY")
         self.path = Path(configured or (Path.home() / ".docs" / "workspaces.json")).expanduser().resolve()
         self._lock = _lock_for(self.path)
@@ -199,9 +205,7 @@ class WorkspaceRegistry:
         return value
 
     def _write(self, value: dict[str, Any]) -> None:
-        # Resolved lazily so `application` never imports an infrastructure module (same seam as atomic_transform).
-        write = import_module("docs.infrastructure.atomic_write").atomic_write_text
-        write(self.path, json.dumps(value, indent=2, sort_keys=True) + "\n")
+        self._write_text(self.path, json.dumps(value, indent=2, sort_keys=True) + "\n")
 
     @staticmethod
     def _name(value: str) -> str:

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from docs.cli._shared import Deps
 from docs.cli.main import app
+from docs.composition import ApplicationComposition
 
 runner = CliRunner()
 
@@ -39,7 +39,7 @@ def ws(canonical_cli_workspace):
     # DEVIATION from the plan's literal fixture (which invokes `docs doc new`):
     # the `doc` command group is Task 6's scope and does not exist yet. Same
     # deviation established in Task 1's test_cli_core.py.
-    Deps().documents.create("doc1", "tesina")
+    ApplicationComposition().documents.create("doc1", "tesina")
     return tmp_path
 
 

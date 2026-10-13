@@ -14,6 +14,7 @@ from docs.application.workspace_migration import (
     WorkspaceMigrationPublisher,
 )
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.composition import open_workspace_registry
 from docs.domain.identity import pretty_json
 
 workspace_app = typer.Typer(help="Manage persistent Doc Harness workspaces.")
@@ -28,7 +29,7 @@ def _registry() -> WorkspaceRegistry:
     variable and global-home fallback behavior.
     """
     local_registry = Path.cwd() / ".docs" / "workspaces.json"
-    return WorkspaceRegistry(local_registry if local_registry.is_file() else None)
+    return open_workspace_registry(local_registry if local_registry.is_file() else None)
 
 
 def _migration_record_payload(record: MigrationRecord) -> dict[str, Any]:

@@ -76,7 +76,7 @@ def test_commands_package_splits_by_concern():
     from docs.cli.commands.collection_app import collection_app
     from docs.cli.commands.context_app import context_app
     from docs.cli.commands.core_app import core_app
-    from docs.cli.commands.doc_app import doc_app
+    from docs.cli.commands.doc_crud_app import doc_crud_app
     from docs.cli.commands.docx_app import docx_app
     from docs.cli.commands.section_app import section_app
     from docs.cli.commands.template_app import template_app
@@ -97,7 +97,7 @@ def test_commands_package_splits_by_concern():
         "build-section", "pack-context", "review-section", "review-document",
     }
     assert _names(template_app) == {"list", "show", "init", "create", "validate", "use"}
-    assert _names(doc_app) == {
+    assert _names(doc_crud_app) == {
         "current", "delete", "init", "list", "new", "rename", "revise", "show", "status", "use",
     }
     assert _names(asset_app) == {"add", "list", "rm"}

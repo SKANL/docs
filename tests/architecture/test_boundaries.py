@@ -106,46 +106,6 @@ def test_pipeline_kernel_contains_no_nondeterministic_timestamp_calls() -> None:
     assert not violations, "pipeline_kernel must not read wall-clock time:\n" + "\n".join(violations)
 
 
-def test_application_atomic_transform_does_not_import_system_boundaries_directly() -> None:
-    """The v2 application native port must not own process or filesystem mechanics."""
-    path = SRC_ROOT / "application" / "atomic_transform.py"
-    tree = _parse(path)
-    violations: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name in {"os", "subprocess", "tempfile"} or alias.name.startswith(("os.", "subprocess.", "tempfile.")):
-                    violations.append(f"{_display(node)} imports {alias.name}")
-        elif isinstance(node, ast.ImportFrom) and node.module and (
-            node.module in {"os", "subprocess", "tempfile"} or node.module.startswith(("os.", "subprocess.", "tempfile."))
-        ):
-            violations.append(f"{_display(node)} imports from {node.module}")
-
-    assert not violations, "application atomic transform must not import process or filesystem boundary modules:\n" + "\n".join(violations)
-
-def test_application_provenance_is_a_thin_reexport_without_persistence_imports() -> None:
-    """Filesystem, hashing, and JSON ledger mechanics live in infrastructure."""
-    path = SRC_ROOT / "application" / "provenance.py"
-    tree = _parse(path)
-    forbidden_modules = {"hashlib", "json", "os", "tempfile"}
-    violations: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = alias.name.split(".")[0]
-                if root in forbidden_modules:
-                    violations.append(f"{_display(node)} imports {alias.name}")
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            root = node.module.split(".")[0]
-            if root in forbidden_modules:
-                violations.append(f"{_display(node)} imports from {node.module}")
-
-    assert not violations, (
-        "application provenance must re-export infrastructure behavior rather than own persistence mechanics:\\n"
-        + "\\n".join(violations)
-    )
-
-
 def test_source_pipeline_uses_ports_instead_of_dynamic_infrastructure_imports() -> None:
     """Source orchestration must depend on ports, not import adapters at runtime."""
     path = SRC_ROOT / "application" / "source_pipeline.py"

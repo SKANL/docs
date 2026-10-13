@@ -18,7 +18,7 @@ class ResvgRasterizerAdapter:
     check=True)` -- never `shell=True`, never string-interpolated. Absent
     `resvg` (optional PATH toolchain, mirrors `MermaidSvgRenderer`) raises a
     clean, catchable `RuntimeError` so the generate-visuals stage (Slice 5)
-    can WARN+skip it -- never crashes `Deps()` construction.
+    can WARN+skip it -- never crashes `ApplicationComposition()` construction.
 
     `font_dir` pins `--use-fonts-dir` for determinism (design.md: "pinned
     font-dir"); no font is vendored by this repo yet (design.md Open

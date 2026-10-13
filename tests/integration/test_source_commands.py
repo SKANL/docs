@@ -399,7 +399,7 @@ def test_source_operations_turn_invalid_paths_config_into_failed_v2_reports(
 
 def test_document_ingest_is_public_and_returns_structured_report(monkeypatch, tmp_path: Path) -> None:
     deps = _deps(tmp_path)
-    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    monkeypatch.setattr("docs.cli.main.compose_application", lambda: deps)
 
     result = CliRunner().invoke(app, ["document", "ingest", "--json"])
 
@@ -411,7 +411,7 @@ def test_document_ingest_is_public_and_returns_structured_report(monkeypatch, tm
 
 def test_document_prepare_wires_all_source_handlers(monkeypatch, tmp_path: Path) -> None:
     deps = _deps(tmp_path)
-    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    monkeypatch.setattr("docs.cli.main.compose_application", lambda: deps)
 
     result = CliRunner().invoke(app, ["document", "prepare", "--json"])
 
@@ -647,7 +647,7 @@ def test_source_prepare_converts_compile_structure_exception_to_failed_stage_rep
 def test_source_ingest_alias_uses_the_same_native_stage(tmp_path, monkeypatch):
     # The source namespace is a public spelling of the v2 ingest boundary.
     deps = _deps(tmp_path)
-    monkeypatch.setattr("docs.cli.main.Deps", lambda: deps)
+    monkeypatch.setattr("docs.cli.main.compose_application", lambda: deps)
     result = CliRunner().invoke(app, ["source", "ingest", "--json"])
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout)["succeeded"] is True

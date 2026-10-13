@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from docs.cli._shared import resolve_renderer
+from docs.composition import resolve_renderer
 from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 
@@ -73,7 +73,7 @@ def test_unregistered_format_raises_clear_error_naming_the_format():
 
 
 def test_every_registered_renderer_matches_the_port_build_signature():
-    # `Deps.renderers` is annotated `dict[str, DocumentRendererPort]`, but a
+    # `ApplicationComposition.renderers` is annotated `dict[str, DocumentRendererPort]`, but a
     # Protocol only constrains what a type checker sees -- and the checker
     # was never run in CI, so the registry silently held two members whose
     # `build()` returns `Path | None` against a port declaring `-> Path`.
