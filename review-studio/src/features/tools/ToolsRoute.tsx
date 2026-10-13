@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -6,7 +7,8 @@ import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorText, useActiveContext, useCapability } from "@/features/authoring/data";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 import type { FileTool } from "@/api/domains/tools";
 import { BuildDocxCard, DocxInspectionPanel, FileToolCard, ReviewRulesCard } from "./DocumentTools";
 import { TranslationWorkflow } from "./TranslationWorkflow";
@@ -27,7 +29,7 @@ export function ToolsRoute() {
   const active = useActiveContext();
   const header = <PageHeader eyebrow="Specialist" title="Tools" description="Collection, rules, DOCX, and translation tools. Open a tool to see its options." />;
   if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={errorText(active.error, "workspace")} onRetry={() => void active.refetch()} /></div>;
+  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
   const documentId = active.data.documentId;
 
   const entries: Entry[] = [

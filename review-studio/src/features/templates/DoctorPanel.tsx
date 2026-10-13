@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -10,7 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Unavailable, errorText, useActiveContext, useCapability } from "@/features/authoring/data";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 import type { DiagnosticStatus } from "@/api/domains/tools";
 
 const statusVariant: Record<DiagnosticStatus, "secondary" | "outline" | "destructive" | "default"> = { ok: "secondary", warn: "outline", error: "destructive", unavailable: "outline" };
@@ -25,7 +28,7 @@ function IssueCodeLookup() {
       <div className="grid gap-1"><Label htmlFor="issue-code">Issue code</Label><Input id="issue-code" autoComplete="off" placeholder="e.g. QA.001" value={code} onChange={event => setCode(event.target.value)} /></div>
       <Button type="submit" variant="outline" disabled={!code.trim() || explain.isPending}>Explain code</Button>
     </form>
-    {explain.isError && <ErrorState title="Could not explain the code" message={errorText(explain.error, "code")} />}
+    {explain.isError && <ErrorState title="Could not explain the code" message={formatApiError(explain.error)} />}
     {explain.data && <section aria-label="Issue code explanation" className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
       <p className="font-medium"><code>{explain.data.code}</code> <span className="text-muted-foreground">{explain.data.family}{explain.data.family_description ? ` · ${explain.data.family_description}` : ""}</span></p>
       <p><span className="text-muted-foreground">Meaning</span> {explain.data.meaning}</p>
@@ -57,7 +60,7 @@ export function DoctorPanel() {
       </div>
       {!can("doctor") || !api.getDiagnostics ? <Unavailable>Diagnostics are not available on this server.</Unavailable>
         : diagnostics.isPending ? <Skeleton className="h-24 w-full" />
-        : diagnostics.isError ? <ErrorState title="Could not run the diagnostics" message={errorText(diagnostics.error, "diagnostics")} onRetry={() => void diagnostics.refetch()} />
+        : diagnostics.isError ? <ErrorState title="Could not run the diagnostics" message={formatApiError(diagnostics.error)} onRetry={() => void diagnostics.refetch()} />
         : <>
           <p className="flex items-center gap-2 text-sm"><Badge variant={diagnostics.data.passed ? "secondary" : "destructive"}>{diagnostics.data.passed ? "Passed" : "Needs attention"}</Badge><span className="text-muted-foreground">Checked for {diagnostics.data.document_id}{diagnostics.data.strict ? " (strict)" : ""}</span></p>
           <Table aria-label="Diagnostic checks">

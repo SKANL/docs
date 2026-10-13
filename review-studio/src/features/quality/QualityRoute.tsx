@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -5,7 +6,9 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Unavailable, errorText, useActiveContext, useCapability } from "@/features/authoring/data";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { BaselinesPanel } from "./BaselinesPanel";
 import { DiffPanel } from "./DiffViewer";
@@ -27,7 +30,7 @@ export function QualityRoute() {
   const can = useCapability();
   const header = <PageHeader eyebrow="Task area" title="Review" description="Follow a failing run to its finding, previews, input evidence, and the next operation." />;
   if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={errorText(active.error, "workspace")} onRetry={() => void active.refetch()} /></div>;
+  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
   const { workspaceId } = active.data;
   if (!workspaceId) return <div className="grid gap-6">{header}
     <EmptyState title="Select a workspace first" description="Findings, artifacts, and evidence belong to a workspace."><Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button></EmptyState></div>;

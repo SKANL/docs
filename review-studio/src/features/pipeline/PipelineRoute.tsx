@@ -1,9 +1,10 @@
+import { formatApiError } from "@/api/errors";
 import { Link } from "react-router-dom";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorText, useActiveContext } from "@/features/authoring/data";
+import { useActiveContext } from "@/app/active-context";
 import { PipelineLauncher } from "./PipelineLauncher";
 import { RunList } from "./RunList";
 
@@ -11,7 +12,7 @@ export function PipelineRoute() {
   const active = useActiveContext();
   const header = <PageHeader eyebrow="Task area" title="Pipeline" description="Plan, launch, and watch runs for the current document." />;
   if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={errorText(active.error, "workspace")} onRetry={() => void active.refetch()} /></div>;
+  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
   const { workspaceId, workspaceName, documentId, documentTitle } = active.data;
   return <div className="grid gap-6">
     {header}

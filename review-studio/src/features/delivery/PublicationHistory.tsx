@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -5,7 +6,8 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { errorText, Unavailable, useCapability } from "@/features/authoring/data";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useCapability } from "@/lib/capability-registry";
 import { CopyDigest, deliveryKeys } from "./data";
 
 const when = (iso?: string) => { const date = iso ? new Date(iso) : null; return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : "-"; };
@@ -20,7 +22,7 @@ export function PublicationHistory({ workspaceId }: { workspaceId: string | null
     <h2 className="text-xl font-semibold">Publication history</h2>
     {!listed ? <Unavailable>Publication history is not available on this server.</Unavailable>
       : history.isPending ? <Skeleton className="h-24 w-full" />
-      : history.isError ? <ErrorState message={errorText(history.error, "publications")} onRetry={() => void history.refetch()} />
+      : history.isError ? <ErrorState message={formatApiError(history.error)} onRetry={() => void history.refetch()} />
       : history.data.length === 0 ? <EmptyState title="Nothing published yet" description="Publications the server accepts are recorded here, with their evidence run." />
       : <Table aria-label="Publication history">
         <TableHeader><TableRow><TableHead>Publication</TableHead><TableHead>Destination</TableHead><TableHead>Policy</TableHead><TableHead>Artifact digest</TableHead><TableHead>Evidence run</TableHead><TableHead>Published</TableHead><TableHead>Warnings</TableHead></TableRow></TableHeader>

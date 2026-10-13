@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -11,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { errorText, useCapability } from "@/features/authoring/data";
+import { useCapability } from "@/lib/capability-registry";
 import { Digest, Facts, reviewKeys } from "./data";
 import { ArtifactPreview, InspectionPanel } from "./inspection";
 
@@ -37,7 +38,7 @@ export function ArtifactsPanel({ workspaceId, selectedId }: { workspaceId: strin
   const artifacts = useQuery({ queryKey: reviewKeys.artifacts(workspaceId), queryFn: () => api.listArtifacts() });
   const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: async () => (await api.listRunPage!()).items });
   if (artifacts.isPending) return <Skeleton className="h-24 w-full" />;
-  if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={errorText(artifacts.error, "artifacts")} onRetry={() => void artifacts.refetch()} />;
+  if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={formatApiError(artifacts.error)} onRetry={() => void artifacts.refetch()} />;
   const all = artifacts.data;
   if (all.length === 0) return <EmptyState title="No artifacts" description="Artifacts appear here after a build produces output for a run." />;
   const rows = runId === "all" ? all : all.filter(item => item.runId === runId);

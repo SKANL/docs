@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ActionError, useAction } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
 import { CheckOutcome } from "./Issues";
 
 /** Validates an installed template, or a pasted draft that is checked but never stored. */

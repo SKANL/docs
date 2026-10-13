@@ -4,14 +4,17 @@ import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { StructureView } from "@/components/shared/StructureView";
-import { ApiError } from "@/api/errors";
+import { ApiError, formatApiError } from "@/api/errors";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ActionError, Unavailable, errorText, useAction, useActiveContext, useCapability } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 import { TemplateValidationPanel } from "./TemplateValidationPanel";
 
 const keys = {
@@ -48,7 +51,7 @@ export function TemplateEditorPage() {
       <h2 className="text-xl font-semibold">Installed templates</h2>
       {!listable || !api.listTemplates ? <Unavailable>Listing templates is not available on this server.</Unavailable>
         : installed.isPending ? <Skeleton className="h-16 w-full" />
-        : installed.isError ? <ErrorState message={errorText(installed.error, "templates")} onRetry={() => void installed.refetch()} />
+        : installed.isError ? <ErrorState message={formatApiError(installed.error)} onRetry={() => void installed.refetch()} />
         : installed.data.length === 0 ? <p className="text-sm text-muted-foreground">No templates are installed in this workspace. Install a built-in one or create a new template.</p>
         : <Table aria-label="Installed templates">
           <TableHeader><TableRow><TableHead>Template</TableHead><TableHead>Version</TableHead><TableHead className="w-28"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
@@ -59,7 +62,7 @@ export function TemplateEditorPage() {
         </Table>}
       {shown && <section aria-label="Template structure" className="grid gap-2 rounded-lg border bg-card p-4">
         <h3 className="text-lg font-semibold">{shown}</h3>
-        {detail.isPending ? <Skeleton className="h-16 w-full" /> : detail.isError ? <ErrorState message={errorText(detail.error, "template")} onRetry={() => void detail.refetch()} />
+        {detail.isPending ? <Skeleton className="h-16 w-full" /> : detail.isError ? <ErrorState message={formatApiError(detail.error)} onRetry={() => void detail.refetch()} />
           : <StructureView value={detail.data.template} />}
       </section>}
     </section>
@@ -68,7 +71,7 @@ export function TemplateEditorPage() {
       <h2 className="text-xl font-semibold">Built-in catalogue</h2>
       {!listable || !api.listTemplateCatalog ? <Unavailable>The built-in catalogue is not available on this server.</Unavailable>
         : catalog.isPending ? <Skeleton className="h-16 w-full" />
-        : catalog.isError ? <ErrorState message={errorText(catalog.error, "catalogue")} onRetry={() => void catalog.refetch()} />
+        : catalog.isError ? <ErrorState message={formatApiError(catalog.error)} onRetry={() => void catalog.refetch()} />
         : <Table aria-label="Built-in catalogue">
           <TableHeader><TableRow><TableHead>Template</TableHead><TableHead>State</TableHead><TableHead className="w-32"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
           <TableBody>{catalog.data.map(item => <TableRow key={item.name}>

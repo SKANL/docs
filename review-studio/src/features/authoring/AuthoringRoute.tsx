@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -11,7 +12,8 @@ import { ContextPanel } from "./ContextPanel";
 import { RevisionsPanel } from "./RevisionsPanel";
 import { SectionsPanel } from "./SectionsPanel";
 import { SourcesPanel } from "./SourcesPanel";
-import { errorText, useActiveContext, useClassification, useContextStatus, useSections } from "./data";
+import { useActiveContext } from "@/app/active-context";
+import { useClassification, useContextStatus, useSections } from "./data";
 
 const tabs = [["sources", "Sources"], ["classification", "Classification"], ["assets", "Assets"], ["context", "Context"], ["sections", "Sections"], ["revisions", "Revisions"]] as const;
 
@@ -37,7 +39,7 @@ export function AuthoringRoute() {
   const active = useActiveContext();
   const header = <PageHeader eyebrow="Task area" title="Authoring" description="Sources, classification, assets, context, sections, and revisions for the current document." />;
   if (active.isPending) return <div className="grid gap-6">{header}<Skeleton className="h-24 w-full" /></div>;
-  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={errorText(active.error, "workspace")} onRetry={() => void active.refetch()} /></div>;
+  if (active.isError) return <div className="grid gap-6">{header}<ErrorState message={formatApiError(active.error)} onRetry={() => void active.refetch()} /></div>;
   const { workspaceName, documentId, documentTitle } = active.data;
   if (!documentId) return <div className="grid gap-6">{header}
     <EmptyState title="Select a document first" description={workspaceName ? `Workspace ${workspaceName} has no current document. Choose or create one to start authoring.` : "No workspace is selected yet. Create a workspace and a document to start authoring."}>

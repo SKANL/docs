@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -8,7 +9,9 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { errorText, useAction, useActiveContext, useCapability } from "@/features/authoring/data";
+import { useAction } from "@/lib/actions";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 import { isTerminalStatus, toRunRecord } from "@/api/domains/pipeline";
 import { RunStatusBadge } from "./RunStatusBadge";
 import { useRunStream } from "./useRunStream";
@@ -48,7 +51,7 @@ export function RunDetailPage() {
   const back = <Button asChild variant="link" className="h-auto w-fit p-0"><Link to="/pipeline">Back to pipeline</Link></Button>;
   const title = `Run ${runId}`;
   if (record.isPending) return <div className="grid gap-6">{back}<PageHeader eyebrow="Pipeline" title={title} /><Skeleton className="h-32 w-full" /></div>;
-  if (record.isError) return <div className="grid gap-6">{back}<PageHeader eyebrow="Pipeline" title={title} /><ErrorState title="Could not load the run" message={errorText(record.error, "run")} onRetry={() => void record.refetch()} /></div>;
+  if (record.isError) return <div className="grid gap-6">{back}<PageHeader eyebrow="Pipeline" title={title} /><ErrorState title="Could not load the run" message={formatApiError(record.error)} onRetry={() => void record.refetch()} /></div>;
 
   const data = record.data;
   const status = settled ? data.status : stream.status ?? data.status;
@@ -75,8 +78,8 @@ export function RunDetailPage() {
       <p>Final status: <b>{status}</b></p>
       <Button asChild variant="link" className="h-auto w-fit p-0"><Link to={`/review/evidence/${encodeURIComponent(runId)}`}>Review evidence for this run</Link></Button>
     </section>}
-    {retry.isError && <ErrorState title="Could not retry the run" message={errorText(retry.error, "retry")} onRetry={() => retry.mutate(undefined)} retrying={retry.isPending} />}
+    {retry.isError && <ErrorState title="Could not retry the run" message={formatApiError(retry.error)} onRetry={() => retry.mutate(undefined)} retrying={retry.isPending} />}
     <ConfirmActionDialog open={confirmCancel} onOpenChange={setConfirmCancel} title="Cancel this run?" description="The run stops at its next safe point. Work already written to the workspace stays."
-      confirmLabel="Cancel this run" pending={cancel.isPending} error={cancel.isError ? errorText(cancel.error, "cancel") : undefined} onConfirm={() => cancel.mutate(undefined)} />
+      confirmLabel="Cancel this run" pending={cancel.isPending} error={cancel.isError ? formatApiError(cancel.error) : undefined} onConfirm={() => cancel.mutate(undefined)} />
   </div>;
 }

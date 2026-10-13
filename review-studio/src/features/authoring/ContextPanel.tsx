@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
@@ -10,7 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { ActionError, Unavailable, authoringKeys, errorText, useAction, useCapability, useContextStatus } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys, useContextStatus } from "./data";
 
 export function ContextPanel({ documentId }: { documentId: string }) {
   const api = useApi();
@@ -33,7 +37,7 @@ export function ContextPanel({ documentId }: { documentId: string }) {
     <h2 className="text-xl font-semibold">Context</h2>
     {!can("context.status") ? <Unavailable>Context status is not available on this server.</Unavailable>
       : status.isPending ? <Skeleton className="h-24 w-full" />
-      : status.isError ? <ErrorState message={errorText(status.error, "context")} onRetry={() => void status.refetch()} />
+      : status.isError ? <ErrorState message={formatApiError(status.error)} onRetry={() => void status.refetch()} />
       : status.data.topics.length === 0 ? <EmptyState title="No context topics" description="The template declares no context topics for this document." />
       : <ul className="grid gap-3 sm:grid-cols-2" aria-label="Context topics">{status.data.topics.map(item => <li key={item.id}><Card>
         <CardHeader><CardTitle className="flex flex-wrap items-center gap-2 text-base"><span>{item.title}</span>
@@ -66,7 +70,7 @@ export function ContextPanel({ documentId }: { documentId: string }) {
     {ingest.data && <p role="status" className="text-sm">Topics now available: {ingest.data.topics.join(", ") || "none"}.</p>}
 
     <ConfirmActionDialog open={removing !== null} title={`Remove topic ${removing ?? ""}?`} description="The saved answers for this topic are deleted. You can write the questionnaire again afterwards."
-      confirmLabel="Remove topic" pending={remove.isPending} error={remove.isError ? errorText(remove.error, "remove topic") : undefined}
+      confirmLabel="Remove topic" pending={remove.isPending} error={remove.isError ? formatApiError(remove.error) : undefined}
       onOpenChange={open => { if (!open) setRemoving(null); }} onConfirm={() => removing && remove.mutate(removing)} />
   </div>;
 }

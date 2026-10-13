@@ -6,7 +6,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ActionError, useAction, useCapability } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
+import { useCapability } from "@/lib/capability-registry";
 import { Facts } from "@/features/quality/data";
 import type { PackageInput } from "@/api/domains/delivery";
 import { deliveryKeys } from "./data";

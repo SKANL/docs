@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -11,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { errorText } from "@/features/authoring/data";
+
 import { reviewKeys, scalarRows } from "./data";
 
 const queries: Array<{ query: GraphQuery; label: string; idLabel?: string }> = [
@@ -51,7 +52,7 @@ export function GraphPanel({ workspaceId }: { workspaceId: string | null }) {
   return <div className="grid gap-6">
     <section aria-label="Graph overview" className="grid gap-2">
       <h2 className="text-xl font-semibold">Graph</h2>
-      {graph.isPending ? <Skeleton className="h-16 w-full" /> : graph.isError ? <ErrorState title="Could not load the graph" message={errorText(graph.error, "graph")} onRetry={() => void graph.refetch()} />
+      {graph.isPending ? <Skeleton className="h-16 w-full" /> : graph.isError ? <ErrorState title="Could not load the graph" message={formatApiError(graph.error)} onRetry={() => void graph.refetch()} />
         : graph.data.nodes.length === 0 ? <EmptyState title="The semantic graph is empty" description="Claims, sources, and artifacts are linked here once a run has produced evidence. Run the pipeline, then come back." />
         : <p className="text-sm">{graph.data.nodes.length} nodes and {graph.data.edges.length} links connect claims, sources, sections, and artifacts.</p>}
     </section>
@@ -68,7 +69,7 @@ export function GraphPanel({ workspaceId }: { workspaceId: string | null }) {
         <Button type="button" disabled={run.isPending} onClick={start}>Run query</Button>
       </div>
       {missing && <p className="text-sm text-destructive" role="alert">{missing}</p>}
-      {run.isError && <ErrorState title="Could not run the query" message={errorText(run.error, "query")} onRetry={start} retrying={run.isPending} />}
+      {run.isError && <ErrorState title="Could not run the query" message={formatApiError(run.error)} onRetry={start} retrying={run.isPending} />}
       {run.data && <QueryResults result={run.data} />}
     </section>
   </div>;

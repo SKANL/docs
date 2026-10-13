@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/app/providers";
@@ -9,7 +10,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ActionError, Unavailable, authoringKeys, errorText, fileToBase64, useAction, useCapability } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { fileToBase64 } from "@/lib/files";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys } from "./data";
 
 export function AssetsPanel({ documentId }: { documentId: string }) {
   const api = useApi();
@@ -34,7 +39,7 @@ export function AssetsPanel({ documentId }: { documentId: string }) {
       <Button type="submit" variant="outline">Apply filter</Button>
     </form>}
     {list.isPending ? (can("asset.list") ? <Skeleton className="h-24 w-full" /> : <Unavailable>Listing assets is not available on this server.</Unavailable>)
-      : list.isError ? <ErrorState message={errorText(list.error, "assets")} onRetry={() => void list.refetch()} />
+      : list.isError ? <ErrorState message={formatApiError(list.error)} onRetry={() => void list.refetch()} />
       : list.data.items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} />
       : <Table aria-label="Document assets"><TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="w-24"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
         <TableBody>{list.data.items.map(item => <TableRow key={item.name}><TableCell>{item.name}</TableCell>
@@ -46,7 +51,7 @@ export function AssetsPanel({ documentId }: { documentId: string }) {
     </form> : <Unavailable>Adding assets is not available on this server.</Unavailable>}
     <ActionError action={add} what="add the asset" />
     <ConfirmActionDialog open={removing !== null} title={`Remove ${removing ?? "asset"}?`} description="The file is deleted from the document. Sections that reference it will show a finding at the next review."
-      confirmLabel="Remove asset" pending={remove.isPending} error={remove.isError ? errorText(remove.error, "remove asset") : undefined}
+      confirmLabel="Remove asset" pending={remove.isPending} error={remove.isError ? formatApiError(remove.error) : undefined}
       onOpenChange={open => { if (!open) setRemoving(null); }} onConfirm={() => removing && remove.mutate(removing)} />
   </div>;
 }

@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -12,7 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import type { ContextPacked, ReviewFinding, ReviewResult } from "@/api/domains/authoring";
-import { ActionError, authoringKeys, errorText, useAction, useCapability, useSections } from "./data";
+import { ActionError, useAction } from "@/lib/actions";
+import { useCapability } from "@/lib/capability-registry";
+import { authoringKeys, useSections } from "./data";
 
 export function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; onOpenSection(id: string): void }) {
   const where = (finding: ReviewFinding) => [finding.section && `section ${finding.section}`, finding.file, finding.page != null && `page ${finding.page}`].filter(Boolean).join(" · ");
@@ -89,7 +92,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const pack = useAction(() => api.packContext!(documentId, target.trim()), { success: result => `Packed context for ${result.target}.`, onDone: result => { setPacked(result); setPackOpen(false); } });
 
   if (sections.isPending) return <Skeleton className="h-48 w-full" />;
-  if (sections.isError) return <ErrorState message={errorText(sections.error, "sections")} onRetry={() => void sections.refetch()} />;
+  if (sections.isError) return <ErrorState message={formatApiError(sections.error)} onRetry={() => void sections.refetch()} />;
   if (items.length === 0) return <EmptyState title="No sections yet" description="Add sources and build the document structure first. Sections appear here once they exist." />;
 
   return <div className="grid gap-6">

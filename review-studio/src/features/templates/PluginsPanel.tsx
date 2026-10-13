@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -7,7 +8,9 @@ import { StructureView } from "@/components/shared/StructureView";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Unavailable, errorText, useActiveContext, useCapability } from "@/features/authoring/data";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useActiveContext } from "@/app/active-context";
+import { useCapability } from "@/lib/capability-registry";
 
 const text = (value: unknown) => typeof value === "string" ? value : Array.isArray(value) ? value.join(", ") : "-";
 
@@ -25,7 +28,7 @@ export function PluginsPanel() {
     <p className="text-sm text-muted-foreground">Review Studio only lists registered plugins; they are never executed here.</p>
     {!listed ? <Unavailable>The plugin registry is not available on this server.</Unavailable>
       : list.isPending ? <Skeleton className="h-16 w-full" />
-      : list.isError ? <ErrorState message={errorText(list.error, "plugins")} onRetry={() => void list.refetch()} />
+      : list.isError ? <ErrorState message={formatApiError(list.error)} onRetry={() => void list.refetch()} />
       : list.data.length === 0 ? <EmptyState title="No plugins registered" description="Plugins registered for this workspace appear here with their trust level." />
       : <Table aria-label="Plugins">
         <TableHeader><TableRow><TableHead>Plugin</TableHead><TableHead>Version</TableHead><TableHead>Capabilities</TableHead><TableHead>Trust</TableHead><TableHead className="w-28"><span className="sr-only">Details</span></TableHead></TableRow></TableHeader>
@@ -39,7 +42,7 @@ export function PluginsPanel() {
       </Table>}
     {selected && <section aria-label="Plugin detail" className="grid gap-2 rounded-lg border bg-card p-4">
       <h3 className="text-lg font-semibold">{selected}</h3>
-      {detail.isPending ? <Skeleton className="h-16 w-full" /> : detail.isError ? <ErrorState message={errorText(detail.error, "plugin")} onRetry={() => void detail.refetch()} /> : <StructureView value={detail.data} />}
+      {detail.isPending ? <Skeleton className="h-16 w-full" /> : detail.isError ? <ErrorState message={formatApiError(detail.error)} onRetry={() => void detail.refetch()} /> : <StructureView value={detail.data} />}
     </section>}
   </section>;
 }

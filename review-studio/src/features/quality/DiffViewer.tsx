@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -8,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ActionError, Unavailable, errorText, useAction, useCapability } from "@/features/authoring/data";
+import { ActionError, useAction } from "@/lib/actions";
+import { Unavailable } from "@/components/shared/Unavailable";
+import { useCapability } from "@/lib/capability-registry";
 import { Facts, reviewKeys } from "./data";
 import { reportRows } from "./inspection";
 
@@ -45,7 +48,7 @@ export function DiffPanel({ workspaceId }: { workspaceId: string | null }) {
   const compare = useAction(() => api.diffArtifacts!(left, right), { success: () => "Comparison ready.", onDone: setResult });
   if (!can("document.diff") || !api.diffArtifacts) return <Unavailable>Artifact comparison is not available on this server.</Unavailable>;
   if (artifacts.isPending) return <Skeleton className="h-24 w-full" />;
-  if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={errorText(artifacts.error, "artifacts")} onRetry={() => void artifacts.refetch()} />;
+  if (artifacts.isError) return <ErrorState title="Could not load artifacts" message={formatApiError(artifacts.error)} onRetry={() => void artifacts.refetch()} />;
   if (artifacts.data.length < 2) return <EmptyState title="Nothing to compare yet" description="Comparing needs two artifacts. Build the document again to produce a second one." />;
   const picker = (label: string, value: string, set: (id: string) => void) => <div className="grid gap-1"><Label htmlFor={`diff-${label}`}>{label}</Label>
     <Select value={value} onValueChange={id => { set(id); setResult(null); compare.reset(); }}>

@@ -24,10 +24,10 @@ describe("ReviewApiClient", () => {
   });
 
   it("appends /v2 to a bare origin and keeps an explicit /v2", async () => {
-    const fetcher = vi.fn(async () => jsonResponse({ items: [] }));
+    const fetcher = vi.fn(async (_input: RequestInfo | URL) => jsonResponse({ items: [] }));
     await new ReviewApiClient({ baseUrl: "https://review.test", fetch: fetcher }).pipeline.listRunPage();
     await new ReviewApiClient({ baseUrl: "https://review.test/v2/", fetch: fetcher }).pipeline.listRunPage();
-    expect(fetcher.mock.calls.map(call => call[0].toString())).toEqual(Array(2).fill("https://review.test/v2/runs?workspace_id=workspace-1"));
+    expect(fetcher.mock.calls.map(call => call[0].toString())).toEqual(["https://review.test/v2/runs?workspace_id=workspace-1", "https://review.test/v2/runs?workspace_id=workspace-1"]);
   });
 
   it("bootstraps an explicit local workspace before scoped content requests", async () => {

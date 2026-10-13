@@ -1,3 +1,4 @@
+import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -10,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { errorText } from "@/features/authoring/data";
+
 import { Facts, SeverityBadge, reviewKeys, toFindingRow, type FindingRow } from "./data";
 
 /** Where a finding came from and where to go next: its run's evidence, and the section to fix. */
@@ -38,7 +39,7 @@ export function FindingsPanel({ workspaceId, selectedId }: { workspaceId: string
     queryFn: async () => (await api.listFindings()).map(item => toFindingRow(item as unknown as Record<string, unknown>)),
   });
   if (findings.isPending) return <Skeleton className="h-24 w-full" />;
-  if (findings.isError) return <ErrorState title="Could not load findings" message={errorText(findings.error, "findings")} onRetry={() => void findings.refetch()} />;
+  if (findings.isError) return <ErrorState title="Could not load findings" message={formatApiError(findings.error)} onRetry={() => void findings.refetch()} />;
   const all = findings.data;
   if (all.length === 0) return <EmptyState title="No findings" description="Findings appear here after a run is verified. A clean workspace has none." />;
   const needle = filter.trim().toLowerCase();
