@@ -20,10 +20,11 @@ class Operation:
     path: str
     scope: str
     summary: str
-    handler: str  # method name on AuthoringRoutes
+    handler: str  # method name on the route object named by `routes`
     request: type[dto.AuthoringDTO] | None
     response: type[dto.AuthoringDTO]
     success_status: int = 200
+    routes: str = "authoring"  # key of the handler object ("authoring" or "sections")
 
     def request_ref(self) -> dict[str, str] | None:
         return _ref(self.request) if self.request else None
@@ -54,6 +55,19 @@ OPERATIONS: tuple[Operation, ...] = (
               "Ingest context answers", "ingest_context", dto.WorkspaceScopedRequest, dto.ContextIngestResponse),
     Operation(("context show",), "GET", f"{_DOC}/context/{{topic_id}}", "documents:read",
               "Show context topic", "show_context_topic", None, dto.ContextTopicResponse),
+    Operation(("build-section",), "POST", f"{_DOC}/sections/{{section_id}}/build", "documents:write",
+              "Build section scaffold", "build_section", dto.WorkspaceScopedRequest, dto.SectionBuildResponse,
+              routes="sections"),
+    Operation(("pack-context",), "POST", f"{_DOC}/context-pack", "documents:write",
+              "Pack authoring context", "pack_context", dto.ContextPackRequest, dto.ContextPackResponse,
+              routes="sections"),
+    Operation(("review-section",), "POST", f"{_DOC}/sections/{{section_id}}/review", "documents:write",
+              "Review section", "review_section", dto.ReviewRequest, dto.ReviewResponse, routes="sections"),
+    Operation(("review-document",), "POST", f"{_DOC}/review", "documents:write",
+              "Review document", "review_document", dto.DocumentReviewRequest, dto.ReviewResponse,
+              routes="sections"),
+    Operation(("stamp-section",), "POST", f"{_DOC}/sections/{{section_id}}/stamp", "documents:write",
+              "Stamp section", "stamp_section", dto.StampRequest, dto.StampResponse, routes="sections"),
     Operation(("context rm",), "DELETE", f"{_DOC}/context/{{topic_id}}", "documents:write",
               "Remove context topic", "remove_context_topic", None, dto.ContextRemoveResponse),
 )
@@ -62,6 +76,11 @@ OPERATIONS: tuple[Operation, ...] = (
 # wiring but reads/writes through the same application function.
 CLASSIFICATION_CLI_COMMAND = "document classify"
 CLASSIFICATION_ROUTE = "POST /v2/documents/{document_id}/classification"
+
+# `doc revise` keeps its historical route (declared by hand in openapi.py);
+# `SectionRoutes.revise` now serves it through the same canonical service.
+REVISION_CLI_COMMAND = "doc revise"
+REVISION_ROUTE = "POST /v2/documents/{document_id}/revisions"
 
 
 def match_operation(method: str, path: str) -> tuple[Operation, dict[str, str]] | None:
@@ -89,6 +108,7 @@ def match_operation(method: str, path: str) -> tuple[Operation, dict[str, str]] 
 def available_cli_routes() -> dict[str, str]:
     routes = {command: f"{op.method} {op.path}" for op in OPERATIONS for command in op.cli_commands}
     routes[CLASSIFICATION_CLI_COMMAND] = CLASSIFICATION_ROUTE
+    routes[REVISION_CLI_COMMAND] = REVISION_ROUTE
     return routes
 
 
@@ -100,7 +120,7 @@ def component_schemas() -> dict[str, dict[str, Any]]:
         for model in (op.request, op.response)
         if model is not None
     }
-    models |= {dto.ClassificationConfirmRequest, dto.ClassificationResponse}
+    models |= {dto.ClassificationConfirmRequest, dto.ClassificationResponse, dto.RevisionRequest, dto.RevisionResponse}
     schemas: dict[str, dict[str, Any]] = {}
     for model in sorted(models, key=lambda m: m.__name__):
         schema = model.model_json_schema(ref_template="#/components/schemas/{model}")

@@ -43,6 +43,7 @@ from .enterprise import encode_sse_event
 from .http import APIError, Request, Response, Router, paginate
 from .openapi import build_capability_catalog, build_openapi_document, canonical_json
 from .operations import match_operation
+from .section_routes import SectionRoutes
 from .workspace_dto import (
     WorkspaceCreateRequest,
     WorkspaceDeleteResponse,
@@ -152,11 +153,17 @@ class X20Application:
         self.classification_service = classification_service
         self.workspace_services_factory = workspace_services_factory
         self._workspace_services: dict[str, Any] = {}
+        self._workspace_locks: dict[str, threading.Lock] = {}
         self._authoring = AuthoringRoutes(
             workspace_root=self._authoring_workspace_root,
             services_for=self._workspace_services_for,
             import_service=self.import_service,
         )
+        self._sections = SectionRoutes(
+            workspace_root=self._authoring_workspace_root,
+            services_for=self._workspace_services_for,
+        )
+        self._operation_routes: dict[str, Any] = {"authoring": self._authoring, "sections": self._sections}
         self.workspace_scoped_auth = workspace_scoped_auth
         self._dynamic_routes: set[tuple[str, str]] = set()
         self._cancel_lock = threading.Lock()
@@ -454,7 +461,7 @@ class X20Application:
         matched = match_operation(method, path)
         if matched is not None:
             operation, params = matched
-            handler = getattr(self._authoring, operation.handler)
+            handler = getattr(self._operation_routes[operation.routes], operation.handler)
             return lambda request: handler(request, **params)
         if parts[:2] == ["v2", "documents"]:
             if len(parts) == 3 and method == "GET":
@@ -724,15 +731,22 @@ class X20Application:
         """Composed application services for one workspace, memoized per root."""
         if self.workspace_services_factory is None:
             raise APIError("authoring_unavailable", "Authoring services are not configured", 501)
-        with self._document_service_lock:
+        with self._document_service_lock:  # guards only the dicts, never the slow factory
             cached = self._workspace_services.get(workspace_root)
+            if cached is not None:
+                return cached
+            lock = self._workspace_locks.setdefault(workspace_root, threading.Lock())
+        with lock:  # per-root: one composition per root, other roots proceed
+            with self._document_service_lock:
+                cached = self._workspace_services.get(workspace_root)
             if cached is not None:
                 return cached
             try:
                 services = self.workspace_services_factory(workspace_root)
-            except (OSError, ValueError, KeyError) as exc:
+            except Exception as exc:
                 raise APIError("authoring_unavailable", str(exc), 503) from exc
-            self._workspace_services[workspace_root] = services
+            with self._document_service_lock:
+                self._workspace_services[workspace_root] = services
             return services
 
     @staticmethod
@@ -1438,6 +1452,8 @@ class X20Application:
         return Response.json(_dict(artifact))
 
     def _revision(self, document_id: str, request: Request) -> Response:
+        if self.workspace_services_factory is not None:
+            return self._sections.revise(request, document_id)
         self._document(document_id, request)
         data = request.json(object_only=True)
         if callable(self.revision_service):

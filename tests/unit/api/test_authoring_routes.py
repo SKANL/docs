@@ -2,17 +2,16 @@
 
 import base64
 import json
-from pathlib import Path
+import threading
 
 import pytest
 
 from docs.api.application import X20Application
 from docs.api.auth import Principal
-from docs.api.http import Request
+from docs.api.http import APIError, Request
 from docs.api.openapi import build_capability_catalog, build_openapi_document
+from docs.application.imports import ImportError
 from docs.application.workspaces import WorkspaceRegistry
-from docs.composition import compose_application
-from docs.domain.workspace import Workspace
 
 NEW_COMMANDS = {
     "asset add": ("POST", "documents:write"),
@@ -28,66 +27,12 @@ NEW_COMMANDS = {
 }
 
 
-class Runs:
-    def put(self, item): ...
-    def get(self, key): return None
-    def list(self): return []
-
-
-class Queue:
-    def enqueue(self, job_id, payload): ...
-
-
-class Passports:
-    def get(self, key): return None
-
-
-class Artifacts:
-    def list(self): return []
-    def get(self, key): return None
-
-
-class Graphs:
-    def get(self): return None
-
-
 def body(response):
     return json.loads(response.body)
 
 
 def b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
-
-
-@pytest.fixture
-def api(tmp_path):
-    registry = WorkspaceRegistry(tmp_path / "registry.json")
-    workspace = registry.create("Docs", tmp_path / "ws")
-
-    def services(root):
-        root = Path(root)
-        return compose_application(Workspace(root / "documents", root / "templates", root=root))
-
-    application = X20Application(
-        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
-        document_service_factory=lambda root: services(root).documents,
-        workspace_services_factory=services,
-    )
-    wid = workspace["id"]
-    created = application.dispatch(Request("POST", "/v2/documents", body={
-        "workspace_id": wid, "document_id": "doc", "template": "documento-generico", "title": "Doc",
-    }))
-    assert created.status == 201
-    ws_root = Path(workspace["root"])
-
-    def call(method, path, payload=None, **kw):
-        sep = "&" if "?" in path else "?"
-        return application.dispatch(Request(method, f"{path}{sep}workspace_id={wid}", body=payload, **kw))
-
-    call.app, call.wid, call.ws_root = application, wid, ws_root
-    call.doc_root = ws_root / "documents" / "doc"
-    return call
 
 
 def test_asset_add_list_remove_roundtrip(api):
@@ -272,12 +217,117 @@ def test_openapi_declares_every_authoring_route_with_scopes():
     assert {"document_id", "topic_id", "workspace_id"} <= {p["name"] for p in item["parameters"]}
 
 
-def test_routes_report_unavailable_when_services_factory_missing(tmp_path):
+def test_routes_report_unavailable_when_services_factory_missing(tmp_path, stores):
     registry = WorkspaceRegistry(tmp_path / "r.json")
     ws = registry.create("W", tmp_path / "w")
     app = X20Application(
-        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        **stores, workspace_registry=registry,
     )
     response = app.dispatch(Request("GET", f"/v2/documents/doc/assets?workspace_id={ws['id']}"))
     assert response.status == 501  # 5xx codes are masked by the error normalizer
+
+
+# -- S2.1 advisory findings ---------------------------------------------------
+@pytest.mark.parametrize("content", [
+    "{not json", "5", '"text"', "null", "[1, 2]", '{"entries": {"a/x.md": 3}}', '{"items": [1]}',
+])
+def test_corrupt_classification_queue_is_a_structured_4xx(api, content):
+    inbox = api.doc_root / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "_classification-queue.json").write_text(content, encoding="utf-8")
+    for response in (
+        api("GET", "/v2/documents/doc/classification"),
+        api("POST", "/v2/documents/doc/classification", {"relative_path": "a/x.md", "confirmed_role": "evidence"}),
+    ):
+        assert response.status == 400, (content, response.body)
+        assert body(response)["error"]["code"] == "invalid_classification"
+
+
+def test_ingest_resolves_context_before_writing_any_upload(api, monkeypatch):
+    def unresolvable(deps, document_id):
+        raise APIError("document_unresolvable", "broken", 400)
+
+    monkeypatch.setattr(api.app._authoring, "_resolve", unresolvable)
+    response = api("POST", "/v2/documents/doc/ingest", {"files": [{"filename": "a.md", "content_base64": b64(b"# A\n")}]})
+    assert response.status == 400
+    assert not list((api.doc_root / "inbox").glob("*a.md")) if (api.doc_root / "inbox").exists() else True
+
+
+def test_ingest_removes_this_requests_uploads_when_a_later_upload_fails(api, monkeypatch):
+    service = api.app._authoring._import
+    real, calls = service.import_bytes, []
+
+    def flaky(*args, **kwargs):
+        calls.append(args[1])
+        if len(calls) == 2:
+            raise ImportError("source_too_large")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(service, "import_bytes", flaky)
+    response = api("POST", "/v2/documents/doc/ingest", {"files": [
+        {"filename": "a.md", "content_base64": b64(b"# A\n")},
+        {"filename": "b.md", "content_base64": b64(b"# B\n")},
+    ]})
+    assert response.status == 400 and body(response)["error"]["code"] == "source_too_large"
+    assert not list((api.doc_root / "inbox").glob("*-a.md"))
+
+
+def test_ingest_pipeline_failure_is_a_structured_error(api):
+    deps = api.app._workspace_services_for(str(api.ws_root.resolve()))
+
+    def boom():
+        raise ValueError("pipeline exploded")
+
+    deps.create_source_pipeline = boom
+    response = api("POST", "/v2/documents/doc/ingest")
+    assert response.status == 400 and body(response)["error"]["code"] == "ingest_failed"
+
+
+def test_remove_context_topic_without_saved_content_is_idempotent_like_the_cli(api):
+    api("POST", "/v2/documents/doc/context/requests", {"topic": "tema"})
+    response = api("DELETE", "/v2/documents/doc/context/tema")
+    assert response.status == 200 and body(response)["removed"] == "tema"
+    assert api("DELETE", "/v2/documents/doc/context/unknown-topic").status == 404
+
+
+def test_remove_asset_honours_the_kind_parameter(api):
+    api("POST", "/v2/documents/doc/assets", {"filename": "cover.docx", "content_base64": b64(b"PKdocx")})
+    bad = api("DELETE", "/v2/documents/doc/assets/cover?kind=bogus")
+    assert bad.status == 400 and body(bad)["error"]["code"] == "invalid_asset_kind"
+    assert (api.doc_root / "assets" / "cover.docx").exists()
+    assert api("DELETE", "/v2/documents/doc/assets/cover?kind=docx").status == 200
+
+
+def test_unexpected_factory_failure_is_a_503_structured_error(tmp_path, stores):
+    registry = WorkspaceRegistry(tmp_path / "r.json")
+    ws = registry.create("W", tmp_path / "w")
+
+    def broken(root):
+        raise RuntimeError("compose failed")
+
+    app = X20Application(**stores, workspace_registry=registry, workspace_services_factory=broken)
+    response = app.dispatch(Request("GET", f"/v2/documents/doc/assets?workspace_id={ws['id']}"))
+    assert response.status == 503
+
+
+def test_a_slow_factory_for_one_root_does_not_block_another(tmp_path, stores):
+    registry = WorkspaceRegistry(tmp_path / "r.json")
+    started, release = threading.Event(), threading.Event()
+
+    def factory(root):
+        if root.endswith("slow"):
+            started.set()
+            assert release.wait(10)
+        return object()
+
+    app = X20Application(**stores, workspace_registry=registry, workspace_services_factory=factory)
+    slow = threading.Thread(target=app._workspace_services_for, args=(str(tmp_path / "slow"),))
+    slow.start()
+    try:
+        assert started.wait(5)
+        done = threading.Event()
+        threading.Thread(target=lambda: (app._workspace_services_for(str(tmp_path / "fast")), done.set())).start()
+        assert done.wait(3), "fast root must not wait for the slow factory"
+    finally:
+        release.set()
+        slow.join(5)
