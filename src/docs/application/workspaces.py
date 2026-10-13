@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+import time
 from importlib.resources import files
 from pathlib import Path
 from threading import RLock
@@ -28,11 +30,23 @@ class WorkspaceRegistryError(ValueError):
         super().__init__(f"{code}: {path}" if path is not None else code)
 
 
+# One lock per registry file, shared by every instance in this process: the
+# sidecar composes a registry per request, and per-instance locks let a write
+# race a read of the same file (on Windows the replace then fails outright).
+_PATH_LOCKS: dict[Path, RLock] = {}
+_PATH_LOCKS_GUARD = RLock()
+
+
+def _lock_for(path: Path) -> RLock:
+    with _PATH_LOCKS_GUARD:
+        return _PATH_LOCKS.setdefault(path, RLock())
+
+
 class WorkspaceRegistry:
     def __init__(self, registry_path: str | Path | None = None) -> None:
         configured = registry_path or os.environ.get("DOCS_WORKSPACE_REGISTRY")
         self.path = Path(configured or (Path.home() / ".docs" / "workspaces.json")).expanduser().resolve()
-        self._lock = RLock()
+        self._lock = _lock_for(self.path)
 
     def list(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -187,9 +201,21 @@ class WorkspaceRegistry:
 
     def _write(self, value: dict[str, Any]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
-        temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        temporary.replace(self.path)
+        handle, name = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name, suffix=".tmp")
+        temporary = Path(name)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+        # ponytail: bounded retry for another PROCESS (CLI vs sidecar) holding the file
+        # open on Windows; in-process access is already serialized by the path lock.
+        for attempt in range(50):
+            try:
+                temporary.replace(self.path)
+                return
+            except PermissionError:
+                if attempt == 49:
+                    temporary.unlink(missing_ok=True)
+                    raise
+                time.sleep(0.02)
 
     @staticmethod
     def _name(value: str) -> str:
