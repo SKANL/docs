@@ -50,7 +50,7 @@ missing.
 - [x] G2 Persist review `Issue.to_dict()` lists in each revision-log entry
       (`application/revision.py`), so revisions link to the findings they
       produced.
-- [ ] G3 Stable fact ids (hash of classification|claim|source) and a
+- [x] G3 Stable fact ids (hash of classification|claim|source) and a
       structured `source_path` on ledger facts when the source is a file.
 - [ ] G4 Pure domain projector `domain/document_graph.py`: snapshot of the
       above -> `SemanticGraph` (kinds: document, section, source, evidence,
@@ -83,4 +83,5 @@ missing.
 - Branch: `feat/document-graph` (from main f4a8803c).
 - G1 done: RED `KeyError: 'section_id'` (store returned whole log as one record), GREEN after reading `entries`; test_sidecar.py 30 passed, ruff, mypy clean.
 - G2 done: RED 2 failed (no `issues`/`id` in entry), GREEN after persisting `Issue.to_dict()` lists (section + document, topic ripple too) and `id = sha256_content(entry)`; old logs load unchanged (entries are only appended). test_revision + test_section_routes 38 passed, ruff, mypy clean.
-- Next: G3.
+- G3 done: RED ImportError `identify_facts`; GREEN with `domain/collection.py:identify_facts` (id = sha256 of the dedupe key, first 16 hex; `source_path` when the source is a collected file; dependency facts carry their manifest path). Ledger render reads only classification/claim, so its output is unchanged (`-k ledger` green). Collection tests green, ruff, mypy clean. `ledger_seed` is template config, never persisted, so it is untouched.
+- Next: G4.
