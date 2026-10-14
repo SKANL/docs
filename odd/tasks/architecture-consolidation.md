@@ -42,6 +42,9 @@ domain logic out of giant adapters.
 - [x] T5 Move locking/guard helpers behind the composition root for cli
       (`document_release`, `document_batch`, `document_app`); empty the T1
       allowlist. Route: delegated writer.
+- [ ] T5b Provenance port: inject the ledger through the composition root so
+      `application/provenance.py` drops its infrastructure import; delete
+      `KNOWN_EXCEPTIONS`. Route: delegated. (Added after T5 deviation.)
 - [ ] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
       in domain/identity-adjacent module; replace duplicates. Route: delegated.
 - [ ] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
@@ -52,9 +55,9 @@ domain logic out of giant adapters.
       delegated.
 - [ ] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
       helpers to their own module. Route: delegated.
-- [x] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
+- [ ] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
       Route: delegated.
-- [x] T11 Contributor map: short "where do I add X" section in AGENTS.md.
+- [ ] T11 Contributor map: short "where do I add X" section in AGENTS.md.
       Route: inline.
 
 ## Acceptance
