@@ -3,12 +3,11 @@ import hashlib
 import pytest
 
 from docs.domain.block_grouping import group_runs_into_blocks
+from docs.domain.pdf_layout import ObjectSnapshot, missing_expected_lines
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement, WriteDiagnostic
 from docs.domain.text_fitting import FittedText, fit_text_to_block
 from docs.infrastructure.pdf.pypdfium2_text_edit_adapter import (
     Pypdfium2TextEditAdapter,
-    _missing_expected_lines,
-    _ObjectSnapshot,
 )
 
 
@@ -318,12 +317,12 @@ def test_missing_replacement_lines_prevent_publication(sample_pdf, tmp_path, mon
 
 def test_missing_replacement_lines_are_reported_in_expected_order():
     expected = (
-        _ObjectSnapshot(0, "first", (0, 0, 10, 10)),
-        _ObjectSnapshot(1, "second", (0, 10, 10, 20)),
+        ObjectSnapshot(0, "first", (0, 0, 10, 10)),
+        ObjectSnapshot(1, "second", (0, 10, 10, 20)),
     )
-    actual = (_ObjectSnapshot(4, "second", (0, 10, 10, 20)),)
+    actual = (ObjectSnapshot(4, "second", (0, 10, 10, 20)),)
 
-    assert _missing_expected_lines(expected, actual) == (expected[0],)
+    assert missing_expected_lines(expected, actual) == (expected[0],)
 
 
 def _object_kinds(path):

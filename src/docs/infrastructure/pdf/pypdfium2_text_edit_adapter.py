@@ -34,6 +34,20 @@ from docs.domain.alignment import Alignment
 from docs.domain.block_grouping import DOMINANT_STYLE_SHARE, TextRun
 from docs.domain.fonts import needs_embedded_font, substitute_font
 from docs.domain.pdf_id import normalize_pdf_id
+from docs.domain.pdf_layout import (
+    Bounds,
+    ObjectSnapshot,
+    drop_unmapped,
+    line_x,
+    match_key,
+    missing_expected_lines,
+    outside,
+    overlaps,
+    permitted_bounds,
+    strip_subset_tag,
+    styled,
+    union,
+)
 from docs.domain.ports.pdf_text_edit_port import (
     BlockReplacement,
     WriteDiagnostic,
@@ -43,30 +57,15 @@ from docs.infrastructure.fonts.dejavu_font_source import DejaVuFontSource
 
 _LINE_SPACING = 1.18
 
-# PDFium bounds are floating-point measurements. Differences up to half a
-# point are treated as equivalent at every post-save geometry boundary.
-POST_WRITE_TOLERANCE_POINTS = 0.5
-
-_Bounds = tuple[float, float, float, float]
-
-
-@dataclass(frozen=True)
-class _ObjectSnapshot:
-    object_index: int
-    text: str | None
-    bounds: _Bounds
-
 
 @dataclass(frozen=True)
 class _VerificationSpec:
     page: int
     replacement_index: int
-    permitted_bounds: _Bounds
-    expected_lines: tuple[_ObjectSnapshot, ...]
-    untouched: tuple[_ObjectSnapshot, ...]
+    permitted_bounds: Bounds
+    expected_lines: tuple[ObjectSnapshot, ...]
+    untouched: tuple[ObjectSnapshot, ...]
 
-# Subset tags are exactly six uppercase letters followed by "+".
-_SUBSET_TAG_LENGTH = 6
 
 # Original fonts are embedded as SUBSETS holding only the glyphs the document
 # already used, so a target-language glyph that never appeared is simply not
@@ -103,62 +102,6 @@ _SUBSET_TAG_LENGTH = 6
 # quietly guessed at.
 # Family classification and the measured advances now live in `domain/fonts.py`,
 # so the layout code and the writer cannot disagree about which face is used.
-
-# Base-14 covers four styles per family, so italic and bold survive the
-# substitution instead of being flattened. The source book distinguishes
-# spoken words from inner thought purely with italics; dropping that loses
-# meaning the author put there deliberately.
-_BASE14 = {
-    b"Times-Roman": (b"Times-Roman", b"Times-Bold", b"Times-Italic", b"Times-BoldItalic"),
-    b"Helvetica": (b"Helvetica", b"Helvetica-Bold", b"Helvetica-Oblique", b"Helvetica-BoldOblique"),
-    b"Courier": (b"Courier", b"Courier-Bold", b"Courier-Oblique", b"Courier-BoldOblique"),
-}
-
-def _styled(font: bytes, bold: bool, italic: bool) -> bytes:
-    regular, bold_face, italic_face, both = _BASE14[font]
-    if bold and italic:
-        return both
-    if bold:
-        return bold_face
-    if italic:
-        return italic_face
-    return regular
-
-
-def _line_start(replacement: BlockReplacement, line_number: int) -> float:
-    """The left edge available to one line, before alignment moves it.
-
-    Line 0 keeps the start the original had; a hanging indent means that is
-    NOT the block's leftmost edge.
-    """
-    if line_number == 0 and replacement.first_line_x:
-        return replacement.first_line_x
-    return replacement.x
-
-
-def _line_x(replacement: BlockReplacement, line: str, line_number: int) -> float:
-    """Where one laid-out line starts, honouring the block's alignment.
-
-    Measured with the fitter's OWN calibration rather than a fresh guess: two
-    different width estimates for the same line would place it somewhere the
-    wrapper never intended.
-    """
-    left = _line_start(replacement, line_number)
-    # A justified line reaching here is the paragraph's LAST one, which a
-    # justified paragraph never stretches -- it sits flush left. Without this
-    # it fell through to the right-aligned branch and every paragraph ended
-    # with a line pushed against the right margin.
-    if (
-        replacement.alignment in (Alignment.LEFT, Alignment.JUSTIFY)
-        or replacement.right <= left
-    ):
-        return left
-    slack = (replacement.right - left) - replacement.fitted.line_width(line)
-    if slack <= 0:
-        return left
-    if replacement.alignment is Alignment.CENTER:
-        return left + slack / 2
-    return left + slack
 
 
 # How far a drawn line may be re-shrunk to fit its column before we accept
@@ -266,31 +209,6 @@ def _standard_font_for(family: str) -> tuple[bytes, bool]:
     return name.encode("ascii"), recognized
 
 
-def _strip_subset_tag(name: str) -> str:
-    """`GGKEDP+DejaVuSans` -> `DejaVuSans`; anything else is returned as-is."""
-    prefix, plus, rest = name.partition("+")
-    if plus and len(prefix) == _SUBSET_TAG_LENGTH and prefix.isalpha() and prefix.isupper():
-        return rest
-    return name
-
-
-def _drop_unmapped(text: str) -> str:
-    """Remove control characters left by glyphs the font never mapped.
-
-    A PDF whose font encoding is incomplete hands back raw CID codes instead
-    of Unicode -- exactly what `pdf-inspector` means by `has_encoding_issues`,
-    which this document reported and which was ignored once already. Measured
-    on a 120-page book: 17 U+0002 and 3 U+0001, each a hyphen or ligature at
-    a line break, reaching the reader as visible garbage.
-
-    Dropping them is right for the common case rather than merely tidy: the
-    character is a LINE-BREAK hyphen, so "mis" + "interpreted" rejoins as
-    "misinterpreted", which is the word the author wrote. Keeping a code we
-    cannot decode only guarantees it reaches the reader as noise.
-    """
-    return "".join(ch for ch in text if ch.isprintable() or ch.isspace())
-
-
 def _object_text(obj: Any, textpage: Any) -> str:
     length = pdfium_c.FPDFTextObj_GetText(obj, textpage, None, 0)
     if length <= 0:
@@ -299,7 +217,7 @@ def _object_text(obj: Any, textpage: Any) -> str:
     pdfium_c.FPDFTextObj_GetText(
         obj, textpage, ctypes.cast(buffer, ctypes.POINTER(ctypes.c_ushort)), length
     )
-    return _drop_unmapped(buffer.raw[: length * 2].decode("utf-16-le").rstrip("\x00"))
+    return drop_unmapped(buffer.raw[: length * 2].decode("utf-16-le").rstrip("\x00"))
 
 
 def _is_rotated(obj: Any) -> bool:
@@ -349,63 +267,6 @@ def _object_bounds(obj: Any) -> tuple[float, float, float, float]:
     return left.value, bottom.value, right.value, top.value
 
 
-def _outside(inner: _Bounds, outer: _Bounds) -> bool:
-    tolerance = POST_WRITE_TOLERANCE_POINTS
-    return (
-        inner[0] < outer[0] - tolerance
-        or inner[1] < outer[1] - tolerance
-        or inner[2] > outer[2] + tolerance
-        or inner[3] > outer[3] + tolerance
-    )
-
-
-def _overlaps(first: _Bounds, second: _Bounds) -> bool:
-    tolerance = POST_WRITE_TOLERANCE_POINTS
-    return (
-        min(first[2], second[2]) - max(first[0], second[0]) > tolerance
-        and min(first[3], second[3]) - max(first[1], second[1]) > tolerance
-    )
-
-
-def _union(bounds: list[_Bounds]) -> _Bounds:
-    return (
-        min(item[0] for item in bounds),
-        min(item[1] for item in bounds),
-        max(item[2] for item in bounds),
-        max(item[3] for item in bounds),
-    )
-
-
-def _missing_expected_lines(
-    expected: tuple[_ObjectSnapshot, ...], actual: list[_ObjectSnapshot] | tuple[_ObjectSnapshot, ...]
-) -> tuple[_ObjectSnapshot, ...]:
-    remaining = list(actual)
-    missing: list[_ObjectSnapshot] = []
-    for item in expected:
-        for index, candidate in enumerate(remaining):
-            if candidate.text == item.text:
-                remaining.pop(index)
-                break
-        else:
-            missing.append(item)
-    return tuple(missing)
-
-
-def _permitted_bounds(
-    replacement: BlockReplacement, expected_lines: tuple[_ObjectSnapshot, ...]
-) -> _Bounds:
-    starts = [replacement.x]
-    if replacement.first_line_x:
-        starts.append(replacement.first_line_x)
-    source_bottom = min((run.y for run in replacement.remove), default=replacement.top)
-    baseline = replacement.baseline or (replacement.top - replacement.fitted.font_size)
-    first_line_bottom = (
-        expected_lines[0].bounds[1] if expected_lines else source_bottom
-    )
-    ink_descent = min(0.0, first_line_bottom - baseline)
-    return min(starts), source_bottom + ink_descent, replacement.right, replacement.top
-
-
 def _text_objects(page: Any, textpage: Any) -> list[tuple[Any, str, tuple[float, float, float, float]]]:
     """Every text object on the page, with its text and bounds, read once.
 
@@ -421,12 +282,6 @@ def _text_objects(page: Any, textpage: Any) -> list[tuple[Any, str, tuple[float,
             continue
         found.append((obj, _object_text(obj, textpage), _object_bounds(obj)))
     return found
-
-
-def _match_key(text: str, left: float, bottom: float) -> tuple[str, float, float]:
-    """Objects are re-read from a freshly opened document, so pointers differ
-    between the read and the write. Text plus rounded position is the join."""
-    return text, round(left, 1), round(bottom, 1)
 
 
 class Pypdfium2TextEditAdapter:
@@ -473,8 +328,8 @@ class Pypdfium2TextEditAdapter:
         if handle:
             cache[key] = (handle, True)
         else:
-            styled = _styled(face, bold, italic)
-            cache[key] = (pdfium_c.FPDFText_LoadStandardFont(document.raw, styled), False)
+            styled_face = styled(face, bold, italic)
+            cache[key] = (pdfium_c.FPDFText_LoadStandardFont(document.raw, styled_face), False)
         return cache[key]
 
     def read_runs(self, pdf_path: Path) -> list[TextRun]:
@@ -528,7 +383,7 @@ class Pypdfium2TextEditAdapter:
             return ""
         buffer = ctypes.create_string_buffer(length)
         pdfium_c.FPDFFont_GetBaseFontName(font, buffer, length)
-        return _strip_subset_tag(buffer.value.decode("utf-8", errors="replace"))
+        return strip_subset_tag(buffer.value.decode("utf-8", errors="replace"))
 
     def write_blocks(
         self, pdf_path: Path, out_path: Path, replacements: list[BlockReplacement]
@@ -570,7 +425,7 @@ class Pypdfium2TextEditAdapter:
                         _VerificationSpec(
                             page=page_index,
                             replacement_index=replacement_indices[id(replacement)],
-                            permitted_bounds=_permitted_bounds(replacement, expected_lines),
+                            permitted_bounds=permitted_bounds(replacement, expected_lines),
                             expected_lines=expected_lines,
                             untouched=untouched,
                         )
@@ -614,16 +469,16 @@ class Pypdfium2TextEditAdapter:
         self, page: Any, replacements: list[BlockReplacement]
     ) -> tuple[
         list[tuple[BlockReplacement, list[Any]]],
-        tuple[_ObjectSnapshot, ...],
+        tuple[ObjectSnapshot, ...],
     ]:
         """Match each replacement to its page objects, then CLOSE the textpage."""
         lookup: dict[tuple[str, float, float], int] = {}
         for index, replacement in enumerate(replacements):
             for run in replacement.remove:
-                lookup[_match_key(run.text, run.x, run.y)] = index
+                lookup[match_key(run.text, run.x, run.y)] = index
 
         matched: dict[int, list[Any]] = {index: [] for index in range(len(replacements))}
-        objects: list[tuple[int, Any, str | None, _Bounds]] = []
+        objects: list[tuple[int, Any, str | None, Bounds]] = []
         textpage = pdfium_c.FPDFText_LoadPage(page.raw)
         try:
             for object_index in range(pdfium_c.FPDFPage_CountObjects(page.raw)):
@@ -638,14 +493,14 @@ class Pypdfium2TextEditAdapter:
                 if text is None:
                     continue
                 left, bottom, _, _ = bounds
-                target = lookup.get(_match_key(text, left, bottom))
+                target = lookup.get(match_key(text, left, bottom))
                 if target is not None:
                     matched[target].append(obj)
         finally:
             pdfium_c.FPDFText_ClosePage(textpage)
         targeted = {id(obj) for group in matched.values() for obj in group}
         untouched = tuple(
-            _ObjectSnapshot(index, text, bounds)
+            ObjectSnapshot(index, text, bounds)
             for index, obj, text, bounds in objects
             if text is not None and id(obj) not in targeted
         )
@@ -669,7 +524,7 @@ class Pypdfium2TextEditAdapter:
                 textpage = pdfium_c.FPDFText_LoadPage(page.raw)
                 try:
                     written = [
-                        _ObjectSnapshot(index, text, bounds)
+                        ObjectSnapshot(index, text, bounds)
                         for index, (obj, text, bounds) in enumerate(
                             _text_objects(page, textpage)
                         )
@@ -680,7 +535,7 @@ class Pypdfium2TextEditAdapter:
                 page_bounds = (0.0, 0.0, float(page.get_width()), float(page.get_height()))
                 used: set[int] = set()
                 for spec in page_specs:
-                    actual_lines: list[_ObjectSnapshot] = []
+                    actual_lines: list[ObjectSnapshot] = []
                     for expected in spec.expected_lines:
                         candidates = [
                             item
@@ -699,22 +554,22 @@ class Pypdfium2TextEditAdapter:
                         used.add(actual.object_index)
                         actual_lines.append(actual)
 
-                    missing = _missing_expected_lines(spec.expected_lines, actual_lines)
+                    missing = missing_expected_lines(spec.expected_lines, actual_lines)
                     if missing:
                         diagnostics.append(
                             WriteDiagnostic(
                                 code="pdf.write.missing_replacement_lines",
                                 page=page_index + 1,
                                 replacement_index=spec.replacement_index,
-                                bounds=_union([item.bounds for item in missing]),
-                                reference_bounds=_union([item.bounds for item in spec.expected_lines]),
+                                bounds=union([item.bounds for item in missing]),
+                                reference_bounds=union([item.bounds for item in spec.expected_lines]),
                             )
                         )
                     if not actual_lines:
                         continue
-                    actual_bounds = _union([item.bounds for item in actual_lines])
+                    actual_bounds = union([item.bounds for item in actual_lines])
                     page_number = page_index + 1
-                    if _outside(actual_bounds, spec.permitted_bounds):
+                    if outside(actual_bounds, spec.permitted_bounds):
                         diagnostics.append(
                             WriteDiagnostic(
                                 code="pdf.write.clipped",
@@ -724,7 +579,7 @@ class Pypdfium2TextEditAdapter:
                                 reference_bounds=spec.permitted_bounds,
                             )
                         )
-                    if _outside(actual_bounds, page_bounds):
+                    if outside(actual_bounds, page_bounds):
                         diagnostics.append(
                             WriteDiagnostic(
                                 code="pdf.write.outside_page_bounds",
@@ -735,7 +590,7 @@ class Pypdfium2TextEditAdapter:
                             )
                         )
                     for untouched in spec.untouched:
-                        if any(_overlaps(line.bounds, untouched.bounds) for line in actual_lines):
+                        if any(overlaps(line.bounds, untouched.bounds) for line in actual_lines):
                             diagnostics.append(
                                 WriteDiagnostic(
                                     code="pdf.write.overlaps_untouched_object",
@@ -765,7 +620,7 @@ class Pypdfium2TextEditAdapter:
     def _draw(
         self, document: Any, page: Any, replacement: BlockReplacement,
         font_cache: dict[Any, Any],
-    ) -> tuple[int, bool, bool, tuple[_ObjectSnapshot, ...]]:
+    ) -> tuple[int, bool, bool, tuple[ObjectSnapshot, ...]]:
         family = replacement.remove[0].font_family if replacement.remove else ""
         font_name, recognized = _standard_font_for(family)
         # Matches `TextBlock._dominant`: a block goes italic only when it is
@@ -781,14 +636,14 @@ class Pypdfium2TextEditAdapter:
         )
         size = replacement.fitted.font_size
         lines = replacement.fitted.lines
-        expected_lines: list[_ObjectSnapshot] = []
+        expected_lines: list[ObjectSnapshot] = []
         for line_number, line in enumerate(lines):
             obj, size = _place_within(
                 document,
                 font,
                 line,
                 size,
-                _line_x(replacement, line, line_number),
+                line_x(replacement, line, line_number),
                 replacement.right,
                 # A justified paragraph never stretches its LAST line.
                 justify=(
@@ -804,7 +659,7 @@ class Pypdfium2TextEditAdapter:
             pdfium_c.FPDFPageObj_Transform(obj, 1, 0, 0, 1, 0, first - line_number * leading)
             pdfium_c.FPDFPage_InsertObject(page.raw, obj)
             expected_lines.append(
-                _ObjectSnapshot(
+                ObjectSnapshot(
                     object_index=pdfium_c.FPDFPage_CountObjects(page.raw) - 1,
                     text=line,
                     bounds=_object_bounds(obj),

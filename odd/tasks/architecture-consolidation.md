@@ -55,7 +55,7 @@ domain logic out of giant adapters.
       delegated.
 - [x] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
       helpers to their own module. Route: delegated.
-- [ ] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
+- [x] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
       Route: delegated.
 - [ ] T11 Contributor map: short "where do I add X" section in AGENTS.md.
       Route: inline.
@@ -202,4 +202,16 @@ domain logic out of giant adapters.
   `_parse_part` with the rest of the adapter, so moving them would only
   relocate the coupling. Targeted theme/infrastructure/docx/architecture 498
   passed; ruff, mypy clean.
-- Next: T10.
+- T10 done. Moved to `domain/pdf_layout.py` (all verified free of
+  pdfium/ctypes): `styled` + `BASE14`, `line_start`, `line_x`, `outside`,
+  `overlaps`, `union`, `missing_expected_lines`, `permitted_bounds`,
+  `match_key`, `strip_subset_tag`, `drop_unmapped`, plus `ObjectSnapshot`,
+  `Bounds`, `POST_WRITE_TOLERANCE_POINTS`. Call order in the adapter is
+  untouched (read/write phase comments intact); `text_fitting` already covered
+  nothing of these, so nothing duplicated. Adapter 813 -> ~660 lines. Tests:
+  `tests/unit/domain/test_pdf_layout.py` (10) added AFTER the move (honest
+  note: this was a verbatim move, so characterisation tests, no observed RED);
+  the integration test now imports `ObjectSnapshot`/`missing_expected_lines`
+  from the domain. Targeted pdf/translate/architecture/infrastructure 520
+  passed; ruff check, mypy clean.
+- Next: T11.
