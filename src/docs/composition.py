@@ -25,6 +25,7 @@ from docs.application.docx_assembly import DocxRendererAdapter
 from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
+from docs.application.graph_queries import GraphQueryService
 from docs.application.html_render import HtmlRendererAdapter
 from docs.application.ingest import IngestService
 from docs.application.package_publication_service import PackagePublicationService
@@ -96,7 +97,6 @@ from docs.infrastructure.persistence.json_section_repository import JsonSectionR
 from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteFindingStore,
-    SqliteGraphStore,
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -238,10 +238,6 @@ class RuntimeStores:
         return SqlitePublicationStore(self.state)
 
     @cached_property
-    def graph(self) -> SqliteGraphStore:
-        return SqliteGraphStore(self.state)
-
-    @cached_property
     def leases(self) -> SqliteLeaseStore:
         return SqliteLeaseStore(self.state)
 
@@ -294,6 +290,7 @@ class ApplicationComposition:
     package_publications: PackagePublicationService
     provenance_ledger: LedgerFactory
     rules_manifest_state: Callable[[dict[str, Any]], tuple[bool, int]]
+    graph_queries: GraphQueryService
 
     def __init__(
         self,
@@ -316,6 +313,7 @@ class ApplicationComposition:
         self._wire_pdf_translation_tools()
         self._wire_document_services()
         self._wire_delivery()
+        self.graph_queries = GraphQueryService(open_document_graph_reader(self.workspace.root))
 
     def _wire_repositories(self) -> None:
         self.document_repository = JsonDocumentRepository(self.workspace)

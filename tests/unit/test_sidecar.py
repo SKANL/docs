@@ -605,7 +605,7 @@ def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None
     assert application.application.queue.path == tmp_path / ".docs" / "runtime.sqlite3"
     assert application.application.passport_store.path == tmp_path / ".docs" / "runtime.sqlite3"
     assert application.application.artifact_store.path == tmp_path / ".docs" / "runtime.sqlite3"
-    assert application.application.graph_store.path == tmp_path / ".docs" / "runtime.sqlite3"
+    assert not hasattr(application.application, "graph_store")  # the document graph is projected on read
 
 
 def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
@@ -619,7 +619,7 @@ def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
         workspace_id = open_workspace_registry(tmp_path / ".docs" / "workspaces.json").list()[0]["id"]
         url = f"http://127.0.0.1:{server.server_address[1]}/v2/graph?workspace_id={workspace_id}"
         with urllib.request.urlopen(url, timeout=2) as response:
-            assert json.load(response) == {"nodes": [], "edges": []}
+            assert json.load(response) == {"nodes": [], "edges": [], "no_data": True}
     finally:
         server.shutdown()
         thread.join(timeout=2)
@@ -705,6 +705,26 @@ def test_revision_store_lists_each_entry_of_the_real_revision_log(tmp_path: Path
     items = WorkspaceJsonCollectionStore(tmp_path, "revisions", registry).list()
 
     assert [item["section_id"] for item in items] == ["a", "b"]
+
+
+def test_revision_records_carry_the_document_and_the_id_the_graph_uses(tmp_path: Path) -> None:
+    from docs.composition import open_workspace_registry
+    from docs.domain.identity import sha256_content
+    from docs.sidecar.stores import WorkspaceJsonCollectionStore
+
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
+    workspace = registry.create("Workspace", tmp_path / "workspace")
+    registry.select(workspace["id"])
+    revisions = Path(workspace["root"]) / "documents" / "tesis" / "sections" / "_revisions"
+    revisions.mkdir(parents=True)
+    legacy = {"section_id": "a", "ts": "t1"}
+    log = {"schema": 1, "entries": [{"id": "kept", "section_id": "b", "ts": "t2"}, legacy]}
+    (revisions / "revision-log.json").write_text(json.dumps(log), encoding="utf-8")
+
+    items = WorkspaceJsonCollectionStore(tmp_path, "revisions", registry).list()
+
+    # a legacy entry gets the same content hash the document graph derives for it
+    assert [(i["id"], i["document_id"]) for i in items] == [("kept", "tesis"), (sha256_content(legacy), "tesis")]
 
 
 def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> None:

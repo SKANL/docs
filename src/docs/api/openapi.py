@@ -8,6 +8,7 @@ from typing import Any
 from docs.domain.identity import canonical_json
 
 from .document_dto import document_openapi_schemas
+from .graph_routes import GRAPH_QUERIES
 from .operations import OPERATIONS, available_cli_routes, component_schemas
 from .workspace_dto import workspace_openapi_schemas
 
@@ -61,7 +62,20 @@ def _schemas() -> dict[str, Any]:
         "run": _item_schema("run", {"schema": {"type": "string", "const": "docs.runtime/v1"}, "id": {"type": "string"}, "status": _ref("status"), "payload": {"type": "object"}, "created_at": {"type": "string", "format": "date-time"}}),
         "finding": _item_schema("finding", {"id": {"type": "string"}, "run_id": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "status": _ref("status"), "message": {"type": "string"}}),
         "passport": _item_schema("passport", {"id": {"type": "string"}, "run_id": {"type": "string"}, "coverage": {"type": "number"}, "attestations": {"type": "integer"}}),
-        "graph": _item_schema("graph", {"nodes": {"type": "array", "items": {"type": "object"}}, "edges": {"type": "array", "items": {"type": "object"}}}),
+        "graph_node": _item_schema("graph_node", {"id": {"type": "string"}, "kind": {"type": "string"}, "label": {"type": "string"}, "attributes": {"type": "object"}, "provenance": {"type": "array", "items": {"type": "object"}}, "confidence": {"type": "object"}}),
+        "graph_edge": _item_schema("graph_edge", {"id": {"type": "string"}, "source": {"type": "string"}, "target": {"type": "string"}, "relation": {"type": "string"}, "provenance": {"type": "array", "items": {"type": "object"}}, "confidence": {"type": "object"}}),
+        "graph": {
+            "type": "object",
+            "description": "The projected document graph. `no_data` is true when the workspace has no documents to project; `graph_unavailable` replaces the graph when it cannot be read.",
+            "properties": {
+                "nodes": {"type": "array", "items": _ref("graph_node")},
+                "edges": {"type": "array", "items": _ref("graph_edge")},
+                "no_data": {"type": "boolean"},
+                "graph_unavailable": {"type": "boolean"},
+                "warnings": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["nodes", "edges"],
+        },
         "artifact": _item_schema("artifact", {"id": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}, "checksum": {"type": "string"}, "status": _ref("status")}),
         "preview": _item_schema("preview", {"id": {"type": "string"}, "artifact_id": {"type": "string"}, "page": {"type": "integer"}, "url": {"type": "string", "format": "uri"}}),
         "revision": _item_schema("revision", {"id": {"type": "string"}, "message": {"type": "string"}, "author": {"type": "string"}, "status": _ref("status")}),
@@ -114,6 +128,7 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "run retry": "POST /v2/runs/{run_id}/retry",
     "template list": "GET /v2/templates",
     "document passport": "GET /v2/runs/{run_id}/passport",  # same payload `document passport` prints
+    "graph": "GET /v2/graph",  # `docs graph <query>` answers the same named queries
     **available_cli_routes(),
 }
 
@@ -165,7 +180,7 @@ def _slice_for(command: str) -> str:
         "document plan", "document prepare", "document run", "document build", "document verify",
     }:
         return "S3"
-    if command in {"document evidence", "document passport", "document baseline", "document inspect", "document diff", "qa-docx", "apply-corrections"}:
+    if command in {"graph", "document evidence", "document passport", "document baseline", "document inspect", "document diff", "qa-docx", "apply-corrections"}:
         return "S4"
     if command in {"document package", "document publish", "document release"}:
         return "S5"
@@ -384,13 +399,7 @@ def _declared_paths() -> dict[str, Any]:
                     "description": "Optional graph read-model query mode. Omit it to return the complete graph.",
                     "schema": {
                         "type": "string",
-                        "enum": [
-                            "claims_without_evidence",
-                            "findings_affected_by_revision",
-                            "artifacts_derived_from_input",
-                            "unused_references",
-                            "unmet_requirements",
-                        ],
+                        "enum": list(GRAPH_QUERIES),
                     },
                 },
                 {
@@ -399,19 +408,13 @@ def _declared_paths() -> dict[str, Any]:
                     "description": "Review Studio graph query alias. Cannot be combined with mode.",
                     "schema": {
                         "type": "string",
-                        "enum": [
-                            "claims_without_evidence",
-                            "findings_affected_by_revision",
-                            "artifacts_derived_from_input",
-                            "unused_references",
-                            "unmet_requirements",
-                        ],
+                        "enum": list(GRAPH_QUERIES),
                     },
                 },
                 {
                     "name": "id",
                     "in": "query",
-                    "description": "Identifier required by findings_affected_by_revision or artifacts_derived_from_input when query is used.",
+                    "description": "Identifier required by findings_affected_by_revision, artifacts_derived_from_input or source_impact when query is used.",
                     "schema": {"type": "string"},
                 },
                 {
@@ -424,6 +427,12 @@ def _declared_paths() -> dict[str, Any]:
                     "name": "input_id",
                     "in": "query",
                     "description": "Input identifier required by artifacts_derived_from_input.",
+                    "schema": {"type": "string"},
+                },
+                {
+                    "name": "source_id",
+                    "in": "query",
+                    "description": "Source, evidence or input node identifier required by source_impact.",
                     "schema": {"type": "string"},
                 },
                 {"name": "workspace_id", "in": "query", "schema": {"type": "string"}},

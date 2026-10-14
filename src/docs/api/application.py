@@ -17,7 +17,6 @@ from docs.application.imports import SourceImportService
 from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.domain.ports.blob_store import BlobStore
-from docs.domain.ports.graph_store import GraphStore
 from docs.domain.ports.semantic_graph import SemanticGraphReader
 from docs.observability import ObservabilityPort, create_observability_from_env
 
@@ -52,7 +51,6 @@ class ApiApplication:
         queue: Any,
         passport_store: Any,
         artifact_store: Any,
-        graph_store: GraphStore,
         semantic_graph_store: SemanticGraphReader | None = None,
         document_store: Any = None,
         findings_store: Any = None,
@@ -86,7 +84,6 @@ class ApiApplication:
         self.queue = queue
         self.passport_store = passport_store
         self.artifact_store = artifact_store
-        self.graph_store = graph_store
         self.semantic_graph_store = semantic_graph_store
         self.document_store = document_store
         self.findings_store = findings_store

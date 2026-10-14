@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from docs.domain.runtime_records import SCHEMA, Artifact, Graph, Job, Passport, Run
+from docs.domain.runtime_records import SCHEMA, Artifact, Job, Passport, Run
 
 _JSON = dict[str, Any]
 
@@ -184,25 +184,9 @@ class SqliteArtifactStore(_SqliteStore):
         return [Artifact.from_dict(self._decode(row[0])) for row in rows]
 
 
-class SqliteGraphStore(_SqliteStore):
-    def _initialize(self) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS runtime_graph (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)"
-            )
-
-    def put(self, graph: Graph) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                "INSERT INTO runtime_graph (id, payload) VALUES (1, ?) "
-                "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
-                (self._encode(graph.to_dict()),),
-            )
-
-    def get(self) -> Graph:
-        with self._connect() as connection:
-            row = connection.execute("SELECT payload FROM runtime_graph WHERE id = 1").fetchone()
-        return Graph() if row is None else Graph.from_dict(self._decode(row[0]))
+# ponytail: the runtime `graph` table of older databases is no longer created or read --
+# the document graph is projected on read (`infrastructure/graph/document_graph_reader.py`).
+# Existing tables are left alone so no migration is needed; drop it with the next schema bump.
 
 
 class SqlitePublicationStore(_SqliteStore):

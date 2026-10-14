@@ -160,9 +160,29 @@ Two `docs doctor` checks worth knowing up front:
 | `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `document publish` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
-| (flat, no prefix) | `doctor`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger` |
+| (flat, no prefix) | `doctor`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger`, `graph <query>` |
 | `asset` | asset registration commands |
 | `docx` | low-level `.docx` inspection commands |
+
+### Traceability queries: `docs graph`
+
+    docs graph <query> [--id <node-id>] [--json]      # all documents
+    docs --doc <doc-id> graph <query>                 # one document
+
+A deterministic, no-LLM graph links each document's sources, evidence,
+claims, sections, requirements, references, revisions, findings and build
+artifacts; it is projected from files already on disk and never stored.
+Queries: `claims_without_evidence`, `unused_references`, `unmet_requirements`,
+`requirement_coverage` (per section: satisfied vs missing),
+`stale_artifacts` (a build input changed or vanished since the build),
+`findings_affected_by_revision --id`, `artifacts_derived_from_input --id` and
+`source_impact --id` (artifacts and sections a source reaches). Node ids look
+like `<doc>/<kind>/<key>`; `--json` prints the exact payload of
+`GET /v2/graph?query=<query>`.
+
+Read the first line of the answer before the list: **"Sin datos"** means the
+query had nothing to evaluate (no claims, no build yet...), which is not the
+same as **"Nada encontrado"** (it looked and found nothing wrong).
 
 ### Translating a PDF: `docs translate`
 
@@ -688,6 +708,13 @@ This means:
 - **Workspace config, tokens and computed paths**: `src/docs/application/workspace_config.py`.
   Only `composition.py` and `infrastructure/` may import `docs.infrastructure`
   (`tests/architecture/test_infrastructure_imports.py`).
+- **A document-graph query or node kind**: project it in
+  `src/docs/domain/document_graph.py` (pure), read its inputs in
+  `src/docs/infrastructure/graph/document_graph_reader.py`, add the query to
+  `GraphQueryService` and `NAMED_QUERIES` (the API route, the OpenAPI enum and
+  `docs graph` follow from it), and extend
+  `tests/integration/test_document_graph_e2e.py`. Contract:
+  `openspec/specs/document-graph/spec.md`.
 - **Pure logic** (themes, PDF layout and geometry): `src/docs/domain/`, for
   example `theme.py` and `pdf_layout.py`; adapters pass plain values in.
 

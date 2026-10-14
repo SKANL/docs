@@ -107,7 +107,6 @@ def test_every_registered_cli_command_has_exactly_one_capability_and_matrix_row(
 def test_available_capabilities_have_real_registered_routes_and_matching_scopes():
     application = ApiApplication(
         run_store=None, queue=None, passport_store=None, artifact_store=None,
-        graph_store=None,
     )
     paths = openapi.build_openapi_document()["paths"]
     for capability in _all_capabilities():
@@ -128,7 +127,6 @@ def test_capability_catalog_http_route_returns_the_declared_catalog():
 
     application = ApiApplication(
         run_store=None, queue=None, passport_store=None, artifact_store=None,
-        graph_store=None,
     )
     response = application.dispatch(Request("GET", "/v2/capabilities"))
     assert response.status == 200

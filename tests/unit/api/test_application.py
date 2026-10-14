@@ -12,7 +12,7 @@ from docs.api.oidc import scope_policy
 from docs.api.openapi import build_openapi_document, canonical_json
 from docs.api.route_policy import required_scope
 from docs.composition import compose_application, open_workspace_registry
-from docs.domain.runtime_records import Artifact, Graph, Passport, Run
+from docs.domain.runtime_records import Artifact, Passport, Run
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 from docs.domain.workspace import Workspace
 
@@ -59,11 +59,6 @@ class Artifacts:
         return None
 
 
-class Graphs:
-    def get(self):
-        return Graph(("r1", "a1"), (("r1", "a1"),))
-
-
 def body(response):
     return json.loads(response.body)
 
@@ -83,7 +78,7 @@ def document_lifecycle_app(tmp_path):
 
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
         document_service_factory=document_service_factory,
     )
     return application, workspace, registry
@@ -112,7 +107,7 @@ def test_document_lifecycle_routes_use_canonical_service_and_persist_active_sele
 
     restarted = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
         document_service_factory=application.document_service_factory,
     )
     persisted_current = restarted.dispatch(Request("GET", f"/v2/current-document?workspace_id={workspace_id}"))
@@ -172,7 +167,6 @@ def app(router=None):
         queue=Queue(),
         passport_store=Passports(),
         artifact_store=Artifacts(),
-        graph_store=Graphs(),
         documents=[{"id": "d1", "owner": "ada"}],
         findings=[{"run_id": "r1", "severity": "error"}],
         router=router,
@@ -186,7 +180,7 @@ def test_application_rejects_preexisting_dynamic_route_collision_at_construction
     with pytest.raises(ValueError, match="GET /v2/runs/r1"):
         ApiApplication(
             run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-            graph_store=Graphs(), router=router,
+            router=router,
         )
 
 
@@ -214,7 +208,7 @@ def test_v2_workspace_contract_has_no_server_active_selection_or_fallback(tmp_pa
     workspace = registry.create("Workspace", root)
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
     )
 
     listed = body(application.dispatch(Request("GET", "/v2/workspaces")))
@@ -229,7 +223,7 @@ def test_workspace_transport_dtos_are_strict_and_serialize_the_canonical_shapes(
     registry = open_workspace_registry(tmp_path / "state" / "registry.json")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
         managed_workspace_root=tmp_path / "managed-workspaces",
     )
 
@@ -256,7 +250,7 @@ def test_workspace_lifecycle_use_and_status(tmp_path):
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
     )
     workspace_id = workspace["id"]
 
@@ -276,7 +270,7 @@ def test_workspace_lifecycle_use_and_status(tmp_path):
 def test_workspace_lifecycle_missing_workspace_returns_404(tmp_path, method, action, body_value):
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=open_workspace_registry(tmp_path / "registry.json"),
+        workspace_registry=open_workspace_registry(tmp_path / "registry.json"),
     )
     response = application.dispatch(Request(method, f"/v2/workspaces/missing/{action}", body=body_value))
     assert response.status == 404
@@ -292,7 +286,7 @@ def test_workspace_lifecycle_denies_insufficient_scope(tmp_path, method, action,
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
     )
     application.auth = lambda token: Principal("ada", frozenset({allowed_scope})) if token == "ok" else None
     response = application.dispatch(Request(method, f"/v2/workspaces/{workspace['id']}/{action}", headers={"Authorization": "Bearer ok"}))
@@ -307,7 +301,7 @@ def test_workspace_use_is_reachable_through_wsgi(tmp_path):
     workspace = registry.create("Source", tmp_path / "source")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
     )
     statuses = []
     result = application(
@@ -328,7 +322,7 @@ def test_workspace_use_is_reachable_through_wsgi(tmp_path):
 def test_workspace_transport_dtos_reject_unknown_fields_and_non_string_names(tmp_path, method, path, payload):
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=open_workspace_registry(tmp_path / "registry.json"),
+        workspace_registry=open_workspace_registry(tmp_path / "registry.json"),
         managed_workspace_root=tmp_path / "managed-workspaces",
     )
 
@@ -343,7 +337,7 @@ def test_workspace_creation_allocates_under_managed_root_and_rejects_client_root
     managed_root = tmp_path / "managed-workspaces"
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry, managed_workspace_root=managed_root,
+        workspace_registry=registry, managed_workspace_root=managed_root,
     )
 
     created = application.dispatch(Request("POST", "/v2/workspaces", body={"name": "Managed"}))
@@ -368,7 +362,7 @@ def test_workspace_content_routes_fail_closed_without_explicit_workspace(tmp_pat
     registry.create("Workspace", tmp_path / "workspace")
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
     )
 
     response = application.dispatch(Request(method, path))
@@ -392,7 +386,7 @@ def test_document_collection_rejects_invalid_workspace_before_reading_store(tmp_
     documents = WorkspaceDocuments()
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), document_store=documents, workspace_registry=registry,
+        document_store=documents, workspace_registry=registry,
     )
 
     response = application.dispatch(
@@ -412,7 +406,7 @@ def test_create_run_rejects_invalid_workspace_before_writing_or_enqueuing(tmp_pa
     )
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), workspace_registry=registry,
+        workspace_registry=registry,
     )
 
     response = application.dispatch(
@@ -465,7 +459,7 @@ def section_app(tmp_path, revision_service=None):
     (document_root / "sections" / "intro.md").write_text("Original", encoding="utf-8")
     return ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), documents=[{"id": "d1"}], workspace_registry=registry,
+        documents=[{"id": "d1"}], workspace_registry=registry,
         revision_service=revision_service,
     )
 
@@ -555,7 +549,7 @@ def test_auth_refresh_preserves_unrelated_router_routes():
     router.route("GET", "/v2/other")(unrelated)
     application = ApiApplication(
         run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(),
-        graph_store=Graphs(), router=router,
+        router=router,
     )
     application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
     application.dispatch(Request("GET", "/v2/graph", headers={"Authorization": "Bearer ok"}))
@@ -693,7 +687,7 @@ def test_endpoints_return_resources_and_cancel():
     assert body(application.dispatch(Request("GET", "/v2/runs/r1/passport")))["entries"] == [{"ok": True}]
     assert body(application.dispatch(Request("GET", "/v2/runs/r1/artifacts")))["items"][0]["id"] == "a1"
     assert body(application.dispatch(Request("GET", "/v2/findings?run_id=r1")))["items"][0]["run_id"] == "r1"
-    assert body(application.dispatch(Request("GET", "/v2/graph")))["nodes"] == ["r1", "a1"]
+    assert body(application.dispatch(Request("GET", "/v2/graph")))["graph_unavailable"] is True
     assert application.dispatch(Request("POST", "/v2/runs/r1/cancel")).status == 200
     assert application.run_store.get("r1").status == "cancelled"
 
@@ -1232,7 +1226,6 @@ def test_baselines_and_plugins_use_existing_read_store_contracts():
         queue=Queue(),
         passport_store=Passports(),
         artifact_store=Artifacts(),
-        graph_store=Graphs(),
         baseline_store=baselines,
         plugin_store=Plugins(),
     )
@@ -1282,7 +1275,6 @@ def semantic_app():
         queue=Queue(),
         passport_store=Passports(),
         artifact_store=Artifacts(),
-        graph_store=Graphs(),
         semantic_graph_store=SemanticGraphs(),
     )
 
@@ -1388,7 +1380,6 @@ def test_graph_queries_read_the_semantic_store_not_the_runtime_graph():
         queue=Queue(),
         passport_store=Passports(),
         artifact_store=Artifacts(),
-        graph_store=Graphs(),
         semantic_graph_store=SemanticGraphs(),
     )
 
@@ -1399,7 +1390,7 @@ def test_graph_queries_read_the_semantic_store_not_the_runtime_graph():
 
 def test_graph_queries_without_a_semantic_store_say_so():
     app = ApiApplication(
-        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(), graph_store=Graphs()
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts()
     )
 
     payload = body(app.dispatch(Request("GET", "/v2/graph?mode=unused_references")))

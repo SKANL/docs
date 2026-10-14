@@ -8,7 +8,6 @@ import pytest
 from fakes.in_memory_runtime_stores import (
     InMemoryArtifactStore,
     InMemoryBlobStore,
-    InMemoryGraphStore,
     InMemoryJobQueue,
     InMemoryLeaseStore,
     InMemoryPassportStore,
@@ -16,11 +15,10 @@ from fakes.in_memory_runtime_stores import (
 )
 
 from docs.domain.ports.blob_store import BlobStore
-from docs.domain.ports.graph_store import GraphStore
 from docs.domain.ports.job_queue import JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.run_store import ArtifactStore, PassportStore, RunStore
-from docs.domain.runtime_records import Artifact, Blob, Graph, Lease, Passport, Run
+from docs.domain.runtime_records import Artifact, Blob, Lease, Passport, Run
 
 
 class CustomMapping(Mapping[str, object]):
@@ -86,7 +84,6 @@ def test_contracts_are_versioned_and_json_serializable():
         Passport(run_id="run-1"),
         Artifact(id="artifact-1", run_id="run-1", kind="report", digest="abc"),
         Blob(key="blob-1", digest="abc", size_bytes=3),
-        Graph(nodes=("run-1",), edges=()),
     ]
 
     for value in values:
@@ -107,20 +104,17 @@ def test_in_memory_stores_are_interchangeable_ports():
     passport = Passport(run_id=run.id)
     artifact = Artifact(id="artifact-1", run_id=run.id, kind="report", digest="abc")
     blob = Blob(key="blob-1", digest="abc", size_bytes=3)
-    graph = Graph(nodes=(run.id,), edges=())
 
-    stores: tuple[RunStore, PassportStore, ArtifactStore, BlobStore, GraphStore] = (
+    stores: tuple[RunStore, PassportStore, ArtifactStore, BlobStore] = (
         InMemoryRunStore(),
         InMemoryPassportStore(),
         InMemoryArtifactStore(),
         InMemoryBlobStore(),
-        InMemoryGraphStore(),
     )
     stores[0].put(run)
     stores[1].put(passport)
     stores[2].put(artifact)
     stores[3].put(blob, b"abc")
-    stores[4].put(graph)
 
     assert stores[0].get(run.id) == run
     assert stores[0].list() == [run]
@@ -128,7 +122,6 @@ def test_in_memory_stores_are_interchangeable_ports():
     assert stores[2].get(artifact.id) == artifact
     assert stores[2].list() == [artifact]
     assert stores[3].get(blob.key) == (blob, b"abc")
-    assert stores[4].get() == graph
 
 
 def test_job_queue_and_lease_store_support_claim_lifecycle():
@@ -195,8 +188,6 @@ def test_in_memory_adapters_isolate_mutable_payloads():
         (Artifact, "metadata", []),
         (Blob, "size_bytes", -1),
         (Lease, "ttl_seconds", -1),
-        (Graph, "nodes", {"node": "run-1"}),
-        (Graph, "edges", [["run-1"]]),
     ],
 )
 def test_from_dict_rejects_invalid_shapes_and_values(contract, field, value):
@@ -224,10 +215,6 @@ def test_from_dict_rejects_non_exact_scalar_types_and_malformed_edges():
         Run.from_dict({"schema": "docs.runtime/v1", "id": 7})
     with pytest.raises((TypeError, ValueError)):
         Blob.from_dict({"schema": "docs.runtime/v1", "key": "b", "digest": "d", "size_bytes": True})
-    with pytest.raises((TypeError, ValueError)):
-        Graph.from_dict({"schema": "docs.runtime/v1", "nodes": ["run-1"], "edges": [["run-1", 7]]})
-    with pytest.raises((TypeError, ValueError)):
-        Graph.from_dict({"schema": "docs.runtime/v1", "nodes": ["run-1"], "edges": [("run-1", "run-2")]})
 
 
 @pytest.mark.parametrize(
@@ -242,18 +229,6 @@ def test_from_dict_rejects_non_exact_scalar_types_and_malformed_edges():
 def test_contract_constructors_reject_invalid_values(factory):
     with pytest.raises((TypeError, ValueError)):
         factory()
-
-
-def test_graph_constructor_copies_mutable_node_and_edge_inputs():
-    nodes = ["run-1"]
-    edges = [["run-1", "run-2"]]
-
-    graph = Graph(nodes=nodes, edges=edges)
-    nodes.append("run-3")
-    edges[0][1] = "mutated"
-
-    assert graph.nodes == ("run-1",)
-    assert graph.edges == (("run-1", "run-2"),)
 
 
 def test_expired_lease_can_be_acquired_by_another_owner():

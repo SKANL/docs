@@ -12,7 +12,7 @@ from typing import Any
 
 from docs.application.workspaces import WorkspaceRegistry
 from docs.composition import RuntimeStores, atomic_write_text, open_document_graph_reader, runtime_state_path
-from docs.domain.identity import pretty_json, read_json_object
+from docs.domain.identity import pretty_json, read_json_object, sha256_content
 from docs.domain.runtime_records import Artifact, Passport
 from docs.domain.semantic_graph import SemanticGraph
 from docs.sidecar.roots import PerRoot, WorkspaceRoots
@@ -120,6 +120,10 @@ class WorkspaceJsonCollectionStore:
             for item in values:
                 if isinstance(item, dict):
                     record = dict(item)
+                    if self.kind == "revisions":
+                        # legacy entries predate the persisted id: derive the hash the document graph uses
+                        record.setdefault("id", sha256_content(item))
+                        record.setdefault("document_id", path.parents[2].name)
                     record.setdefault("source_path", str(path))
                     record.setdefault("workspace_root", str(root))
                     items.append(record)
@@ -360,41 +364,6 @@ class WorkspacePublicationStore:
             for value in self.parent._stores_for_root(self.parent._root_for_run(run.id)).publications.list()
             if value.get("run_id") == run.id
         ]
-
-
-class WorkspaceGraphStore:
-    def __init__(self, registry: WorkspaceRegistry, fallback_root: Path) -> None:
-        self.roots = WorkspaceRoots(registry, fallback_root)
-        self.fallback_root = fallback_root.resolve()
-        self._graph = PerRoot(RuntimeStores)
-
-    @property
-    def path(self) -> Path:
-        return runtime_state_path(self.fallback_root)
-
-    def _store(self, workspace_id: str | None = None) -> Any:
-        return self._graph(self.roots.root_for(workspace_id)).graph
-
-    def for_workspace(self, workspace_id: str) -> WorkspaceGraphView:
-        return WorkspaceGraphView(self, workspace_id)
-
-    def get(self, workspace_id: str | None = None) -> Any:
-        return self._store(workspace_id).get()
-
-    def put(self, value: Any) -> None:
-        self._store().put(value)
-
-
-class WorkspaceGraphView:
-    def __init__(self, parent: WorkspaceGraphStore, workspace_id: str) -> None:
-        self.parent = parent
-        self.workspace_id = workspace_id
-
-    def get(self) -> Any:
-        return self.parent.get(self.workspace_id)
-
-    def put(self, value: Any) -> None:
-        self.parent._store(self.workspace_id).put(value)
 
 
 class WorkspaceSemanticGraphStore:

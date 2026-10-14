@@ -219,6 +219,25 @@ describe("ReviewApiClient", () => {
     await expect(client.review.getGraph()).resolves.toMatchObject({ nodes: [{ id: "claim-1", type: "claim", confidence: 0.75 }], edges: [{ from: "source-1", to: "claim-1" }] });
   });
 
+  it("carries the no-data signal, coverage counts and per-section requirement rows", async () => {
+    const section = { id: "d/section/a", kind: "section", label: "A" };
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ items: [{ section, satisfied: [], missing: [{ id: "d/requirement/a/1", kind: "requirement", label: "alcance" }] }], no_data: false, coverage: { requirement: 1, section: 1 } }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+    const result = await client.review.getGraphQuery("requirement_coverage");
+    expect(result).toMatchObject({ noData: false, coverage: { requirement: 1, section: 1 }, sections: [{ section: { id: "d/section/a" }, missing: [{ label: "alcance" }] }] });
+    expect(result.items).toEqual([]);
+    fetcher.mockResolvedValue(jsonResponse({ items: [], no_data: true, coverage: { claim: 0 } }));
+    await expect(client.review.getGraphQuery("claims_without_evidence")).resolves.toMatchObject({ noData: true, items: [] });
+  });
+
+  it("reports an unavailable or empty overview graph instead of an indistinguishable empty one", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({ nodes: [], edges: [], graph_unavailable: true, warnings: ["no store"] }));
+    const client = new ReviewApiClient({ baseUrl: "https://review.test/v2", fetch: fetcher });
+    await expect(client.review.getGraph()).resolves.toMatchObject({ unavailable: true, warnings: ["no store"] });
+    fetcher.mockResolvedValue(jsonResponse({ nodes: [], edges: [], no_data: true }));
+    await expect(client.review.getGraph()).resolves.toMatchObject({ unavailable: false, noData: true });
+  });
+
   it("normalizes structured API errors", async () => {
     const client = new ReviewApiClient({ fetch: vi.fn().mockResolvedValue(jsonResponse({ code: "invalid_run", message: "Run not found", details: { id: "x" } }, { status: 404, statusText: "Not Found", headers: { "x-request-id": "req-1" } })) });
     await expect(client.review.getRunEvidence("x")).rejects.toMatchObject({ name: "ApiError", status: 404, code: "invalid_run", requestId: "req-1", details: { id: "x" } });

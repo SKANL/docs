@@ -119,3 +119,29 @@ describe("authoring client", () => {
     expect(revise.call()).toMatchObject({ path: "/v2/documents/d/revisions", method: "POST", body: { target_id: "intro", new_body: "x", request: "r" } });
   });
 });
+
+describe("revisions", () => {
+  beforeEach(() => { localStorage.setItem("docs.review.workspace", "ws-1"); });
+
+  it("turns raw revision-log entries into timeline rows", async () => {
+    const { client } = setup({ items: [
+      { id: "h1", document_id: "tesis", section_id: "intro", request: "Add scope", ts: "2026-10-14T10:00:00", ripple: ["fin"], issues: [{ severity: "error", message: "x" }] },
+      { id: "h2", document_id: "tesis", section_id: "fin", ts: "2026-10-14T11:00:00", issues: [{ severity: "warning", message: "y" }] },
+      { id: "h3", document_id: "tesis", section_id: "x", request: "Clean", ts: "t", issues: [] },
+      { id: "h4", document_id: "tesis", section_id: "old", ts: "t0" },
+    ] });
+    await expect(client.authoring.listRevisions()).resolves.toEqual([
+      { id: "h1", message: "Add scope", author: "tesis", date: "2026-10-14T10:00:00", status: "failed", files: 2 },
+      { id: "h2", message: "Revised fin", author: "tesis", date: "2026-10-14T11:00:00", status: "warnings", files: 1 },
+      { id: "h3", message: "Clean", author: "tesis", date: "t", status: "passed", files: 1 },
+      { id: "h4", message: "Revised old", author: "tesis", date: "t0", status: "unverified", files: 1 },
+    ]);
+  });
+
+  it("keeps already shaped revisions unchanged", async () => {
+    const shaped = { id: "r1", message: "Initial", author: "ana", date: "2026-01-01", status: "passed", files: 2 };
+    const { client } = setup({ items: [shaped] });
+    await expect(client.authoring.listRevisions()).resolves.toEqual([shaped]);
+  });
+});
+

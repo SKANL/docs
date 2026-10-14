@@ -146,7 +146,7 @@ def test_runtime_vertical_journey_is_deterministic_from_template_ir_to_api_run(t
         queue=InMemoryJobQueue(),
         passport_store=passport_store,
         artifact_store=artifact_store,
-        graph_store=graph_store,
+        semantic_graph_store=graph_store,
         documents=[{"id": "vertical"}],
     )
     artifact_store.put(Artifact("artifact:html", run_id, "html", html_digest, "text/html"))

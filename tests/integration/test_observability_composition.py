@@ -12,7 +12,6 @@ def _api_kwargs():
         "queue": object(),
         "passport_store": object(),
         "artifact_store": object(),
-        "graph_store": object(),
     }
 
 

@@ -33,6 +33,10 @@ _EXPECTED_FLAT_COMMANDS = {
     # other flat commands rather than inside an authoring group. Deliberate
     # growth, not drift.
     "translate",
+    # `graph` is the CLI entry point of the `document-graph` capability:
+    # authors ask the same traceability queries Review Studio shows.
+    # Deliberate growth, not drift.
+    "graph",
     "collect-sources", "build-rules", "review-rules", "collect-issues",
     "collect-code-evidence", "build-ledger", "build-section", "pack-context",
     "review-section", "review-document", "build-docx", "qa-docx",

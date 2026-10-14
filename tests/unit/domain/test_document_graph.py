@@ -124,3 +124,46 @@ def test_legacy_revision_without_issues_projects_without_findings():
     snap = DocumentSnapshot(doc_id="d", title="d", revisions=(RevisionSnapshot("r", "x", "q", "t"),))
     graph = project_document_graph([snap])
     assert ids(graph, "finding") == [] and ids(graph, "revision") == ["d/revision/r"]
+
+
+def _with_run(inputs, outputs=(FileEntry("out/doc.docx", sha256="h2"),), run_id="r1"):
+    snap = snapshot()
+    return DocumentSnapshot(**{**snap.__dict__, "runs": (RunSnapshot(run_id, tuple(inputs), tuple(outputs)),)})
+
+
+def _artifact(graph):
+    return next(n for n in graph.nodes if n.kind == "artifact")
+
+
+def test_artifact_is_stale_when_a_current_input_hash_differs_or_the_file_is_gone():
+    changed = project_document_graph([_with_run([FileEntry("sections/001-intro.md", sha256="h1", current_sha256="new")])])
+    assert _artifact(changed).attributes["stale"] is True
+    assert _artifact(changed).attributes["stale_inputs"] == ("sections/001-intro.md",)
+    gone = project_document_graph([_with_run([FileEntry("sections/001-intro.md", sha256="h1", current_sha256="")])])
+    assert _artifact(gone).attributes["stale"] is True
+
+
+def test_artifact_is_fresh_when_hashes_match_and_unchecked_without_current_hashes():
+    fresh = project_document_graph([_with_run([FileEntry("sections/001-intro.md", sha256="h1", current_sha256="h1")])])
+    assert _artifact(fresh).attributes["stale"] is False
+    unchecked = project_document_graph([_with_run([FileEntry("sections/001-intro.md", sha256="h1")])])
+    assert "stale" not in _artifact(unchecked).attributes
+
+
+def test_an_artifact_rebuilt_by_a_later_run_is_fresh_if_any_run_matches_current_files():
+    snap = snapshot()
+    old = RunSnapshot("a", (FileEntry("s.md", sha256="v1", current_sha256="v2"),), (FileEntry("out/doc.docx"),))
+    new = RunSnapshot("b", (FileEntry("s.md", sha256="v2", current_sha256="v2"),), (FileEntry("out/doc.docx"),))
+    graph = project_document_graph([DocumentSnapshot(**{**snap.__dict__, "runs": (old, new)})])
+    assert _artifact(graph).attributes["stale"] is False
+
+
+def test_inputs_link_to_the_section_source_and_evidence_they_are_the_file_of():
+    snap = snapshot()
+    runs = (RunSnapshot("r1", (
+        FileEntry("sections/001-intro.md", sha256="h"), FileEntry("inbox/a.pdf", sha256="h"),
+        FileEntry("/ctx/a.md", sha256="h")), (FileEntry("out/doc.docx"),)),)
+    graph = project_document_graph([DocumentSnapshot(**{**snap.__dict__, "runs": runs})])
+    assert ("doc/input/sections/001-intro.md", "doc/section/intro") in edges(graph, "contains")
+    assert ("doc/source/inbox/a.pdf", "doc/input/inbox/a.pdf") in edges(graph, "supports")
+    assert ("doc/evidence//ctx/a.md", "doc/input//ctx/a.md") in edges(graph, "supports")

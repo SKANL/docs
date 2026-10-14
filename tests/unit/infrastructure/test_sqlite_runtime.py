@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from docs.domain.runtime_records import Artifact, Graph, Passport, Run
+from docs.domain.runtime_records import Artifact, Passport, Run
 from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
-    SqliteGraphStore,
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -22,18 +21,15 @@ def test_sqlite_stores_round_trip_contracts_and_survive_reopen(tmp_path: Path) -
     run = Run("run-1", status="running", payload={"attempt": 1}, created_at="2026-09-16T00:00:00Z")
     passport = Passport("run-1", entries=({"artifact": "a-1"},))
     artifact = Artifact("a-1", "run-1", "report", "digest", metadata={"page": 1})
-    graph = Graph(nodes=("run-1", "a-1"), edges=(("run-1", "a-1"),))
 
     SqliteRunStore(db).put(run)
     SqlitePassportStore(db).put(passport)
     SqliteArtifactStore(db).put(artifact)
-    SqliteGraphStore(db).put(graph)
 
     assert SqliteRunStore(db).get("run-1") == run
     assert SqlitePassportStore(db).get("run-1") == passport
     assert SqliteArtifactStore(db).get("a-1") == artifact
     assert SqliteArtifactStore(db).list_for_run("run-1") == [artifact]
-    assert SqliteGraphStore(db).get() == graph
 
 
 def test_sqlite_adapters_enable_wal_and_busy_timeout(tmp_path: Path) -> None:

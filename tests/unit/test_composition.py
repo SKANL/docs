@@ -38,6 +38,7 @@ DEPENDENCY_FIELDS = {
     "qa",
     "doctor",
     "documents",
+    "graph_queries",
     "corrections",
     "context",
     "section",

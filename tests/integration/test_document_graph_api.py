@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -47,9 +48,16 @@ def _build_workspace(root: Path) -> str:
             ],
         },
     )
+    # the ledger stores absolute paths for anything outside runs/, as the real one does
+    section = sections / "020-introduccion.md"
+    _write(doc / "output" / "tesis.docx", "docx")
     _write(
         doc / "runs" / "provenance.json",
-        {"runs": {"r1": {"run_id": "r1", "inputs": {"sections/020-introduccion.md": "a"}, "outputs": {"out/tesis.docx": "b"}}}},
+        {"runs": {"r1": {
+            "run_id": "r1",
+            "inputs": {str(section.resolve()): hashlib.sha256(section.read_bytes()).hexdigest()},
+            "outputs": {str((doc / "output" / "tesis.docx").resolve()): "b"},
+        }}},
     )
     _write(
         sections / "_revisions" / "revision-log.json",
@@ -78,7 +86,7 @@ def test_api_answers_graph_queries_from_a_real_workspace(tmp_path: Path) -> None
         ws = app.application.workspace_registry.list()[0]["id"]
 
         derived = _items(app, ws, "artifacts_derived_from_input", id="tesis/input/sections/020-introduccion.md")
-        assert [n["id"] for n in derived] == ["tesis/artifact/out/tesis.docx"]
+        assert [n["id"] for n in derived] == ["tesis/artifact/output/tesis.docx"]
 
         unmet = {n["label"] for n in _items(app, ws, "unmet_requirements") if n["id"].startswith("tesis/requirement/introduccion/")}
         assert unmet == {"alcance"}
@@ -123,3 +131,48 @@ def test_reader_returns_an_empty_graph_for_a_workspace_without_documents(tmp_pat
     graph = open_document_graph_reader(tmp_path).get()
 
     assert graph.nodes == () and graph.edges == ()
+
+
+def _reader(root: Path):
+    from docs.composition import open_document_graph_reader
+
+    return open_document_graph_reader(root)
+
+
+def test_ledger_paths_are_normalised_and_current_hashes_flag_stale_outputs(tmp_path: Path) -> None:
+    _build_workspace(tmp_path)
+    reader = _reader(tmp_path)
+    artifact = next(n for n in reader.get().nodes if n.kind == "artifact")
+    assert artifact.id == "tesis/artifact/output/tesis.docx" and artifact.attributes["stale"] is False
+
+    section = tmp_path / "documents" / "tesis" / "sections" / "020-introduccion.md"
+    section.write_text("otro texto", encoding="utf-8")
+    os.utime(section, ns=(1, 2_000_000_000_000))
+    stale = next(n for n in reader.get().nodes if n.kind == "artifact")
+    assert stale.attributes["stale"] is True and stale.attributes["stale_inputs"] == ("sections/020-introduccion.md",)
+
+
+def test_an_input_that_vanished_or_lives_outside_the_workspace_never_crashes_the_reader(tmp_path: Path) -> None:
+    _build_workspace(tmp_path)
+    ledger = tmp_path / "documents" / "tesis" / "runs" / "provenance.json"
+    outside = tmp_path.parent / "elsewhere.txt"
+    _write(ledger, {"runs": {"r1": {"inputs": {
+        str(tmp_path / "documents" / "tesis" / "gone.md"): "x", str(outside): "y", "../../../../escape.txt": "z"},
+        "outputs": {"o": "b"}}}})
+    inputs = {n.label: n for n in _reader(tmp_path).get().nodes if n.kind == "input"}
+    assert inputs["gone.md"].attributes["current_sha256"] == ""
+    assert str(outside) in inputs and inputs[str(outside)].attributes["current_sha256"] == ""
+
+
+def test_template_ledger_seed_facts_become_claims(tmp_path: Path) -> None:
+    _build_workspace(tmp_path)
+    import docs.templates
+
+    builtin = Path(docs.templates.__file__).parent / "builtin" / "documento-generico.json"
+    _write(
+        tmp_path / "templates" / "documento-generico.json",
+        json.loads(builtin.read_text(encoding="utf-8")) | {"ledger_seed": [{"claim": "Semilla"}]},
+    )
+    claims = {n.label: n for n in _reader(tmp_path).get().nodes if n.kind == "claim"}
+    assert claims["Semilla"].attributes["classification"] == "confirmado"
+    assert claims["Semilla"].attributes["source"] == "template"

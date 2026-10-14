@@ -45,6 +45,9 @@ class FileEntry:
     type: str = ""
     classification: str = ""
     sha256: str = ""
+    # Hash of the file as it is NOW (None: not checked, "": file gone). The
+    # adapter measures it; the projector only compares it with `sha256`.
+    current_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,7 @@ def _project(snap: DocumentSnapshot, out: _Builder) -> None:
     _sections(snap, out)
     _evidence_and_claims(snap, out)
     _runs(snap, out)
+    _link_input_files(snap, out)
     _revisions(snap, out)
 
 
@@ -169,13 +173,61 @@ def _evidence_and_claims(snap: DocumentSnapshot, out: _Builder) -> None:
             out.edge(evidence_ids[fact.source_path], claim_id, "supports")
 
 
-def _runs(snap: DocumentSnapshot, out: _Builder) -> None:
-    for run in sorted(snap.runs, key=lambda r: r.run_id):
-        inputs = [out.node("input", i.path, i.path, sha256=i.sha256) for i in run.inputs]
+def _changed_inputs(run: RunSnapshot) -> list[str] | None:
+    """Inputs whose current hash differs from the recorded one; None when never measured."""
+    if all(i.current_sha256 is None for i in run.inputs):
+        return None
+    return sorted(i.path for i in run.inputs if i.current_sha256 is not None and i.current_sha256 != i.sha256)
+
+
+def _stale_verdicts(runs: list[RunSnapshot]) -> dict[str, list[str]]:
+    """Per artifact path, the changed inputs of the run that best matches today's files.
+
+    An artifact rebuilt after a source changed is fresh because one of its
+    runs matches the current files; the chronology of run ids is not needed.
+    """
+    best: dict[str, list[str]] = {}
+    for run in runs:
+        changed = _changed_inputs(run)
+        if changed is None:
+            continue
         for artifact in run.outputs:
-            artifact_id = out.node("artifact", artifact.path, artifact.path, sha256=artifact.sha256, run_id=run.run_id)
+            if artifact.path not in best or len(changed) < len(best[artifact.path]):
+                best[artifact.path] = changed
+    return best
+
+
+def _runs(snap: DocumentSnapshot, out: _Builder) -> None:
+    runs = sorted(snap.runs, key=lambda r: r.run_id)
+    verdicts = _stale_verdicts(runs)
+    for run in runs:
+        inputs = []
+        for i in run.inputs:
+            current = {} if i.current_sha256 is None else {"current_sha256": i.current_sha256}
+            inputs.append(out.node("input", i.path, i.path, sha256=i.sha256, **current))
+        for artifact in run.outputs:
+            changed = verdicts.get(artifact.path)
+            verdict = {} if changed is None else {"stale": bool(changed), "stale_inputs": changed}
+            artifact_id = out.node(
+                "artifact", artifact.path, artifact.path, sha256=artifact.sha256, run_id=run.run_id, **verdict
+            )
             for input_id in inputs:
                 out.edge(artifact_id, input_id, "derived_from")
+
+
+def _link_input_files(snap: DocumentSnapshot, out: _Builder) -> None:
+    """A build input that is the file of a section, source or evidence item is that item."""
+    section_files = {f"sections/{s.order:03d}-{s.id}.md": s.id for s in snap.sections}
+    for node in list(out.nodes.values()):
+        if node.kind != "input":
+            continue
+        path = node.label
+        if path in section_files:
+            out.edge(node.id, out.nid("section", section_files[path]), "contains")
+        for kind in ("source", "evidence"):
+            origin = out.nid(kind, path)
+            if origin in out.nodes:
+                out.edge(origin, node.id, "supports")
 
 
 def _revisions(snap: DocumentSnapshot, out: _Builder) -> None:

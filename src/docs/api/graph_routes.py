@@ -1,4 +1,4 @@
-"""HTTP handlers for the read-only graph model."""
+"""HTTP handlers for the read-only document graph (one model: the projected `SemanticGraph`)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,17 @@ from collections.abc import Mapping
 from typing import Literal, cast
 from urllib.parse import urlencode, urlsplit
 
-from docs.application.graph_queries import GraphQueryService
+from docs.application.graph_queries import NAMED_QUERIES, GraphQueryService
+
+# query name -> the parameter that carries its subject when `mode=` is used
+# (the `query=` alias always uses `id`).
+_BY_ID = {
+    "findings_affected_by_revision": "revision_id",
+    "artifacts_derived_from_input": "input_id",
+    "source_impact": "source_id",
+}
+# Every named query, in contract order (the OpenAPI enum is built from this).
+GRAPH_QUERIES = tuple(NAMED_QUERIES)
 
 
 class GraphRoutes:
@@ -32,23 +42,16 @@ class GraphRoutes:
         if request.principal is not None and self._host.workspace_registry is None:
             raise APIError("not_found", "Graph not found", 404)
         workspace_id = self._host.workspace_filter(request)
-        graph_store = self._host.graph_store
         semantic_store = self._host.semantic_graph_store
-        if workspace_id:
-            if not hasattr(graph_store, "for_workspace"):
-                raise APIError("workspace_graph_unavailable", "Workspace-scoped graph is not configured", 503)
-            graph_store = graph_store.for_workspace(workspace_id)
-            if semantic_store is not None:
-                semantic_store = semantic_store.for_workspace(workspace_id) if hasattr(semantic_store, "for_workspace") else None
-        if not request.query or (set(request.query) == {"workspace_id"}):
-            graph = graph_store.get()
-            data = as_dict(graph)
-            if not isinstance(data, Mapping):
-                data = {}
-            return Response.json({"nodes": list(data.get("nodes", [])), "edges": list(data.get("edges", []))})
-        # The raw route serves the runtime Graph; queries need the semantic read
-        # model, which is a separate store and may be absent (reported, not faked).
+        if workspace_id and semantic_store is not None:
+            semantic_store = semantic_store.for_workspace(workspace_id) if hasattr(semantic_store, "for_workspace") else None
         query = GraphQueryService(semantic_store)
+        if not request.query or (set(request.query) == {"workspace_id"}):
+            whole = query.graph()
+            if whole.graph_unavailable or whole.value is None:
+                return Response.json({"nodes": [], "edges": [], "graph_unavailable": True, "warnings": list(whole.warnings)})
+            data = whole.value.to_dict()
+            return Response.json({"nodes": data["nodes"], "edges": data["edges"], "no_data": not data["nodes"]})
         params = request.query
         mode = params.get("mode")
         query_name = params.get("query")
@@ -58,38 +61,15 @@ class GraphRoutes:
         identifier = params.get("id") if query_name is not None else None
         result: Any
         payload: dict[str, Any]
-        if selected_query == "claims_without_evidence":
-            result = query.claims_without_evidence()
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "findings_affected_by_revision":
-            revision_id = identifier if query_name is not None else params.get("revision_id")
-            if not revision_id:
-                identifier_name = "id" if query_name is not None else "revision_id"
-                raise APIError(
-                    "invalid_graph_query",
-                    f"{identifier_name} is required for findings_affected_by_revision",
-                    400,
-                )
-            result = query.findings_affected_by_revision(revision_id)
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "artifacts_derived_from_input":
-            input_id = identifier if query_name is not None else params.get("input_id")
-            if not input_id:
-                identifier_name = "id" if query_name is not None else "input_id"
-                raise APIError(
-                    "invalid_graph_query",
-                    f"{identifier_name} is required for artifacts_derived_from_input",
-                    400,
-                )
-            result = query.artifacts_derived_from_input(input_id)
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "unused_references":
-            result = query.unused_references()
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "unmet_requirements":
-            result = query.unmet_requirements()
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query is not None:
+        if selected_query in NAMED_QUERIES:
+            target = None
+            if NAMED_QUERIES[selected_query]:
+                identifier_name = "id" if query_name is not None else _BY_ID[selected_query]
+                target = identifier if query_name is not None else params.get(identifier_name)
+                if not target:
+                    raise APIError("invalid_graph_query", f"{identifier_name} is required for {selected_query}", 400)
+            return Response.json(query.answer(selected_query, target).to_payload())
+        if selected_query is not None:
             parameter_name = "query" if query_name is not None else "mode"
             raise APIError(
                 "invalid_graph_query",
@@ -114,6 +94,10 @@ class GraphRoutes:
             payload = {"items": [as_dict(item) for item in (result.value or ())]}
         if result.graph_unavailable:
             payload = {"items": [], "graph_unavailable": True, "warnings": list(result.warnings)}
+        else:
+            # "no data" (the source kinds are absent) must never read as "nothing wrong"
+            coverage = query.coverage(selected_query).value or {}
+            payload = {**payload, "no_data": coverage.get("no_data", True), "coverage": coverage.get("counts", {})}
         return Response.json(payload)
 
     def run_graph(self, run_id: str, request: Request) -> Response:
