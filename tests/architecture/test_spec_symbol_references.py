@@ -67,7 +67,7 @@ def test_the_scan_finds_the_specs_and_the_code():
     # (and iterating nothing passes trivially), a broken AST walk reports
     # zero symbols (and then NOTHING resolves, which would look like total
     # drift rather than a broken test).
-    assert len(_anchors_per_spec()) == 13, "se esperan 13 capabilities"
+    assert len(_anchors_per_spec()) == 14, "se esperan 14 capabilities"
     assert len(_navigable_symbols()) > 500
 
 

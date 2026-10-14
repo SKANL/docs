@@ -708,6 +708,13 @@ This means:
 - **Workspace config, tokens and computed paths**: `src/docs/application/workspace_config.py`.
   Only `composition.py` and `infrastructure/` may import `docs.infrastructure`
   (`tests/architecture/test_infrastructure_imports.py`).
+- **A document-graph query or node kind**: project it in
+  `src/docs/domain/document_graph.py` (pure), read its inputs in
+  `src/docs/infrastructure/graph/document_graph_reader.py`, add the query to
+  `GraphQueryService` and `NAMED_QUERIES` (the API route, the OpenAPI enum and
+  `docs graph` follow from it), and extend
+  `tests/integration/test_document_graph_e2e.py`. Contract:
+  `openspec/specs/document-graph/spec.md`.
 - **Pure logic** (themes, PDF layout and geometry): `src/docs/domain/`, for
   example `theme.py` and `pdf_layout.py`; adapters pass plain values in.
 

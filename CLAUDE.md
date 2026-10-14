@@ -216,9 +216,9 @@ three share; never re-declare an artifact filename or extension set locally.
 
 ## Specs & planning — read on demand (do not @import)
 
-- `openspec/specs/<capability>/spec.md` — the CURRENT contract (13
+- `openspec/specs/<capability>/spec.md` — the CURRENT contract (14
   capabilities: agent-contract, asset-management, context-curation,
-  document-ingest, document-lifecycle, document-pipeline, document-render,
+  document-graph, document-ingest, document-lifecycle, document-pipeline, document-render,
   document-revise, document-template, document-translate, document-visuals,
   template-provisioning, workspace-config). New SDD changes delta against
   these. `test_spec_symbol_references.py` pins the count, so adding a
