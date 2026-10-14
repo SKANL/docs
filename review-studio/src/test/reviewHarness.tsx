@@ -7,7 +7,7 @@ import { makeApi } from "./authoringHarness";
 const cap = (id: string, status: Capability["status"] = "available"): Capability => ({
   id, cli_command: id.replace(".", " "), route: status === "available" ? "POST /v2/x" : null, scopes: [], surface: "web+desktop", slice: "S4", status,
 });
-export const reviewCapabilityIds = ["document.evidence", "document.passport", "document.baseline", "document.inspect", "document.diff", "qa-docx", "apply-corrections", "findings.list", "artifacts.list", "baselines.list", "graph.read"];
+const reviewCapabilityIds = ["document.evidence", "document.passport", "document.baseline", "document.inspect", "document.diff", "qa-docx", "apply-corrections", "findings.list", "artifacts.list", "baselines.list", "graph.read"];
 export const reviewCatalog = (...missing: string[]) => ({ groups: [{ id: "review", capabilities: reviewCapabilityIds.map(id => cap(id, missing.includes(id) ? "planned" : "available")) }] });
 
 export const finding = (over: Record<string, unknown> = {}) => ({ id: "f-1", runId: "run-1", title: "Heading is missing", severity: "high" as const, status: "failed" as const, location: "section intro", summary: "Intro has no heading", owner: "-", updated: "-", ...over });

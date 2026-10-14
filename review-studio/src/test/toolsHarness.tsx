@@ -6,7 +6,7 @@ import { makeApi } from "./authoringHarness";
 const cap = (id: string, status: Capability["status"] = "available"): Capability => ({
   id, cli_command: id.replace(".", " "), route: status === "available" ? "POST /v2/x" : null, scopes: [], surface: "web+desktop", slice: "S6", status,
 });
-export const toolCapabilityIds = [
+const toolCapabilityIds = [
   "template.list", "template.show", "template.use", "template.create", "template.init", "template.validate", "doctor", "explain",
   "collect-sources", "collect-issues", "collect-code-evidence", "build-rules", "build-ledger", "review-rules", "build-docx", "format-audit-docx", "translate",
   "doc.show", "doc.status", "document.import", "source.ingest", "plugins.list", "plugins.show",
