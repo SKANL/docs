@@ -61,7 +61,7 @@ domain logic out of giant adapters.
       Route: inline.
 - [x] T12 Resolve the shrink-only allowlist in `test_ports_have_consumers.py`
       (`blob_store`, `graph_store`, `plugin_executor`); delete the allowlist.
-- [ ] T13 Prove `tests/unit/domain/test_pdf_layout.py` is not vacuous by
+- [x] T13 Prove `tests/unit/domain/test_pdf_layout.py` is not vacuous by
       mutating each tested function and observing RED.
 
 ## Acceptance
@@ -240,3 +240,18 @@ domain logic out of giant adapters.
   `test_runtime_ports.py` now targets `PluginRunner.run` directly. No
   application/domain import of infrastructure added. Targeted
   architecture 131, domain+api+runtime-stores+vertical-journey 1383 passed, ruff, mypy clean. The removed port had drifted from the runner (it lacked `artifact_digest`); the pin now reflects the real signature.
+- T13 done. 44 single-point mutations over all 11 tested functions plus
+  `POST_WRITE_TOLERANCE_POINTS` (wrong returns, flipped comparisons, dropped
+  branches, swapped min/max), each applied to `pdf_layout.py`, run against
+  `test_pdf_layout.py`, then reverted (tree clean; breakage never committed).
+  37 went RED at once. 7 stayed GREEN and were closed with 7 new tests, each
+  observed RED against its mutation: `strip_subset_tag` isalpha (`ABC123+`),
+  `drop_unmapped` space/printable (digits, punctuation), `overlaps` y-axis,
+  `missing_expected_lines` text compare, `permitted_bounds` default top,
+  baseline fallback (top - font_size) and the `min(0.0, ...)` descent clamp.
+  Two further survivors are equivalent mutants (no observable change):
+  `line_x` `right <= left` -> `<` and `slack <= 0` -> `<` (both yield `left`
+  when the boundary is hit). Per function: styled, line_start, union,
+  match_key, outside, tolerance constant killed first time; line_x (2
+  equivalent), strip_subset_tag, drop_unmapped, overlaps, missing_expected_lines,
+  permitted_bounds needed the added assertions. 17 tests pass.
