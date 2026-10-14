@@ -52,7 +52,7 @@ missing.
       produced.
 - [x] G3 Stable fact ids (hash of classification|claim|source) and a
       structured `source_path` on ledger facts when the source is a file.
-- [ ] G4 Pure domain projector `domain/document_graph.py`: snapshot of the
+- [x] G4 Pure domain projector `domain/document_graph.py`: snapshot of the
       above -> `SemanticGraph` (kinds: document, section, source, evidence,
       claim, requirement, reference, revision, finding, artifact, input;
       relations: contains, supports, satisfies, references, cites, affects,
@@ -84,4 +84,5 @@ missing.
 - G1 done: RED `KeyError: 'section_id'` (store returned whole log as one record), GREEN after reading `entries`; test_sidecar.py 30 passed, ruff, mypy clean.
 - G2 done: RED 2 failed (no `issues`/`id` in entry), GREEN after persisting `Issue.to_dict()` lists (section + document, topic ripple too) and `id = sha256_content(entry)`; old logs load unchanged (entries are only appended). test_revision + test_section_routes 38 passed, ruff, mypy clean.
 - G3 done: RED ImportError `identify_facts`; GREEN with `domain/collection.py:identify_facts` (id = sha256 of the dedupe key, first 16 hex; `source_path` when the source is a collected file; dependency facts carry their manifest path). Ledger render reads only classification/claim, so its output is unchanged (`-k ledger` green). Collection tests green, ruff, mypy clean. `ledger_seed` is template config, never persisted, so it is untouched.
-- Next: G4.
+- G4 done: RED collection ImportError (no module), GREEN 8 tests in tests/unit/domain/test_document_graph.py (namespacing, supports via source_path, satisfies via requirement_present, references via apa author keys, revision->finding/section, derived_from, determinism under reordering, legacy revisions). `GraphQueryService` constants/relations already matched (no change); all 5 queries verified on a projected graph. Relation `cites` was folded into `references` (queries only know `references`). ruff, mypy clean. Module: src/docs/domain/document_graph.py (~190 lines).
+- Next: G5.
