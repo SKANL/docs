@@ -14,12 +14,6 @@ from pathlib import Path
 SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "docs"
 PORTS = SRC_ROOT / "domain" / "ports"
 
-# Runtime-store ports whose conformance is pinned by `test_runtime_ports.py`
-# and whose stores reach the API through untyped slots. Pruning them is a
-# separate decision from the one-impl/zero-fake candidates; shrink-only.
-KNOWN_ORPHANS = {"blob_store", "graph_store", "plugin_executor"}
-
-
 def _imported_port_modules(path: Path) -> set[str]:
     modules: set[str] = set()
     for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -47,13 +41,9 @@ def test_the_scan_sees_a_real_consumer():
 
 def test_every_port_has_a_consumer_outside_infrastructure():
     ports = {path.stem for path in PORTS.glob("*.py") if path.stem != "__init__"}
-    orphans = sorted(ports - _consumers() - KNOWN_ORPHANS)
+    orphans = sorted(ports - _consumers())
     assert not orphans, (
         f"estos puertos solo los usa infraestructura: {orphans}. "
         "Un puerto sin consumidor en application/ es ceremonia: borralo."
     )
 
-
-def test_the_orphan_allowlist_only_shrinks():
-    stale = sorted(KNOWN_ORPHANS & _consumers())
-    assert not stale, f"ya tienen consumidor; quitalos de KNOWN_ORPHANS: {stale}"

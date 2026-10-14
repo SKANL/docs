@@ -32,7 +32,10 @@ class GraphRoutes:
         if request.principal is not None and self._host.workspace_registry is None:
             raise APIError("not_found", "Graph not found", 404)
         workspace_id = self._host.workspace_filter(request)
-        graph_store = self._host.graph_store
+        # ponytail: GraphQueryService is typed on SemanticGraphStore while the
+        # host serves the runtime Graph; the shapes differ (pre-existing, hidden
+        # by the old Any slot). Reconcile the two graph models before narrowing.
+        graph_store: Any = self._host.graph_store
         if workspace_id and hasattr(self._host.graph_store, "for_workspace"):
             graph_store = self._host.graph_store.for_workspace(workspace_id)
         elif workspace_id:

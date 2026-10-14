@@ -59,6 +59,10 @@ domain logic out of giant adapters.
       Route: delegated.
 - [x] T11 Contributor map: short "where do I add X" section in AGENTS.md.
       Route: inline.
+- [x] T12 Resolve the shrink-only allowlist in `test_ports_have_consumers.py`
+      (`blob_store`, `graph_store`, `plugin_executor`); delete the allowlist.
+- [ ] T13 Prove `tests/unit/domain/test_pdf_layout.py` is not vacuous by
+      mutating each tested function and observing RED.
 
 ## Acceptance
 - No module outside `composition.py`/`infrastructure/` imports infrastructure
@@ -222,3 +226,17 @@ domain logic out of giant adapters.
   named path/symbol was checked to exist. `test_agents_md_content.py` and the
   packaging test pass.
 - Full suite on 395a6068: 3238 passed, 6 skipped, 0 failed. All tasks done; next: native review, then PR (user decision).
+- T12 done. Allowlist deleted. RED: with `KNOWN_ORPHANS` removed the guard
+  failed naming `blob_store`, `graph_store`, `plugin_executor`. Decisions:
+  `blob_store` KEPT as a real seam (`InMemoryBlobStore` fake substitutes it;
+  `ApiApplication.blob_store` was an untyped `Any` slot, now `BlobStore | None`,
+  so the API layer is the consumer). `graph_store` KEPT likewise
+  (`InMemoryGraphStore` fake; `ApiApplication.graph_store: GraphStore`);
+  `graph_routes` keeps a local `Any` with a `# ponytail:` because
+  `GraphQueryService` is typed on `SemanticGraphStore` while the host serves
+  the runtime `Graph` (pre-existing mismatch the old `Any` hid). `plugin_executor`
+  REMOVED: `PluginRunner` is the only implementation, nothing in src types
+  against the Protocol and no fake substitutes it; the signature pin in
+  `test_runtime_ports.py` now targets `PluginRunner.run` directly. No
+  application/domain import of infrastructure added. Targeted
+  architecture 131, domain+api+runtime-stores+vertical-journey 1383 passed, ruff, mypy clean. The removed port had drifted from the runner (it lacked `artifact_digest`); the pin now reflects the real signature.
