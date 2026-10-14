@@ -1282,7 +1282,8 @@ def semantic_app():
         queue=Queue(),
         passport_store=Passports(),
         artifact_store=Artifacts(),
-        graph_store=SemanticGraphs(),
+        graph_store=Graphs(),
+        semantic_graph_store=SemanticGraphs(),
     )
 
 
@@ -1379,3 +1380,29 @@ def test_section_routes_use_canonical_section_ids_for_ordered_files(tmp_path):
 
     assert {"id": "introduccion", "filename": "020-introduccion.md", "body": "Intro body"} in listed["items"]
     assert body(fetched)["filename"] == "020-introduccion.md"
+
+
+def test_graph_queries_read_the_semantic_store_not_the_runtime_graph():
+    app = ApiApplication(
+        run_store=Runs(),
+        queue=Queue(),
+        passport_store=Passports(),
+        artifact_store=Artifacts(),
+        graph_store=Graphs(),
+        semantic_graph_store=SemanticGraphs(),
+    )
+
+    response = app.dispatch(Request("GET", "/v2/graph?mode=unused_references"))
+
+    assert [item["id"] for item in body(response)["items"]] == ["reference-unused"]
+
+
+def test_graph_queries_without_a_semantic_store_say_so():
+    app = ApiApplication(
+        run_store=Runs(), queue=Queue(), passport_store=Passports(), artifact_store=Artifacts(), graph_store=Graphs()
+    )
+
+    payload = body(app.dispatch(Request("GET", "/v2/graph?mode=unused_references")))
+
+    assert payload["graph_unavailable"] is True
+    assert payload["warnings"] == ["graph unavailable: no semantic graph store configured"]
