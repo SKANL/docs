@@ -10,9 +10,6 @@ duplicated across cli, sidecar and workers.
 An AST scan needs no graph index, so it never skips. It sees `import`,
 `from ... import` (relative too) and `import_module("docs.infrastructure...")`
 with a literal string.
-
-ALLOWLIST holds today's violators and may only SHRINK: a listed module that no
-longer violates fails the test, forcing its removal from the list.
 """
 from __future__ import annotations
 
@@ -23,12 +20,13 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "docs"
 _FORBIDDEN = "docs.infrastructure"
 _ALLOWED_ROOTS = ("infrastructure/", "composition.py")
 
-ALLOWLIST: set[str] = {
+# Named, justified and shrink-only: a listed module that stops violating fails
+# the test so the entry gets deleted.
+KNOWN_EXCEPTIONS = {
+    # Subclasses the concrete ledger through a lazy `import_module` so that
+    # ten application services can keep calling `ProvenanceLedger(...)`.
+    # Removing it needs a provenance port plus injection through the root.
     "application/provenance.py",
-    "cli/commands/document_app.py",
-    "cli/commands/document_batch.py",
-    "cli/commands/document_release.py",
-    "cli/commands/source_app.py",
 }
 
 
@@ -96,16 +94,16 @@ def test_the_scan_finds_a_real_infrastructure_import():
 
 
 def test_only_the_composition_root_imports_infrastructure():
-    new = sorted(_violators() - ALLOWLIST)
+    new = sorted(_violators() - KNOWN_EXCEPTIONS)
     assert not new, (
         f"estos módulos importan `docs.infrastructure` directamente: {new}. "
         "Pedí el adaptador a `ApplicationComposition` en lugar de construirlo acá."
     )
 
 
-def test_the_allowlist_only_shrinks():
-    stale = sorted(ALLOWLIST - _violators())
-    assert not stale, f"ya no violan; quitalos de ALLOWLIST: {stale}"
+def test_the_exception_list_only_shrinks():
+    stale = sorted(KNOWN_EXCEPTIONS - _violators())
+    assert not stale, f"ya no violan; quitalos de KNOWN_EXCEPTIONS: {stale}"
 
 
 def test_the_runtime_sqlite_path_is_declared_once():

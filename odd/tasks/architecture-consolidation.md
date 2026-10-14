@@ -39,7 +39,7 @@ domain logic out of giant adapters.
       delete inline `runtime.sqlite3` paths. Route: delegated writer.
 - [x] T4 Collapse `workers/composition.py` production factories into the root
       (drop dead `create_production_worker*`). Route: delegated writer.
-- [ ] T5 Move locking/guard helpers behind the composition root for cli
+- [x] T5 Move locking/guard helpers behind the composition root for cli
       (`document_release`, `document_batch`, `document_app`); empty the T1
       allowlist. Route: delegated writer.
 - [ ] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
@@ -88,7 +88,7 @@ domain logic out of giant adapters.
   removed. `atomic_write_text` for baseline promotion now comes from the
   composition root. Targeted suites (sidecar, local_worker, api, architecture)
   green; ruff and mypy clean.
-- T4 done. Verified `create_production_worker*` had no caller in `src/` or
+- T4 done (commit 7450e634). Verified `create_production_worker*` had no caller in `src/` or
   docs (only tests) and that `compose_worker` always passes
   `application.observability`. RED: new
   `test_worker_composition_without_observability_stays_noop` + allowlist
@@ -96,4 +96,21 @@ domain logic out of giant adapters.
   sqlite imports and the `create_observability_from_env()` fallback in
   `WorkerComposition` (the integration test pinning that fallback removed).
   Targeted workers/integration/architecture/sidecar 241 passed; ruff, mypy clean.
-- Next: T5.
+- T5 done. `ApplicationComposition` already exposed `directory_guard` /
+  `release_lock`; cli modules now import `owned_directory_lock` /
+  `directory_handle_guard` from `docs.composition` (re-exported, commented).
+  `source_app.create_source_pipeline` no longer builds `MdNormalizeAdapter` /
+  `AtomicFileAdapter` fallbacks: deps without them yield no pipeline. RED:
+  allowlist deleted (violators asserted empty) + new
+  `test_source_pipeline_needs_its_adapters_from_the_composition` failed;
+  GREEN after the change. DEVIATION: the allowlist did not reach empty.
+  `application/provenance.py` (lazy `import_module` subclass of the concrete
+  infrastructure ledger, used by ~10 application services) remains as one
+  named, justified, shrink-only `KNOWN_EXCEPTIONS` entry; removing it needs a
+  provenance port + injection, which is out of T1-T5 scope. Suggest a new task.
+  Targeted (architecture, cli, source commands, composition) 190 passed;
+  ruff, mypy clean.
+- Full-suite evidence: T1 3206 passed / 3 timing-flaky failures under load
+  (plugins sdk, pass in isolation); T2 (side worktree, 70ea2b16) 3211 passed,
+  6 skipped. Final-commit full run reported in the handoff.
+- Next: T6.

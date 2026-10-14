@@ -651,3 +651,11 @@ def test_source_ingest_alias_uses_the_same_native_stage(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["source", "ingest", "--json"])
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout)["succeeded"] is True
+
+
+def test_source_pipeline_needs_its_adapters_from_the_composition(tmp_path: Path) -> None:
+    # The CLI never builds adapters itself: deps without them yield no pipeline.
+    from docs.cli.commands.source_app import create_source_pipeline
+
+    assert create_source_pipeline(SimpleNamespace(ingest=_Ingest())) is None
+    assert create_source_pipeline(_deps(tmp_path)) is not None

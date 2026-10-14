@@ -1,4 +1,7 @@
 # src/docs/composition.py
+# ponytail: `owned_directory_lock`, `directory_handle_guard` and `atomic_write_text`
+# are re-exported from here so cli/sidecar reach them through the root; no wrapper until
+# one needs a seam.
 from __future__ import annotations
 
 import json

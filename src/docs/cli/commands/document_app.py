@@ -36,12 +36,12 @@ from docs.cli.commands.document_run import (
     wait_for_run,
 )
 from docs.cli.commands.source_app import run_source_command
+from docs.composition import owned_directory_lock
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import pretty_json, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
-from docs.infrastructure.locking import owned_directory_lock
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
