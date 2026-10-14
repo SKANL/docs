@@ -58,7 +58,3 @@ class PerRoot(Generic[Store]):
 
     def values(self) -> list[Store]:
         return list(self._items.values())
-
-
-def state_path(root: Path) -> Path:
-    return root / ".docs" / "runtime.sqlite3"

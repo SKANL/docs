@@ -5,15 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from .composition import RuntimeStores
 from .domain.workspace_format import validate_workspace_layout, validate_workspace_marker
-from .infrastructure.persistence.sqlite_runtime import (
-    SqliteArtifactStore,
-    SqliteFindingStore,
-    SqliteJobQueue,
-    SqlitePassportStore,
-    SqlitePublicationStore,
-    SqliteRunStore,
-)
 from .sidecar.worker import build_worker
 
 
@@ -25,22 +18,16 @@ def main(argv: list[str] | None = None) -> int:
     root = args.workspace_root.expanduser().resolve()
     validate_workspace_layout(root, root / "documents", root / "templates")
     validate_workspace_marker(root)
-    state = root / ".docs" / "runtime.sqlite3"
-    queue = SqliteJobQueue(state)
-    run_store = SqliteRunStore(state)
-    passport_store = SqlitePassportStore(state)
-    artifact_store = SqliteArtifactStore(state)
-    findings_store = SqliteFindingStore(state)
-    publication_store = SqlitePublicationStore(state)
+    stores = RuntimeStores(root)
     runner = build_worker(
         root,
-        queue,
-        state,
-        run_store,
-        passport_store,
-        artifact_store,
-        findings_store,
-        publication_store,
+        stores.queue,
+        stores.leases,
+        stores.runs,
+        stores.passports,
+        stores.artifacts,
+        stores.findings,
+        stores.publications,
     )
     runner.run_until_stopped(args.iterations)
     return 0

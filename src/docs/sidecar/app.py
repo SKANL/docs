@@ -14,13 +14,11 @@ from docs.api.application import ApiApplication
 from docs.api.http import Router
 from docs.api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
-from docs.composition import open_workspace_registry
-from docs.infrastructure.persistence.idempotency import SqliteIdempotencyStore
+from docs.composition import RuntimeStores, open_workspace_registry
 from docs.plugins.registry import PluginRegistry
 from docs.sidecar.config import SidecarConfig
 from docs.sidecar.document_actions import DocumentActions, workspace_services
 from docs.sidecar.health import HealthApplication
-from docs.sidecar.roots import state_path
 from docs.sidecar.stores import (
     FilesystemDocumentStore,
     FilesystemTemplateStore,
@@ -116,7 +114,7 @@ def _build_api_application(
         router=Router(
             cors_origins=config.cors_origins,
             max_body_size=config.max_body_bytes,
-            idempotency_persistence=SqliteIdempotencyStore(state_path(config.workspace)),
+            idempotency_persistence=RuntimeStores(config.workspace).idempotency,
         ),
     )
 

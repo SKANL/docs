@@ -118,7 +118,7 @@ def run_inline(queued: QueuedRun) -> str:
     worker = build_worker(
         queued.workspace_root,
         stores.queue,
-        stores.state,
+        stores.leases,
         stores.runs,
         stores.passports,
         stores.artifacts,

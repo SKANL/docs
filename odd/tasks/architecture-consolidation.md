@@ -35,7 +35,7 @@ domain logic out of giant adapters.
 - [x] T2 `RuntimeStores` bundle + single `state_path`/registry resolution,
       exposed by the composition root; migrate cli (`run_app`, `document_run`)
       to it. Route: delegated writer.
-- [ ] T3 Migrate sidecar (`stores.py`, `app.py`, `worker.py`) to the bundle;
+- [x] T3 Migrate sidecar (`stores.py`, `app.py`, `worker.py`) to the bundle;
       delete inline `runtime.sqlite3` paths. Route: delegated writer.
 - [ ] T4 Collapse `workers/composition.py` production factories into the root
       (drop dead `create_production_worker*`). Route: delegated writer.
@@ -70,7 +70,7 @@ domain logic out of giant adapters.
   Full suite 3206 passed, 3 failed (2 in `tests/unit/plugins/test_sdk.py`
   process-timeout tests, flaky under full-suite load: 32/32 pass in
   isolation), ruff and mypy clean. Full suite takes ~21 min.
-- T2 done. RED: `tests/unit/test_runtime_stores.py` failed at collection
+- T2 done (commit 70ea2b16). RED: `tests/unit/test_runtime_stores.py` failed at collection
   (ImportError on `RuntimeStores`, `resolve_workspace_registry`,
   `resolve_runtime_root`, `runtime_state_path`); GREEN 5 passed. Added to
   `composition.py` (lazy `RuntimeStores`, one registry/state-path
@@ -79,4 +79,13 @@ domain logic out of giant adapters.
   `durable_evidence_stores` return). Targeted: architecture + unit/cli +
   composition 151 passed; ruff and mypy clean. Full suite runs in a side
   worktree (~21 min) and is reported in the final handoff.
-- Next: T3.
+- T3 done. RED: sidecar test with the new `build_worker(..., leases, ...)`
+  signature + shrunken allowlist + new `test_the_runtime_sqlite_path_is_declared_once`
+  failed (3 failures). GREEN after migrating `sidecar/stores.py` (one
+  `PerRoot(RuntimeStores)` per facade), `app.py` (idempotency), `worker.py`
+  (`build_worker` now receives `leases` instead of a state path) and
+  `local_worker.py` (a violator the mapping missed). `sidecar/roots.state_path`
+  removed. `atomic_write_text` for baseline promotion now comes from the
+  composition root. Targeted suites (sidecar, local_worker, api, architecture)
+  green; ruff and mypy clean.
+- Next: T4.

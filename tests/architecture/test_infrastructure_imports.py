@@ -29,10 +29,6 @@ ALLOWLIST: set[str] = {
     "cli/commands/document_batch.py",
     "cli/commands/document_release.py",
     "cli/commands/source_app.py",
-    "local_worker.py",
-    "sidecar/app.py",
-    "sidecar/stores.py",
-    "sidecar/worker.py",
     "workers/composition.py",
 }
 
@@ -111,3 +107,14 @@ def test_only_the_composition_root_imports_infrastructure():
 def test_the_allowlist_only_shrinks():
     stale = sorted(ALLOWLIST - _violators())
     assert not stale, f"ya no violan; quitalos de ALLOWLIST: {stale}"
+
+
+def test_the_runtime_sqlite_path_is_declared_once():
+    # `runtime_state_path` is the only place that spells the filename; every
+    # other module asks the composition root for its stores.
+    spelled = sorted(
+        path.relative_to(SRC_ROOT).as_posix()
+        for path in SRC_ROOT.rglob("*.py")
+        if "runtime.sqlite3" in path.read_text(encoding="utf-8")
+    )
+    assert spelled == ["composition.py"], spelled

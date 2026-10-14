@@ -142,7 +142,7 @@ def test_sidecar_worker_bootstrap_reuses_the_shared_application_composition(monk
     runner = build_worker(
         tmp_path,
         object(),
-        tmp_path / "worker.sqlite3",
+        object(),
         object(),
         object(),
         object(),

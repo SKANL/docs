@@ -10,11 +10,10 @@ from typing import Any
 
 from docs.application.pipeline_service import PipelineRequest
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
-from docs.composition import compose_application, open_workspace_registry
+from docs.composition import RuntimeStores, compose_application, open_workspace_registry
 from docs.domain.identity import sha256_bytes, sha256_file
 from docs.domain.runtime_records import Artifact, Passport, Run
 from docs.domain.workspace import Workspace
-from docs.infrastructure.persistence.sqlite_runtime import SqliteLeaseStore
 from docs.sidecar.stores import WorkspaceEvidenceStores, WorkspaceJobQueue, WorkspaceRunStore
 from docs.workers.composition import compose_worker
 from docs.workers.runner import WorkerRunner
@@ -23,14 +22,14 @@ from docs.workers.runner import WorkerRunner
 def worker_process_main(workspace: Path) -> None:
     root = Path(workspace).resolve()
     registry = open_workspace_registry(root / ".docs" / "workspaces.json")
-    state_path = root / ".docs" / "runtime.sqlite3"
+    leases = RuntimeStores(root).leases
     queue = WorkspaceJobQueue(registry, root)
     run_store = WorkspaceRunStore(registry, root)
     evidence = WorkspaceEvidenceStores(registry, run_store, root)
     runner = build_worker(
         root,
         queue,
-        state_path,
+        leases,
         run_store,
         evidence.passport(),
         evidence.artifact(),
@@ -166,7 +165,7 @@ class LocalRunExecutor:
 def build_worker(
     workspace: Path,
     queue: Any,
-    state_path: Path,
+    leases: Any,
     run_store: Any,
     passport_store: Any,
     artifact_store: Any,
@@ -196,7 +195,7 @@ def build_worker(
         executor_for,
         root,
         queue,
-        SqliteLeaseStore(state_path),
+        leases,
         run_store=run_store,
         passport_store=passport_store,
         finalizer=lambda result: persist_worker_evidence(
