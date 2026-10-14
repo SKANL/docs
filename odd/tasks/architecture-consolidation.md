@@ -50,7 +50,7 @@ domain logic out of giant adapters.
 - [x] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
       no test substitutes them; merge Document/Registry/Template repository
       ports; drop or justify `PlatformSandboxProvider`. Route: delegated.
-- [ ] T8 Split `composition.py`: config/token/path logic out to
+- [x] T8 Split `composition.py`: config/token/path logic out to
       `application/workspace_config.py`; type attributes as ports. Route:
       delegated.
 - [ ] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
@@ -172,4 +172,22 @@ domain logic out of giant adapters.
   provider-issued attestation nothing counts as sandboxed) and
   `tests/unit/plugins/test_sdk.py` substitutes it with two fakes. Targeted
   architecture + pdf adapter + infrastructure + domain 1398 passed; ruff, mypy clean.
-- Next: T8.
+- T8 done. RED: `tests/unit/application/test_workspace_config.py` failed at
+  collection (no `docs.application.workspace_config`). GREEN: the new module
+  holds `load_workspace_config`, `WORKSPACE_CONFIG_FILENAME`, `deep_merge`,
+  `expand_tokens`, `standard_tokens`, `computed_paths`,
+  `apply_confirmed_placements`, `try_compile_template` and
+  `rules_manifest_state` (no adapters; moved verbatim, underscore dropped).
+  `composition.py` 833 -> ~700 lines and imports them; `doc_crud_app` now
+  imports `WORKSPACE_CONFIG_FILENAME` from the new module (it was the only
+  external user). The `try_compile_template` test moved with the function.
+  Attribute types: `markdown_normalizer: MarkdownNormalizerPort`,
+  `atomic_file_writer: AtomicFilePort`, `visual_renderers: dict[str,
+  VisualRendererPort]`, `pdf_classifier: PdfClassifyPort | None`,
+  `pdf_text_editor: PdfTextEditPort | None`, `pdf_render: PdfRenderPort | None`,
+  `docx: DocumentRendererPort`, plus `context_repository: ContextRepository`,
+  `source_repository: SourceRepository` and `rules_manifest_state` as a
+  `Callable`; mypy clean with no ignores. `resolve_renderer` and
+  `build_workspace` stay (the latter touches the registry adapter). Targeted
+  composition/architecture/cli/workspace-config 170 passed; ruff, mypy clean.
+- Next: T9.

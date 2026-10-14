@@ -224,20 +224,3 @@ def test_application_composition_owns_document_pipeline_use_case(tmp_path: Path)
     composition = compose_application(_workspace(tmp_path))
 
     assert callable(composition.create_document_pipeline_service)
-
-
-def test_try_compile_template_warns_and_returns_none_when_the_template_does_not_compile(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    import docs.composition as composition
-    from docs.template_compiler import TemplateCompilationError
-
-    def refuse(_template: object) -> None:
-        raise TemplateCompilationError("broken contract")
-
-    monkeypatch.setattr(composition, "compile_template", refuse)
-
-    with caplog.at_level("WARNING", logger="docs.composition"):
-        assert composition._try_compile_template(object()) is None  # type: ignore[arg-type]
-
-    assert "template IR unavailable" in caplog.text

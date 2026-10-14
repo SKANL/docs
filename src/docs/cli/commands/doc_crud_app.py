@@ -15,8 +15,9 @@ import typer
 
 from docs.application.document_summary import build_document_summary
 from docs.application.templates import builtin_names, read_builtin
+from docs.application.workspace_config import WORKSPACE_CONFIG_FILENAME
 from docs.cli._shared import _ctx, emit_result
-from docs.composition import WORKSPACE_CONFIG_FILENAME, open_workspace_registry
+from docs.composition import open_workspace_registry
 from docs.domain.identity import pretty_json
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.workspace_config import resolve_workspace_roots

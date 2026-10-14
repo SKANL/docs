@@ -4,10 +4,9 @@
 # one needs a seam.
 from __future__ import annotations
 
-import json
 import logging
 import os
-import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -27,7 +26,7 @@ from docs.application.evidence import EvidenceService
 from docs.application.format_audit import FormatAuditService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
-from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
+from docs.application.ingest import IngestService
 from docs.application.package_publication_service import PackagePublicationService
 from docs.application.package_service import PackageService, assert_directory_identity
 from docs.application.pdf_render import PdfRendererAdapter
@@ -42,12 +41,30 @@ from docs.application.source_pipeline import SourcePipeline
 from docs.application.status import StatusService
 from docs.application.status_reader import StatusReader
 from docs.application.structural_audit import StructuralAuditService
+from docs.application.workspace_config import (
+    apply_confirmed_placements,
+    computed_paths,
+    deep_merge,
+    expand_tokens,
+    load_workspace_config,
+    rules_manifest_state,
+    standard_tokens,
+    try_compile_template,
+)
 from docs.application.workspaces import WorkspaceRegistry
 from docs.domain.docx_structure import structure_parts
 from docs.domain.models.template import Template
+from docs.domain.ports.atomic_file_port import AtomicFilePort
+from docs.domain.ports.context_repository import ContextRepository
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
+from docs.domain.ports.markdown_normalizer_port import MarkdownNormalizerPort
+from docs.domain.ports.pdf_classify_port import PdfClassifyPort
+from docs.domain.ports.pdf_render_port import PdfRenderPort
+from docs.domain.ports.pdf_text_edit_port import PdfTextEditPort
 from docs.domain.ports.source_ingest_port import SourceIngestPort
+from docs.domain.ports.source_repository import SourceRepository
 from docs.domain.ports.svg_rasterizer_port import SvgRasterizerPort
+from docs.domain.ports.visual_renderer_port import VisualRendererPort
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_config import resolve_workspace_roots
 from docs.domain.workspace_format import validate_workspace_layout, validate_workspace_marker
@@ -91,7 +108,7 @@ from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToo
 from docs.infrastructure.transform.system_transform import AtomicTransform
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
 from docs.observability import ObservabilityPort, create_observability_from_env
-from docs.template_compiler import TemplateCompilationError, TemplateIR, compile_template, source_template
+from docs.template_compiler import TemplateIR, source_template
 
 
 @dataclass(frozen=True)
@@ -100,23 +117,6 @@ class ResolvedContext:
     config: dict[str, Any]
     template: Template
     template_ir: TemplateIR | None = None
-
-
-WORKSPACE_CONFIG_FILENAME = "docs.config.json"
-
-
-def _load_workspace_config() -> dict[str, str] | None:
-    """Best-effort read of `docs.config.json` in cwd (spec: workspace-config
-    "Persisted Workspace Configuration"). A malformed file WARNs to stderr and
-    is ignored — fail-open, never bricks a command (design.md item A)."""
-    path = Path.cwd() / WORKSPACE_CONFIG_FILENAME
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        print(f"WARN: no se pudo leer {path}, se ignora ({exc}).", file=sys.stderr)
-        return None
 
 
 def _validated_workspace(root: Path, documents_dir: Path, templates_dir: Path) -> Workspace:
@@ -134,7 +134,7 @@ def build_workspace() -> Workspace:
     workspace resolution paths are read-only and reject an unmarked root before
     any service can construct adapters or create state.
     """
-    config = _load_workspace_config()
+    config = load_workspace_config()
     # A selected local workspace is the CLI's durable source of truth when no
     # explicit per-cwd config or environment override is supplied. This keeps
     # `docs workspace use` aligned with the sidecar and avoids silently
@@ -244,15 +244,6 @@ class RuntimeStores:
         return SqliteIdempotencyStore(self.state)
 
 
-def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:
-    """Read the rules manifest without constructing the alternate pipeline."""
-    try:
-        path = Path(config["paths"]["rules_manifest"])
-        return (True, path.stat().st_size) if path.is_file() else (False, 0)
-    except (KeyError, OSError, TypeError):
-        return False, 0
-
-
 @dataclass(init=False)
 class ApplicationComposition:
     """Composition root — builds every adapter + service exactly as the
@@ -261,24 +252,24 @@ class ApplicationComposition:
     workspace: Workspace
     observability: ObservabilityPort
     document_repository: JsonDocumentRepository
-    context_repository: JsonContextRepository
-    source_repository: FilesystemSourceRepository
+    context_repository: ContextRepository
+    source_repository: SourceRepository
     renderers: dict[str, DocumentRendererPort]
-    markdown_normalizer: MdNormalizeAdapter
-    atomic_file_writer: AtomicFileAdapter
+    markdown_normalizer: MarkdownNormalizerPort
+    atomic_file_writer: AtomicFilePort
     svg_rasterizer: SvgRasterizerPort | None
     ingest: IngestService
-    visual_renderers: dict[str, Any]
+    visual_renderers: dict[str, VisualRendererPort]
     generate_visuals_service: GenerateVisualsService | None
-    pdf_classifier: Any | None
-    pdf_text_editor: Any | None
-    pdf_render: Any | None
+    pdf_classifier: PdfClassifyPort | None
+    pdf_text_editor: PdfTextEditPort | None
+    pdf_render: PdfRenderPort | None
     assets: AssetService
     evidence: EvidenceService
     review: ReviewService
     collection: CollectionService
     context_pack: ContextPackService
-    docx: DocxRendererAdapter
+    docx: DocumentRendererPort
     format_audit: FormatAuditService
     render_verification: RenderVerificationService
     qa: QaService
@@ -296,7 +287,7 @@ class ApplicationComposition:
     artifact_reports: ArtifactReportService
     package_publications: PackagePublicationService
     provenance_ledger: LedgerFactory
-    rules_manifest_state: Any
+    rules_manifest_state: Callable[[dict[str, Any]], tuple[bool, int]]
 
     def __init__(
         self,
@@ -384,7 +375,7 @@ class ApplicationComposition:
         try:
             from docs.infrastructure.pdf.pdfium2_pdf_render_adapter import Pdfium2PdfRenderAdapter
 
-            self.pdf_render: Any = Pdfium2PdfRenderAdapter()
+            self.pdf_render = Pdfium2PdfRenderAdapter()
         except Exception as exc:
             logger.debug("PDF page renderer no registrado: %s", exc)
             self.pdf_render = None
@@ -416,7 +407,7 @@ class ApplicationComposition:
         # Every renderer is optional: an import failure removes that renderer
         # from the registry instead of failing composition. Degrading is
         # correct, swallowing silently is not, so each failure leaves a trace.
-        self.visual_renderers: dict[str, Any] = {}
+        self.visual_renderers = {}
         try:
             from docs.infrastructure.visuals.chart_svg_renderer import ChartSvgRenderer
 
@@ -457,8 +448,8 @@ class ApplicationComposition:
         # are declared dependencies, but an import failure must cost the
         # TRANSLATE command, not every command in the CLI. `None` means
         # `docs translate` reports why it cannot run.
-        self.pdf_classifier: Any = None
-        self.pdf_text_editor: Any = None
+        self.pdf_classifier = None
+        self.pdf_text_editor = None
         try:
             from docs.infrastructure.fonts.dejavu_font_source import DejaVuFontSource
             from docs.infrastructure.pdf.pdf_inspector_classify_adapter import (
@@ -508,7 +499,7 @@ class ApplicationComposition:
             transform=AtomicTransform(),
             ledger_factory=self.provenance_ledger,
         )
-        self.rules_manifest_state = _rules_manifest_state
+        self.rules_manifest_state = rules_manifest_state
 
     def build_translate_service(self, memory_dir: Path, pending_file: Path) -> Any:
         """Build a `TranslateService` bound to this run's memory and slot file.
@@ -688,38 +679,26 @@ class ApplicationComposition:
             raise RuntimeError("No hay documento activo. Usa `doc new <id>` o `doc use <id>`.")
         document = self.document_repository.read_document(doc_id)      # Document (extra allowed)
         template = self.document_repository.load_template(document.template)
-        _try_compile_template(template)
-        merged = _deep_merge(template.model_dump(), document.model_dump())
-        merged = _expand_tokens(merged, _standard_tokens(self.workspace, self.workspace.doc_root(doc_id)))
+        try_compile_template(template)
+        merged = deep_merge(template.model_dump(), document.model_dump())
+        merged = expand_tokens(merged, standard_tokens(self.workspace, self.workspace.doc_root(doc_id)))
         paths = dict(merged.get("paths", {}))
-        paths.update(_computed_paths(self.workspace.doc_root(doc_id)))
+        paths.update(computed_paths(self.workspace.doc_root(doc_id)))
         # prompts_dir: per-document default, template/document override wins if set
         paths.setdefault("prompts_dir", str(self.workspace.doc_root(doc_id) / "prompts"))
         merged["paths"] = paths
         merged["doc_id"] = doc_id
-        merged["structure"] = _apply_confirmed_placements(
+        merged["structure"] = apply_confirmed_placements(
             structure_parts(merged), Path(paths["inbox_dir"])
         )
         resolved_template = Template.model_validate(merged)
-        resolved_template_ir = _try_compile_template(resolved_template)
+        resolved_template_ir = try_compile_template(resolved_template)
         return ResolvedContext(
             doc_id=doc_id,
             config=merged,
             template=(source_template(resolved_template_ir) if resolved_template_ir is not None else resolved_template),
             template_ir=resolved_template_ir,
         )
-
-
-def _try_compile_template(template: Template) -> TemplateIR | None:
-    """Compile the template IR; return None (and warn) when it does not compile.
-
-    A template that does not compile still resolves as its source template, so
-    the document stays usable; the warning keeps that degradation visible."""
-    try:
-        return compile_template(template)
-    except TemplateCompilationError as exc:
-        logger.warning("template IR unavailable, using the source template: %s", exc)
-        return None
 
 
 def resolve_renderer(renderers: dict[str, DocumentRendererPort], output_format: str) -> DocumentRendererPort:
@@ -734,114 +713,6 @@ def resolve_renderer(renderers: dict[str, DocumentRendererPort], output_format: 
             f"Formatos disponibles: {available}."
         )
     return renderer
-
-
-def _apply_confirmed_placements(parts: list[dict[str, Any]], inbox_dir: Path) -> list[dict[str, Any]]:
-    """CRITICAL-1 fix (PR5 verify): the WRITE half of design.md Decision 6a's
-    "confirmation lands TWICE" -- reads confirmed placements' precomputed
-    `structure_part` from `inbox/_source-manifest.json` (IngestService's own
-    output, `route_and_queue_assets`) and splices them into the resolved
-    document structure, so the EXISTING `structure_parts()` consumer
-    (docx_assembly.py/doctor.py) can actually see them. No new consumer.
-    """
-    manifest_path = inbox_dir / SOURCE_MANIFEST_NAME
-    if not manifest_path.exists():
-        return parts
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return parts
-    confirmed_parts = [
-        placement["structure_part"]
-        for placement in manifest.get("placements", [])
-        if placement.get("structure_part")
-    ]
-    if not confirmed_parts:
-        return parts
-    parts = list(parts)
-    for part in confirmed_parts:
-        if part.get("type") == "cover_from_asset":
-            # A confirmed cover REPLACES whatever cover the template already
-            # declared -- cover_from_template OR its own cover_from_asset (the
-            # real reporte-estadia-tic declares the latter, and filtering only
-            # cover_from_template left the document with two covers). There is
-            # exactly one cover.
-            parts = [
-                p
-                for p in parts
-                if p.get("type") not in ("cover_from_template", "cover_from_asset")
-            ]
-            parts.insert(0, part)
-        else:
-            # embed_docx ("back" kind) -- appended after the sections part.
-            parts.append(part)
-    return parts
-
-
-def _deep_merge(base: Any, override: Any) -> Any:
-    if isinstance(base, dict) and isinstance(override, dict):
-        merged = dict(base)
-        for key, value in override.items():
-            merged[key] = _deep_merge(base.get(key), value) if key in base else value
-        return merged
-    return override if override is not None else base
-
-
-def _expand_tokens(value: Any, tokens: dict[str, str]) -> Any:
-    if isinstance(value, dict):
-        return {k: _expand_tokens(v, tokens) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_expand_tokens(v, tokens) for v in value]
-    if isinstance(value, str):
-        for token, replacement in tokens.items():
-            value = value.replace(token, replacement)
-    return value
-
-
-def _standard_tokens(workspace: Workspace, doc_root: Path) -> dict[str, str]:
-    # Harness-global tokens have no library equivalent (Judgment call 2);
-    # expand only what the workspace/cwd can supply. Unresolved tokens stay literal.
-    # `{doc_root}`/`{inbox_dir}` are per-document: a template's source paths point
-    # into the document's OWN inbox, since every document is an isolated workspace
-    # and its material arrives by being dropped there.
-    return {
-        "{templates_dir}": str(workspace.templates_dir.resolve()),
-        "{documents_dir}": str(workspace.documents_dir.resolve()),
-        "{doc_root}": str(doc_root.resolve()),
-        "{inbox_dir}": str((doc_root / "inbox").resolve()),
-        "{cwd}": str(Path.cwd().resolve()),
-    }
-
-
-def _computed_paths(doc_root: Path) -> dict[str, str]:
-    # Persist absolute paths.  SourcePipeline receives the document root as
-    # its resolution base; relative values here would otherwise be prefixed a
-    # second time (documents/<id>/documents/<id>/inbox).
-    doc_root = doc_root.resolve()
-    sections = doc_root / "sections"
-    context = doc_root / "context"
-    corrections = doc_root / "corrections"
-    output = doc_root / "output"
-    return {
-        "context_dir": str(context),
-        "context_index": str(context / "index.json"),
-        "context_requests": str(context / "_requests.md"),
-        "assets_dir": str(doc_root / "assets"),
-        "inbox_dir": str(doc_root / "inbox"),
-        "sections_dir": str(sections),
-        "source_manifest": str(sections / "source-manifest.json"),
-        "issues_manifest": str(sections / "issues-manifest.json"),
-        "code_evidence_manifest": str(sections / "code-evidence-manifest.json"),
-        "rules_manifest": str(sections / "manual-rules.json"),
-        "fact_ledger": str(sections / "00-fact-ledger.md"),
-        "corrections_inbox_dir": str(corrections / "inbox"),
-        "corrections_applied": str(corrections / "applied.json"),
-        "output_draft_dir": str(output / "draft"),
-        "output_final_dir": str(output / "final"),
-        "output_qa_dir": str(output / "qa"),
-        "runs_dir": str(doc_root / "runs"),
-    }
-
 
 
 def compose_application(
