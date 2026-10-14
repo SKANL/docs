@@ -53,11 +53,11 @@ domain logic out of giant adapters.
 - [x] T8 Split `composition.py`: config/token/path logic out to
       `application/workspace_config.py`; type attributes as ports. Route:
       delegated.
-- [ ] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
+- [x] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
       helpers to their own module. Route: delegated.
-- [ ] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
+- [x] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
       Route: delegated.
-- [ ] T11 Contributor map: short "where do I add X" section in AGENTS.md.
+- [x] T11 Contributor map: short "where do I add X" section in AGENTS.md.
       Route: inline.
 
 ## Acceptance
@@ -194,4 +194,31 @@ domain logic out of giant adapters.
   skipped, 1 failed: `tests/unit/plugins/test_sdk.py::test_runner_enforces_measurable_scratch_limits_and_reports_usage`
   (PytestUnhandledThreadExceptionWarning in a plugin reader thread under load;
   the same file passes 32/32 in isolation, same flaky class as T1).
-- Next: T9.
+- T9 done. RED: `tests/unit/domain/test_theme.py` failed at collection (no
+  `docs.domain.theme`). GREEN: the 7 theme dataclasses, `resolve_visual_theme`,
+  `has_visual_theme` and `_theme_color` (now public `resolve_theme_color`) moved
+  to `domain/theme.py`; only the adapter and one test imported them, both
+  updated (no re-exports). Optional OOXML zip helpers NOT moved: they share
+  `_parse_part` with the rest of the adapter, so moving them would only
+  relocate the coupling. Targeted theme/infrastructure/docx/architecture 498
+  passed; ruff, mypy clean.
+- T10 done. Moved to `domain/pdf_layout.py` (all verified free of
+  pdfium/ctypes): `styled` + `BASE14`, `line_start`, `line_x`, `outside`,
+  `overlaps`, `union`, `missing_expected_lines`, `permitted_bounds`,
+  `match_key`, `strip_subset_tag`, `drop_unmapped`, plus `ObjectSnapshot`,
+  `Bounds`, `POST_WRITE_TOLERANCE_POINTS`. Call order in the adapter is
+  untouched (read/write phase comments intact); `text_fitting` already covered
+  nothing of these, so nothing duplicated. Adapter 813 -> ~660 lines. Tests:
+  `tests/unit/domain/test_pdf_layout.py` (10) added AFTER the move (honest
+  note: this was a verbatim move, so characterisation tests, no observed RED);
+  the integration test now imports `ObjectSnapshot`/`missing_expected_lines`
+  from the domain. Targeted pdf/translate/architecture/infrastructure 520
+  passed; ruff check, mypy clean.
+- T11 done. AGENTS.md section 9 "Where do I add X" (port/adapter, CLI
+  command, API route, `RuntimeStores`, `confine_or_raise`/`read_json_object`,
+  `application/workspace_config.py`, pure domain modules, and the two new
+  architecture tests `test_ports_have_consumers` and
+  `test_infrastructure_imports`). Inline route; docs-only, so no RED. Every
+  named path/symbol was checked to exist. `test_agents_md_content.py` and the
+  packaging test pass.
+- Full suite on 395a6068: 3238 passed, 6 skipped, 0 failed. All tasks done; next: native review, then PR (user decision).
