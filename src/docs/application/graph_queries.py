@@ -6,7 +6,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Generic, Literal, TypeVar
 
-from docs.domain.ports.semantic_graph import SemanticGraphStore
+from docs.domain.ports.semantic_graph import SemanticGraphReader
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 
 T = TypeVar("T")
@@ -44,7 +44,7 @@ class GraphQueryResult(Generic[T]):
 class GraphQueryService:
     """Provide deterministic queries without mutating or requiring the graph store."""
 
-    def __init__(self, store: SemanticGraphStore | None) -> None:
+    def __init__(self, store: SemanticGraphReader | None) -> None:
         self._store = store
 
     def find_nodes(

@@ -76,6 +76,7 @@ from docs.infrastructure.docx.python_docx_assembly_adapter import PythonDocxAsse
 from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAdapter
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import PythonDocxImageMetadataAdapter
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
+from docs.infrastructure.graph.document_graph_reader import DocumentGraphReader
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.ingest.content_probe_adapter import FilesystemContentProbeAdapter
 from docs.infrastructure.ingest.filesystem_ingest_artifact_writer import FilesystemIngestArtifactWriter
@@ -171,6 +172,11 @@ def open_workspace_registry(registry_path: str | Path | None = None) -> Workspac
 def open_provenance_ledger(log_path: Path, *, trusted_root: Path | None = None) -> ProvenanceLedgerPort:
     """Open the filesystem provenance ledger stored at ``log_path``."""
     return ProvenanceLedger(log_path, trusted_root=trusted_root)
+
+
+def open_document_graph_reader(root: Path) -> DocumentGraphReader:
+    """Open the read-only, mtime-cached document graph of one workspace root."""
+    return DocumentGraphReader(root)
 
 
 def resolve_workspace_registry(workspace_root: Path) -> WorkspaceRegistry:

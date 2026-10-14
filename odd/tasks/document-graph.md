@@ -57,7 +57,7 @@ missing.
       claim, requirement, reference, revision, finding, artifact, input;
       relations: contains, supports, satisfies, references, cites, affects,
       derived_from, revises). Deterministic ordering and ids.
-- [ ] G5 Infrastructure adapter: reads one workspace's documents into the
+- [x] G5 Infrastructure adapter: reads one workspace's documents into the
       snapshot, mtime cache, implements `SemanticGraphStore.for_workspace`;
       wire in composition root and sidecar `semantic_graph_store`.
 - [ ] G6 New queries with real value: `stale_artifacts` (ledger input hashes
@@ -85,4 +85,5 @@ missing.
 - G2 done: RED 2 failed (no `issues`/`id` in entry), GREEN after persisting `Issue.to_dict()` lists (section + document, topic ripple too) and `id = sha256_content(entry)`; old logs load unchanged (entries are only appended). test_revision + test_section_routes 38 passed, ruff, mypy clean.
 - G3 done: RED ImportError `identify_facts`; GREEN with `domain/collection.py:identify_facts` (id = sha256 of the dedupe key, first 16 hex; `source_path` when the source is a collected file; dependency facts carry their manifest path). Ledger render reads only classification/claim, so its output is unchanged (`-k ledger` green). Collection tests green, ruff, mypy clean. `ledger_seed` is template config, never persisted, so it is untouched.
 - G4 done: RED collection ImportError (no module), GREEN 8 tests in tests/unit/domain/test_document_graph.py (namespacing, supports via source_path, satisfies via requirement_present, references via apa author keys, revision->finding/section, derived_from, determinism under reordering, legacy revisions). `GraphQueryService` constants/relations already matched (no change); all 5 queries verified on a projected graph. Relation `cites` was folded into `references` (queries only know `references`). ruff, mypy clean. Module: src/docs/domain/document_graph.py (~190 lines).
-- Next: G5.
+- G5 done: RED `graph unavailable: no semantic graph store configured` from the API; GREEN with `infrastructure/graph/document_graph_reader.py` (`DocumentGraphReader`, cache keyed by (path, mtime_ns) of every file read), `composition.open_document_graph_reader`, `sidecar/stores.py:WorkspaceSemanticGraphStore` wired as `semantic_graph_store` in `sidecar/app.py`. New read-only port `SemanticGraphReader` (consumers use it; `SemanticGraphStore` extends it). tests/integration/test_document_graph_api.py: 3 passed (API answers artifacts_derived_from_input, unmet_requirements, unused_references, claims_without_evidence, findings_affected_by_revision with real ids; cache invalidation; empty workspace). ruff, mypy clean; architecture + unit/api + test_sidecar green (see commit).
+- Next: G6.

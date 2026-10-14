@@ -1,0 +1,1 @@
+"""Graph read-model adapters."""

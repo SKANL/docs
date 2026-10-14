@@ -18,7 +18,7 @@ from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.domain.ports.blob_store import BlobStore
 from docs.domain.ports.graph_store import GraphStore
-from docs.domain.ports.semantic_graph import SemanticGraphStore
+from docs.domain.ports.semantic_graph import SemanticGraphReader
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
@@ -53,7 +53,7 @@ class ApiApplication:
         passport_store: Any,
         artifact_store: Any,
         graph_store: GraphStore,
-        semantic_graph_store: SemanticGraphStore | None = None,
+        semantic_graph_store: SemanticGraphReader | None = None,
         document_store: Any = None,
         findings_store: Any = None,
         template_store: Any = None,
