@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from docs.application.context import ContextService
-from docs.application.provenance import ProvenanceLedger
 from docs.application.review import ReviewService
 from docs.application.status import StatusService
 from docs.application.status_reader import StatusReader, StatusSnapshot
@@ -27,6 +26,7 @@ from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdap
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 
 _NORMATIVE = NormativeSettings(
     excluded_terms={},
@@ -88,7 +88,7 @@ def service(workspace: Workspace, document_repo: JsonDocumentRepository) -> Stat
     context_repo = JsonContextRepository(workspace)
     context_service = ContextService(context_repo, document_repo, ContextMarkdownAdapter())
     review_service = ReviewService(section_repo)
-    return StatusService(section_repo, context_service, review_service, document_repo)
+    return StatusService(section_repo, context_service, review_service, document_repo, StatusReader(ProvenanceLedger))
 
 
 def _config(tmp_path: Path) -> dict:
@@ -330,7 +330,7 @@ def test_status_reader_reader_loads_manifest_and_matching_provenance_from_docume
     provenance = ProvenanceLedger(doc_root / "runs" / "provenance.json")
     expected_provenance = provenance.record_run("build-001", inputs=(source,), outputs=(artifact,))
 
-    snapshot = StatusReader().read(doc_root)
+    snapshot = StatusReader(ProvenanceLedger).read(doc_root)
 
     assert snapshot.manifest == manifest
     assert snapshot.provenance == expected_provenance
@@ -360,7 +360,7 @@ def test_status_reader_reader_derives_unsupported_stages_and_publication_blocker
     }
     artifact.with_suffix(".docx.manifest.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    snapshot = StatusReader().read(doc_root)
+    snapshot = StatusReader(ProvenanceLedger).read(doc_root)
 
     assert snapshot.unsupported_stages == ["accessibility-review"]
     assert snapshot.publication_blockers == [
@@ -375,7 +375,7 @@ def test_status_reader_reader_fails_open_for_invalid_manifest(tmp_path: Path) ->
     manifest_path.parent.mkdir(parents=True)
     manifest_path.write_text("not-json", encoding="utf-8")
 
-    snapshot = StatusReader().read(doc_root)
+    snapshot = StatusReader(ProvenanceLedger).read(doc_root)
 
     assert snapshot.manifest is None
     assert snapshot.provenance is None
@@ -401,7 +401,7 @@ def test_status_reader_reader_blocks_tampered_provenance_artifact(tmp_path: Path
     ledger.record_attestation("build-002", manifest.attestation())
 
     artifact.write_bytes(b"tampered")
-    snapshot = StatusReader().read(doc_root)
+    snapshot = StatusReader(ProvenanceLedger).read(doc_root)
 
     assert snapshot.succeeded is False
     assert any("artifact hash mismatch" in finding for finding in snapshot.publication_blockers)
@@ -437,7 +437,7 @@ def test_status_reader_reader_accepts_current_absolute_path_attestation(tmp_path
         },
     )
 
-    snapshot = StatusReader().read(doc_root)
+    snapshot = StatusReader(ProvenanceLedger).read(doc_root)
 
     assert snapshot.succeeded is True
     assert not any("provenance attestation mismatch" in finding for finding in snapshot.publication_blockers)

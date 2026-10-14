@@ -33,13 +33,13 @@ class StatusService:
         context_service: ContextService,
         review_service: ReviewService,
         document_repository: DocumentRepository,
-        status_reader_reader: StatusReader | None = None,
+        status_reader_reader: StatusReader,
     ) -> None:
         self.section_repository = section_repository
         self.context_service = context_service
         self.review_service = review_service
         self.document_repository = document_repository
-        self.status_reader_reader = status_reader_reader or StatusReader()
+        self.status_reader_reader = status_reader_reader
 
     def status_summary(
         self,

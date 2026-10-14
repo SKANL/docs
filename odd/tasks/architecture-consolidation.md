@@ -42,7 +42,7 @@ domain logic out of giant adapters.
 - [x] T5 Move locking/guard helpers behind the composition root for cli
       (`document_release`, `document_batch`, `document_app`); empty the T1
       allowlist. Route: delegated writer.
-- [ ] T5b Provenance port: inject the ledger through the composition root so
+- [x] T5b Provenance port: inject the ledger through the composition root so
       `application/provenance.py` drops its infrastructure import; delete
       `KNOWN_EXCEPTIONS`. Route: delegated. (Added after T5 deviation.)
 - [ ] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
@@ -116,4 +116,20 @@ domain logic out of giant adapters.
 - Full-suite evidence: T1 3206 passed / 3 timing-flaky failures under load
   (plugins sdk, pass in isolation); T2 (side worktree, 70ea2b16) 3211 passed,
   6 skipped. Final commit b360db80 (T5): 3211 passed, 6 skipped.
+- T5b done. RED: `KNOWN_EXCEPTIONS` and its shrink-only test deleted; the
+  scan reported `application/provenance.py`. GREEN: `application/provenance.py`
+  is now only `ProvenanceLedgerPort` (reusing the narrow-port idea of
+  `build_manifest_service.ProvenanceLedgerPort`, widened to the six methods
+  application calls) plus a `LedgerFactory` protocol with the ledger
+  constructor signature. The v2-compat `verify_attestation` and
+  `_without_optional_artifact_metadata` moved into
+  `infrastructure/provenance/ledger.py` (the lazy subclass is gone).
+  `composition.open_provenance_ledger` / `ApplicationComposition.provenance_ledger`
+  is injected into `PackagePublicationService`, `assemble_pipeline_resources`,
+  `StatusReader` (via `StatusService`, and `ApiApplication.status_reader` fed
+  by the sidecar) and `document_app._promote_published_build`. The ledger
+  was used by 3 src modules constructing it (not ~10); the rest only typed it.
+  Tests import the concrete ledger from infrastructure. Targeted
+  (architecture, unit/application, unit/api, sidecar, composition, cli,
+  pipeline integration) 1078 passed; ruff, mypy clean.
 - Next: T6.

@@ -20,16 +20,6 @@ SRC_ROOT = Path(__file__).resolve().parents[2] / "src" / "docs"
 _FORBIDDEN = "docs.infrastructure"
 _ALLOWED_ROOTS = ("infrastructure/", "composition.py")
 
-# Named, justified and shrink-only: a listed module that stops violating fails
-# the test so the entry gets deleted.
-KNOWN_EXCEPTIONS = {
-    # Subclasses the concrete ledger through a lazy `import_module` so that
-    # ten application services can keep calling `ProvenanceLedger(...)`.
-    # Removing it needs a provenance port plus injection through the root.
-    "application/provenance.py",
-}
-
-
 def _is_infra(name: str) -> bool:
     return name == _FORBIDDEN or name.startswith(_FORBIDDEN + ".")
 
@@ -94,16 +84,11 @@ def test_the_scan_finds_a_real_infrastructure_import():
 
 
 def test_only_the_composition_root_imports_infrastructure():
-    new = sorted(_violators() - KNOWN_EXCEPTIONS)
+    new = sorted(_violators())
     assert not new, (
         f"estos módulos importan `docs.infrastructure` directamente: {new}. "
         "Pedí el adaptador a `ApplicationComposition` en lugar de construirlo acá."
     )
-
-
-def test_the_exception_list_only_shrinks():
-    stale = sorted(KNOWN_EXCEPTIONS - _violators())
-    assert not stale, f"ya no violan; quitalos de KNOWN_EXCEPTIONS: {stale}"
 
 
 def test_the_runtime_sqlite_path_is_declared_once():

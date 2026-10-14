@@ -438,8 +438,8 @@ def test_sidecar_wsgi_delivery_routes_package_and_publish_a_verified_build(tmp_p
     import hashlib
 
     from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
-    from docs.application.provenance import ProvenanceLedger
     from docs.domain.artifacts import ArtifactRef, BuildManifest
+    from docs.infrastructure.provenance.ledger import ProvenanceLedger
 
     server = build_server(SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path))
     application = server._docs_application.application

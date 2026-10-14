@@ -23,7 +23,6 @@ from docs.application.document_pipeline import (
 from docs.application.pipeline_plan import describe_pipeline
 from docs.application.pipeline_registry import PUBLIC_PIPELINES
 from docs.application.pipeline_service import PipelineRequest
-from docs.application.provenance import ProvenanceLedger
 from docs.application.visual_baseline import VisualBaselineError, VisualBaselineService
 from docs.cli.commands.document_batch import BatchTransaction
 from docs.cli.commands.document_release import promote_release_candidate
@@ -165,7 +164,7 @@ def _promote_published_build(
     artifact = Path(draft_dir).parent / "current" / f"{resolved.doc_id}.{output_format}"
     if not artifact.is_file():
         return None
-    ledger = ProvenanceLedger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
+    ledger = deps.provenance_ledger(resolved_root / "runs" / "provenance.json", trusted_root=resolved_root)
     recorded = ledger.load_attestation(provenance_run_id or "")
     if recorded is None:
         raise RuntimeError("missing pre-publication build attestation")

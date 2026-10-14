@@ -49,6 +49,7 @@ DEPENDENCY_FIELDS = {
     "structural_audit_service",
     "artifact_reports",
     "package_publications",
+    "provenance_ledger",
     "rules_manifest_state",
 }
 

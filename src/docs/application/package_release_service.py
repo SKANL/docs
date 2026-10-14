@@ -8,7 +8,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from docs.application.provenance import ProvenanceLedger
+from docs.application.provenance import ProvenanceLedgerPort
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import sha256_file
 
@@ -27,7 +27,7 @@ class PackageReleaseService:
         output_format: str,
         source_dir: Path,
         destination: Path,
-        ledger: ProvenanceLedger,
+        ledger: ProvenanceLedgerPort,
         write_package: PackageWriter,
         candidate_sink: Callable[[Path], None] | None = None,
         verify_current_build: bool = True,
@@ -57,7 +57,7 @@ class PackageReleaseService:
             or not manifest.artifacts
             or sha256_file(artifact) != manifest.artifacts[0].sha256
             or not self._ledger.verify_attestation(
-                manifest.provenance_run, manifest.attestation()
+                manifest.provenance_run or "", manifest.attestation()
             )
         ):
             return False, "package-release manifest is not attested for the current build"
@@ -100,7 +100,7 @@ class PackageReleaseService:
                 if (
                     previous.document_id != self._document_id
                     or not self._ledger.verify_attestation(
-                        previous.provenance_run, previous.attestation()
+                        previous.provenance_run or "", previous.attestation()
                     )
                     or sha256_file(existing) != previous.artifacts[0].sha256
                 ):

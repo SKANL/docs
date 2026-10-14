@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from docs.application.provenance import ProvenanceLedger
+from docs.application.provenance import LedgerFactory
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import sha256_content, sha256_file
 
@@ -28,6 +28,9 @@ class StatusSnapshot:
 
 class StatusReader:
     """Fail-open reader for the latest v2 manifest and its provenance run."""
+
+    def __init__(self, ledger_factory: LedgerFactory) -> None:
+        self._ledger_factory = ledger_factory
 
     def read(self, document_root: Path) -> StatusSnapshot:
         try:
@@ -58,8 +61,8 @@ class StatusReader:
             return max(candidates, key=lambda item: (item[0], item[1]))[2]
         return max(fallback, key=lambda path: path.as_posix()) if fallback else None
 
-    @staticmethod
     def _status_from_payload(
+        self,
         document_root: Path, manifest: BuildManifest, payload: dict[str, Any]
     ) -> StatusSnapshot:
         report_value = payload.get("report")
@@ -76,11 +79,11 @@ class StatusReader:
             passed = manifest.verification.get("passed")
             succeeded = passed if isinstance(passed, bool) else None
         if provenance is None and manifest.provenance_run:
-            provenance = ProvenanceLedger(document_root / "runs" / "provenance.json").load_run(
+            provenance = self._ledger_factory(document_root / "runs" / "provenance.json").load_run(
                 manifest.provenance_run
             )
         unsupported_stages, publication_blockers = _runtime_status_details(execution)
-        publication_blockers.extend(_integrity_blockers(document_root, manifest))
+        publication_blockers.extend(_integrity_blockers(self._ledger_factory, document_root, manifest))
         if publication_blockers and succeeded is True:
             succeeded = False
         return StatusSnapshot(
@@ -94,7 +97,9 @@ class StatusReader:
         )
 
 
-def _integrity_blockers(document_root: Path, manifest: BuildManifest) -> list[str]:
+def _integrity_blockers(
+    ledger_factory: LedgerFactory, document_root: Path, manifest: BuildManifest
+) -> list[str]:
     """Validate the immutable evidence behind a v2 status snapshot.
 
     Current manifests without a provenance run remain readable.  Once a
@@ -104,7 +109,7 @@ def _integrity_blockers(document_root: Path, manifest: BuildManifest) -> list[st
     if not manifest.provenance_run:
         return []
     blockers: list[str] = []
-    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json")
+    ledger = ledger_factory(document_root / "runs" / "provenance.json")
     run = ledger.load_run(manifest.provenance_run)
     if run is None:
         blockers.append(f"provenance run missing: {manifest.provenance_run}")

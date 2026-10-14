@@ -9,7 +9,7 @@ from typing import Any
 
 from docs.application.pipeline_executor import PipelineReport, StageHandler, _PipelineExecutor
 from docs.application.pipeline_registry import PipelinePlanner, PipelineRegistry
-from docs.application.provenance import ProvenanceLedger
+from docs.application.provenance import ProvenanceLedgerPort
 from docs.application.stage_artifact_store import StageArtifactStore
 from docs.domain.identity import sha256_bytes
 from docs.domain.pipeline_kernel import (
@@ -118,7 +118,7 @@ class PipelineService:
         operations: StageOperationMap,
         publication: PublicationSpec,
         capabilities: ToolCapabilityRegistry,
-        ledger: ProvenanceLedger,
+        ledger: ProvenanceLedgerPort,
         atomic_transform: TransformPort,
         policy: PipelinePolicy | None = None,
         run_id_sink: Callable[[str], None] | None = None,

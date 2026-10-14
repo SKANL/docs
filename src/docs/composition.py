@@ -31,6 +31,7 @@ from docs.application.ingest import SOURCE_MANIFEST_NAME, IngestService
 from docs.application.package_publication_service import PackagePublicationService
 from docs.application.package_service import PackageService, assert_directory_identity
 from docs.application.pdf_render import PdfRendererAdapter
+from docs.application.provenance import LedgerFactory, ProvenanceLedgerPort
 from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
@@ -39,6 +40,7 @@ from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
 from docs.application.source_pipeline import SourcePipeline
 from docs.application.status import StatusService
+from docs.application.status_reader import StatusReader
 from docs.application.structural_audit import StructuralAuditService
 from docs.application.workspaces import WorkspaceRegistry
 from docs.domain.docx_structure import structure_parts
@@ -84,6 +86,7 @@ from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteRunStore,
 )
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 from docs.infrastructure.transform.system_transform import AtomicTransform
 from docs.infrastructure.verification.render_verification_adapter import RenderVerificationAdapter
@@ -163,6 +166,11 @@ logger = logging.getLogger(__name__)
 def open_workspace_registry(registry_path: str | Path | None = None) -> WorkspaceRegistry:
     """Open the workspace registry with the atomic file writer wired in."""
     return WorkspaceRegistry(registry_path, write_text=atomic_write_text)
+
+
+def open_provenance_ledger(log_path: Path, *, trusted_root: Path | None = None) -> ProvenanceLedgerPort:
+    """Open the filesystem provenance ledger stored at ``log_path``."""
+    return ProvenanceLedger(log_path, trusted_root=trusted_root)
 
 
 def resolve_workspace_registry(workspace_root: Path) -> WorkspaceRegistry:
@@ -287,6 +295,7 @@ class ApplicationComposition:
     structural_audit_service: StructuralAuditService
     artifact_reports: ArtifactReportService
     package_publications: PackagePublicationService
+    provenance_ledger: LedgerFactory
     rules_manifest_state: Any
 
     def __init__(
@@ -471,7 +480,14 @@ class ApplicationComposition:
         self.corrections = CorrectionsService(self.section_repository, self.evidence_repository)
         self.context = ContextService(self.context_repository, self.document_repository, ContextMarkdownAdapter())
         self.section = SectionService(self.review, self.evidence, self.context_repository)
-        self.status = StatusService(self.section_repository, self.context, self.review, self.document_repository)
+        self.provenance_ledger = open_provenance_ledger
+        self.status = StatusService(
+            self.section_repository,
+            self.context,
+            self.review,
+            self.document_repository,
+            StatusReader(self.provenance_ledger),
+        )
         self.revision = RevisionService(self.section_repository, self.review, self.context, self.evidence_repository)
         self.history = RunHistoryService(self.workspace)
         self.run_recorder = RunRecorderService(self.workspace, self.source_repository)
@@ -490,6 +506,7 @@ class ApplicationComposition:
             ),
             lock=owned_directory_lock,
             transform=AtomicTransform(),
+            ledger_factory=self.provenance_ledger,
         )
         self.rules_manifest_state = _rules_manifest_state
 
@@ -575,6 +592,7 @@ class ApplicationComposition:
         return assemble_pipeline_resources(
             **kwargs,
             capability_detector=self.create_tool_capability_detector(paths),
+            ledger_factory=self.provenance_ledger,
         )
 
     def create_capability_registry(
@@ -629,7 +647,7 @@ class ApplicationComposition:
         destinations: tuple[Path, ...],
         operation: Any,
         capabilities: Any,
-        ledger: Any,
+        ledger: ProvenanceLedgerPort,
         policy: Any = None,
         run_id_sink: Any = None,
         excluded_stages: frozenset[str] = frozenset(),

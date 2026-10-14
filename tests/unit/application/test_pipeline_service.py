@@ -10,7 +10,6 @@ from docs.application.pipeline_service import (
     PublicationSpec,
     _finding_code,
 )
-from docs.application.provenance import ProvenanceLedger
 from docs.domain.pipeline_kernel import (
     ArtifactContract,
     PipelineDefinition,
@@ -19,6 +18,7 @@ from docs.domain.pipeline_kernel import (
 )
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 from docs.infrastructure.transform.system_transform import AtomicTransform
 
 

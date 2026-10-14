@@ -13,8 +13,9 @@ from urllib.parse import urlsplit
 from docs.api.application import ApiApplication
 from docs.api.http import Router
 from docs.api.server import GracefulHTTPServer, TransportConfig, create_server, serve
+from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
-from docs.composition import RuntimeStores, open_workspace_registry
+from docs.composition import RuntimeStores, open_provenance_ledger, open_workspace_registry
 from docs.plugins.registry import PluginRegistry
 from docs.sidecar.config import SidecarConfig
 from docs.sidecar.document_actions import DocumentActions, workspace_services
@@ -111,6 +112,7 @@ def _build_api_application(
         document_context_writer=actions.set_context,
         revision_service=actions.revise,
         workspace_services_factory=workspace_services,
+        status_reader=StatusReader(open_provenance_ledger),
         router=Router(
             cors_origins=config.cors_origins,
             max_body_size=config.max_body_bytes,

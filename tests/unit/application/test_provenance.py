@@ -3,9 +3,9 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from docs.application.provenance import ProvenanceLedger
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.identity import sha256_content
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 
 
 def test_record_run_writes_deterministic_hashes_and_load_run_returns_them(tmp_path: Path) -> None:

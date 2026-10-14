@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.build_manifest_service import BuildManifestService
-from docs.application.provenance import ProvenanceLedger
+from docs.application.provenance import ProvenanceLedgerPort
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import sha256_file
 
@@ -16,7 +16,7 @@ from docs.domain.identity import sha256_file
 class PipelinePublication:
     """Create provenance and stage verified outputs for atomic publication."""
 
-    def __init__(self, manifests: BuildManifestService, ledger: ProvenanceLedger) -> None:
+    def __init__(self, manifests: BuildManifestService, ledger: ProvenanceLedgerPort) -> None:
         self._manifests = manifests
         self._ledger = ledger
 

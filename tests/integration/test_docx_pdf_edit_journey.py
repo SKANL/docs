@@ -11,7 +11,6 @@ from docx.shared import Inches
 from docs.application.docx_import import DocxImportService
 from docs.application.evidence_passport import EvidencePassportService
 from docs.application.pdf_render import PdfRendererAdapter
-from docs.application.provenance import ProvenanceLedger
 from docs.domain.ports.pdf_text_edit_port import BlockReplacement
 from docs.domain.text_fitting import FittedText
 from docs.infrastructure.docx.libreoffice_qa_adapter import (
@@ -23,6 +22,7 @@ from docs.infrastructure.docx.python_docx_audit_adapter import PythonDocxAuditAd
 from docs.infrastructure.docx.tool_resolver_adapter import SystemToolResolverAdapter
 from docs.infrastructure.pdf.pypdfium2_text_edit_adapter import Pypdfium2TextEditAdapter
 from docs.infrastructure.persistence.evidence_passport_store import FileEvidencePassportStore
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 
 _PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUB"

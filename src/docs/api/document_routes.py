@@ -19,7 +19,6 @@ from pydantic import ValidationError
 
 from docs.application.documents import DocumentService
 from docs.application.imports import ImportError
-from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistryError
 from docs.domain.ports.document_repository import DocumentExistsError, DocumentNotFoundError
 from docs.domain.sections import infer_section_id_from_path
@@ -209,7 +208,9 @@ class DocumentRoutes:
         document_root = Path(str(workspace["root"])) / "documents" / document_id
         if not (document_root / "document.json").is_file():
             raise APIError("document_not_found", "Document not found in workspace", 404)
-        snapshot = StatusReader().read(document_root)
+        if self._host.status_reader is None:
+            raise APIError("status_not_configured", "Document status reader is not configured", 503)
+        snapshot = self._host.status_reader.read(document_root)
         return Response.json({
             "document_id": document_id,
             "workspace_id": workspace["id"],
