@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -64,10 +65,21 @@ from docs.infrastructure.locking import directory_handle_guard, owned_directory_
 from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.filesystem_asset_repository import FilesystemAssetRepository
 from docs.infrastructure.persistence.filesystem_source_repository import FilesystemSourceRepository
+from docs.infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
 from docs.infrastructure.persistence.json_repository import JsonDocumentRepository
 from docs.infrastructure.persistence.json_section_repository import JsonSectionRepository
+from docs.infrastructure.persistence.sqlite_runtime import (
+    SqliteArtifactStore,
+    SqliteFindingStore,
+    SqliteGraphStore,
+    SqliteJobQueue,
+    SqliteLeaseStore,
+    SqlitePassportStore,
+    SqlitePublicationStore,
+    SqliteRunStore,
+)
 from docs.infrastructure.process.pandoc_runner_adapter import SubprocessPandocRunner
 from docs.infrastructure.tools.tool_capability_detector_adapter import NativeToolCapabilityDetector
 from docs.infrastructure.transform.system_transform import AtomicTransform
@@ -148,6 +160,77 @@ logger = logging.getLogger(__name__)
 def open_workspace_registry(registry_path: str | Path | None = None) -> WorkspaceRegistry:
     """Open the workspace registry with the atomic file writer wired in."""
     return WorkspaceRegistry(registry_path, write_text=atomic_write_text)
+
+
+def resolve_workspace_registry(workspace_root: Path) -> WorkspaceRegistry:
+    """Prefer the workspace-local registry over the process-wide one.
+
+    A document configured by this cwd must never fall back to the process-wide
+    active workspace unless the caller supplied `DOCS_WORKSPACE_REGISTRY`;
+    that fallback can enqueue a run for a different project.
+    """
+    local = workspace_root / ".docs" / "workspaces.json"
+    # `None` lets the registry apply its own env-then-home fallback.
+    return open_workspace_registry(local if local.is_file() else None)
+
+
+def resolve_runtime_root(workspace_root: Path) -> Path:
+    """Root that owns the durable runtime state: the active workspace, else `workspace_root`."""
+    root = workspace_root.resolve()
+    active = resolve_workspace_registry(root).active()
+    return Path(str(active["root"])).resolve() if active is not None else root
+
+
+def runtime_state_path(root: Path) -> Path:
+    """The one location of a workspace's durable runtime SQLite file."""
+    return root / ".docs" / "runtime.sqlite3"
+
+
+class RuntimeStores:
+    """Durable runtime stores for one workspace root, each built on first use.
+
+    Construction creates the SQLite file and schema, so stores stay lazy: a
+    caller that only reads runs never touches the queue or lease tables.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.state = runtime_state_path(root)
+
+    @cached_property
+    def runs(self) -> SqliteRunStore:
+        return SqliteRunStore(self.state)
+
+    @cached_property
+    def queue(self) -> SqliteJobQueue:
+        return SqliteJobQueue(self.state)
+
+    @cached_property
+    def passports(self) -> SqlitePassportStore:
+        return SqlitePassportStore(self.state)
+
+    @cached_property
+    def artifacts(self) -> SqliteArtifactStore:
+        return SqliteArtifactStore(self.state)
+
+    @cached_property
+    def findings(self) -> SqliteFindingStore:
+        return SqliteFindingStore(self.state)
+
+    @cached_property
+    def publications(self) -> SqlitePublicationStore:
+        return SqlitePublicationStore(self.state)
+
+    @cached_property
+    def graph(self) -> SqliteGraphStore:
+        return SqliteGraphStore(self.state)
+
+    @cached_property
+    def leases(self) -> SqliteLeaseStore:
+        return SqliteLeaseStore(self.state)
+
+    @cached_property
+    def idempotency(self) -> SqliteIdempotencyStore:
+        return SqliteIdempotencyStore(self.state)
 
 
 def _rules_manifest_state(config: dict[str, Any]) -> tuple[bool, int]:

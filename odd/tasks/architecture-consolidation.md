@@ -32,7 +32,7 @@ domain logic out of giant adapters.
 - [x] T1 Architecture test: only `composition.py` (and `infrastructure/`)
       may import `docs.infrastructure`; start with an explicit allowlist of
       current violators that later tasks shrink to empty. Route: inline.
-- [ ] T2 `RuntimeStores` bundle + single `state_path`/registry resolution,
+- [x] T2 `RuntimeStores` bundle + single `state_path`/registry resolution,
       exposed by the composition root; migrate cli (`run_app`, `document_run`)
       to it. Route: delegated writer.
 - [ ] T3 Migrate sidecar (`stores.py`, `app.py`, `worker.py`) to the bundle;
@@ -64,10 +64,19 @@ domain logic out of giant adapters.
 
 ## Progress
 - Branch: `refactor/single-composition-root`.
-- T1 done (commit below). RED: with empty ALLOWLIST the scan reported 12
+- T1 done (commit 6a2be37b). RED: with empty ALLOWLIST the scan reported 12
   violators (the mapped 10 plus `local_worker.py` and the dynamic
   `import_module` in `application/provenance.py`); GREEN with the allowlist.
   Full suite 3206 passed, 3 failed (2 in `tests/unit/plugins/test_sdk.py`
   process-timeout tests, flaky under full-suite load: 32/32 pass in
   isolation), ruff and mypy clean. Full suite takes ~21 min.
-- Next: T2.
+- T2 done. RED: `tests/unit/test_runtime_stores.py` failed at collection
+  (ImportError on `RuntimeStores`, `resolve_workspace_registry`,
+  `resolve_runtime_root`, `runtime_state_path`); GREEN 5 passed. Added to
+  `composition.py` (lazy `RuntimeStores`, one registry/state-path
+  resolution); `cli/commands/run_app.py` and `document_run.py` migrated and
+  removed from the allowlist (`document_app.py` adapted to the new
+  `durable_evidence_stores` return). Targeted: architecture + unit/cli +
+  composition 151 passed; ruff and mypy clean. Full suite runs in a side
+  worktree (~21 min) and is reported in the final handoff.
+- Next: T3.

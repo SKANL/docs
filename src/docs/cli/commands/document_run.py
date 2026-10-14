@@ -13,17 +13,9 @@ from pathlib import Path
 
 import typer
 
-from docs.composition import open_workspace_registry
+from docs.composition import RuntimeStores, resolve_runtime_root, resolve_workspace_registry
 from docs.domain.pipeline_policy import PipelineMode
 from docs.domain.runtime_records import Run
-from docs.infrastructure.persistence.sqlite_runtime import (
-    SqliteArtifactStore,
-    SqliteFindingStore,
-    SqliteJobQueue,
-    SqlitePassportStore,
-    SqlitePublicationStore,
-    SqliteRunStore,
-)
 
 _FINISHED_STATUSES = {"succeeded", "completed", "failed", "cancelled", "expired"}
 
@@ -32,45 +24,21 @@ _FINISHED_STATUSES = {"succeeded", "completed", "failed", "cancelled", "expired"
 class QueuedRun:
     run_id: str
     workspace_root: Path
-    state: Path
+    stores: RuntimeStores
 
 
-def _open_registry(deps_workspace_root: Path):
-    """Prefer the workspace-local registry over the process-wide one.
-
-    A document configured by this cwd must never fall back to the
-    process-wide active workspace. That fallback can enqueue a run for a
-    different project and makes the detached worker fail against the
-    wrong document. Use the workspace-local registry unless the caller
-    explicitly supplied DOCS_WORKSPACE_REGISTRY.
-    """
-    registry_path = deps_workspace_root / ".docs" / "workspaces.json"
-    return open_workspace_registry(
-        registry_path
-        if registry_path.is_file()
-        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
-    )
-
-
-def durable_evidence_stores(
-    deps,
-) -> tuple[SqlitePassportStore, SqliteArtifactStore, SqliteFindingStore]:
-    root = deps.workspace.documents_dir.parent.resolve()
-    active = _open_registry(root).active()
-    if active is not None:
-        root = Path(str(active["root"])).resolve()
-    state = root / ".docs" / "runtime.sqlite3"
-    return SqlitePassportStore(state), SqliteArtifactStore(state), SqliteFindingStore(state)
+def durable_evidence_stores(deps) -> RuntimeStores:
+    return RuntimeStores(resolve_runtime_root(deps.workspace.documents_dir.parent))
 
 
 def queue_run(deps, document: str, output_format: str, policy: PipelineMode) -> QueuedRun:
     """Persist a Run and enqueue its job in the active workspace's runtime store."""
     resolved = deps.resolve_context(document)
-    active = _open_registry(deps.workspace.documents_dir.parent.resolve()).active()
+    active = resolve_workspace_registry(deps.workspace.documents_dir.parent.resolve()).active()
     if active is None:
         raise typer.BadParameter("No workspace is selected; run docs workspace use <id> first")
     workspace_root = Path(str(active["root"])).resolve()
-    state = workspace_root / ".docs" / "runtime.sqlite3"
+    stores = RuntimeStores(workspace_root)
     run_id = str(uuid.uuid4())
     payload = {
         "run_id": run_id,
@@ -80,9 +48,9 @@ def queue_run(deps, document: str, output_format: str, policy: PipelineMode) -> 
         "format": output_format,
         "policy": policy.value,
     }
-    SqliteRunStore(state).put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
-    SqliteJobQueue(state).enqueue(run_id, payload)
-    return QueuedRun(run_id, workspace_root, state)
+    stores.runs.put(Run(run_id, payload=payload, created_at=datetime.now(UTC).isoformat()))
+    stores.queue.enqueue(run_id, payload)
+    return QueuedRun(run_id, workspace_root, stores)
 
 
 def spawn_detached_worker(workspace_root: Path) -> None:
@@ -124,7 +92,7 @@ def spawn_detached_worker(workspace_root: Path) -> None:
 
 
 def wait_for_run(queued: QueuedRun) -> None:
-    store = SqliteRunStore(queued.state)
+    store = queued.stores.runs
     while True:
         item = store.get(queued.run_id)
         if item is None:
@@ -135,7 +103,7 @@ def wait_for_run(queued: QueuedRun) -> None:
 
 
 def run_status(queued: QueuedRun, default: str) -> str:
-    current = SqliteRunStore(queued.state).get(queued.run_id)
+    current = queued.stores.runs.get(queued.run_id)
     return current.status if current is not None else default
 
 
@@ -146,16 +114,16 @@ def run_inline(queued: QueuedRun) -> str:
     # implementation of execution and evidence finalization.
     from docs.sidecar.worker import build_worker
 
-    state = queued.state
+    stores = queued.stores
     worker = build_worker(
         queued.workspace_root,
-        SqliteJobQueue(state),
-        state,
-        SqliteRunStore(state),
-        SqlitePassportStore(state),
-        SqliteArtifactStore(state),
-        SqliteFindingStore(state),
-        SqlitePublicationStore(state),
+        stores.queue,
+        stores.state,
+        stores.runs,
+        stores.passports,
+        stores.artifacts,
+        stores.findings,
+        stores.publications,
     )
     worker_result = worker.run_once()
     if worker_result is None:

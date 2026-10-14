@@ -28,8 +28,6 @@ ALLOWLIST: set[str] = {
     "cli/commands/document_app.py",
     "cli/commands/document_batch.py",
     "cli/commands/document_release.py",
-    "cli/commands/document_run.py",
-    "cli/commands/run_app.py",
     "cli/commands/source_app.py",
     "local_worker.py",
     "sidecar/app.py",
