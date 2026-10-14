@@ -221,4 +221,4 @@ domain logic out of giant adapters.
   `test_infrastructure_imports`). Inline route; docs-only, so no RED. Every
   named path/symbol was checked to exist. `test_agents_md_content.py` and the
   packaging test pass.
-- Next: full suite.
+- Full suite on 395a6068: 3238 passed, 6 skipped, 0 failed. All tasks done; next: native review, then PR (user decision).
