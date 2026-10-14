@@ -719,7 +719,9 @@ def test_shield_and_drain_surfaces_drained_operation_failure_after_cancellation(
     asyncio.run(exercise())
 
 
-def test_async_cleanup_failure_is_not_acknowledged_after_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_async_cleanup_failure_is_not_acknowledged_after_cancellation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     started = asyncio.Event()
 
     async def handler(job: Job, scratch: Path) -> int:
@@ -736,7 +738,7 @@ def test_async_cleanup_failure_is_not_acknowledged_after_cancellation(monkeypatc
         queue = FakeQueue(Job("job-1", {"run_id": "run-1"}))
         leases = FakeLeases()
         service = WorkerService(
-            queue, leases, handler, scratch_parent=Path.cwd(), worker_id="worker-1"
+            queue, leases, handler, scratch_parent=tmp_path, worker_id="worker-1"
         )
         task = asyncio.create_task(service.run_async())
         await started.wait()
