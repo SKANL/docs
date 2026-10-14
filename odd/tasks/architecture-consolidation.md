@@ -47,7 +47,7 @@ domain logic out of giant adapters.
       `KNOWN_EXCEPTIONS`. Route: delegated. (Added after T5 deviation.)
 - [x] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
       in domain/identity-adjacent module; replace duplicates. Route: delegated.
-- [ ] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
+- [x] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
       no test substitutes them; merge Document/Registry/Template repository
       ports; drop or justify `PlatformSandboxProvider`. Route: delegated.
 - [ ] T8 Split `composition.py`: config/token/path logic out to
@@ -146,4 +146,30 @@ domain logic out of giant adapters.
   a top-level list; `doc_crud_app`/`workspaces` raise or differ. Merging any of
   those would change semantics. Targeted domain/api/workers/plugins/sidecar/
   architecture 733 passed; ruff, mypy clean.
-- Next: T7.
+- T7 done. Per-port decisions (rg over src and tests):
+  ContextRepository, DocxAssemblyPort, DocxAuditPort, EvidenceRepository,
+  SectionRepository, SourceRepository: KEPT. Each is imported by application
+  services (context/section, docx_assembly, format_audit, 7 evidence
+  consumers, 5 section consumers, collection); inlining the adapter would
+  make application import infrastructure, so the hexagonal rule wins (and
+  test_context_service/test_context_gap_report do define a `read_topic` fake).
+  FontSourcePort: REMOVED. Only `Pypdfium2TextEditAdapter` (infrastructure)
+  used it, with one impl (`DejaVuFontSource`) and no test substitute; the
+  adapter now types the optional parameter as `DejaVuFontSource` (infra to
+  infra) and the contract text moved to the source's docstring, with a
+  `# ponytail:` naming the upgrade path. RED/GREEN: new
+  `tests/architecture/test_ports_have_consumers.py` (every domain port needs
+  a consumer outside infrastructure) failed naming `font_source_port`, passes
+  after. Its shrink-only allowlist names `blob_store`, `graph_store`,
+  `plugin_executor` (runtime-store ports pinned by `test_runtime_ports.py`,
+  outside the candidate list; flagged for a later decision).
+  DocumentRepository/RegistryRepository/TemplateRepository: KEPT split. They
+  are narrow interfaces consumed by different services (`DocumentService`
+  takes registry and template separately; `test_repository_ports.py` pins
+  each) and one class already implements all three, so merging would only
+  widen every consumer. `PlatformSandboxProvider`: KEPT. It has no prod impl
+  but it is the injection seam of `PluginRunner` (fail-closed: without a
+  provider-issued attestation nothing counts as sandboxed) and
+  `tests/unit/plugins/test_sdk.py` substitutes it with two fakes. Targeted
+  architecture + pdf adapter + infrastructure + domain 1398 passed; ruff, mypy clean.
+- Next: T8.

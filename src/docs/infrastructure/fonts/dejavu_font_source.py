@@ -72,7 +72,13 @@ def _font_dir() -> Path | None:
 
 
 class DejaVuFontSource:
-    """`FontSourcePort` over matplotlib's bundled DejaVu family."""
+    """Real font files, from matplotlib's bundled DejaVu family, for text a base-14 face cannot draw.
+
+    Needed only for correctness, never for taste: a base-14 face is encoded
+    WinAnsi and renders Russian, Greek or Ukrainian as empty boxes. Latin
+    targets never reach this source. `load` returning `None` is not an error:
+    the caller falls back to the base-14 face and reports the substitution.
+    """
 
     @lru_cache(maxsize=len(_FACES))  # noqa: B019
     def load(self, face: str, bold: bool, italic: bool) -> bytes | None:

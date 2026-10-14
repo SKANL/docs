@@ -34,12 +34,12 @@ from docs.domain.alignment import Alignment
 from docs.domain.block_grouping import DOMINANT_STYLE_SHARE, TextRun
 from docs.domain.fonts import needs_embedded_font, substitute_font
 from docs.domain.pdf_id import normalize_pdf_id
-from docs.domain.ports.font_source_port import FontSourcePort
 from docs.domain.ports.pdf_text_edit_port import (
     BlockReplacement,
     WriteDiagnostic,
     WriteReport,
 )
+from docs.infrastructure.fonts.dejavu_font_source import DejaVuFontSource
 
 _LINE_SPACING = 1.18
 
@@ -87,7 +87,7 @@ _SUBSET_TAG_LENGTH = 6
 #
 # Substitution is not a shortcut here. It is the only option that produces a
 # readable document.
-# When base-14 cannot draw the text at all, `FontSourcePort` supplies a real
+# When base-14 cannot draw the text at all, `DejaVuFontSource` supplies a real
 # face instead; see `infrastructure/fonts/`. Base-14 remains the default
 # because it embeds nothing.
 #
@@ -432,7 +432,10 @@ def _match_key(text: str, left: float, bottom: float) -> tuple[str, float, float
 class Pypdfium2TextEditAdapter:
     """`PdfTextEditPort` implementation over the raw PDFium C API."""
 
-    def __init__(self, font_source: FontSourcePort | None = None) -> None:
+    def __init__(self, font_source: DejaVuFontSource | None = None) -> None:
+        # ponytail: one source today, so no port; the contract is `load(face, bold,
+        # italic) -> bytes | None` (None = unavailable, never an error). Reintroduce
+        # a Protocol when a second font source appears.
         # Optional: without it, text a base-14 face cannot draw renders as
         # empty boxes and the run reports the substitution, like every other
         # missing optional toolchain here.
