@@ -16,6 +16,28 @@ from urllib.parse import urlencode, urlsplit
 
 from docs.application.graph_queries import GraphQueryService
 
+# query name -> the parameter that carries its subject when `mode=` is used
+# (the `query=` alias always uses `id`).
+_BY_ID = {
+    "findings_affected_by_revision": "revision_id",
+    "artifacts_derived_from_input": "input_id",
+    "source_impact": "source_id",
+}
+_PARAMETERLESS = frozenset(
+    {"claims_without_evidence", "unused_references", "unmet_requirements", "stale_artifacts", "requirement_coverage"}
+)
+# Every named query, in contract order (the OpenAPI enum is built from this).
+GRAPH_QUERIES = (
+    "claims_without_evidence",
+    "findings_affected_by_revision",
+    "artifacts_derived_from_input",
+    "unused_references",
+    "unmet_requirements",
+    "stale_artifacts",
+    "source_impact",
+    "requirement_coverage",
+)
+
 
 class GraphRoutes:
     """Graph endpoints over the host application."""
@@ -58,36 +80,15 @@ class GraphRoutes:
         identifier = params.get("id") if query_name is not None else None
         result: Any
         payload: dict[str, Any]
-        if selected_query == "claims_without_evidence":
-            result = query.claims_without_evidence()
+        if selected_query in _PARAMETERLESS:
+            result = getattr(query, selected_query)()
             payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "findings_affected_by_revision":
-            revision_id = identifier if query_name is not None else params.get("revision_id")
-            if not revision_id:
-                identifier_name = "id" if query_name is not None else "revision_id"
-                raise APIError(
-                    "invalid_graph_query",
-                    f"{identifier_name} is required for findings_affected_by_revision",
-                    400,
-                )
-            result = query.findings_affected_by_revision(revision_id)
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "artifacts_derived_from_input":
-            input_id = identifier if query_name is not None else params.get("input_id")
-            if not input_id:
-                identifier_name = "id" if query_name is not None else "input_id"
-                raise APIError(
-                    "invalid_graph_query",
-                    f"{identifier_name} is required for artifacts_derived_from_input",
-                    400,
-                )
-            result = query.artifacts_derived_from_input(input_id)
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "unused_references":
-            result = query.unused_references()
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query == "unmet_requirements":
-            result = query.unmet_requirements()
+        elif selected_query in _BY_ID:
+            identifier_name = "id" if query_name is not None else _BY_ID[selected_query]
+            target = identifier if query_name is not None else params.get(identifier_name)
+            if not target:
+                raise APIError("invalid_graph_query", f"{identifier_name} is required for {selected_query}", 400)
+            result = getattr(query, selected_query)(target)
             payload = {"items": [as_dict(item) for item in (result.value or ())]}
         elif selected_query is not None:
             parameter_name = "query" if query_name is not None else "mode"
@@ -114,6 +115,10 @@ class GraphRoutes:
             payload = {"items": [as_dict(item) for item in (result.value or ())]}
         if result.graph_unavailable:
             payload = {"items": [], "graph_unavailable": True, "warnings": list(result.warnings)}
+        else:
+            # "no data" (the source kinds are absent) must never read as "nothing wrong"
+            coverage = query.coverage(selected_query).value or {}
+            payload = {**payload, "no_data": coverage.get("no_data", True), "coverage": coverage.get("counts", {})}
         return Response.json(payload)
 
     def run_graph(self, run_id: str, request: Request) -> Response:

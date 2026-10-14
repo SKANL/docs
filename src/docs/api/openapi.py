@@ -8,6 +8,7 @@ from typing import Any
 from docs.domain.identity import canonical_json
 
 from .document_dto import document_openapi_schemas
+from .graph_routes import GRAPH_QUERIES
 from .operations import OPERATIONS, available_cli_routes, component_schemas
 from .workspace_dto import workspace_openapi_schemas
 
@@ -384,13 +385,7 @@ def _declared_paths() -> dict[str, Any]:
                     "description": "Optional graph read-model query mode. Omit it to return the complete graph.",
                     "schema": {
                         "type": "string",
-                        "enum": [
-                            "claims_without_evidence",
-                            "findings_affected_by_revision",
-                            "artifacts_derived_from_input",
-                            "unused_references",
-                            "unmet_requirements",
-                        ],
+                        "enum": list(GRAPH_QUERIES),
                     },
                 },
                 {
@@ -399,19 +394,13 @@ def _declared_paths() -> dict[str, Any]:
                     "description": "Review Studio graph query alias. Cannot be combined with mode.",
                     "schema": {
                         "type": "string",
-                        "enum": [
-                            "claims_without_evidence",
-                            "findings_affected_by_revision",
-                            "artifacts_derived_from_input",
-                            "unused_references",
-                            "unmet_requirements",
-                        ],
+                        "enum": list(GRAPH_QUERIES),
                     },
                 },
                 {
                     "name": "id",
                     "in": "query",
-                    "description": "Identifier required by findings_affected_by_revision or artifacts_derived_from_input when query is used.",
+                    "description": "Identifier required by findings_affected_by_revision, artifacts_derived_from_input or source_impact when query is used.",
                     "schema": {"type": "string"},
                 },
                 {
@@ -424,6 +413,12 @@ def _declared_paths() -> dict[str, Any]:
                     "name": "input_id",
                     "in": "query",
                     "description": "Input identifier required by artifacts_derived_from_input.",
+                    "schema": {"type": "string"},
+                },
+                {
+                    "name": "source_id",
+                    "in": "query",
+                    "description": "Source, evidence or input node identifier required by source_impact.",
                     "schema": {"type": "string"},
                 },
                 {"name": "workspace_id", "in": "query", "schema": {"type": "string"}},

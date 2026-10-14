@@ -99,9 +99,13 @@ def test_graph_query_modes_are_documented() -> None:
         "artifacts_derived_from_input",
         "unused_references",
         "unmet_requirements",
+        "stale_artifacts",
+        "source_impact",
+        "requirement_coverage",
     ]
     assert parameters["revision_id"]["description"]
     assert parameters["input_id"]["description"]
+    assert parameters["source_id"]["description"]
 
 
 def test_review_studio_graph_query_aliases_and_id_are_documented() -> None:
@@ -114,6 +118,9 @@ def test_review_studio_graph_query_aliases_and_id_are_documented() -> None:
         "artifacts_derived_from_input",
         "unused_references",
         "unmet_requirements",
+        "stale_artifacts",
+        "source_impact",
+        "requirement_coverage",
     ]
     assert parameters["id"]["description"]
     assert parameters["mode"]["schema"]["enum"] == parameters["query"]["schema"]["enum"]
