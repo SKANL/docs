@@ -206,46 +206,6 @@ class Blob(_Contract):
 
 
 @dataclass(frozen=True)
-class Graph(_Contract):
-    nodes: tuple[str, ...] = ()
-    edges: tuple[tuple[str, str], ...] = ()
-
-    def __post_init__(self) -> None:
-        if type(self.nodes) not in (list, tuple) or any(type(node) is not str or not node for node in self.nodes):
-            raise TypeError("nodes must contain non-empty strings")
-        if type(self.edges) not in (list, tuple):
-            raise TypeError("edges must contain two-item lists of non-empty strings")
-        parsed_edges: list[tuple[str, str]] = []
-        for edge in self.edges:
-            if (
-                type(edge) not in (list, tuple)
-                or len(edge) != 2
-                or any(type(node) is not str or not node for node in edge)
-            ):
-                raise TypeError("edges must contain two-item lists of non-empty strings")
-            parsed_edges.append((edge[0], edge[1]))
-        object.__setattr__(self, "nodes", tuple(self.nodes))
-        object.__setattr__(self, "edges", tuple(parsed_edges))
-
-    def _payload(self) -> dict[str, Any]:
-        return {"nodes": list(self.nodes), "edges": [list(edge) for edge in self.edges]}
-
-    @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> Graph:
-        payload = cls._check_schema(payload)
-        nodes = _list_field(payload, "nodes")
-        edges = _list_field(payload, "edges")
-        if any(type(node) is not str or not node for node in nodes):
-            raise TypeError("nodes must contain non-empty strings")
-        parsed_edges: list[tuple[str, str]] = []
-        for edge in edges:
-            if type(edge) is not list or len(edge) != 2 or any(type(node) is not str or not node for node in edge):
-                raise TypeError("edges must contain two-item lists of non-empty strings")
-            parsed_edges.append((edge[0], edge[1]))
-        return cls(tuple(nodes), tuple(parsed_edges))
-
-
-@dataclass(frozen=True)
 class Job(_Contract):
     id: str
     payload: Mapping[str, Any] = field(default_factory=dict)

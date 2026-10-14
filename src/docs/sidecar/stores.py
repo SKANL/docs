@@ -362,41 +362,6 @@ class WorkspacePublicationStore:
         ]
 
 
-class WorkspaceGraphStore:
-    def __init__(self, registry: WorkspaceRegistry, fallback_root: Path) -> None:
-        self.roots = WorkspaceRoots(registry, fallback_root)
-        self.fallback_root = fallback_root.resolve()
-        self._graph = PerRoot(RuntimeStores)
-
-    @property
-    def path(self) -> Path:
-        return runtime_state_path(self.fallback_root)
-
-    def _store(self, workspace_id: str | None = None) -> Any:
-        return self._graph(self.roots.root_for(workspace_id)).graph
-
-    def for_workspace(self, workspace_id: str) -> WorkspaceGraphView:
-        return WorkspaceGraphView(self, workspace_id)
-
-    def get(self, workspace_id: str | None = None) -> Any:
-        return self._store(workspace_id).get()
-
-    def put(self, value: Any) -> None:
-        self._store().put(value)
-
-
-class WorkspaceGraphView:
-    def __init__(self, parent: WorkspaceGraphStore, workspace_id: str) -> None:
-        self.parent = parent
-        self.workspace_id = workspace_id
-
-    def get(self) -> Any:
-        return self.parent.get(self.workspace_id)
-
-    def put(self, value: Any) -> None:
-        self.parent._store(self.workspace_id).put(value)
-
-
 class WorkspaceSemanticGraphStore:
     """Read-only document graph of a workspace, projected from its files on read."""
 

@@ -29,15 +29,11 @@ class Artifacts:
     def get(self, key): return None
 
 
-class Graphs:
-    def get(self): return None
-
-
 @pytest.fixture
 def stores():
     return {
         "run_store": Runs(), "queue": Queue(), "passport_store": Passports(),
-        "artifact_store": Artifacts(), "graph_store": Graphs(),
+        "artifact_store": Artifacts(),
     }
 
 

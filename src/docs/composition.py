@@ -96,7 +96,6 @@ from docs.infrastructure.persistence.json_section_repository import JsonSectionR
 from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteFindingStore,
-    SqliteGraphStore,
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -236,10 +235,6 @@ class RuntimeStores:
     @cached_property
     def publications(self) -> SqlitePublicationStore:
         return SqlitePublicationStore(self.state)
-
-    @cached_property
-    def graph(self) -> SqliteGraphStore:
-        return SqliteGraphStore(self.state)
 
     @cached_property
     def leases(self) -> SqliteLeaseStore:

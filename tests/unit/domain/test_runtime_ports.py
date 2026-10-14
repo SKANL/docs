@@ -4,7 +4,6 @@ import inspect
 from typing import Protocol
 
 from docs.domain.ports.blob_store import BlobStore
-from docs.domain.ports.graph_store import GraphStore
 from docs.domain.ports.job_queue import CancellableJobQueue, JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.run_store import ArtifactStore, PassportStore, RunStore
@@ -21,7 +20,6 @@ def test_runtime_ports_are_protocols() -> None:
         ArtifactStore,
         BlobStore,
         CancellableJobQueue,
-        GraphStore,
         JobQueue,
         LeaseStore,
         PassportStore,

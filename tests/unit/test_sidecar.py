@@ -605,7 +605,7 @@ def test_sidecar_composes_all_sqlite_stores_in_workspace(tmp_path: Path) -> None
     assert application.application.queue.path == tmp_path / ".docs" / "runtime.sqlite3"
     assert application.application.passport_store.path == tmp_path / ".docs" / "runtime.sqlite3"
     assert application.application.artifact_store.path == tmp_path / ".docs" / "runtime.sqlite3"
-    assert application.application.graph_store.path == tmp_path / ".docs" / "runtime.sqlite3"
+    assert not hasattr(application.application, "graph_store")  # the document graph is projected on read
 
 
 def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
@@ -619,7 +619,7 @@ def test_sidecar_empty_graph_is_an_empty_graph(tmp_path: Path) -> None:
         workspace_id = open_workspace_registry(tmp_path / ".docs" / "workspaces.json").list()[0]["id"]
         url = f"http://127.0.0.1:{server.server_address[1]}/v2/graph?workspace_id={workspace_id}"
         with urllib.request.urlopen(url, timeout=2) as response:
-            assert json.load(response) == {"nodes": [], "edges": []}
+            assert json.load(response) == {"nodes": [], "edges": [], "no_data": True}
     finally:
         server.shutdown()
         thread.join(timeout=2)

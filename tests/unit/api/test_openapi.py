@@ -288,3 +288,14 @@ def test_document_lifecycle_routes_have_strict_dtos_scopes_and_active_state_cont
     assert schemas["document_create_request"]["additionalProperties"] is False
     assert schemas["document_create_request"]["required"] == ["workspace_id", "document_id"]
     assert schemas["document_rename_request"]["additionalProperties"] is False
+
+
+def test_graph_schema_describes_the_semantic_graph_not_an_opaque_blob() -> None:
+    schemas = build_openapi_document()["components"]["schemas"]
+    graph = schemas["graph"]
+
+    assert graph["required"] == ["nodes", "edges"]
+    assert {"no_data", "graph_unavailable", "warnings"} <= set(graph["properties"])
+    node = schemas["graph_node"]
+    assert {"id", "kind", "label", "attributes", "confidence"} <= set(node["required"])
+    assert {"source", "target", "relation"} <= set(schemas["graph_edge"]["required"])

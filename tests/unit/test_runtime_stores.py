@@ -14,7 +14,6 @@ from docs.infrastructure.persistence.idempotency import SqliteIdempotencyStore
 from docs.infrastructure.persistence.sqlite_runtime import (
     SqliteArtifactStore,
     SqliteFindingStore,
-    SqliteGraphStore,
     SqliteJobQueue,
     SqliteLeaseStore,
     SqlitePassportStore,
@@ -64,7 +63,6 @@ def test_runtime_stores_are_lazy_and_share_one_state_file(tmp_path: Path) -> Non
         "artifacts": SqliteArtifactStore,
         "findings": SqliteFindingStore,
         "publications": SqlitePublicationStore,
-        "graph": SqliteGraphStore,
         "leases": SqliteLeaseStore,
         "idempotency": SqliteIdempotencyStore,
     }

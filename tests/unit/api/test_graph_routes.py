@@ -37,7 +37,7 @@ class _Graphs:
 def _app(graph: SemanticGraph) -> ApiApplication:
     return ApiApplication(
         run_store=_Empty(), queue=_Empty(), passport_store=_Empty(), artifact_store=_Empty(),
-        graph_store=_Empty(), semantic_graph_store=_Graphs(graph),
+        semantic_graph_store=_Graphs(graph),
     )
 
 
@@ -98,3 +98,26 @@ def test_an_empty_answer_over_real_data_is_not_no_data():
 def test_raw_node_listing_also_carries_the_no_data_signal():
     assert _get(_app(SemanticGraph()), "kind=claim")["no_data"] is True
     assert _get(_app(GRAPH), "kind=claim")["no_data"] is False
+
+
+def test_raw_graph_serves_the_semantic_graph_as_node_and_edge_objects():
+    payload = _get(_app(GRAPH), "")
+    assert {n["id"] for n in payload["nodes"]} >= {"d/section/intro", "d/artifact/o.docx"}
+    assert all(isinstance(n, dict) and n["kind"] and "confidence" in n for n in payload["nodes"])
+    assert {"source": "d/artifact/o.docx", "relation": "derived_from"}.items() <= next(
+        e for e in payload["edges"] if e["relation"] == "derived_from"
+    ).items()
+    assert payload["no_data"] is False and _get(_app(SemanticGraph()), "")["no_data"] is True
+
+
+def test_raw_graph_says_so_when_no_semantic_store_is_configured():
+    app = ApiApplication(run_store=_Empty(), queue=_Empty(), passport_store=_Empty(), artifact_store=_Empty())
+    payload = _get(app, "")
+    assert payload["nodes"] == [] and payload["graph_unavailable"] is True and payload["warnings"]
+
+
+def test_run_graph_serves_the_same_semantic_graph():
+    app = _app(GRAPH)
+    app.run_store = type("Runs", (_Empty,), {"get": lambda self, key: type("R", (), {"to_dict": lambda s: {"id": key, "payload": {}}})()})()
+    response = app.dispatch(Request("GET", "/v2/runs/r1/graph"))
+    assert response.status == 200 and json.loads(response.body)["nodes"]

@@ -78,6 +78,10 @@ class GraphQueryService:
     def __init__(self, store: SemanticGraphReader | None) -> None:
         self._store = store
 
+    def graph(self) -> GraphQueryResult[SemanticGraph]:
+        """The whole projected graph."""
+        return self._read(lambda graph: graph)
+
     def find_nodes(
         self, *, kind: str | None = None, label: str | None = None
     ) -> GraphQueryResult[tuple[SemanticNode, ...]]:

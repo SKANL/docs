@@ -4,7 +4,7 @@ import builtins as _builtins
 from collections import deque
 from time import monotonic
 
-from docs.domain.runtime_records import Artifact, Blob, Graph, Job, Passport, Run
+from docs.domain.runtime_records import Artifact, Blob, Job, Passport, Run
 
 
 class InMemoryRunStore:
@@ -73,17 +73,6 @@ class InMemoryBlobStore:
 
     def get(self, key: str) -> tuple[Blob, bytes] | None:
         return self._items.get(key)
-
-
-class InMemoryGraphStore:
-    def __init__(self) -> None:
-        self._graph = Graph()
-
-    def put(self, graph: Graph) -> None:
-        self._graph = graph
-
-    def get(self) -> Graph:
-        return self._graph
 
 
 class InMemoryJobQueue:
