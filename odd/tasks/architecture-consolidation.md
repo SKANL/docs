@@ -53,7 +53,7 @@ domain logic out of giant adapters.
 - [x] T8 Split `composition.py`: config/token/path logic out to
       `application/workspace_config.py`; type attributes as ports. Route:
       delegated.
-- [ ] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
+- [x] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
       helpers to their own module. Route: delegated.
 - [ ] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
       Route: delegated.
@@ -194,4 +194,12 @@ domain logic out of giant adapters.
   skipped, 1 failed: `tests/unit/plugins/test_sdk.py::test_runner_enforces_measurable_scratch_limits_and_reports_usage`
   (PytestUnhandledThreadExceptionWarning in a plugin reader thread under load;
   the same file passes 32/32 in isolation, same flaky class as T1).
-- Next: T9.
+- T9 done. RED: `tests/unit/domain/test_theme.py` failed at collection (no
+  `docs.domain.theme`). GREEN: the 7 theme dataclasses, `resolve_visual_theme`,
+  `has_visual_theme` and `_theme_color` (now public `resolve_theme_color`) moved
+  to `domain/theme.py`; only the adapter and one test imported them, both
+  updated (no re-exports). Optional OOXML zip helpers NOT moved: they share
+  `_parse_part` with the rest of the adapter, so moving them would only
+  relocate the coupling. Targeted theme/infrastructure/docx/architecture 498
+  passed; ruff, mypy clean.
+- Next: T10.

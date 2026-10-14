@@ -127,7 +127,7 @@ def test_transfer_body_paragraphs_preserves_inline_images():
 
 
 def test_visual_theme_merges_defaults_and_normalizes_hex_colors():
-    from docs.infrastructure.docx.python_docx_assembly_adapter import resolve_visual_theme
+    from docs.domain.theme import resolve_visual_theme
 
     theme = resolve_visual_theme(
         {
