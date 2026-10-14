@@ -9,9 +9,9 @@ import pytest
 from docs.api.auth import Principal
 from docs.api.openapi import build_capability_catalog, build_openapi_document
 from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
-from docs.application.provenance import ProvenanceLedger
 from docs.domain.artifacts import ArtifactRef, BuildManifest
 from docs.domain.runtime_records import Run
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 
 NEW_COMMANDS = {
     "document package": ("POST", "/v2/documents/{document_id}/package", "documents:write"),

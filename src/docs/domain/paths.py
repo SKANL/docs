@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path, PureWindowsPath
 
 
@@ -36,3 +37,17 @@ def confine(root: Path, relative: str | Path, *, strict: bool = False) -> Path:
         raise PathEscapeError(f"path must be relative and inside its root: {text!r}")
     # Join the parsed parts, not the raw text: on POSIX "a\b" would otherwise be one odd filename.
     return require_within(root.joinpath(*parts.parts), root, strict=strict)
+
+
+def confine_or_raise(
+    root: Path,
+    relative: str | Path,
+    make_error: Callable[[PathEscapeError], Exception],
+    *,
+    strict: bool = False,
+) -> Path:
+    """`confine`, with the escape re-raised as the caller's own error (HTTP 400, ValueError, ...)."""
+    try:
+        return confine(root, relative, strict=strict)
+    except PathEscapeError as exc:
+        raise make_error(exc) from exc

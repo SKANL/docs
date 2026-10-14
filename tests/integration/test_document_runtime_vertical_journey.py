@@ -16,7 +16,6 @@ from docs.api.http import Request
 from docs.application.evidence_passport import EvidencePassportService
 from docs.application.generate_visuals import GenerateVisualsService
 from docs.application.html_render import HtmlRendererAdapter
-from docs.application.provenance import ProvenanceLedger
 from docs.domain.runtime_records import Artifact
 from docs.domain.semantic_graph import SemanticEdge, SemanticGraph, SemanticNode
 from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
@@ -24,6 +23,7 @@ from docs.infrastructure.docx.python_docx_image_metadata_adapter import (
 )
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
 from docs.infrastructure.persistence.evidence_passport_store import FileEvidencePassportStore
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 from docs.template_compiler import compile_template
 
 

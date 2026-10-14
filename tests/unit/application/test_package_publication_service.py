@@ -18,10 +18,11 @@ from docs.application.package_service import PackageService
 from docs.cli.commands import document_app
 from docs.domain.artifacts import ArtifactRef, BuildManifest
 from docs.domain.pipeline_policy import PipelineMode
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 from docs.infrastructure.transform.system_transform import AtomicTransform
 
 
-def _service() -> PackagePublicationService:
+def _service(ledger_factory: object = ProvenanceLedger) -> PackagePublicationService:
     return PackagePublicationService(
         archive_writer=PackageService(
             lock=lambda _path: nullcontext(),
@@ -31,6 +32,7 @@ def _service() -> PackagePublicationService:
         ),
         lock=lambda _path: nullcontext(),
         transform=AtomicTransform(),
+        ledger_factory=ledger_factory,  # type: ignore[arg-type]
     )
 
 
@@ -150,7 +152,10 @@ def test_package_rejects_a_source_member_change_before_archive_write(
     writes: list[object] = []
     archive_writer = SimpleNamespace(write=lambda *_args, **_kwargs: writes.append("write"))
     service = PackagePublicationService(
-        archive_writer=archive_writer, lock=lambda _path: nullcontext(), transform=AtomicTransform()
+        archive_writer=archive_writer,
+        lock=lambda _path: nullcontext(),
+        transform=AtomicTransform(),
+        ledger_factory=ProvenanceLedger,
     )
     source_dir = tmp_path / "output" / "current"
     source_dir.mkdir(parents=True)
@@ -212,8 +217,7 @@ def test_publish_rechecks_attestation_after_preflight(tmp_path: Path, monkeypatc
         def verify_attestation(self, *_args: object) -> bool:
             return next(verdicts)
 
-    monkeypatch.setattr("docs.application.package_publication_service.ProvenanceLedger", Ledger)
-    service = _service()
+    service = _service(Ledger)
     prepared = service.preflight_publish(source, tmp_path / "release.pdf", policy=PipelineMode.release)
 
     with pytest.raises(PackagePublicationError, match="verifiable provenance attestation"):

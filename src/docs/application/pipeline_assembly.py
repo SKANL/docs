@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.package_release_service import PackageReleaseService
-from docs.application.provenance import ProvenanceLedger
+from docs.application.provenance import LedgerFactory, ProvenanceLedgerPort
 from docs.application.stage_artifact_store import StageArtifactStore
 from docs.application.stage_provider import StageProvider
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
@@ -17,7 +17,7 @@ from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 @dataclass(frozen=True)
 class PipelineResources:
     capabilities: ToolCapabilityRegistry
-    ledger: ProvenanceLedger
+    ledger: ProvenanceLedgerPort
     artifact_store: StageArtifactStore
     publication: PackageReleaseService
 
@@ -30,6 +30,7 @@ def assemble_pipeline_resources(
     document_id: str,
     paths: dict[str, object],
     atomic_file_writer: Any,
+    ledger_factory: LedgerFactory,
     artifact: Any = None,
     manifest: Any = None,
     package_writer: Any = None,
@@ -73,7 +74,7 @@ def assemble_pipeline_resources(
         capabilities,
         capability_detector,
     )
-    ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
+    ledger = ledger_factory(document_root / "runs" / "provenance.json", trusted_root=document_root)
     store = StageArtifactStore(document_root / "runs" / "v2-stage-artifacts", atomic_file_writer)
     release_root = document_root / "output" / "release"
     publication = PackageReleaseService(

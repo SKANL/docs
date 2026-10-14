@@ -14,6 +14,7 @@ from typing import Any
 
 from docs.application.documents import DocumentService
 from docs.application.imports import SourceImportService
+from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.observability import ObservabilityPort, create_observability_from_env
 
@@ -75,6 +76,7 @@ class ApiApplication:
         document_context_writer: Any = None,
         classification_service: Any = None,
         workspace_services_factory: Callable[[str], Any] | None = None,
+        status_reader: StatusReader | None = None,
     ) -> None:
         self.run_store = run_store
         self.queue = queue
@@ -113,6 +115,7 @@ class ApiApplication:
         self.document_context_writer = document_context_writer
         self.classification_service = classification_service
         self.workspace_services_factory = workspace_services_factory
+        self.status_reader = status_reader
         self._workspace_services: dict[str, Any] = {}
         self._workspace_locks: dict[str, threading.Lock] = {}
         # SSE progress stream bounds: a stream never holds a worker thread longer

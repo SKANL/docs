@@ -13,11 +13,11 @@ from docs.application.pipeline_service import (
     PipelineService,
     PublicationSpec,
 )
-from docs.application.provenance import ProvenanceLedger
 from docs.application.stage_artifact_store import StageArtifactStore
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.tool_capability import ToolCapability, ToolCapabilityRegistry
 from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 from docs.infrastructure.transform.system_transform import AtomicTransform
 
 STAGE_IDS = (

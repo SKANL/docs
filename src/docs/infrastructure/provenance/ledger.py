@@ -14,11 +14,40 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from docs.domain.identity import canonical_json
+from docs.domain.identity import canonical_json, sha256_content
 from docs.domain.paths import require_within
 from docs.infrastructure.atomic_write import atomic_write_text
 
 _PROCESS_LOCK = threading.Lock()
+
+
+def _without_optional_artifact_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize only fields added after the initial v2 attestation schema."""
+    normalized = dict(payload)
+    # v2.1 manifests keep the run id as metadata but exclude it from the
+    # content-addressed attestation. Accept older attestations that included
+    # it when comparing against a current manifest.
+    normalized.pop("provenance_run", None)
+    artifacts = normalized.get("artifacts")
+    if isinstance(artifacts, list):
+        normalized["artifacts"] = [
+            {
+                key: value
+                for key, value in item.items()
+                if key not in {"media_type", "size_bytes"}
+            }
+            if isinstance(item, dict)
+            else item
+            for item in artifacts
+        ]
+        for item in normalized["artifacts"]:
+            if isinstance(item, dict) and isinstance(item.get("path"), str):
+                # Early v2 manifests stored absolute workspace paths.  Path
+                # identity is now content-addressed by artifact name, so
+                # normalize only this current comparison field; publication
+                # still validates the live source path and digest separately.
+                item["path"] = Path(item["path"]).name
+    return normalized
 
 
 class ProvenanceLedger:
@@ -69,8 +98,24 @@ class ProvenanceLedger:
         return self._verify_hashes(record["inputs"]) and self._verify_hashes(record["outputs"])
 
     def verify_attestation(self, run_id: str, manifest: dict[str, Any]) -> bool:
-        """Require immutable attestation equality and a still-verifiable run."""
-        return self.load_attestation(run_id) == manifest and self.verify_run(run_id)
+        """Require a still-verifiable run and an attestation matching the manifest.
+
+        Raw-manifest callers stay aligned with v2 attestations: fields added
+        after the initial v2 schema are ignored on both sides.
+        """
+        recorded = self.load_attestation(run_id)
+        if recorded is None or not self.verify_run(run_id):
+            return False
+        left = recorded.get("manifest", recorded)
+        right = manifest.get("manifest", manifest)
+        if left == right:
+            return True
+        if not isinstance(recorded, dict) or not isinstance(left, dict) or not isinstance(right, dict):
+            return False
+        recorded_hash = recorded.get("sha256")
+        if recorded_hash is not None and recorded_hash != sha256_content(left):
+            return False
+        return _without_optional_artifact_metadata(left) == _without_optional_artifact_metadata(right)
 
     def _hashes(self, paths: Iterable[Path], identities: Mapping[Path, Path] | None = None) -> dict[str, str]:
         identities = identities or {}

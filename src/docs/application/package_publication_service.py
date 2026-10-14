@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from docs.application.package_service import PackageFile, PackagePublicationError, PackageService
-from docs.application.provenance import ProvenanceLedger
+from docs.application.provenance import LedgerFactory
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import sha256_bytes
 from docs.domain.paths import PathEscapeError, require_within
@@ -89,10 +89,12 @@ class PackagePublicationService:
         archive_writer: PackageService,
         lock: Callable[[Path], AbstractContextManager[None]],
         transform: TransformPort,
+        ledger_factory: LedgerFactory,
     ) -> None:
         self._archive_writer = archive_writer
         self._lock = lock
         self._transform = transform
+        self._ledger_factory = ledger_factory
 
     def package(
         self,
@@ -129,7 +131,7 @@ class PackagePublicationService:
         attestation = prepared.manifest.attestation()
         if str(attestation["sha256"]) != prepared.attestation_sha256:
             raise PackagePublicationError("publish preflight attestation no longer matches its manifest")
-        ledger = ProvenanceLedger(
+        ledger = self._ledger_factory(
             prepared.document_root / "runs" / "provenance.json", trusted_root=prepared.document_root
         )
         if not ledger.verify_attestation(prepared.manifest.provenance_run or "", attestation):
@@ -177,7 +179,7 @@ class PackagePublicationService:
         if len(matching) != 1 or matching[0].sha256 != sha256_bytes(source_bytes):
             raise PackagePublicationError("publish requires the manifest artifact hash to match the source")
         attestation = manifest.attestation()
-        ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
+        ledger = self._ledger_factory(document_root / "runs" / "provenance.json", trusted_root=document_root)
         if not ledger.verify_attestation(manifest.provenance_run or "", attestation):
             raise PackagePublicationError("publish requires a present, verifiable provenance attestation")
         return PreparedPublication(
@@ -205,7 +207,7 @@ class PackagePublicationService:
         if not artifacts:
             raise PackagePublicationError("package requires at least one artifact")
         document_root = source_dir.parent.parent
-        ledger = ProvenanceLedger(document_root / "runs" / "provenance.json", trusted_root=document_root)
+        ledger = self._ledger_factory(document_root / "runs" / "provenance.json", trusted_root=document_root)
         expected_manifests: set[Path] = set()
         snapshots: dict[str, FileSnapshot] = {}
         generation_identity: tuple[tuple[object, ...], dict[str, tuple[tuple[str, str], ...]]] | None = None

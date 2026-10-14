@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from docs.domain.paths import PathEscapeError, confine, is_within, require_within
+from docs.domain.paths import PathEscapeError, confine, confine_or_raise, is_within, require_within
 
 
 @pytest.mark.parametrize(
@@ -37,3 +37,16 @@ def test_require_within_rejects_sibling_with_shared_prefix(tmp_path: Path) -> No
 def test_require_within_strict_requires_existence(tmp_path: Path) -> None:
     with pytest.raises(OSError):
         require_within(tmp_path / "missing", tmp_path, strict=True)
+
+
+def test_confine_or_raise_returns_the_confined_path(tmp_path: Path) -> None:
+    assert confine_or_raise(tmp_path, "a/b.txt", RuntimeError) == (tmp_path / "a" / "b.txt").resolve()
+
+
+def test_confine_or_raise_maps_the_escape_to_the_callers_error(tmp_path: Path) -> None:
+    class Mapped(Exception):
+        pass
+
+    with pytest.raises(Mapped, match="escapes") as caught:
+        confine_or_raise(tmp_path, "../x", lambda _exc: Mapped("escapes"))
+    assert isinstance(caught.value.__cause__, PathEscapeError)

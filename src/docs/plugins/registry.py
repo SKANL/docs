@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from docs.domain.identity import sha256_bytes, sha256_file
-from docs.domain.paths import PathEscapeError, confine
+from docs.domain.paths import confine_or_raise
 
 from .manifest import (
     ManifestError,
@@ -133,10 +133,11 @@ class PluginPackageInstaller:
                 seen: set[str] = set()
                 for member in archive.infolist():
                     name = member.filename.replace("\\", "/")
-                    try:
-                        output = confine(destination, name)
-                    except PathEscapeError as exc:
-                        raise ManifestError("plugin package contains an unsafe or duplicate path") from exc
+                    output = confine_or_raise(
+                        destination,
+                        name,
+                        lambda _exc: ManifestError("plugin package contains an unsafe or duplicate path"),
+                    )
                     if name in seen:
                         raise ManifestError("plugin package contains an unsafe or duplicate path")
                     seen.add(name)

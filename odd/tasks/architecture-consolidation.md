@@ -42,15 +42,15 @@ domain logic out of giant adapters.
 - [x] T5 Move locking/guard helpers behind the composition root for cli
       (`document_release`, `document_batch`, `document_app`); empty the T1
       allowlist. Route: delegated writer.
-- [ ] T5b Provenance port: inject the ledger through the composition root so
+- [x] T5b Provenance port: inject the ledger through the composition root so
       `application/provenance.py` drops its infrastructure import; delete
       `KNOWN_EXCEPTIONS`. Route: delegated. (Added after T5 deviation.)
-- [ ] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
+- [x] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
       in domain/identity-adjacent module; replace duplicates. Route: delegated.
-- [ ] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
+- [x] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
       no test substitutes them; merge Document/Registry/Template repository
       ports; drop or justify `PlatformSandboxProvider`. Route: delegated.
-- [ ] T8 Split `composition.py`: config/token/path logic out to
+- [x] T8 Split `composition.py`: config/token/path logic out to
       `application/workspace_config.py`; type attributes as ports. Route:
       delegated.
 - [ ] T9 Extract `VisualTheme` + helpers to `domain/theme.py`, pure OOXML zip
@@ -116,4 +116,82 @@ domain logic out of giant adapters.
 - Full-suite evidence: T1 3206 passed / 3 timing-flaky failures under load
   (plugins sdk, pass in isolation); T2 (side worktree, 70ea2b16) 3211 passed,
   6 skipped. Final commit b360db80 (T5): 3211 passed, 6 skipped.
-- Next: T6.
+- T5b done. RED: `KNOWN_EXCEPTIONS` and its shrink-only test deleted; the
+  scan reported `application/provenance.py`. GREEN: `application/provenance.py`
+  is now only `ProvenanceLedgerPort` (reusing the narrow-port idea of
+  `build_manifest_service.ProvenanceLedgerPort`, widened to the six methods
+  application calls) plus a `LedgerFactory` protocol with the ledger
+  constructor signature. The v2-compat `verify_attestation` and
+  `_without_optional_artifact_metadata` moved into
+  `infrastructure/provenance/ledger.py` (the lazy subclass is gone).
+  `composition.open_provenance_ledger` / `ApplicationComposition.provenance_ledger`
+  is injected into `PackagePublicationService`, `assemble_pipeline_resources`,
+  `StatusReader` (via `StatusService`, and `ApiApplication.status_reader` fed
+  by the sidecar) and `document_app._promote_published_build`. The ledger
+  was used by 3 src modules constructing it (not ~10); the rest only typed it.
+  Tests import the concrete ledger from infrastructure. Targeted
+  (architecture, unit/application, unit/api, sidecar, composition, cli,
+  pipeline integration) 1078 passed; ruff, mypy clean.
+- T6 done. RED: new `confine_or_raise` / `read_json_object` tests failed at
+  import (ImportError). GREEN: `domain/paths.confine_or_raise(root, rel,
+  make_error)` replaces the 4 confine+remap copies (`api/tool_routes`,
+  `api/delivery_routes`, `workers/composition`, `plugins/registry`), each
+  keeping its own error type (APIError 400 / ValueError / ManifestError).
+  `domain/identity.read_json_object` (None on absent/unreadable/non-object)
+  replaces the 3 matching read-then-check-dict copies in `sidecar/stores.py`.
+  Deliberately NOT merged: `figure_resolver.read_json_fail_open` returns `{}`
+  for an absent file and warns in Spanish (and `generate_visuals._read_json_fail_open`
+  is a shape check layered ON it, not a copy); `composition._load_workspace_config`
+  warns and does not check the shape; `sidecar/stores` collection store accepts
+  a top-level list; `doc_crud_app`/`workspaces` raise or differ. Merging any of
+  those would change semantics. Targeted domain/api/workers/plugins/sidecar/
+  architecture 733 passed; ruff, mypy clean.
+- T7 done. Per-port decisions (rg over src and tests):
+  ContextRepository, DocxAssemblyPort, DocxAuditPort, EvidenceRepository,
+  SectionRepository, SourceRepository: KEPT. Each is imported by application
+  services (context/section, docx_assembly, format_audit, 7 evidence
+  consumers, 5 section consumers, collection); inlining the adapter would
+  make application import infrastructure, so the hexagonal rule wins (and
+  test_context_service/test_context_gap_report do define a `read_topic` fake).
+  FontSourcePort: REMOVED. Only `Pypdfium2TextEditAdapter` (infrastructure)
+  used it, with one impl (`DejaVuFontSource`) and no test substitute; the
+  adapter now types the optional parameter as `DejaVuFontSource` (infra to
+  infra) and the contract text moved to the source's docstring, with a
+  `# ponytail:` naming the upgrade path. RED/GREEN: new
+  `tests/architecture/test_ports_have_consumers.py` (every domain port needs
+  a consumer outside infrastructure) failed naming `font_source_port`, passes
+  after. Its shrink-only allowlist names `blob_store`, `graph_store`,
+  `plugin_executor` (runtime-store ports pinned by `test_runtime_ports.py`,
+  outside the candidate list; flagged for a later decision).
+  DocumentRepository/RegistryRepository/TemplateRepository: KEPT split. They
+  are narrow interfaces consumed by different services (`DocumentService`
+  takes registry and template separately; `test_repository_ports.py` pins
+  each) and one class already implements all three, so merging would only
+  widen every consumer. `PlatformSandboxProvider`: KEPT. It has no prod impl
+  but it is the injection seam of `PluginRunner` (fail-closed: without a
+  provider-issued attestation nothing counts as sandboxed) and
+  `tests/unit/plugins/test_sdk.py` substitutes it with two fakes. Targeted
+  architecture + pdf adapter + infrastructure + domain 1398 passed; ruff, mypy clean.
+- T8 done. RED: `tests/unit/application/test_workspace_config.py` failed at
+  collection (no `docs.application.workspace_config`). GREEN: the new module
+  holds `load_workspace_config`, `WORKSPACE_CONFIG_FILENAME`, `deep_merge`,
+  `expand_tokens`, `standard_tokens`, `computed_paths`,
+  `apply_confirmed_placements`, `try_compile_template` and
+  `rules_manifest_state` (no adapters; moved verbatim, underscore dropped).
+  `composition.py` 833 -> ~700 lines and imports them; `doc_crud_app` now
+  imports `WORKSPACE_CONFIG_FILENAME` from the new module (it was the only
+  external user). The `try_compile_template` test moved with the function.
+  Attribute types: `markdown_normalizer: MarkdownNormalizerPort`,
+  `atomic_file_writer: AtomicFilePort`, `visual_renderers: dict[str,
+  VisualRendererPort]`, `pdf_classifier: PdfClassifyPort | None`,
+  `pdf_text_editor: PdfTextEditPort | None`, `pdf_render: PdfRenderPort | None`,
+  `docx: DocumentRendererPort`, plus `context_repository: ContextRepository`,
+  `source_repository: SourceRepository` and `rules_manifest_state` as a
+  `Callable`; mypy clean with no ignores. `resolve_renderer` and
+  `build_workspace` stay (the latter touches the registry adapter). Targeted
+  composition/architecture/cli/workspace-config 170 passed; ruff, mypy clean.
+- Full suite on 41ae57cf (side worktree, since removed): 3221 passed, 6
+  skipped, 1 failed: `tests/unit/plugins/test_sdk.py::test_runner_enforces_measurable_scratch_limits_and_reports_usage`
+  (PytestUnhandledThreadExceptionWarning in a plugin reader thread under load;
+  the same file passes 32/32 in isolation, same flaky class as T1).
+- Next: T9.

@@ -6,6 +6,7 @@ from docs.application.pipeline_assembly import (
     assemble_pipeline_resources,
     assemble_stage_provider,
 )
+from docs.infrastructure.provenance.ledger import ProvenanceLedger
 
 
 def test_stage_provider_assembly_registers_shared_stage_services_and_optional_defaults():
@@ -37,6 +38,7 @@ def test_pipeline_resources_own_capability_provenance_and_artifact_stores(tmp_pa
         document_id="report-id",
         paths={},
         atomic_file_writer=object(),
+        ledger_factory=ProvenanceLedger,
     )
 
     assert "pandoc" in {item.name for item in resources.capabilities.capabilities}

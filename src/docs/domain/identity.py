@@ -37,6 +37,19 @@ def pretty_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def read_json_object(path: Path) -> dict[str, Any] | None:
+    """The JSON object stored at `path`; `None` when it is absent, unreadable or not an object.
+
+    Fail-open, for callers that skip a bad file instead of failing. Callers that
+    must raise (or that accept a top-level list) read the file themselves.
+    """
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def sha256_bytes(value: bytes) -> str:
     """Return the SHA-256 digest of raw bytes."""
     return hashlib.sha256(value).hexdigest()
