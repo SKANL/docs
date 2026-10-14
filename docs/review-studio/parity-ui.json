@@ -436,6 +436,15 @@
    "review-studio/src/test/toolsFeature.test.tsx › audits the DOCX format in strict mode and shows the report as text"
   ]
  },
+ "graph": {
+  "ui": "/review/graph › Run query",
+  "api": [
+   "tests/unit/api/test_graph_routes.py::test_stale_artifacts_and_requirement_coverage_answer_in_both_query_styles"
+  ],
+  "proof": [
+   "review-studio/src/test/reviewFeature.test.tsx › runs a graph query and lists the matches"
+  ]
+ },
  "pack-context": {
   "ui": "/authoring/sections › Pack context",
   "api": [

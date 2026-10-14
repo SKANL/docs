@@ -128,6 +128,7 @@ _AVAILABLE_CLI_ROUTES: dict[str, str] = {
     "run retry": "POST /v2/runs/{run_id}/retry",
     "template list": "GET /v2/templates",
     "document passport": "GET /v2/runs/{run_id}/passport",  # same payload `document passport` prints
+    "graph": "GET /v2/graph",  # `docs graph <query>` answers the same named queries
     **available_cli_routes(),
 }
 
@@ -179,7 +180,7 @@ def _slice_for(command: str) -> str:
         "document plan", "document prepare", "document run", "document build", "document verify",
     }:
         return "S3"
-    if command in {"document evidence", "document passport", "document baseline", "document inspect", "document diff", "qa-docx", "apply-corrections"}:
+    if command in {"graph", "document evidence", "document passport", "document baseline", "document inspect", "document diff", "qa-docx", "apply-corrections"}:
         return "S4"
     if command in {"document package", "document publish", "document release"}:
         return "S5"

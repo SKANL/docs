@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from typing import Literal, cast
 from urllib.parse import urlencode, urlsplit
 
-from docs.application.graph_queries import GraphQueryService
+from docs.application.graph_queries import NAMED_QUERIES, GraphQueryService
 
 # query name -> the parameter that carries its subject when `mode=` is used
 # (the `query=` alias always uses `id`).
@@ -23,20 +23,8 @@ _BY_ID = {
     "artifacts_derived_from_input": "input_id",
     "source_impact": "source_id",
 }
-_PARAMETERLESS = frozenset(
-    {"claims_without_evidence", "unused_references", "unmet_requirements", "stale_artifacts", "requirement_coverage"}
-)
 # Every named query, in contract order (the OpenAPI enum is built from this).
-GRAPH_QUERIES = (
-    "claims_without_evidence",
-    "findings_affected_by_revision",
-    "artifacts_derived_from_input",
-    "unused_references",
-    "unmet_requirements",
-    "stale_artifacts",
-    "source_impact",
-    "requirement_coverage",
-)
+GRAPH_QUERIES = tuple(NAMED_QUERIES)
 
 
 class GraphRoutes:
@@ -73,17 +61,15 @@ class GraphRoutes:
         identifier = params.get("id") if query_name is not None else None
         result: Any
         payload: dict[str, Any]
-        if selected_query in _PARAMETERLESS:
-            result = getattr(query, selected_query)()
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query in _BY_ID:
-            identifier_name = "id" if query_name is not None else _BY_ID[selected_query]
-            target = identifier if query_name is not None else params.get(identifier_name)
-            if not target:
-                raise APIError("invalid_graph_query", f"{identifier_name} is required for {selected_query}", 400)
-            result = getattr(query, selected_query)(target)
-            payload = {"items": [as_dict(item) for item in (result.value or ())]}
-        elif selected_query is not None:
+        if selected_query in NAMED_QUERIES:
+            target = None
+            if NAMED_QUERIES[selected_query]:
+                identifier_name = "id" if query_name is not None else _BY_ID[selected_query]
+                target = identifier if query_name is not None else params.get(identifier_name)
+                if not target:
+                    raise APIError("invalid_graph_query", f"{identifier_name} is required for {selected_query}", 400)
+            return Response.json(query.answer(selected_query, target).to_payload())
+        if selected_query is not None:
             parameter_name = "query" if query_name is not None else "mode"
             raise APIError(
                 "invalid_graph_query",

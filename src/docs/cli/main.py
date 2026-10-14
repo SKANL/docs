@@ -25,6 +25,7 @@ from docs.cli.commands.core_app import core_app
 from docs.cli.commands.doc_crud_app import doc_crud_app
 from docs.cli.commands.document_app import document_app
 from docs.cli.commands.docx_app import docx_app
+from docs.cli.commands.graph_app import graph_app
 from docs.cli.commands.run_app import run_app
 from docs.cli.commands.section_app import section_app
 from docs.cli.commands.source_app import source_app
@@ -50,6 +51,7 @@ app.add_typer(collection_app)
 app.add_typer(section_app)
 app.add_typer(source_app, name="source")
 app.add_typer(docx_app)
+app.add_typer(graph_app)
 app.add_typer(translate_app)
 app.add_typer(workspace_app, name="workspace")
 app.add_typer(run_app, name="run")

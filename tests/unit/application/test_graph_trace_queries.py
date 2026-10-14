@@ -85,3 +85,26 @@ def test_coverage_reports_node_counts_and_no_data_per_query():
     unchecked = _service(runs=(RunSnapshot("r", (FileEntry("x", sha256="a"),), (FileEntry("o"),)),))
     cov = unchecked.coverage("stale_artifacts").value
     assert cov["no_data"] is True and cov["counts"]["artifact"] == 1 and cov["counts"]["checked_artifact"] == 0
+
+
+def test_answer_bundles_items_no_data_and_coverage_and_filters_by_document():
+    answer = _service().answer("stale_artifacts")
+    assert [i["id"] for i in answer.items] == ["d/artifact/out/d.docx", "d/artifact/out/d.pdf"]
+    assert answer.no_data is False and answer.coverage["checked_artifact"] == 2
+    assert answer.to_payload()["items"] == list(answer.items)
+    assert _service().answer("stale_artifacts", document="other").items == ()
+    rows = _service().answer("requirement_coverage", document="d").items
+    assert [r["section"]["id"] for r in rows] == ["d/section/fin", "d/section/intro"]
+
+
+def test_answer_reports_unavailable_and_validates_the_query_name_and_subject():
+    unavailable = GraphQueryService(None).answer("unused_references")
+    assert unavailable.unavailable and unavailable.to_payload() == {
+        "items": [], "graph_unavailable": True, "warnings": ["graph unavailable: no semantic graph store configured"]
+    }
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown graph query"):
+        _service().answer("nope")
+    with pytest.raises(ValueError, match="requires a subject id"):
+        _service().answer("source_impact")

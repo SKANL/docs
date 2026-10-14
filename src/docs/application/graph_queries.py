@@ -45,6 +45,19 @@ _COVERAGE: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
 }
 
 
+# The named review queries in contract order -> whether they take a subject node id.
+NAMED_QUERIES: dict[str, bool] = {
+    "claims_without_evidence": False,
+    "findings_affected_by_revision": True,
+    "artifacts_derived_from_input": True,
+    "unused_references": False,
+    "unmet_requirements": False,
+    "stale_artifacts": False,
+    "source_impact": True,
+    "requirement_coverage": False,
+}
+
+
 @dataclass(frozen=True)
 class SectionCoverage:
     section: SemanticNode
@@ -72,11 +85,45 @@ class GraphQueryResult(Generic[T]):
         return cls(graph_unavailable=True, warnings=(f"graph unavailable: {error}",))
 
 
+@dataclass(frozen=True)
+class GraphAnswer:
+    """What a named query answers: the items, and whether there was anything to check at all."""
+
+    items: tuple[dict[str, Any], ...] = ()
+    no_data: bool = False
+    coverage: dict[str, int] | None = None
+    unavailable: bool = False
+    warnings: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        if self.unavailable:
+            return {"items": [], "graph_unavailable": True, "warnings": list(self.warnings)}
+        return {"items": list(self.items), "no_data": self.no_data, "coverage": self.coverage or {}}
+
+
 class GraphQueryService:
     """Provide deterministic queries without mutating or requiring the graph store."""
 
     def __init__(self, store: SemanticGraphReader | None) -> None:
         self._store = store
+
+    def answer(self, name: str, subject: str | None = None, *, document: str | None = None) -> GraphAnswer:
+        """Run a named query with its no-data signal; `document` keeps only that document's items."""
+        if name not in NAMED_QUERIES:
+            raise ValueError(f"unknown graph query: {name}")
+        if NAMED_QUERIES[name] and not subject:
+            raise ValueError(f"{name} requires a subject id")
+        result = getattr(self, name)(subject) if NAMED_QUERIES[name] else getattr(self, name)()
+        covered = self.coverage(name)
+        if result.graph_unavailable or covered.graph_unavailable:
+            return GraphAnswer(unavailable=True, warnings=result.warnings or covered.warnings)
+        rows = [
+            item.to_dict()
+            for item in (result.value or ())
+            if document is None or (item.section.id if isinstance(item, SectionCoverage) else item.id).startswith(f"{document}/")
+        ]
+        report = covered.value or {}
+        return GraphAnswer(tuple(rows), report.get("no_data", True), report.get("counts", {}))
 
     def graph(self) -> GraphQueryResult[SemanticGraph]:
         """The whole projected graph."""
