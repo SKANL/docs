@@ -57,7 +57,7 @@ domain logic out of giant adapters.
       helpers to their own module. Route: delegated.
 - [x] T10 Extract PDF layout/geometry helpers to `domain/pdf_layout.py`.
       Route: delegated.
-- [ ] T11 Contributor map: short "where do I add X" section in AGENTS.md.
+- [x] T11 Contributor map: short "where do I add X" section in AGENTS.md.
       Route: inline.
 
 ## Acceptance
@@ -214,4 +214,11 @@ domain logic out of giant adapters.
   the integration test now imports `ObjectSnapshot`/`missing_expected_lines`
   from the domain. Targeted pdf/translate/architecture/infrastructure 520
   passed; ruff check, mypy clean.
-- Next: T11.
+- T11 done. AGENTS.md section 9 "Where do I add X" (port/adapter, CLI
+  command, API route, `RuntimeStores`, `confine_or_raise`/`read_json_object`,
+  `application/workspace_config.py`, pure domain modules, and the two new
+  architecture tests `test_ports_have_consumers` and
+  `test_infrastructure_imports`). Inline route; docs-only, so no RED. Every
+  named path/symbol was checked to exist. `test_agents_md_content.py` and the
+  packaging test pass.
+- Next: full suite.

@@ -666,6 +666,31 @@ This means:
   runs/                   # command history + build_version (document runs, document status)
 ```
 
+## 9. Where do I add X (contributors changing the harness itself)
+
+- **A port and its adapter**: the `typing.Protocol` goes in `src/docs/domain/ports/`,
+  the implementation in `src/docs/infrastructure/`, and the adapter is wired
+  only in `src/docs/composition.py`. A port needs a consumer outside
+  infrastructure (`tests/architecture/test_ports_have_consumers.py`); a
+  single-implementation helper used only by one adapter does not get a port.
+- **A CLI command**: a Typer sub-app in `src/docs/cli/commands/`, registered
+  with `app.add_typer` in `src/docs/cli/main.py`. Give every command help text
+  and keep CLI, API and UI capabilities in step
+  (`tests/architecture/test_cli_api_ui_parity.py`).
+- **An API route**: a `*_routes.py` module in `src/docs/api/`, mounted in
+  `src/docs/api/application.py`, with its scope in `src/docs/api/route_policy.py`.
+- **A durable runtime store**: a `cached_property` on `RuntimeStores` in
+  `src/docs/composition.py`. Stores are lazy, so a reader that never needs the
+  queue never creates its tables.
+- **Shared helpers, do not re-declare**: path confinement with a caller-owned
+  error is `domain/paths.py:confine_or_raise`; reading a JSON object that may
+  be absent or malformed is `domain/identity.py:read_json_object`.
+- **Workspace config, tokens and computed paths**: `src/docs/application/workspace_config.py`.
+  Only `composition.py` and `infrastructure/` may import `docs.infrastructure`
+  (`tests/architecture/test_infrastructure_imports.py`).
+- **Pure logic** (themes, PDF layout and geometry): `src/docs/domain/`, for
+  example `theme.py` and `pdf_layout.py`; adapters pass plain values in.
+
 ## Single source of truth
 
 This file IS the canonical content — `docs guide` prints these exact
