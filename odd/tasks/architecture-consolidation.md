@@ -59,6 +59,10 @@ domain logic out of giant adapters.
       Route: delegated.
 - [x] T11 Contributor map: short "where do I add X" section in AGENTS.md.
       Route: inline.
+- [x] T12 Resolve the shrink-only allowlist in `test_ports_have_consumers.py`
+      (`blob_store`, `graph_store`, `plugin_executor`); delete the allowlist.
+- [x] T13 Prove `tests/unit/domain/test_pdf_layout.py` is not vacuous by
+      mutating each tested function and observing RED.
 
 ## Acceptance
 - No module outside `composition.py`/`infrastructure/` imports infrastructure
@@ -222,3 +226,32 @@ domain logic out of giant adapters.
   named path/symbol was checked to exist. `test_agents_md_content.py` and the
   packaging test pass.
 - Full suite on 395a6068: 3238 passed, 6 skipped, 0 failed. All tasks done; next: native review, then PR (user decision).
+- T12 done. Allowlist deleted. RED: with `KNOWN_ORPHANS` removed the guard
+  failed naming `blob_store`, `graph_store`, `plugin_executor`. Decisions:
+  `blob_store` KEPT as a real seam (`InMemoryBlobStore` fake substitutes it;
+  `ApiApplication.blob_store` was an untyped `Any` slot, now `BlobStore | None`,
+  so the API layer is the consumer). `graph_store` KEPT likewise
+  (`InMemoryGraphStore` fake; `ApiApplication.graph_store: GraphStore`);
+  `graph_routes` keeps a local `Any` with a `# ponytail:` because
+  `GraphQueryService` is typed on `SemanticGraphStore` while the host serves
+  the runtime `Graph` (pre-existing mismatch the old `Any` hid). `plugin_executor`
+  REMOVED: `PluginRunner` is the only implementation, nothing in src types
+  against the Protocol and no fake substitutes it; the signature pin in
+  `test_runtime_ports.py` now targets `PluginRunner.run` directly. No
+  application/domain import of infrastructure added. Targeted
+  architecture 131, domain+api+runtime-stores+vertical-journey 1383 passed, ruff, mypy clean. The removed port had drifted from the runner (it lacked `artifact_digest`); the pin now reflects the real signature.
+- T13 done. 44 single-point mutations over all 11 tested functions plus
+  `POST_WRITE_TOLERANCE_POINTS` (wrong returns, flipped comparisons, dropped
+  branches, swapped min/max), each applied to `pdf_layout.py`, run against
+  `test_pdf_layout.py`, then reverted (tree clean; breakage never committed).
+  37 went RED at once. 7 stayed GREEN and were closed with 7 new tests, each
+  observed RED against its mutation: `strip_subset_tag` isalpha (`ABC123+`),
+  `drop_unmapped` space/printable (digits, punctuation), `overlaps` y-axis,
+  `missing_expected_lines` text compare, `permitted_bounds` default top,
+  baseline fallback (top - font_size) and the `min(0.0, ...)` descent clamp.
+  Two further survivors are equivalent mutants (no observable change):
+  `line_x` `right <= left` -> `<` and `slack <= 0` -> `<` (both yield `left`
+  when the boundary is hit). Per function: styled, line_start, union,
+  match_key, outside, tolerance constant killed first time; line_x (2
+  equivalent), strip_subset_tag, drop_unmapped, overlaps, missing_expected_lines,
+  permitted_bounds needed the added assertions. 17 tests pass.

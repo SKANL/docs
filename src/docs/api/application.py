@@ -16,6 +16,8 @@ from docs.application.documents import DocumentService
 from docs.application.imports import SourceImportService
 from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
+from docs.domain.ports.blob_store import BlobStore
+from docs.domain.ports.graph_store import GraphStore
 from docs.observability import ObservabilityPort, create_observability_from_env
 
 from .auth import AuthError, bearer_auth
@@ -49,7 +51,7 @@ class ApiApplication:
         queue: Any,
         passport_store: Any,
         artifact_store: Any,
-        graph_store: Any,
+        graph_store: GraphStore,
         document_store: Any = None,
         findings_store: Any = None,
         template_store: Any = None,
@@ -60,7 +62,7 @@ class ApiApplication:
         plugin_store: Any = None,
         plugin_registry: Any = None,
         plugins: Iterable[Any] = (),
-        blob_store: Any = None,
+        blob_store: BlobStore | None = None,
         documents: Iterable[Any] = (),
         findings: Iterable[Any] = (),
         router: Router | None = None,

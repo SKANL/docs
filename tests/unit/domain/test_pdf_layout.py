@@ -97,3 +97,37 @@ def test_permitted_bounds_extends_to_the_hanging_indent_and_ink_descent():
 
 def test_match_key_rounds_the_position_to_one_decimal():
     assert match_key("a", 1.26, 2.74) == ("a", 1.3, 2.7)
+
+
+def test_strip_subset_tag_requires_letters_not_just_uppercase_cased_text():
+    assert strip_subset_tag("ABC123+Font") == "ABC123+Font"
+
+
+def test_drop_unmapped_keeps_digits_and_punctuation():
+    assert drop_unmapped("a1.\x02,b") == "a1.,b"
+
+
+def test_overlaps_needs_vertical_as_well_as_horizontal_intersection():
+    box = (0.0, 0.0, 10.0, 10.0)
+    assert not overlaps(box, (0.0, 9.8, 10.0, 20.0))
+
+
+def test_missing_expected_lines_compares_text_not_position_or_index():
+    a = ObjectSnapshot(0, "x", (0, 0, 1, 1))
+    assert missing_expected_lines((a,), (ObjectSnapshot(0, "y", (0, 0, 1, 1)),)) == (a,)
+
+
+def test_permitted_bounds_baseline_defaults_to_top_minus_font_size():
+    r = _Replacement(remove=(_Run(680.0),))  # baseline 0 -> 700 - 10 = 690
+    lines = (ObjectSnapshot(0, "t", (0, 685.0, 1, 1)),)
+    assert permitted_bounds(r, lines)[1] == 675.0
+
+
+def test_permitted_bounds_without_removed_runs_starts_from_the_top():
+    assert permitted_bounds(_Replacement(), ()) == (50.0, 700.0, 150.0, 700.0)
+
+
+def test_permitted_bounds_ink_never_descends_below_zero_extension():
+    r = _Replacement(baseline=690.0, remove=(_Run(680.0),))
+    lines = (ObjectSnapshot(0, "t", (0, 695.0, 1, 1)),)  # sits above the baseline
+    assert permitted_bounds(r, lines)[1] == 680.0
