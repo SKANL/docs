@@ -12,7 +12,7 @@ from typing import Any
 
 from docs.application.workspaces import WorkspaceRegistry
 from docs.composition import RuntimeStores, atomic_write_text, runtime_state_path
-from docs.domain.identity import pretty_json
+from docs.domain.identity import pretty_json, read_json_object
 from docs.domain.runtime_records import Artifact, Passport
 from docs.sidecar.roots import PerRoot, WorkspaceRoots
 
@@ -37,11 +37,8 @@ class FilesystemDocumentStore:
             return []
         items: list[dict[str, Any]] = []
         for path in sorted(root.glob("*/document.json")):
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if isinstance(value, dict):
+            value = read_json_object(path)
+            if value is not None:
                 value.setdefault("id", path.parent.name)
                 items.append(value)
         return items
@@ -51,11 +48,8 @@ class FilesystemDocumentStore:
 
     def get(self, document_id: str) -> dict[str, Any] | None:
         path = self._documents_root() / document_id / "document.json"
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
-        if not isinstance(value, dict):
+        value = read_json_object(path)
+        if value is None:
             return None
         value.setdefault("id", document_id)
         return value
@@ -79,11 +73,8 @@ class FilesystemTemplateStore:
             return []
         items: list[dict[str, Any]] = []
         for path in sorted(root.glob("*.json")):
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if not isinstance(value, dict):
+            value = read_json_object(path)
+            if value is None:
                 continue
             value.setdefault("id", path.stem)
             value.setdefault("version", value.get("template_version", "1"))

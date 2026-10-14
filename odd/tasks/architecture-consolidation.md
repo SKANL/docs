@@ -45,7 +45,7 @@ domain logic out of giant adapters.
 - [x] T5b Provenance port: inject the ledger through the composition root so
       `application/provenance.py` drops its infrastructure import; delete
       `KNOWN_EXCEPTIONS`. Route: delegated. (Added after T5 deviation.)
-- [ ] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
+- [x] T6 Shared helpers: one confine→error mapper, one fail-open JSON reader
       in domain/identity-adjacent module; replace duplicates. Route: delegated.
 - [ ] T7 Port pruning: inline the 7 one-impl/zero-fake ports after confirming
       no test substitutes them; merge Document/Registry/Template repository
@@ -132,4 +132,18 @@ domain logic out of giant adapters.
   Tests import the concrete ledger from infrastructure. Targeted
   (architecture, unit/application, unit/api, sidecar, composition, cli,
   pipeline integration) 1078 passed; ruff, mypy clean.
-- Next: T6.
+- T6 done. RED: new `confine_or_raise` / `read_json_object` tests failed at
+  import (ImportError). GREEN: `domain/paths.confine_or_raise(root, rel,
+  make_error)` replaces the 4 confine+remap copies (`api/tool_routes`,
+  `api/delivery_routes`, `workers/composition`, `plugins/registry`), each
+  keeping its own error type (APIError 400 / ValueError / ManifestError).
+  `domain/identity.read_json_object` (None on absent/unreadable/non-object)
+  replaces the 3 matching read-then-check-dict copies in `sidecar/stores.py`.
+  Deliberately NOT merged: `figure_resolver.read_json_fail_open` returns `{}`
+  for an absent file and warns in Spanish (and `generate_visuals._read_json_fail_open`
+  is a shape check layered ON it, not a copy); `composition._load_workspace_config`
+  warns and does not check the shape; `sidecar/stores` collection store accepts
+  a top-level list; `doc_crud_app`/`workspaces` raise or differ. Merging any of
+  those would change semantics. Targeted domain/api/workers/plugins/sidecar/
+  architecture 733 passed; ruff, mypy clean.
+- Next: T7.

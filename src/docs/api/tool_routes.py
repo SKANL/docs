@@ -24,7 +24,7 @@ from docs.application.imports import ImportError, SourceImportService
 from docs.application.templates import TemplateService, builtin_names
 from docs.application.translate import UntranslatablePdfError
 from docs.domain.issue_codes import ISSUE_CODE_FAMILIES, ISSUE_CODES
-from docs.domain.paths import PathEscapeError, confine
+from docs.domain.paths import confine_or_raise
 from docs.domain.tool_capability import ToolUnavailableError
 from docs.domain.translation_sidecars import translation_sidecars
 
@@ -81,10 +81,9 @@ class ToolRoutes(RouteSupport):
     def _confined(base: Path, requested: str, suffix: str) -> Path:
         """A path strictly inside `base` with the expected extension; anything else is refused."""
         message = f"Output must be a relative {suffix} path inside the workspace"
-        try:
-            candidate = confine(base, requested)
-        except PathEscapeError as exc:
-            raise APIError("output_not_permitted", message, 400) from exc
+        candidate = confine_or_raise(
+            base, requested, lambda _exc: APIError("output_not_permitted", message, 400)
+        )
         if candidate.suffix.lower() != suffix:
             raise APIError("output_not_permitted", message, 400)
         return candidate

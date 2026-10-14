@@ -18,7 +18,7 @@ from typing import Any
 from docs.application.document_pipeline import _current_input_identities, _resolve_publish_inputs
 from docs.application.package_publication_service import PackagePublicationError, PublishPolicyDeniedError
 from docs.domain.identity import sha256_bytes
-from docs.domain.paths import PathEscapeError, confine
+from docs.domain.paths import confine_or_raise
 from docs.domain.pipeline_policy import PipelineMode
 from docs.domain.ports.document_repository import DocumentNotFoundError
 
@@ -77,10 +77,13 @@ class DeliveryRoutes(RouteSupport):
     @staticmethod
     def _destination(release: Path, requested: str) -> Path:
         """A path strictly inside `release`; anything absolute, drive-qualified or climbing is refused."""
-        try:
-            candidate = confine(release, requested)
-        except PathEscapeError as exc:
-            raise APIError("destination_not_permitted", "Destination must be a relative path inside output/release", 400) from exc
+        candidate = confine_or_raise(
+            release,
+            requested,
+            lambda _exc: APIError(
+                "destination_not_permitted", "Destination must be a relative path inside output/release", 400
+            ),
+        )
         if candidate == release.resolve():
             raise APIError("destination_not_permitted", "Destination must name a file", 400)
         return candidate

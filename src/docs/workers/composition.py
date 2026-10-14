@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from docs.composition import ApplicationComposition
-from docs.domain.paths import PathEscapeError, confine
+from docs.domain.paths import confine_or_raise
 from docs.domain.ports.job_queue import JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.run_store import PassportStore, RunStore
@@ -222,7 +222,6 @@ def _paths(payload: Mapping[str, Any], field_name: str, workspace_root: Path) ->
 
 
 def _workspace_path(value: str, field_name: str, workspace_root: Path) -> Path:
-    try:
-        return confine(workspace_root, value)
-    except PathEscapeError as exc:
-        raise ValueError(f"{field_name} path escapes workspace_root") from exc
+    return confine_or_raise(
+        workspace_root, value, lambda _exc: ValueError(f"{field_name} path escapes workspace_root")
+    )
