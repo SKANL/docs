@@ -190,4 +190,8 @@ domain logic out of giant adapters.
   `Callable`; mypy clean with no ignores. `resolve_renderer` and
   `build_workspace` stay (the latter touches the registry adapter). Targeted
   composition/architecture/cli/workspace-config 170 passed; ruff, mypy clean.
+- Full suite on 41ae57cf (side worktree, since removed): 3221 passed, 6
+  skipped, 1 failed: `tests/unit/plugins/test_sdk.py::test_runner_enforces_measurable_scratch_limits_and_reports_usage`
+  (PytestUnhandledThreadExceptionWarning in a plugin reader thread under load;
+  the same file passes 32/32 in isolation, same flaky class as T1).
 - Next: T9.
