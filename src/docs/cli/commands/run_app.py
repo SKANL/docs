@@ -3,36 +3,23 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import uuid4
 
 import typer
 
 from docs.cli._shared import _ctx
-from docs.composition import open_workspace_registry
+from docs.composition import RuntimeStores, resolve_runtime_root
 from docs.domain.runtime_records import Run
-from docs.infrastructure.persistence.sqlite_runtime import SqliteJobQueue, SqliteRunStore
 
 run_app = typer.Typer(add_completion=False, help="Inspect and control durable runs.")
 
 
 def _stores(ctx: typer.Context):
     deps, _ = _ctx(ctx)
-    root = deps.workspace.documents_dir.parent.resolve()
-    registry_path = root / ".docs" / "workspaces.json"
-    registry = open_workspace_registry(
-        registry_path
-        if registry_path.is_file()
-        else os.environ.get("DOCS_WORKSPACE_REGISTRY") or (Path.home() / ".docs" / "workspaces.json")
-    )
-    active = registry.active()
-    if active is not None:
-        root = Path(str(active["root"])).resolve()
-    state = root / ".docs" / "runtime.sqlite3"
-    return SqliteRunStore(state), SqliteJobQueue(state)
+    stores = RuntimeStores(resolve_runtime_root(deps.workspace.documents_dir.parent))
+    return stores.runs, stores.queue
 
 
 @run_app.command("list")

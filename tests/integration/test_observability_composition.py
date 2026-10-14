@@ -1,21 +1,9 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from docs import composition as application_composition
 from docs.api.application import ApiApplication
 from docs.composition import ApplicationComposition
 from docs.domain.workspace import Workspace
-from docs.workers import composition
-
-
-class _Queue:
-    def enqueue(self, job):
-        return job
-
-
-class _Leases:
-    pass
 
 
 def _api_kwargs():
@@ -51,20 +39,3 @@ def test_api_composition_invokes_environment_observability_factory(monkeypatch):
     application = ApiApplication(**_api_kwargs())
 
     assert application.observability is marker
-
-
-def test_worker_composition_invokes_environment_observability_factory(monkeypatch, tmp_path):
-    marker = object()
-    monkeypatch.setattr(
-        "docs.workers.composition.create_observability_from_env",
-        lambda: marker,
-    )
-
-    service = composition.WorkerComposition(
-        lambda _pipeline_id: SimpleNamespace(run=lambda *_args, **_kwargs: None),
-        tmp_path,
-        _Queue(),
-        _Leases(),
-    ).create_service()
-
-    assert service.observability is marker

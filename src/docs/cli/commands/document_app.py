@@ -36,12 +36,12 @@ from docs.cli.commands.document_run import (
     wait_for_run,
 )
 from docs.cli.commands.source_app import run_source_command
+from docs.composition import owned_directory_lock
 from docs.domain.artifacts import BuildManifest
 from docs.domain.identity import pretty_json, sha256_file
 from docs.domain.normative import resolve_normative_settings
 from docs.domain.pipeline_policy import PipelineMode, PipelinePolicy
 from docs.domain.review import ReviewDimension
-from docs.infrastructure.locking import owned_directory_lock
 
 document_app = typer.Typer(help="Workspace-backed document engineering commands.")
 
@@ -467,7 +467,7 @@ def run_document(
 @document_app.command("passport")
 def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
     """Show the immutable evidence passport for a durable run."""
-    passport_store, _, _ = durable_evidence_stores(ctx.obj["deps"])
+    passport_store = durable_evidence_stores(ctx.obj["deps"]).passports
     passport = passport_store.get(run_id)
     if passport is None:
         raise typer.BadParameter(f"Passport not found for run: {run_id}")
@@ -482,14 +482,14 @@ def document_passport(ctx: typer.Context, run_id: str, json_output: bool = typer
 @document_app.command("evidence")
 def document_evidence(ctx: typer.Context, run_id: str, json_output: bool = typer.Option(False, "--json")) -> None:
     """Show the passport and all findings/artifacts produced by a durable run."""
-    passport_store, artifact_store, finding_store = durable_evidence_stores(ctx.obj["deps"])
-    passport = passport_store.get(run_id)
+    stores = durable_evidence_stores(ctx.obj["deps"])
+    passport = stores.passports.get(run_id)
     if passport is None:
         raise typer.BadParameter(f"Evidence not found for run: {run_id}")
     payload = {
         "passport": passport.to_dict(),
-        "artifacts": [item.to_dict() for item in artifact_store.list_for_run(run_id)],
-        "findings": finding_store.list_for_run(run_id),
+        "artifacts": [item.to_dict() for item in stores.artifacts.list_for_run(run_id)],
+        "findings": stores.findings.list_for_run(run_id),
     }
     typer.echo(
         json.dumps(payload, ensure_ascii=False, sort_keys=True)

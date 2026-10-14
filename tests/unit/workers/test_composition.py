@@ -9,8 +9,6 @@ from docs.workers.composition import (
     PipelineJobConfiguration,
     WorkerComposition,
     compose_worker,
-    create_production_worker,
-    create_production_worker_factory,
 )
 from docs.workers.service import WorkerService
 
@@ -113,33 +111,14 @@ def test_compose_worker_reuses_application_observability(tmp_path):
     assert composition._service.observability is observability
 
 
-def test_production_factory_composes_durable_sqlite_worker_dependencies(tmp_path):
-    def runtime_factory(_pipeline_id):
-        return type("Runtime", (), {"run": lambda self, run_id, **kwargs: {"run_id": run_id}})()
+def test_worker_composition_without_observability_stays_noop(monkeypatch, tmp_path):
+    # The application composition is the only source of observability; a bare
+    # WorkerComposition must not reach for the environment on its own.
+    def boom():
+        raise AssertionError("WorkerComposition must not build observability from the environment")
 
-    service = create_production_worker(
-        runtime_factory,
-        tmp_path,
-        tmp_path / "worker.sqlite3",
-        worker_id="worker-1",
-        lease_ttl_seconds=9,
-        heartbeat_interval_seconds=0.5,
-    )
+    monkeypatch.setattr("docs.workers.composition.create_observability_from_env", boom, raising=False)
 
-    assert service.worker_id == "worker-1"
-    assert service.lease_ttl_seconds == 9
-    assert service.heartbeat_interval_seconds == 0.5
-    assert service.queue.__class__.__name__ == "SqliteJobQueue"
-    assert service.leases.__class__.__name__ == "SqliteLeaseStore"
-    assert service.run_store.__class__.__name__ == "SqliteRunStore"
+    service = WorkerComposition(lambda _: object(), tmp_path, Queue(), Leases()).create_service()
 
-
-def test_production_worker_factory_adapts_cli_configuration(tmp_path):
-    factory = create_production_worker_factory(
-        lambda _pipeline_id: object(), tmp_path, tmp_path / "worker.sqlite3", lease_ttl_seconds=7
-    )
-
-    service = factory(SimpleNamespace(worker_id="cli-worker"))
-
-    assert service.worker_id == "cli-worker"
-    assert service.lease_ttl_seconds == 7
+    assert type(service.observability).__name__ == "NoOpObservability"

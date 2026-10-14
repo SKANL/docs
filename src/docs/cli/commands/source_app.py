@@ -8,8 +8,6 @@ import typer
 
 from docs.application.source_pipeline import SourcePipeline
 from docs.domain.identity import pretty_json
-from docs.infrastructure.ingest.atomic_file_adapter import AtomicFileAdapter
-from docs.infrastructure.ingest.md_normalize_adapter import MdNormalizeAdapter
 
 source_app = typer.Typer(help="Source ingestion and normalization commands.")
 
@@ -20,13 +18,11 @@ def create_source_pipeline(deps: Any) -> SourcePipeline | None:
     if callable(factory):
         return factory()
     ingest = getattr(deps, "ingest", None)
-    if ingest is None:
+    normalizer = getattr(deps, "markdown_normalizer", None)
+    writer = getattr(deps, "atomic_file_writer", None)
+    if ingest is None or normalizer is None or writer is None:
         return None
-    return SourcePipeline(
-        ingest,
-        getattr(deps, "markdown_normalizer", None) or MdNormalizeAdapter(),
-        getattr(deps, "atomic_file_writer", None) or AtomicFileAdapter(),
-    )
+    return SourcePipeline(ingest, normalizer, writer)
 
 
 def run_source_command(ctx: typer.Context, command: str, json_output: bool) -> None:

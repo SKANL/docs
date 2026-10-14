@@ -2,8 +2,8 @@
 
 This module translates an immutable queue payload into the small, typed call
 surface required by a synchronous pipeline runtime.  ``WorkerComposition``
-remains dependency-injected; the production factory at the bottom supplies
-the durable adapters used by CLI/API entry points.
+is dependency-injected; ``compose_worker`` wires it from the application
+composition, which owns the durable stores and observability.
 """
 
 from __future__ import annotations
@@ -20,13 +20,7 @@ from docs.domain.ports.job_queue import JobQueue
 from docs.domain.ports.lease_store import LeaseStore
 from docs.domain.ports.run_store import PassportStore, RunStore
 from docs.domain.runtime_records import Job
-from docs.infrastructure.persistence.sqlite_runtime import (
-    SqliteJobQueue,
-    SqliteLeaseStore,
-    SqlitePassportStore,
-    SqliteRunStore,
-)
-from docs.observability import ObservabilityPort, create_observability_from_env
+from docs.observability import ObservabilityPort
 from docs.workers.service import WorkerResult, WorkerService
 
 
@@ -126,7 +120,7 @@ class WorkerComposition:
             lease_ttl_seconds=lease_ttl_seconds,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
             max_retries=max_retries,
-            observability=observability or create_observability_from_env(),
+            observability=observability,
         )
 
     def handle(self, job: Job, _scratch: Path | None = None) -> Any:
@@ -199,71 +193,6 @@ def compose_worker(
         max_retries=max_retries,
         observability=application.observability,
     )
-
-
-def create_production_worker(
-    runtime_factory: PipelineRuntimeFactory,
-    workspace_root: str | Path,
-    state_path: str | Path,
-    *,
-    finalizer: Callable[[WorkerResult], Any] | None = None,
-    scratch_parent: str | Path | None = None,
-    worker_id: str | None = None,
-    lease_ttl_seconds: int = 60,
-    heartbeat_interval_seconds: float | None = None,
-    max_retries: int = 0,
-    observability: ObservabilityPort | None = None,
-) -> WorkerService:
-    """Compose a worker with durable SQLite queue, lease, and run stores."""
-    database = Path(state_path).resolve()
-    return WorkerComposition(
-        runtime_factory,
-        workspace_root,
-        SqliteJobQueue(database),
-        SqliteLeaseStore(database),
-        run_store=SqliteRunStore(database),
-        passport_store=SqlitePassportStore(database),
-        finalizer=finalizer,
-        scratch_parent=scratch_parent,
-        worker_id=worker_id,
-        lease_ttl_seconds=lease_ttl_seconds,
-        heartbeat_interval_seconds=heartbeat_interval_seconds,
-        max_retries=max_retries,
-        observability=observability,
-    ).create_service()
-
-
-def create_production_worker_factory(
-    runtime_factory: PipelineRuntimeFactory,
-    workspace_root: str | Path,
-    state_path: str | Path,
-    *,
-    finalizer: Callable[[WorkerResult], Any] | None = None,
-    scratch_parent: str | Path | None = None,
-    worker_id: str | None = None,
-    lease_ttl_seconds: int = 60,
-    heartbeat_interval_seconds: float | None = None,
-    max_retries: int = 0,
-    observability: ObservabilityPort | None = None,
-) -> Callable[[Any], WorkerService]:
-    """Return a CLI/API-compatible factory accepting a worker configuration."""
-
-    def factory(configuration: Any) -> WorkerService:
-        configured_worker_id = getattr(configuration, "worker_id", None) or worker_id
-        return create_production_worker(
-            runtime_factory,
-            workspace_root,
-            state_path,
-            finalizer=finalizer,
-            scratch_parent=scratch_parent,
-            worker_id=configured_worker_id,
-            lease_ttl_seconds=lease_ttl_seconds,
-            heartbeat_interval_seconds=heartbeat_interval_seconds,
-            max_retries=max_retries,
-            observability=observability,
-        )
-
-    return factory
 
 
 def _required_text(payload: Mapping[str, Any], field_name: str) -> str:

@@ -11,19 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.workspaces import WorkspaceRegistry
+from docs.composition import RuntimeStores, atomic_write_text, runtime_state_path
 from docs.domain.identity import pretty_json
 from docs.domain.runtime_records import Artifact, Passport
-from docs.infrastructure.atomic_write import atomic_write_text
-from docs.infrastructure.persistence.sqlite_runtime import (
-    SqliteArtifactStore,
-    SqliteFindingStore,
-    SqliteGraphStore,
-    SqliteJobQueue,
-    SqlitePassportStore,
-    SqlitePublicationStore,
-    SqliteRunStore,
-)
-from docs.sidecar.roots import PerRoot, WorkspaceRoots, state_path
+from docs.sidecar.roots import PerRoot, WorkspaceRoots
 
 LOG = logging.getLogger("docs.sidecar")
 
@@ -179,23 +170,23 @@ class WorkspaceRunStore:
     def __init__(self, registry: WorkspaceRegistry, fallback_root: Path | None = None) -> None:
         self.roots = WorkspaceRoots(registry, fallback_root)
         self.fallback_root = self.roots.fallback
-        self._store = PerRoot(lambda root: SqliteRunStore(state_path(root)))
+        self._store = PerRoot(RuntimeStores)
 
     @property
     def path(self) -> Path:
         if self.fallback_root is None:
             raise AttributeError("workspace run store has no fallback path")
-        return self.fallback_root / ".docs" / "runtime.sqlite3"
+        return runtime_state_path(self.fallback_root)
 
-    def _all(self) -> list[SqliteRunStore]:
-        return [self._store(root) for root in self.roots.all_roots()]
+    def _all(self) -> list[Any]:
+        return [self._store(root).runs for root in self.roots.all_roots()]
 
     def put(self, run: Any) -> None:
         workspace_id = run.payload.get("workspace_id") if isinstance(run.payload, Mapping) else None
         if isinstance(workspace_id, str) and workspace_id:
-            self._store(self.roots.root_for(workspace_id)).put(run)
+            self._store(self.roots.root_for(workspace_id)).runs.put(run)
         elif self.fallback_root is not None:
-            self._store(self.fallback_root).put(run)
+            self._store(self.fallback_root).runs.put(run)
         else:
             raise ValueError("workspace_id is required for durable runs")
 
@@ -217,38 +208,38 @@ class WorkspaceJobQueue:
     def __init__(self, registry: WorkspaceRegistry, fallback_root: Path | None = None) -> None:
         self.roots = WorkspaceRoots(registry, fallback_root)
         self.fallback_root = self.roots.fallback
-        self._queue = PerRoot(lambda root: SqliteJobQueue(state_path(root)))
+        self._queue = PerRoot(RuntimeStores)
 
     @property
     def path(self) -> Path:
         if self.fallback_root is None:
             raise AttributeError("workspace queue has no fallback path")
-        return self.fallback_root / ".docs" / "runtime.sqlite3"
+        return runtime_state_path(self.fallback_root)
 
     def enqueue(self, job_id: str, payload: dict[str, object]) -> None:
         workspace_id = payload.get("workspace_id")
         if isinstance(workspace_id, str) and workspace_id:
-            self._queue(self.roots.root_for(workspace_id)).enqueue(job_id, payload)
+            self._queue(self.roots.root_for(workspace_id)).queue.enqueue(job_id, payload)
         elif self.fallback_root is not None:
-            self._queue(self.fallback_root).enqueue(job_id, payload)
+            self._queue(self.fallback_root).queue.enqueue(job_id, payload)
         else:
             raise ValueError("workspace_id is required for queued runs")
 
     def claim(self, worker_id: str) -> Any:
         for root in self.roots.all_roots():
-            job = self._queue(root).claim(worker_id)
+            job = self._queue(root).queue.claim(worker_id)
             if job is not None:
                 return job
         return None
 
     def ack(self, job_id: str, worker_id: str) -> bool:
-        return any(queue.ack(job_id, worker_id) for queue in self._queue.values())
+        return any(item.queue.ack(job_id, worker_id) for item in self._queue.values())
 
     def cancel(self, run_id: str) -> bool:
-        return any(queue.cancel(run_id) for queue in self._queue.values())
+        return any(item.queue.cancel(run_id) for item in self._queue.values())
 
     def is_cancelled(self, run_id: str) -> bool:
-        return any(queue.is_cancelled(run_id) for queue in self._queue.values())
+        return any(item.queue.is_cancelled(run_id) for item in self._queue.values())
 
 
 class WorkspaceEvidenceStores:
@@ -258,14 +249,7 @@ class WorkspaceEvidenceStores:
         self.roots = WorkspaceRoots(registry, fallback_root)
         self.run_store = run_store
         self.fallback_root = fallback_root.resolve()
-        self._stores_for_root = PerRoot(
-            lambda root: (
-                SqlitePassportStore(state_path(root)),
-                SqliteArtifactStore(state_path(root)),
-                SqliteFindingStore(state_path(root)),
-                SqlitePublicationStore(state_path(root)),
-            )
-        )
+        self._stores_for_root = PerRoot(RuntimeStores)
 
     def _root_for_run(self, run_id: str) -> Path:
         run = self.run_store.get(run_id)
@@ -297,13 +281,13 @@ class WorkspacePassportStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
+        return runtime_state_path(self.parent.fallback_root)
 
     def put(self, value: Passport) -> None:
-        self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[0].put(value)
+        self.parent._stores_for_root(self.parent._root_for_run(value.run_id)).passports.put(value)
 
     def get(self, run_id: str) -> Any:
-        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[0].get(run_id)
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id)).passports.get(run_id)
 
 
 class WorkspaceArtifactStore:
@@ -312,14 +296,14 @@ class WorkspaceArtifactStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
+        return runtime_state_path(self.parent.fallback_root)
 
     def put(self, value: Artifact) -> None:
-        self.parent._stores_for_root(self.parent._root_for_run(value.run_id))[1].put(value)
+        self.parent._stores_for_root(self.parent._root_for_run(value.run_id)).artifacts.put(value)
 
     def get(self, artifact_id: str) -> Any:
         for root in [self.parent._root_for_run(run.id) for run in self.parent.run_store.list()]:
-            value = self.parent._stores_for_root(root)[1].get(artifact_id)
+            value = self.parent._stores_for_root(root).artifacts.get(artifact_id)
             if value is not None:
                 return value
         return None
@@ -328,7 +312,7 @@ class WorkspaceArtifactStore:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
 
     def list_for_run(self, run_id: str) -> builtin_list[Any]:
-        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[1].list_for_run(run_id)
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id)).artifacts.list_for_run(run_id)
 
 
 class WorkspaceFindingStore:
@@ -337,16 +321,16 @@ class WorkspaceFindingStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
+        return runtime_state_path(self.parent.fallback_root)
 
     def put(self, value: dict[str, Any]) -> None:
-        self.parent._stores_for_root(self.parent._root_for_run(str(value.get("run_id", ""))))[2].put(value)
+        self.parent._stores_for_root(self.parent._root_for_run(str(value.get("run_id", "")))).findings.put(value)
 
     def list(self) -> list[dict[str, Any]]:
         return [value for run in self.parent.run_store.list() for value in self.list_for_run(run.id)]
 
     def list_for_run(self, run_id: str) -> builtin_list[dict[str, Any]]:
-        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[2].list_for_run(run_id)
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id)).findings.list_for_run(run_id)
 
 
 class WorkspacePublicationStore:
@@ -355,15 +339,15 @@ class WorkspacePublicationStore:
 
     @property
     def path(self) -> Path:
-        return self.parent.fallback_root / ".docs" / "runtime.sqlite3"
+        return runtime_state_path(self.parent.fallback_root)
 
     def put(self, value: dict[str, Any]) -> None:
         run_id = str(value.get("run_id", ""))
-        self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put(value)
+        self.parent._stores_for_root(self.parent._root_for_run(run_id)).publications.put(value)
 
     def put_if_absent(self, value: dict[str, Any]) -> bool:
         run_id = str(value.get("run_id", ""))
-        return self.parent._stores_for_root(self.parent._root_for_run(run_id))[3].put_if_absent(value)
+        return self.parent._stores_for_root(self.parent._root_for_run(run_id)).publications.put_if_absent(value)
 
     def list(self) -> list[dict[str, Any]]:
         return self._list_runs(self.parent.run_store.list())
@@ -380,7 +364,7 @@ class WorkspacePublicationStore:
         return [
             value
             for run in runs
-            for value in self.parent._stores_for_root(self.parent._root_for_run(run.id))[3].list()
+            for value in self.parent._stores_for_root(self.parent._root_for_run(run.id)).publications.list()
             if value.get("run_id") == run.id
         ]
 
@@ -389,14 +373,14 @@ class WorkspaceGraphStore:
     def __init__(self, registry: WorkspaceRegistry, fallback_root: Path) -> None:
         self.roots = WorkspaceRoots(registry, fallback_root)
         self.fallback_root = fallback_root.resolve()
-        self._graph = PerRoot(lambda root: SqliteGraphStore(state_path(root)))
+        self._graph = PerRoot(RuntimeStores)
 
     @property
     def path(self) -> Path:
-        return state_path(self.fallback_root)
+        return runtime_state_path(self.fallback_root)
 
-    def _store(self, workspace_id: str | None = None) -> SqliteGraphStore:
-        return self._graph(self.roots.root_for(workspace_id))
+    def _store(self, workspace_id: str | None = None) -> Any:
+        return self._graph(self.roots.root_for(workspace_id)).graph
 
     def for_workspace(self, workspace_id: str) -> WorkspaceGraphView:
         return WorkspaceGraphView(self, workspace_id)

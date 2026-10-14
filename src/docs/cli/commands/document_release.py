@@ -9,8 +9,8 @@ from pathlib import Path
 
 import typer
 
+from docs.composition import directory_handle_guard, owned_directory_lock
 from docs.domain.identity import sha256_file
-from docs.infrastructure.locking import directory_handle_guard, owned_directory_lock
 
 
 def promote_release_candidate(
