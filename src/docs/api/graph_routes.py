@@ -32,21 +32,23 @@ class GraphRoutes:
         if request.principal is not None and self._host.workspace_registry is None:
             raise APIError("not_found", "Graph not found", 404)
         workspace_id = self._host.workspace_filter(request)
-        # ponytail: GraphQueryService is typed on SemanticGraphStore while the
-        # host serves the runtime Graph; the shapes differ (pre-existing, hidden
-        # by the old Any slot). Reconcile the two graph models before narrowing.
-        graph_store: Any = self._host.graph_store
-        if workspace_id and hasattr(self._host.graph_store, "for_workspace"):
-            graph_store = self._host.graph_store.for_workspace(workspace_id)
-        elif workspace_id:
-            raise APIError("workspace_graph_unavailable", "Workspace-scoped graph is not configured", 503)
+        graph_store = self._host.graph_store
+        semantic_store = self._host.semantic_graph_store
+        if workspace_id:
+            if not hasattr(graph_store, "for_workspace"):
+                raise APIError("workspace_graph_unavailable", "Workspace-scoped graph is not configured", 503)
+            graph_store = graph_store.for_workspace(workspace_id)
+            if semantic_store is not None:
+                semantic_store = semantic_store.for_workspace(workspace_id) if hasattr(semantic_store, "for_workspace") else None
         if not request.query or (set(request.query) == {"workspace_id"}):
             graph = graph_store.get()
             data = as_dict(graph)
             if not isinstance(data, Mapping):
                 data = {}
             return Response.json({"nodes": list(data.get("nodes", [])), "edges": list(data.get("edges", []))})
-        query = GraphQueryService(graph_store)
+        # The raw route serves the runtime Graph; queries need the semantic read
+        # model, which is a separate store and may be absent (reported, not faked).
+        query = GraphQueryService(semantic_store)
         params = request.query
         mode = params.get("mode")
         query_name = params.get("query")
