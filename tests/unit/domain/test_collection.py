@@ -8,6 +8,7 @@ from docs.domain.collection import (
     classify_source,
     dedupe_facts,
     extract_github_repo,
+    identify_facts,
     parse_gh_issues,
 )
 
@@ -117,3 +118,18 @@ def test_extract_github_repo_returns_empty_string_for_non_github_remote():
 
 def test_extract_github_repo_returns_empty_string_for_empty_input():
     assert extract_github_repo("") == ""
+
+
+def test_identify_facts_adds_a_stable_id_and_links_file_sources():
+    facts = [
+        {"classification": "confirmado", "claim": "A", "source": "/x/a.md"},
+        {"classification": "pendiente", "claim": "B", "source": "git"},
+    ]
+    first = identify_facts(facts, {"/x/a.md"})
+    again = identify_facts(list(reversed(facts)), {"/x/a.md"})
+
+    assert first[0]["source_path"] == "/x/a.md"
+    assert "source_path" not in first[1]
+    assert first[0]["id"] != first[1]["id"]
+    assert {f["id"] for f in first} == {f["id"] for f in again}
+    assert first[0]["claim"] == "A" and "id" not in facts[0]  # input untouched

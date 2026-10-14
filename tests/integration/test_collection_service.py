@@ -253,6 +253,8 @@ def test_collect_code_evidence_detects_dependency_token(tmp_path: Path, service)
     path = service.collect_code_evidence(config, repo_root=tmp_path)
     manifest = json.loads(path.read_text(encoding="utf-8"))
     assert any("fastapi" in f["claim"] for f in manifest["facts"])
+    fact = next(f for f in manifest["facts"] if "fastapi" in f["claim"])
+    assert fact["id"] and fact["source_path"] == (evidence_root / "pyproject.toml").resolve().as_posix()
 
 
 def test_collect_code_evidence_globs_code_files_and_detects_source_token(tmp_path: Path, service):
@@ -271,6 +273,9 @@ def test_collect_code_evidence_globs_code_files_and_detects_source_token(tmp_pat
     manifest = json.loads(path.read_text(encoding="utf-8"))
     assert manifest["file_count"] == 1
     assert any("FastAPI" in f["claim"] for f in manifest["facts"])
+    fact = next(f for f in manifest["facts"] if "FastAPI" in f["claim"])
+    assert fact["source_path"] == (evidence_root / "main.py").resolve().as_posix()
+    assert fact["source_path"] in [f["path"] for f in manifest["files"]]
 
 
 def test_collect_code_evidence_respects_glob_limit(tmp_path: Path, service):
@@ -327,13 +332,14 @@ def test_collect_code_evidence_falls_back_to_pendiente_fact_on_git_failure(tmp_p
     config = _config(tmp_path, evidence_sources={"root": str(evidence_root), "git_log": True})
     path = service.collect_code_evidence(config, repo_root=tmp_path)
     manifest = json.loads(path.read_text(encoding="utf-8"))
-    assert manifest["facts"] == [
+    assert [{k: v for k, v in f.items() if k != "id"} for f in manifest["facts"]] == [
         {
             "classification": "pendiente",
             "claim": "No se pudo obtener git log para la app móvil.",
             "source": "git",
         }
     ]
+    assert manifest["facts"][0]["id"]
 
 
 def test_collect_code_evidence_dedupes_facts(tmp_path: Path, service):

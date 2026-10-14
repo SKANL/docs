@@ -28,6 +28,7 @@ from docs.sidecar.stores import (
     WorkspaceJobQueue,
     WorkspaceJsonCollectionStore,
     WorkspaceRunStore,
+    WorkspaceSemanticGraphStore,
 )
 from docs.sidecar.worker import worker_process_main
 
@@ -94,6 +95,7 @@ def _build_api_application(
         passport_store=evidence_stores.passport(),
         artifact_store=evidence_stores.artifact(),
         graph_store=WorkspaceGraphStore(registry, config.workspace),
+        semantic_graph_store=WorkspaceSemanticGraphStore(registry, config.workspace),
         # The core sidecar remains plugin-independent. Plugin discovery is an
         # optional application concern and must never be required to start or
         # execute the document pipeline.

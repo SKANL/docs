@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from docs.domain.collection import classify_source, dedupe_facts, extract_github_repo, parse_gh_issues
+from docs.domain.collection import classify_source, dedupe_facts, extract_github_repo, identify_facts, parse_gh_issues
 from docs.domain.context_index_files import is_context_content_filename
 from docs.domain.markdown_text import clean_markdown_text
 from docs.domain.ports.evidence_repository import EvidenceRepository
@@ -115,7 +115,7 @@ class CollectionService:
             "policy": config.get("project", {}).get("scope_policy", ""),
             "source_count": len(sources),
             "sources": sources,
-            "facts": facts,
+            "facts": identify_facts(facts, {source["path"] for source in sources}),
         }
         self.evidence_repository.write_manifest(manifest_path, manifest)
         return manifest_path
@@ -160,10 +160,13 @@ class CollectionService:
             return text
 
         dependency_manifest = ""
+        dependency_path = ""
         for entry in evidence.get("files", []):
-            text = add_code_file(resolve(entry.get("path", "")), entry.get("type", "evidence"))
+            file_path = resolve(entry.get("path", ""))
+            text = add_code_file(file_path, entry.get("type", "evidence"))
             if entry.get("type", "").endswith("dependency_manifest"):
                 dependency_manifest = text
+                dependency_path = file_path.resolve().as_posix() if file_path.is_file() else ""
 
         for dependency in evidence.get("dependency_tokens", []):
             if dependency.lower() in dependency_manifest.lower():
@@ -172,6 +175,7 @@ class CollectionService:
                         "classification": "confirmado",
                         "claim": f"El proyecto declara la dependencia `{dependency}`.",
                         "source": "dependency_manifest",
+                        **({"source_path": dependency_path} if dependency_path else {}),
                     }
                 )
 
@@ -206,7 +210,7 @@ class CollectionService:
             "root": root.resolve().as_posix() if root else "",
             "file_count": len(files),
             "files": files,
-            "facts": dedupe_facts(facts),
+            "facts": identify_facts(dedupe_facts(facts), {entry["path"] for entry in files}),
         }
         self.evidence_repository.write_manifest(manifest_path, manifest)
         return manifest_path

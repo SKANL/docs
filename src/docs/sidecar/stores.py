@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from docs.application.workspaces import WorkspaceRegistry
-from docs.composition import RuntimeStores, atomic_write_text, runtime_state_path
+from docs.composition import RuntimeStores, atomic_write_text, open_document_graph_reader, runtime_state_path
 from docs.domain.identity import pretty_json, read_json_object
 from docs.domain.runtime_records import Artifact, Passport
+from docs.domain.semantic_graph import SemanticGraph
 from docs.sidecar.roots import PerRoot, WorkspaceRoots
 
 LOG = logging.getLogger("docs.sidecar")
@@ -111,7 +112,8 @@ class WorkspaceJsonCollectionStore:
             if isinstance(value, list):
                 values: builtin_list[Any] = value
             elif isinstance(value, dict):
-                raw_values = value.get("items", [value])
+                # revision logs are {schema, entries}; "items" kept for other collections
+                raw_values = value.get("entries", value.get("items", [value]))
                 values = raw_values if isinstance(raw_values, list) else []
             else:
                 values = []
@@ -393,3 +395,26 @@ class WorkspaceGraphView:
 
     def put(self, value: Any) -> None:
         self.parent._store(self.workspace_id).put(value)
+
+
+class WorkspaceSemanticGraphStore:
+    """Read-only document graph of a workspace, projected from its files on read."""
+
+    def __init__(self, registry: WorkspaceRegistry, fallback_root: Path) -> None:
+        self.roots = WorkspaceRoots(registry, fallback_root)
+        self._reader = PerRoot(open_document_graph_reader)
+
+    def get(self, workspace_id: str | None = None) -> SemanticGraph:
+        return self._reader(self.roots.root_for(workspace_id)).get()
+
+    def for_workspace(self, workspace_id: str) -> WorkspaceSemanticGraphView:
+        return WorkspaceSemanticGraphView(self, workspace_id)
+
+
+class WorkspaceSemanticGraphView:
+    def __init__(self, parent: WorkspaceSemanticGraphStore, workspace_id: str) -> None:
+        self.parent = parent
+        self.workspace_id = workspace_id
+
+    def get(self) -> SemanticGraph:
+        return self.parent.get(self.workspace_id)
