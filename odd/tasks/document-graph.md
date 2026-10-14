@@ -45,7 +45,7 @@ missing.
   to main (user-authorized).
 
 ## Tasks
-- [ ] G1 Fix `/v2/revisions`: `sidecar/stores.py` reads `items` but the log
+- [x] G1 Fix `/v2/revisions`: `sidecar/stores.py` reads `items` but the log
       key is `entries`.
 - [ ] G2 Persist review `Issue.to_dict()` lists in each revision-log entry
       (`application/revision.py`), so revisions link to the findings they
@@ -81,4 +81,5 @@ missing.
 
 ## Progress
 - Branch: `feat/document-graph` (from main f4a8803c).
-- Next: G1.
+- G1 done: RED `KeyError: 'section_id'` (store returned whole log as one record), GREEN after reading `entries`; test_sidecar.py 30 passed, ruff, mypy clean.
+- Next: G2.

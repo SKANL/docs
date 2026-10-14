@@ -690,6 +690,23 @@ def test_workspace_json_collection_reads_revision_lists_and_promotes_only_real_b
     assert revision_store.promote("revision-1") is None
 
 
+def test_revision_store_lists_each_entry_of_the_real_revision_log(tmp_path: Path) -> None:
+    from docs.composition import open_workspace_registry
+    from docs.sidecar.stores import WorkspaceJsonCollectionStore
+
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
+    workspace = registry.create("Workspace", tmp_path / "workspace")
+    registry.select(workspace["id"])
+    revisions = Path(workspace["root"]) / "documents" / "doc" / "sections" / "_revisions"
+    revisions.mkdir(parents=True)
+    log = {"schema": 1, "entries": [{"section_id": "a", "ts": "t1"}, {"section_id": "b", "ts": "t2"}]}
+    (revisions / "revision-log.json").write_text(json.dumps(log), encoding="utf-8")
+
+    items = WorkspaceJsonCollectionStore(tmp_path, "revisions", registry).list()
+
+    assert [item["section_id"] for item in items] == ["a", "b"]
+
+
 def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> None:
     from docs.application.workspaces import WorkspaceRegistryError
     from docs.composition import open_workspace_registry

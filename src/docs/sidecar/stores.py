@@ -111,7 +111,8 @@ class WorkspaceJsonCollectionStore:
             if isinstance(value, list):
                 values: builtin_list[Any] = value
             elif isinstance(value, dict):
-                raw_values = value.get("items", [value])
+                # revision logs are {schema, entries}; "items" kept for other collections
+                raw_values = value.get("entries", value.get("items", [value]))
                 values = raw_values if isinstance(raw_values, list) else []
             else:
                 values = []
