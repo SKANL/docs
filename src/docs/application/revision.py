@@ -14,11 +14,12 @@ from typing import Any
 
 from docs.application.context import ContextService
 from docs.application.review import ReviewService
-from docs.domain.identity import pretty_json
+from docs.domain.identity import pretty_json, sha256_content
 from docs.domain.models.template import Template
 from docs.domain.normative import NormativeSettings
 from docs.domain.ports.evidence_repository import EvidenceRepository
 from docs.domain.ports.section_repository import SectionRepository
+from docs.domain.review import Issue
 from docs.domain.revision import RevisionResult, summarize_change, unified_diff
 from docs.domain.sections import apply_stamp, with_frontmatter
 
@@ -88,17 +89,21 @@ class RevisionService:
 
         # Scoped re-validation (spec: "Scoped Re-Validation") -- ONLY the
         # edited section + review-document, never the other sections.
-        self.review_service.review_section(doc_id, template, section.id, strict=strict, normative=normative)
-        self.review_service.review_document(
-            doc_id, template, strict=strict,
-            manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
-        )
+        issues = [
+            *self.review_service.review_section(
+                doc_id, template, section.id, strict=strict, normative=normative
+            ).issues,
+            *self.review_service.review_document(
+                doc_id, template, strict=strict,
+                manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
+            ).issues,
+        ]
 
         before_hash = self.evidence_repository.hash_text(before)
         diff_path = self._write_diff(config, f"{section.order:03d}-{section.id}", diff)
         self._append_log_entry(
             config, request=request, target_id=section.id, diff_path=diff_path,
-            before_hash=before_hash, after_hash=after_hash, ripple=[], ts=now,
+            before_hash=before_hash, after_hash=after_hash, ripple=[], ts=now, issues=issues,
         )
 
         return RevisionResult(
@@ -139,19 +144,24 @@ class RevisionService:
         # needed. Sections NOT in `consumed_by` are never re-validated.
         known_section_ids = {section.id for section in template.sections}
         dependent_sections = [sid for sid in topic.consumed_by if sid in known_section_ids]
-        for section_id in dependent_sections:
-            self.review_service.review_section(doc_id, template, section_id, strict=strict, normative=normative)
-        self.review_service.review_document(
+        issues = [
+            issue
+            for section_id in dependent_sections
+            for issue in self.review_service.review_section(
+                doc_id, template, section_id, strict=strict, normative=normative
+            ).issues
+        ]
+        issues += self.review_service.review_document(
             doc_id, template, strict=strict,
             manifest_exists=manifest_exists, manifest_size=manifest_size, normative=normative,
-        )
+        ).issues
 
         before_hash = self.evidence_repository.hash_text(before)
         after_hash = self.evidence_repository.hash_text(after)
         diff_path = self._write_diff(config, f"topic-{topic_id}", diff)
         self._append_log_entry(
             config, request=request, target_id=topic_id, diff_path=diff_path,
-            before_hash=before_hash, after_hash=after_hash, ripple=dependent_sections, ts=now,
+            before_hash=before_hash, after_hash=after_hash, ripple=dependent_sections, ts=now, issues=issues,
         )
 
         return RevisionResult(
@@ -183,7 +193,7 @@ class RevisionService:
 
     def _append_log_entry(
         self, config: dict[str, Any], *, request: str, target_id: str, diff_path: str,
-        before_hash: str, after_hash: str, ripple: list[str], ts: str,
+        before_hash: str, after_hash: str, ripple: list[str], ts: str, issues: list[Issue],
     ) -> None:
         log_path = self._revisions_dir(config) / "revision-log.json"
         state: dict[str, Any] = (
@@ -191,17 +201,19 @@ class RevisionService:
             if log_path.exists()
             else {"schema": 1, "entries": []}
         )
-        state.setdefault("entries", []).append(
-            {
-                "request": request,
-                "section_id": target_id,
-                "diff_path": diff_path,
-                "before_hash": before_hash,
-                "after_hash": after_hash,
-                "ripple": ripple,
-                "ts": ts,
-            }
-        )
+        entry: dict[str, Any] = {
+            "request": request,
+            "section_id": target_id,
+            "diff_path": diff_path,
+            "before_hash": before_hash,
+            "after_hash": after_hash,
+            "ripple": ripple,
+            "ts": ts,
+            "issues": [issue.to_dict() for issue in issues],
+        }
+        # Entries had no id; the content hash gives revisions a stable graph key.
+        entry["id"] = sha256_content(entry)
+        state.setdefault("entries", []).append(entry)
         log_path.write_text(
             pretty_json(state), encoding="utf-8"
         )

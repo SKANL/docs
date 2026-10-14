@@ -14,6 +14,7 @@ import pytest
 from docs.application.context import ContextService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
+from docs.domain.identity import sha256_content
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Section, SectionContract, Template, Topic
 from docs.domain.normative import NormativeSettings
@@ -218,6 +219,52 @@ def test_revise_log_accumulates_entries_in_order_across_calls(tmp_path, section_
     log_path = Path(_config(tmp_path)["paths"]["sections_dir"]) / "_revisions" / "revision-log.json"
     state = json.loads(log_path.read_text(encoding="utf-8"))
     assert [entry["request"] for entry in state["entries"]] == ["cambio 1", "cambio 2", "cambio 3"]
+
+
+def test_revise_persists_review_issues_and_a_stable_id_in_the_log_entry(tmp_path, section_repo, context_service):
+    from docs.domain.review import Issue, ReviewResult
+
+    class _Fake:
+        def review_section(self, *a, **k):
+            return ReviewResult([Issue("error", "falta evidencia", code="X1", section="introduccion")])
+
+        def review_document(self, *a, **k):
+            return ReviewResult([Issue("warning", "global", code="X2")])
+
+    service = RevisionService(section_repo, _Fake(), context_service, JsonEvidenceRepository())
+    _write_section(section_repo, 1, "introduccion", "V1")
+    service.revise(
+        "alpha", _template(), _config(tmp_path), "introduccion", "V2", "r",
+        normative=_NORMATIVE, now="t1",
+    )
+
+    log_path = Path(_config(tmp_path)["paths"]["sections_dir"]) / "_revisions" / "revision-log.json"
+    entry = json.loads(log_path.read_text(encoding="utf-8"))["entries"][0]
+    assert [i["code"] for i in entry["issues"]] == ["X1", "X2"]
+    assert entry["issues"][0]["section"] == "introduccion"
+    body = {k: v for k, v in entry.items() if k != "id"}
+    assert entry["id"] == sha256_content(body)
+
+
+def test_revise_topic_persists_issues_too(tmp_path, section_repo, context_service):
+    from docs.domain.review import Issue, ReviewResult
+
+    class _Fake:
+        def review_section(self, *a, **k):
+            return ReviewResult([Issue("error", "m", code="S1")])
+
+        def review_document(self, *a, **k):
+            return ReviewResult()
+
+    service = RevisionService(section_repo, _Fake(), context_service, JsonEvidenceRepository())
+    _write_section(section_repo, 1, "introduccion", "V1")
+    service.revise_topic(
+        "alpha", _template(), _config(tmp_path), "alumno", "Ana", "r", normative=_NORMATIVE, now="t1",
+    )
+    log_path = Path(_config(tmp_path)["paths"]["sections_dir"]) / "_revisions" / "revision-log.json"
+    entry = json.loads(log_path.read_text(encoding="utf-8"))["entries"][0]
+    assert [i["code"] for i in entry["issues"]] == ["S1"]
+    assert entry["id"]
 
 
 # ── Requirement: Revise Scope Boundary ──────────────────────────────────

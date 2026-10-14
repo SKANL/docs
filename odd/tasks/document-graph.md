@@ -47,7 +47,7 @@ missing.
 ## Tasks
 - [x] G1 Fix `/v2/revisions`: `sidecar/stores.py` reads `items` but the log
       key is `entries`.
-- [ ] G2 Persist review `Issue.to_dict()` lists in each revision-log entry
+- [x] G2 Persist review `Issue.to_dict()` lists in each revision-log entry
       (`application/revision.py`), so revisions link to the findings they
       produced.
 - [ ] G3 Stable fact ids (hash of classification|claim|source) and a
@@ -82,4 +82,5 @@ missing.
 ## Progress
 - Branch: `feat/document-graph` (from main f4a8803c).
 - G1 done: RED `KeyError: 'section_id'` (store returned whole log as one record), GREEN after reading `entries`; test_sidecar.py 30 passed, ruff, mypy clean.
-- Next: G2.
+- G2 done: RED 2 failed (no `issues`/`id` in entry), GREEN after persisting `Issue.to_dict()` lists (section + document, topic ripple too) and `id = sha256_content(entry)`; old logs load unchanged (entries are only appended). test_revision + test_section_routes 38 passed, ruff, mypy clean.
+- Next: G3.
