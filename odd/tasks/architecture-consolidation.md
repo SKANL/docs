@@ -37,7 +37,7 @@ domain logic out of giant adapters.
       to it. Route: delegated writer.
 - [x] T3 Migrate sidecar (`stores.py`, `app.py`, `worker.py`) to the bundle;
       delete inline `runtime.sqlite3` paths. Route: delegated writer.
-- [ ] T4 Collapse `workers/composition.py` production factories into the root
+- [x] T4 Collapse `workers/composition.py` production factories into the root
       (drop dead `create_production_worker*`). Route: delegated writer.
 - [ ] T5 Move locking/guard helpers behind the composition root for cli
       (`document_release`, `document_batch`, `document_app`); empty the T1
@@ -79,7 +79,7 @@ domain logic out of giant adapters.
   `durable_evidence_stores` return). Targeted: architecture + unit/cli +
   composition 151 passed; ruff and mypy clean. Full suite runs in a side
   worktree (~21 min) and is reported in the final handoff.
-- T3 done. RED: sidecar test with the new `build_worker(..., leases, ...)`
+- T3 done (commit b688e2cd). RED: sidecar test with the new `build_worker(..., leases, ...)`
   signature + shrunken allowlist + new `test_the_runtime_sqlite_path_is_declared_once`
   failed (3 failures). GREEN after migrating `sidecar/stores.py` (one
   `PerRoot(RuntimeStores)` per facade), `app.py` (idempotency), `worker.py`
@@ -88,4 +88,12 @@ domain logic out of giant adapters.
   removed. `atomic_write_text` for baseline promotion now comes from the
   composition root. Targeted suites (sidecar, local_worker, api, architecture)
   green; ruff and mypy clean.
-- Next: T4.
+- T4 done. Verified `create_production_worker*` had no caller in `src/` or
+  docs (only tests) and that `compose_worker` always passes
+  `application.observability`. RED: new
+  `test_worker_composition_without_observability_stays_noop` + allowlist
+  shrink failed; GREEN after deleting both factories, their tests, the
+  sqlite imports and the `create_observability_from_env()` fallback in
+  `WorkerComposition` (the integration test pinning that fallback removed).
+  Targeted workers/integration/architecture/sidecar 241 passed; ruff, mypy clean.
+- Next: T5.

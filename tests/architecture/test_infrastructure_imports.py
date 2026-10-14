@@ -29,7 +29,6 @@ ALLOWLIST: set[str] = {
     "cli/commands/document_batch.py",
     "cli/commands/document_release.py",
     "cli/commands/source_app.py",
-    "workers/composition.py",
 }
 
 
