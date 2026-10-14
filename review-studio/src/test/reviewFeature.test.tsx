@@ -308,6 +308,56 @@ describe("graph", () => {
     expect(getGraphQuery).not.toHaveBeenCalled();
   });
 
+  it("offers the traceability queries", async () => {
+    openReview("/review/graph", makeReviewApi());
+    await userEvent.click(await screen.findByRole("combobox", { name: "Query" }));
+    for (const label of ["Stale artifacts", "Source impact", "Requirement coverage"]) expect(await screen.findByRole("option", { name: label })).toBeTruthy();
+  });
+
+  it("tells no data apart from an empty result", async () => {
+    const getGraphQuery = vi.fn()
+      .mockResolvedValueOnce({ items: [], noData: true, coverage: { claim: 0, evidence: 0 } })
+      .mockResolvedValueOnce({ items: [], noData: false, coverage: { claim: 3, evidence: 1 } });
+    openReview("/review/graph", makeReviewApi({ getGraphQuery }));
+    await userEvent.click(await screen.findByRole("button", { name: "Run query" }));
+    expect(await screen.findByText(/No data to check/)).toBeTruthy();
+    expect(screen.queryByText(/Nothing found/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Run query" }));
+    expect(await screen.findByText(/Nothing found/)).toBeTruthy();
+    expect(screen.getByText(/3 claim/)).toBeTruthy();
+    expect(screen.queryByText(/No data to check/)).toBeNull();
+  });
+
+  it("shows requirement coverage per section", async () => {
+    const section = { id: "d/section/intro", kind: "section", label: "Intro" };
+    const getGraphQuery = vi.fn(async () => ({ items: [], noData: false, coverage: { requirement: 2, section: 1 }, sections: [{ section, satisfied: [{ id: "r1", kind: "requirement", label: "metodología" }], missing: [{ id: "r2", kind: "requirement", label: "alcance" }] }] }));
+    openReview("/review/graph", makeReviewApi({ getGraphQuery }));
+    await screen.findByText("The semantic graph is empty");
+    await pick("Query", "Requirement coverage");
+    await userEvent.click(screen.getByRole("button", { name: "Run query" }));
+    const table = await screen.findByRole("table", { name: "Requirement coverage" });
+    expect(within(table).getByText("alcance")).toBeTruthy();
+    expect(within(table).getByText("metodología")).toBeTruthy();
+  });
+
+  it("filters results by document", async () => {
+    const items = [{ id: "a/claim/1", kind: "claim", label: "Claim of A" }, { id: "b/claim/2", kind: "claim", label: "Claim of B" }];
+    const getGraphQuery = vi.fn(async () => ({ items, noData: false, coverage: { claim: 2, evidence: 0 } }));
+    const node = (id: string) => ({ id, label: id, type: "claim" as const, confidence: 1, x: 1, y: 1 });
+    openReview("/review/graph", makeReviewApi({ getGraphQuery, getGraph: async () => ({ nodes: items.map(i => node(i.id)), edges: [] }) }));
+    await userEvent.click(await screen.findByRole("button", { name: "Run query" }));
+    expect(await screen.findByText("Claim of A")).toBeTruthy();
+    await pick("Document", "b");
+    expect(screen.queryByText("Claim of A")).toBeNull();
+    expect(screen.getByText("Claim of B")).toBeTruthy();
+  });
+
+  it("says when the graph overview itself is unavailable", async () => {
+    openReview("/review/graph", makeReviewApi({ getGraph: async () => ({ nodes: [], edges: [], unavailable: true, warnings: ["graph unavailable: no store"] }) }));
+    expect(await screen.findByText(/graph unavailable: no store/)).toBeTruthy();
+    expect(screen.queryByText("The semantic graph is empty")).toBeNull();
+  });
+
   it("reports an unavailable graph read model", async () => {
     openReview("/review/graph", makeReviewApi({ getGraphQuery: async () => ({ items: [], graphUnavailable: true, warnings: ["graph index is stale"] }) }));
     await userEvent.click(await screen.findByRole("button", { name: "Run query" }));

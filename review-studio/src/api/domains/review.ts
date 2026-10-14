@@ -10,9 +10,20 @@ export type Artifact = { id: string; name: string; runId?: string; kind: "DOCX" 
 export type Baseline = { id: string; name: string; scope: string; created: string; status: Status; delta: string };
 export type GraphNode = { id: string; label: string; type: "claim" | "source" | "artifact" | "section"; confidence: number; x: number; y: number };
 export type GraphEdge = { from: string; to: string; relation: string };
-export type GraphQuery = "claims_without_evidence" | "findings_affected_by_revision" | "artifacts_derived_from_input" | "unused_references" | "unmet_requirements";
+export type GraphQuery = "claims_without_evidence" | "findings_affected_by_revision" | "artifacts_derived_from_input" | "unused_references" | "unmet_requirements" | "stale_artifacts" | "source_impact" | "requirement_coverage";
 export type GraphQueryItem = { id: string; kind: string; label: string; confidence?: number; attributes?: Record<string, unknown> };
-export type GraphQueryResult = { items: GraphQueryItem[]; graphUnavailable?: boolean; warnings?: string[]; context?: Record<string, unknown> };
+/** One section of the requirement_coverage query: what its template requires, split by whether the text satisfies it. */
+export type SectionCoverage = { section: GraphQueryItem; satisfied: GraphQueryItem[]; missing: GraphQueryItem[] };
+/**
+ * `noData`: the data the query stands on does not exist (nothing was checked), which is not the same as an empty `items`.
+ * `coverage`: how many nodes of each kind the query looked at.
+ */
+export type GraphQueryResult = {
+  items: GraphQueryItem[]; graphUnavailable?: boolean; warnings?: string[]; context?: Record<string, unknown>;
+  noData?: boolean; coverage?: Record<string, number>; sections?: SectionCoverage[];
+};
+/** `unavailable`: the graph could not be read; `noData`: it was read and holds nothing. */
+export type GraphOverview = { nodes: GraphNode[]; edges: GraphEdge[]; unavailable?: boolean; noData?: boolean; warnings?: string[] };
 
 export interface EvidenceArtifactRef { id: string; kind: string; digest: string; media_type: string }
 export interface PreviewAvailability { available: boolean; artifact_ids: string[] }
@@ -37,7 +48,7 @@ export interface ReviewDomainApi {
   listArtifacts(params?: ListParams): Promise<Artifact[]>;
   listArtifactPreviews(id: string): Promise<Record<string, unknown>[]>;
   artifactPreviewUrl(runId: string, artifactId: string): string;
-  getGraph(): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }>;
+  getGraph(): Promise<GraphOverview>;
   getGraphQuery(query: GraphQuery, id?: string): Promise<GraphQueryResult>;
   listBaselines(params?: ListParams): Promise<Baseline[]>;
   getBaseline(id: string): Promise<Record<string, unknown>>;
@@ -86,8 +97,8 @@ function toArtifact(raw: Record<string, unknown>): Artifact {
   };
 }
 
-function normalizeGraph(payload: unknown): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const value = payload && typeof payload === "object" ? payload as { nodes?: unknown; edges?: unknown } : {};
+function normalizeGraph(payload: unknown): GraphOverview {
+  const value = payload && typeof payload === "object" ? payload as { nodes?: unknown; edges?: unknown; graph_unavailable?: unknown; no_data?: unknown; warnings?: unknown } : {};
   const rawNodes = Array.isArray(value.nodes) ? value.nodes as RawGraphNode[] : [];
   const nodes = rawNodes.flatMap((node, index) => {
     if (typeof node.id !== "string") return [];
@@ -99,19 +110,40 @@ function normalizeGraph(payload: unknown): { nodes: GraphNode[]; edges: GraphEdg
     const to = typeof edge.target === "string" ? edge.target : edge.to;
     return typeof from === "string" && typeof to === "string" ? [{ from, to, relation: typeof edge.relation === "string" ? edge.relation : "related" }] : [];
   });
-  return { nodes, edges };
+  return { nodes, edges, unavailable: value.graph_unavailable === true, noData: value.no_data === true, warnings: stringList(value.warnings) };
 }
 
-function normalizeGraphQuery(payload: unknown): GraphQueryResult {
-  const value = payload && typeof payload === "object" ? payload as { items?: unknown; graph_unavailable?: unknown; warnings?: unknown; context?: unknown } : {};
-  const items = (Array.isArray(value.items) ? value.items : []).flatMap((item): GraphQueryItem[] => {
-    if (!item || typeof item !== "object") return [];
-    const candidate = item as Record<string, unknown>;
-    if (typeof candidate.id !== "string") return [];
-    const attributes = candidate.attributes && typeof candidate.attributes === "object" ? candidate.attributes as Record<string, unknown> : undefined;
-    return [{ id: candidate.id, kind: typeof candidate.kind === "string" ? candidate.kind : "entity", label: typeof candidate.label === "string" ? candidate.label : candidate.id, confidence: confidenceScore(candidate.confidence), attributes }];
-  });
-  return { items, graphUnavailable: value.graph_unavailable === true, warnings: Array.isArray(value.warnings) ? value.warnings.filter((warning): warning is string => typeof warning === "string") : undefined, context: value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined };
+const stringList = (value: unknown): string[] | undefined => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : undefined;
+
+function toQueryItem(item: unknown): GraphQueryItem[] {
+  if (!item || typeof item !== "object") return [];
+  const candidate = item as Record<string, unknown>;
+  if (typeof candidate.id !== "string") return [];
+  const attributes = candidate.attributes && typeof candidate.attributes === "object" ? candidate.attributes as Record<string, unknown> : undefined;
+  return [{ id: candidate.id, kind: typeof candidate.kind === "string" ? candidate.kind : "entity", label: typeof candidate.label === "string" ? candidate.label : candidate.id, confidence: confidenceScore(candidate.confidence), attributes }];
+}
+
+const toQueryItems = (value: unknown): GraphQueryItem[] => (Array.isArray(value) ? value : []).flatMap(toQueryItem);
+
+function normalizeGraphQuery(payload: unknown, query: GraphQuery): GraphQueryResult {
+  const value = payload && typeof payload === "object" ? payload as { items?: unknown; graph_unavailable?: unknown; warnings?: unknown; context?: unknown; no_data?: unknown; coverage?: unknown } : {};
+  const coverage = value.coverage && typeof value.coverage === "object"
+    ? Object.fromEntries(Object.entries(value.coverage as Record<string, unknown>).filter((entry): entry is [string, number] => typeof entry[1] === "number"))
+    : undefined;
+  // requirement_coverage answers with one row per section, not a flat node list
+  const sections = query === "requirement_coverage"
+    ? (Array.isArray(value.items) ? value.items : []).flatMap((row): SectionCoverage[] => {
+      const entry = row as { section?: unknown; satisfied?: unknown; missing?: unknown };
+      const [section] = toQueryItem(entry?.section);
+      return section ? [{ section, satisfied: toQueryItems(entry.satisfied), missing: toQueryItems(entry.missing) }] : [];
+    })
+    : undefined;
+  return {
+    items: sections ? [] : toQueryItems(value.items), sections,
+    graphUnavailable: value.graph_unavailable === true, warnings: stringList(value.warnings),
+    context: value.context && typeof value.context === "object" ? value.context as Record<string, unknown> : undefined,
+    noData: typeof value.no_data === "boolean" ? value.no_data : undefined, coverage,
+  };
 }
 
 export function createReviewDomainApi(t: Transport): ReviewDomainApi {
@@ -128,7 +160,7 @@ export function createReviewDomainApi(t: Transport): ReviewDomainApi {
     async getGraphQuery(query, id) {
       const params = new URLSearchParams({ query });
       if (id) params.set("id", id);
-      return normalizeGraphQuery(await request<unknown>(`graph?${params}`));
+      return normalizeGraphQuery(await request<unknown>(`graph?${params}`), query);
     },
     listBaselines: async params => (await listPage<Baseline>(request, "baselines", params)).items,
     getBaseline: id => request(`baselines/${encodeURIComponent(id)}`),

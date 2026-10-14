@@ -707,6 +707,26 @@ def test_revision_store_lists_each_entry_of_the_real_revision_log(tmp_path: Path
     assert [item["section_id"] for item in items] == ["a", "b"]
 
 
+def test_revision_records_carry_the_document_and_the_id_the_graph_uses(tmp_path: Path) -> None:
+    from docs.composition import open_workspace_registry
+    from docs.domain.identity import sha256_content
+    from docs.sidecar.stores import WorkspaceJsonCollectionStore
+
+    registry = open_workspace_registry(tmp_path / ".docs" / "workspaces.json")
+    workspace = registry.create("Workspace", tmp_path / "workspace")
+    registry.select(workspace["id"])
+    revisions = Path(workspace["root"]) / "documents" / "tesis" / "sections" / "_revisions"
+    revisions.mkdir(parents=True)
+    legacy = {"section_id": "a", "ts": "t1"}
+    log = {"schema": 1, "entries": [{"id": "kept", "section_id": "b", "ts": "t2"}, legacy]}
+    (revisions / "revision-log.json").write_text(json.dumps(log), encoding="utf-8")
+
+    items = WorkspaceJsonCollectionStore(tmp_path, "revisions", registry).list()
+
+    # a legacy entry gets the same content hash the document graph derives for it
+    assert [(i["id"], i["document_id"]) for i in items] == [("kept", "tesis"), (sha256_content(legacy), "tesis")]
+
+
 def test_workspace_backed_stores_reject_noncanonical_roots(tmp_path: Path) -> None:
     from docs.application.workspaces import WorkspaceRegistryError
     from docs.composition import open_workspace_registry

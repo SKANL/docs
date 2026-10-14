@@ -12,7 +12,7 @@ from typing import Any
 
 from docs.application.workspaces import WorkspaceRegistry
 from docs.composition import RuntimeStores, atomic_write_text, open_document_graph_reader, runtime_state_path
-from docs.domain.identity import pretty_json, read_json_object
+from docs.domain.identity import pretty_json, read_json_object, sha256_content
 from docs.domain.runtime_records import Artifact, Passport
 from docs.domain.semantic_graph import SemanticGraph
 from docs.sidecar.roots import PerRoot, WorkspaceRoots
@@ -120,6 +120,10 @@ class WorkspaceJsonCollectionStore:
             for item in values:
                 if isinstance(item, dict):
                     record = dict(item)
+                    if self.kind == "revisions":
+                        # legacy entries predate the persisted id: derive the hash the document graph uses
+                        record.setdefault("id", sha256_content(item))
+                        record.setdefault("document_id", path.parents[2].name)
                     record.setdefault("source_path", str(path))
                     record.setdefault("workspace_root", str(root))
                     items.append(record)

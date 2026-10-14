@@ -43,6 +43,27 @@ export interface RevisionResult { target_id: string; diff: string; summary: stri
 export type DocumentSection = { id: string; filename: string; body: string };
 export type Revision = { id: string; message: string; author: string; date: string; status: Status; files: number };
 
+const BLOCKING = new Set(["error", "critical", "high"]);
+
+/**
+ * The server lists one revision-log entry per row (`section_id`, `request`, `ts`, `ripple`, `issues`);
+ * the timeline reads a display row. The author is the document (the log records no person) and the
+ * status reflects the review issues the revision produced. Rows already shaped for display pass through.
+ */
+export function toRevision(raw: Record<string, unknown>): Revision {
+  if (typeof raw.message === "string" && typeof raw.date === "string") return raw as unknown as Revision;
+  const issues = Array.isArray(raw.issues) ? raw.issues as Array<{ severity?: unknown }> : undefined;
+  const section = typeof raw.section_id === "string" ? raw.section_id : "document";
+  return {
+    id: typeof raw.id === "string" ? raw.id : section,
+    message: typeof raw.request === "string" && raw.request ? raw.request : `Revised ${section}`,
+    author: typeof raw.document_id === "string" ? raw.document_id : "",
+    date: typeof raw.ts === "string" ? raw.ts : "",
+    status: !issues ? "unverified" : issues.some(issue => BLOCKING.has(String(issue?.severity))) ? "failed" : issues.length ? "warnings" : "passed",
+    files: 1 + (Array.isArray(raw.ripple) ? raw.ripple.length : 0),
+  };
+}
+
 export interface AuthoringApi {
   listAssets(documentId: string, kind?: string): Promise<AssetList>;
   addAsset(documentId: string, input: { filename: string; contentBase64: string; name?: string }): Promise<AssetAdded>;
@@ -95,7 +116,7 @@ export function createAuthoringApi(t: Transport): AuthoringApi {
     reviewDocument: (id, options = {}) => request(`${docPath(id)}/review`, jsonInit("POST", options)),
     stampSection: (id, section, input) => request(`${sectionPath(id, section)}/stamp`, jsonInit("POST", input)),
     reviseDocument: (id, input) => request(`${docPath(id)}/revisions`, jsonInit("POST", input)),
-    listRevisions: async params => (await listPage<Revision>(request, "revisions", params)).items,
+    listRevisions: async params => (await listPage<Record<string, unknown>>(request, "revisions", params)).items.map(toRevision),
     getRevision: id => request(`revisions/${encodeURIComponent(id)}`),
   };
 }
