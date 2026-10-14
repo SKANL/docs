@@ -8,7 +8,7 @@ const cap = (id: string, status: Capability["status"] = "available"): Capability
 export const authoringCapabilityIds = ["asset.list", "asset.add", "asset.rm", "source.ingest", "document.classify", "context.status", "context.set", "context.show", "context.rm", "context.elicit", "context.ingest", "build-section", "review-section", "review-document", "stamp-section", "pack-context", "doc.revise", "revisions.list"];
 export const catalogWithout = (...missing: string[]) => ({ groups: [{ id: "authoring", capabilities: authoringCapabilityIds.map(id => cap(id, missing.includes(id) ? "planned" : "available")) }] });
 
-export const sections = [{ id: "intro", filename: "intro.md", body: "Intro body" }, { id: "summary", filename: "summary.md", body: "Summary body" }];
+const sections = [{ id: "intro", filename: "intro.md", body: "Intro body" }, { id: "summary", filename: "summary.md", body: "Summary body" }];
 
 export function makeApi(overrides: Partial<ReviewApi> = {}): ReviewApi {
   return {
