@@ -96,7 +96,7 @@ domain logic out of giant adapters.
   sqlite imports and the `create_observability_from_env()` fallback in
   `WorkerComposition` (the integration test pinning that fallback removed).
   Targeted workers/integration/architecture/sidecar 241 passed; ruff, mypy clean.
-- T5 done. `ApplicationComposition` already exposed `directory_guard` /
+- T5 done (commit b360db80). `ApplicationComposition` already exposed `directory_guard` /
   `release_lock`; cli modules now import `owned_directory_lock` /
   `directory_handle_guard` from `docs.composition` (re-exported, commented).
   `source_app.create_source_pipeline` no longer builds `MdNormalizeAdapter` /
@@ -112,5 +112,5 @@ domain logic out of giant adapters.
   ruff, mypy clean.
 - Full-suite evidence: T1 3206 passed / 3 timing-flaky failures under load
   (plugins sdk, pass in isolation); T2 (side worktree, 70ea2b16) 3211 passed,
-  6 skipped. Final-commit full run reported in the handoff.
+  6 skipped. Final commit b360db80 (T5): 3211 passed, 6 skipped.
 - Next: T6.
