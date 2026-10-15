@@ -60,7 +60,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       limits (128 MB vs 120 MB); replace hardcoded cursor HMAC secret with a
       per-install secret.
 - [x] H6 (D) [dc03af4a] java_on_path stops mutating os.environ (pass env to the subprocess).
-- [ ] H8 (D) application/revision.py (~L179) has the same read-modify-write
+- [x] H8 (D) [c60b20ba] application/revision.py (~L179) has the same read-modify-write
       ordering as corrections (revision-log.json append + .diff numbering by
       glob count, unlocked, non-atomic): make it atomic and collision-safe.
 - [x] H9 (D) [abb150fd] From review R3-corrections-no-dir-create: prove that
@@ -79,11 +79,11 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] H12 (D) [80838dfc] `_reclaim_stale` uses `os.kill(pid, 0)`, which on Windows reports
       an exited pid as alive, so a crashed owner's lock is never reclaimed.
       Use a real liveness check (OpenProcess/psutil-free) with a test.
-- [ ] H7 (D) composition: hard imports (opendataloader_pdf, filetype, pypdfium2)
+- [x] H7 (D) [29b62f78] composition: hard imports (opendataloader_pdf, filetype, pypdfium2)
       become lazy with an actionable `doctor` message instead of killing the CLI.
 
 ### B. Cleanup and documentation truth
-- [ ] C1 (D) Remove dead code with its tests: domain/models/result.py,
+- [x] C1 (D) [8397bddc] Remove dead code with its tests: domain/models/result.py,
       RunRecorderService/RunHistoryService/RunReporter (+composition wiring),
       domain/pipeline.py legacy stage sets. Confirm no callers first.
 - [ ] C2 (I) PluginRunner stays (tested sandbox) but docs state it is not wired
@@ -183,5 +183,15 @@ Batch 3 (H12, H6, H5): writer complete; tests/architecture + 6 touched files
 boundary stays 06d77516 conceptually; next assess uses base ab63ca1f.
 Known limit: java_on_path swaps a module-level subprocess wrapper (not thread-safe).
 
+Batch 4 (H8, H7, C1): writer complete; architecture 146 passed, ruff/mypy clean,
+collect-only 3325 tests, no import errors. Also hardened locking.py (mid-delete
+PermissionError retried). Spec files document-pipeline/document-render and
+CLAUDE.md still mention removed pipeline_stage_plan / `pipeline <set>`: C3.
+Native review for ab63ca1f..8397bddc: tier high (22 files, 600 lines), user
+GRANTED, 4 lenses, lineage review-ac887632da2641c9 started. The bound STATUS
+failed twice with operation_timeout ("aggregate time budget", mutation not
+started, retry_safe false); not retried further. Review PENDING; lineage not
+acknowledged. Retry when the machine is idle.
+
 ## Next step
-H8, H7, then C1-C4 and U1-U12.
+C3 (docs drift), C2, C4, then U1-U12. Retry the pending review status.
