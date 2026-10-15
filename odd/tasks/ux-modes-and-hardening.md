@@ -53,7 +53,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       corrupt file instead of resetting (keep the corrupt file untouched).
 - [x] H2 (D) [98060771] ProvenanceLedger lock uses locking.owned_directory_lock (token
       ownership); corrupt ledger raises a clear error.
-- [ ] H3 (D) API fails closed: a registered route with no scope entry is denied;
+- [x] H3 (D) [59381a59] API fails closed: a registered route with no scope entry is denied;
       add a test that introspects every registered route and asserts a scope.
 - [x] H4 (D) [b86c7272] corrections: persist each applied id as it is applied, atomically.
 - [ ] H5 (D) Sidecar: validate Host header (loopback names only); align body
@@ -63,14 +63,22 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [ ] H8 (D) application/revision.py (~L179) has the same read-modify-write
       ordering as corrections (revision-log.json append + .diff numbering by
       glob count, unlocked, non-atomic): make it atomic and collision-safe.
-- [ ] H9 (D) From review R3-corrections-no-dir-create: prove that
+- [x] H9 (D) [abb150fd] From review R3-corrections-no-dir-create: prove that
       atomic_write_text creates missing parent directories (the explicit mkdir
       was removed from corrections.py and the repositories); add a test writing
       into a missing parent for corrections and each repository.
-- [ ] H10 (D) From review R3-ledger-stale-lock-test-weak: replace the removed
+- [x] H10 (D) [95c2b1de] From review R3-ledger-stale-lock-test-weak: replace the removed
       competing-recoverer test with one covering a live-owner lock timing out,
       and pin the stale-lock test to explicit owner data instead of relying on
       owned_directory_lock internals.
+- [x] H11 (I) [2d4b1671] Found while closing H10: `owned_directory_lock` release used
+      rmtree(ignore_errors=True), which fails on Windows when a contender has
+      owner.json open and orphaned the lock (26/30 contended trials). Release
+      now retries; test_locking.py added (RED observed). This was the
+      "unexplained intermittent failure" (concurrent provenance test).
+- [ ] H12 (D) `_reclaim_stale` uses `os.kill(pid, 0)`, which on Windows reports
+      an exited pid as alive, so a crashed owner's lock is never reclaimed.
+      Use a real liveness check (OpenProcess/psutil-free) with a test.
 - [ ] H7 (D) composition: hard imports (opendataloader_pdf, filetype, pypdfium2)
       become lazy with an actionable `doctor` message instead of killing the CLI.
 
@@ -163,6 +171,11 @@ Verification evidence (observed):
   the intermittent failure is not attributable to any visible change. Reviewed
   boundary is now 06d77516.
 
+Batch 2 (H3, H9, H10, H11): writer reported partial on one failing test,
+test_concurrent_provenance_updates_merge_without_lost_runs; parent diagnosed it
+as the lock-release bug above (H11), fixed it, and observed: test_locking +
+test_provenance 23 passed, ruff clean, mypy clean, tests/architecture 131
+passed, API+parity 471 passed (writer). Full suite NOT run.
+
 ## Next step
-H3 (API fails closed on routes without scope), after confirming the machine has
-memory for focused test runs. H9 and H10 are cheap follow-ups to batch next.
+Native review of 06d77516..HEAD (assess), then H12, H5, H6, H8, H7, then C1-C4 and U1-U12.
