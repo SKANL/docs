@@ -63,6 +63,14 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [ ] H8 (D) application/revision.py (~L179) has the same read-modify-write
       ordering as corrections (revision-log.json append + .diff numbering by
       glob count, unlocked, non-atomic): make it atomic and collision-safe.
+- [ ] H9 (D) From review R3-corrections-no-dir-create: prove that
+      atomic_write_text creates missing parent directories (the explicit mkdir
+      was removed from corrections.py and the repositories); add a test writing
+      into a missing parent for corrections and each repository.
+- [ ] H10 (D) From review R3-ledger-stale-lock-test-weak: replace the removed
+      competing-recoverer test with one covering a live-owner lock timing out,
+      and pin the stale-lock test to explicit owner data instead of relying on
+      owned_directory_lock internals.
 - [ ] H7 (D) composition: hard imports (opendataloader_pdf, filetype, pypdfium2)
       become lazy with an actionable `doctor` message instead of killing the CLI.
 
@@ -147,9 +155,14 @@ Verification evidence (observed):
   empty corrections run; test for the old registry-reset behaviour was removed
   on purpose; ledger/registry corruption now raise (RegistryCorruptError,
   LedgerCorruptError).
-- Route record: H1/H2/H4 delegated (writer); RDD assessment not yet run for
-  these commits (record tier/outcome before the next review boundary).
+- Route record: H1/H2/H4 delegated (writer).
+- Native review (RDD) for the range c4567cba..06d77516: tier medium, 12 files,
+  529 lines, user granted consent, lens review-reliability, outcome APPROVED and
+  acknowledged (lineage review-d3c2f1a799715608, authority burned). Two
+  non-blocking advisory findings became H9 and H10. The reviewer also stated
+  the intermittent failure is not attributable to any visible change. Reviewed
+  boundary is now 06d77516.
 
 ## Next step
 H3 (API fails closed on routes without scope), after confirming the machine has
-memory for focused test runs.
+memory for focused test runs. H9 and H10 are cheap follow-ups to batch next.
