@@ -131,3 +131,20 @@ def test_windows_probe_treats_only_an_invalid_pid_as_dead(monkeypatch: pytest.Mo
     assert locking._pid_alive_windows(10) is False
     _fake_kernel32(monkeypatch, handle=0, exit_code=0, last_error=5)
     assert locking._pid_alive_windows(10) is True
+
+
+def test_persistent_permission_error_fails_fast_as_permission_error(tmp_path: Path, monkeypatch) -> None:
+    # PermissionError is only a transient Windows mid-delete signal; a real denial must surface as
+    # itself within the short grace, not masquerade as a 30 s TimeoutError.
+    real_mkdir = Path.mkdir
+
+    def denied(self: Path, *args: object, **kwargs: object) -> None:
+        if self.name == "denied.lock":
+            raise PermissionError("access denied")
+        real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", denied)
+    started = time.monotonic()
+    with pytest.raises(PermissionError), owned_directory_lock(tmp_path / "denied.lock", timeout=30):
+        pass
+    assert time.monotonic() - started < 10

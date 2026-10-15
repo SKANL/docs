@@ -13,7 +13,9 @@ from pathlib import Path
 
 
 @contextmanager
-def owned_directory_lock(path: Path, *, timeout: float = 30.0, stale_after: float = 30.0) -> Iterator[None]:
+def owned_directory_lock(
+    path: Path, *, timeout: float = 30.0, stale_after: float = 30.0, permission_grace: float = 2.0
+) -> Iterator[None]:
     """Acquire an atomic-directory lease without deleting a live owner's path.
 
     A crashed owner leaves the directory behind, but a later owner first
@@ -24,6 +26,7 @@ def owned_directory_lock(path: Path, *, timeout: float = 30.0, stale_after: floa
     path.parent.mkdir(parents=True, exist_ok=True)
     token = uuid.uuid4().hex
     deadline = time.monotonic() + timeout
+    denied_since: float | None = None
     while True:
         try:
             path.mkdir()
@@ -32,9 +35,19 @@ def owned_directory_lock(path: Path, *, timeout: float = 30.0, stale_after: floa
                 encoding="utf-8",
             )
             break
-        except (FileExistsError, PermissionError):
+        except (FileExistsError, PermissionError) as error:
             # Windows reports a lock directory that a releasing owner is still
-            # deleting as access denied, not as existing: both mean "contended".
+            # deleting as access denied, not as existing, so a PermissionError
+            # is retried like contention. Trade-off: a genuine denial (ACL,
+            # read-only parent) looks identical, so only a short continuous
+            # grace is allowed before it is raised as itself rather than
+            # surfacing as a misleading `timeout`-long TimeoutError.
+            if isinstance(error, PermissionError):
+                denied_since = denied_since if denied_since is not None else time.monotonic()
+                if time.monotonic() - denied_since >= permission_grace:
+                    raise
+            else:
+                denied_since = None
             if _reclaim_stale(path, stale_after=stale_after):
                 continue
             if time.monotonic() >= deadline:

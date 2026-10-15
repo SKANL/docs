@@ -1,4 +1,5 @@
 # tests/unit/infrastructure/test_source_type_detector.py
+import sys
 import zipfile
 from pathlib import Path
 
@@ -56,3 +57,15 @@ def test_unknown_extension_with_no_magic_bytes_returns_empty_string_not_none(tmp
     result = FiletypeDetectorAdapter().detect(path)
     assert result == ""
     assert isinstance(result, str)
+
+
+def test_missing_filetype_library_falls_back_to_extension_instead_of_raising(tmp_path: Path, monkeypatch):
+    # The class contract is "never raises": a missing optional lib costs magic-byte sniffing only.
+    monkeypatch.setitem(sys.modules, "filetype", None)  # makes `import filetype` raise ImportError
+    md = tmp_path / "source.md"
+    md.write_text("# hi", encoding="utf-8")
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(_PDF_BYTES)
+    detector = FiletypeDetectorAdapter()
+    assert detector.detect(md) == "md"
+    assert detector.detect(pdf) == ""
