@@ -791,3 +791,16 @@ def test_the_libreoffice_check_names_everything_its_absence_costs(tmp_path):
     detail = next(c for c in result.checks if c.name == "libreoffice").detail
     assert "pdf" in detail.lower(), "debe decir que se pierde la salida PDF"
     assert "qa" in detail.lower(), "y también el QA visual"
+
+
+def test_run_doctor_filetype_capability_warns_with_install_hint_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "filetype", None)
+    service = _service(tmp_path)
+    config = _rules_config_passing_config(tmp_path)
+
+    result = service.run_doctor("doc1", config)
+
+    check = next(c for c in result.checks if c.name == "file_type_detection")
+    assert check.ok is False
+    assert check.required is False
+    assert "uv pip install filetype" in check.detail

@@ -6,8 +6,6 @@ import zipfile
 from itertools import islice
 from pathlib import Path
 
-import pypdfium2 as pdfium
-
 from docs.domain.ports.content_probe_port import ContentSignals
 
 # First-N-bytes budget for the text/markdown keyword scan and the PDF TOC
@@ -83,6 +81,8 @@ class FilesystemContentProbeAdapter:
 
     def _probe_pdf(self, path: Path) -> tuple[str, tuple[str, ...]]:
         try:
+            import pypdfium2 as pdfium  # lazy; a missing lib means empty signals (fail-open)
+
             pdf = pdfium.PdfDocument(str(path))
         except Exception:
             return "", ()

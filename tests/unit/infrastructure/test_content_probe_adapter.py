@@ -80,9 +80,9 @@ def test_probe_pdf_extracts_headings_from_table_of_contents(tmp_path, monkeypatc
 
     fake_bookmarks = [_FakeBookmark("Introducción"), _FakeBookmark("Alcance"), _FakeBookmark("")]
 
-    import docs.infrastructure.ingest.content_probe_adapter as adapter_module
+    import pypdfium2 as pdfium
 
-    real_pdf_document = adapter_module.pdfium.PdfDocument
+    real_pdf_document = pdfium.PdfDocument
 
     class _FakeDocument:
         def __init__(self, path_str: str) -> None:
@@ -97,7 +97,7 @@ def test_probe_pdf_extracts_headings_from_table_of_contents(tmp_path, monkeypatc
         def close(self) -> None:
             self._real.close()
 
-    monkeypatch.setattr(adapter_module.pdfium, "PdfDocument", _FakeDocument)
+    monkeypatch.setattr(pdfium, "PdfDocument", _FakeDocument)
 
     result = FilesystemContentProbeAdapter().probe(path)
 

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import filetype
-
 # Plain-text formats have no distinguishing magic bytes, so `filetype.guess`
 # returns None for them; fall back to extension matching (document-ingest
 # spec: `File-Type Detection` scenario "Fallback to extension for text formats").
@@ -21,6 +19,8 @@ class FiletypeDetectorAdapter:
     never raises (document-ingest spec: `File-Type Detection`)."""
 
     def detect(self, path: Path) -> str:
+        import filetype  # lazy: a missing lib costs ingest detection, not the CLI (doctor reports it)
+
         guess = filetype.guess(str(path))
         if guess is not None:
             return guess.extension

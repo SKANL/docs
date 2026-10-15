@@ -435,6 +435,21 @@ class DoctorService:
                 )
             )
 
+        try:
+            import filetype  # noqa: F401
+
+            checks.append(Check("file_type_detection", True, "Disponible (filetype)", required=False))
+        except Exception as exc:
+            checks.append(
+                Check(
+                    "file_type_detection",
+                    False,
+                    f"No disponible ({exc}). La detección de tipo de fuentes por firma binaria "
+                    "no funcionará en la ingesta. Instalar con `uv pip install filetype`.",
+                    required=False,
+                )
+            )
+
         java = self.tool_resolver.resolve_java(config.get("paths", {}))
         checks.append(
             Check(
