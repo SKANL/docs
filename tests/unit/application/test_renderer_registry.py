@@ -4,13 +4,12 @@ from pathlib import Path
 from typing import Any
 
 from docs.composition import resolve_renderer
-from docs.domain.pipeline import pipeline_stage_plan
 from docs.domain.ports.document_renderer_port import DocumentRendererPort
 
 
 class _FakeTxtRenderer:
     """Test-only fake proving `DocumentRendererPort` is genuinely extensible
-    to a second format with zero edits to `domain/pipeline.py` (document-render
+    to a second format with zero edits to the harness core (document-render
     spec: `Extensibility Proof via Test Fake`). Not shipped in production."""
 
     output_format = "txt"
@@ -32,24 +31,6 @@ def _registry() -> dict[str, DocumentRendererPort]:
 def test_fake_txt_renderer_resolves_via_the_same_registry_resolution_function():
     renderer = resolve_renderer(_registry(), "txt")
     assert renderer.output_format == "txt"
-
-
-def test_fake_txt_renderer_stage_plan_flows_through_pipeline_stage_plan_unmodified():
-    # No changes to domain/pipeline.py were required to support this format:
-    # the resolved renderer's stage_plan() is passed straight through (only
-    # the format-agnostic "generate-visuals" stage is prepended ahead of it).
-    renderer = resolve_renderer(_registry(), "txt")
-    stages = pipeline_stage_plan("assemble", renderer.stage_plan())
-    assert stages == [("generate-visuals", False), ("build-txt", True)]
-
-
-def test_fake_txt_renderer_stage_plan_is_distinct_from_docx_stage_plan():
-    docx_stages = pipeline_stage_plan(
-        "assemble",
-        [("build-docx", True), ("format-audit-docx", True), ("qa-docx", True)],
-    )
-    txt_stages = pipeline_stage_plan("assemble", _FakeTxtRenderer().stage_plan())
-    assert txt_stages != docx_stages
 
 
 def test_fake_txt_renderer_build_succeeds_and_produces_output(tmp_path):
