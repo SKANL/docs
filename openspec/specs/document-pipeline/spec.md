@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The pipeline orchestrates the conversion of a document from authoring, through review, to final publication. It provides composable, format-agnostic stages for prep (audience/context setup), ingest (source conversion), context curation, assembly, and verification. The pipeline must support multiple output formats without touching domain/pipeline code.
+The pipeline orchestrates the conversion of a document from authoring, through review, to final publication. It provides composable, format-agnostic stages for prep (audience/context setup), ingest (source conversion), context curation, assembly, and verification. The pipeline must support multiple output formats without touching the domain pipeline kernel (`domain/pipeline_kernel.py`).
 
 ## Requirements
 
@@ -10,11 +10,12 @@ The pipeline orchestrates the conversion of a document from authoring, through r
 
 The system MUST derive the ordered list of pipeline stages from configuration/registry keyed by target output format, rather than a single hardcoded stage list. Stage names, ordering, and fail-fast flags MUST contain no format-specific or "tesina" identifiers in the domain layer.
 
-#### Scenario: Unknown stage_set still rejected
+#### Scenario: One authoritative stage order
 
-- GIVEN a stage_set not in `prep`, `assemble`, `all`, `ingest`
-- WHEN `pipeline_stage_plan` is called
-- THEN it raises a clear `ValueError` naming the invalid stage_set
+- GIVEN the ordered stage identifiers in `FULL_STAGE_IDS` (`application/pipeline_service.py`)
+- WHEN a run excludes stages
+- THEN the executed stages are `FULL_STAGE_IDS` minus the excluded ones, in the original order
+- AND the legacy `prep`/`ingest`/`assemble`/`all` stage sets no longer exist
 
 #### Scenario: Stage plan resolved per configured format
 
@@ -24,14 +25,14 @@ The system MUST derive the ordered list of pipeline stages from configuration/re
 
 #### Scenario: No hardcoded format identifiers remain
 
-- GIVEN the `domain/pipeline.py` module
+- GIVEN the `domain/pipeline_kernel.py` module and `FULL_STAGE_IDS`
 - WHEN inspected
 - THEN it contains no literal "tesina" or DOCX-only sentinel identifiers in stage-plan logic
 
 #### Scenario: Deterministic ordering
 
-- GIVEN the same stage_set and format configuration
-- WHEN `pipeline_stage_plan` is called twice
+- GIVEN the same `PipelineDefinition` and format configuration
+- WHEN the plan is requested twice (`docs document plan`)
 - THEN both calls return an identical, stably ordered list
 
 ### Requirement: Repository Port Segregation
@@ -94,25 +95,25 @@ The system MUST have automated unit tests covering application-layer services, a
 
 ### Requirement: Ingest Stage and Context-Curation Integration
 
-The pipeline MUST include an `ingest` stage set (format-agnostic like
-`prep`) for source conversion, plus context-curation stages for building
+The pipeline MUST include ingest stages (format-agnostic, `ingest-sources` and
+`normalize-sources` in `FULL_STAGE_IDS`) for source conversion, plus context-curation stages for building
 skeleton and index files, wired into the composition root without coupling
-domain/pipeline code to their implementations. The ingest stage MUST also
+domain pipeline code to their implementations. The ingest stage MUST also
 apply the asset-management capability's mechanical role/provenance filter to
 figure candidates (excluding example/reference-role `guia` images) and copy
 surviving candidates to the document's stable `assets_dir/figures/` path, so
 later stages (including assemble-time embedding) can reference them without
 depending on the ephemeral `inbox/` contents.
 
-#### Scenario: Ingest stage available alongside prep/assemble/all
+#### Scenario: Ingest stages are part of the plan
 
-- GIVEN the pipeline CLI command
-- WHEN `--help` is displayed
-- THEN ingest is listed as a valid stage option
+- GIVEN the `document plan` command
+- WHEN it prints the ordered stages
+- THEN `ingest-sources` and `normalize-sources` are listed before the build stages
 
 #### Scenario: Context-curation stages integrate into the pipeline
 
-- GIVEN a full pipeline run with the ingest stage_set
+- GIVEN a full pipeline run with the ingest stages
 - WHEN execution completes
 - THEN ingested sources, context files, and the curated index are all
   present in the document context directory
@@ -140,7 +141,7 @@ The system MUST provide a `generate-visuals` stage that renders
 agent-declared visuals from `sections/visual-specs.json` (per the
 document-visuals capability), merges the results into `figure-catalog.json`
 (via asset-management's `merge()`) and `figure-bindings.json`, and MUST run
-it strictly after the `ingest` stage set (so the base figure catalog exists
+it strictly after the ingest stages (so the base figure catalog exists
 to merge into) and strictly before `assemble` (so the resolver used by
 `docx_assembly`/`html_render` sees the generated entries). The stage MUST be
 format-agnostic (no branching on output format) and MUST WARN+skip on a

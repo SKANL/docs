@@ -10,9 +10,11 @@ contract now lives in `openspec/specs/`.
 
 - Test: `uv run pytest` (strict TDD — write the failing test first, always)
 - Run CLI: `uv run python -m docs.cli.main --help`
-- Pipeline stage sets: `pipeline <prep|ingest|assemble|all>` — `ingest` must
-  run before `assemble`/`all` when sources exist in `inbox/` (`all` does NOT
-  include ingest stages, by design).
+- Pipeline: there is no `pipeline` command. Drive it with
+  `source ingest`, `document prepare|plan|build|verify|run|release` (see
+  `--help` per group). `document plan` prints the ordered stages;
+  `FULL_STAGE_IDS` in `application/pipeline_service.py` is the authoritative
+  list. The legacy `prep|ingest|assemble|all` stage sets were removed.
 - Lint/typecheck: `uv run ruff check .` / `uv run mypy` — both DECLARED in
   `[dependency-groups] dev`, with their rulesets declared in
   `pyproject.toml`. Keep the `uv run` prefix: an undeclared tool falls
@@ -28,6 +30,16 @@ contract now lives in `openspec/specs/`.
 - `src/docs/application/` — services, depend on ports only
 - `src/docs/infrastructure/` — adapters (filesystem, python-docx, pandoc)
 - `src/docs/cli/` — Typer CLI; composition root is `composition.py` (`ApplicationComposition`)
+- `src/docs/api/` — HTTP API (`/v2/...`); `sidecar/` hosts it for the desktop app
+  and `workers/` runs durable jobs (`docs run ...`)
+- `src/docs/plugins/` — plugin manifest, registry and `PluginRunner`. The
+  registry is mounted (discovery + `GET /v2/plugins`); `PluginRunner` is tested
+  but NOT wired into any pipeline or CLI execution path, so runs do not
+  execute plugins. Do not document plugin support in runs until it is wired.
+- `src/docs/observability/` (provenance, passports), `template_compiler/`,
+  `templates/` (built-in templates) and `data/` (packaged data)
+- `tools/` — repo-local scripts (spec/code bridge, traceability and package
+  policy checks); `desktop/` and `review-studio/` hold the Tauri shell and UI
 - `tests/unit/`, `tests/integration/` — mirror the src layers
 - `tests/architecture/` — repo-wide invariants (see "Mechanised invariants")
 
@@ -313,9 +325,13 @@ real enforcement rather than a green vacuum.
 
 ### CI jobs, and why there are three
 
+The quality-gate workflows are `quality.yml`, `architecture.yml` and
+`toolchains.yml` (`docs/ci.md` has the detail); `security.yml`, `package.yml`
+and the release workflows are separate.
+
 | Job | Guards | Cost |
 |---|---|---|
-| `check` | ruff, mypy, the suite, an 86% coverage floor | ~1 min |
+| `quality` | ruff, mypy, the suite, an 86% coverage floor, 70% diff coverage | ~1 min |
 | `architecture` | the hexagonal layering rule, against a real GitNexus index | ~1.5 min |
 | `toolchains` | every optional-toolchain path, with LibreOffice/Java/mmdc/resvg installed | ~4 min |
 
@@ -323,12 +339,13 @@ Three jobs rather than one because they fail at different speeds: lint and
 types fail in seconds and must not queue behind a LibreOffice install.
 
 `toolchains` exists because the gate had a SMALLER surface than a developer
-desk. Measured: `check` ran 1575 tests and skipped 16; a laptop ran 1584 and
+desk. Measured: `quality` ran 1575 tests and skipped 16; a laptop ran 1584 and
 skipped 7. The nine-test gap was mermaid, resvg and Java-backed PDF ingest —
 and the seven LibreOffice tests were exercised by nobody, anywhere. That job
-also fails if more than 2 tests skip WITH the full toolchain installed: a
-toolchain that silently stops installing would otherwise turn the suite green
-by skipping, which is the exact failure mode it was added to end.
+runs `pytest -rs`, so skip reasons are visible in its log, but it does NOT
+fail on skips (`test_toolchains_workflow_has_no_doctor_or_skip_failure_gate`
+pins that): a toolchain that silently stops installing shows up as skips to
+read, not as a red build.
 
 ### Determinism is scoped to a toolchain
 
@@ -347,7 +364,8 @@ otherwise report "0 violations" forever.
 above against the GitNexus graph, and skips when no index is present -- set
 `ARCHITECTURE_REQUIRE_GRAPH` to any enabling value (`1`, `true`, `yes`, `on`)
 to make a missing index fail instead, so CI can demand the check rather than
-accept a silent skip. Nothing sets it yet -- this repo has no CI config.
+accept a silent skip. The `architecture` job in
+`.github/workflows/architecture.yml` sets it to `1`.
 `tests/architecture/test_spec_code_bridge.py` covers the bridge from its own
 fixtures and needs no graph, so it always runs.
 
