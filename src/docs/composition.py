@@ -483,7 +483,10 @@ class ApplicationComposition:
             self.document_repository,
             StatusReader(self.provenance_ledger),
         )
-        self.revision = RevisionService(self.section_repository, self.review, self.context, self.evidence_repository)
+        self.revision = RevisionService(
+            self.section_repository, self.review, self.context, self.evidence_repository,
+            provenance_lock=lambda directory: owned_directory_lock(directory / ".revision.lock"),
+        )
         self.history = RunHistoryService(self.workspace)
         self.run_recorder = RunRecorderService(self.workspace, self.source_repository)
         self.verification = DocumentVerificationService(
