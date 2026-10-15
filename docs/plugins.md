@@ -4,6 +4,12 @@ Plugins are an extension boundary, not a runtime dependency of the harness.
 The native CLI, provenance, verification, and publication paths remain usable
 when no plugin is installed.
 
+> **Status: not wired into execution.** `PluginRunner` (`docs.plugins.runner`)
+> is a tested sandbox, but no pipeline stage, CLI command or worker calls it.
+> Only the registry is mounted (discovery at sidecar start and
+> `GET /v2/plugins`). Document builds and runs therefore never execute a
+> plugin; do not read the sections below as plugin support in runs.
+
 ## Manifest contract
 
 Each plugin is discovered from `plugin.json` and must declare

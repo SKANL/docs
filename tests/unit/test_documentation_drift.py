@@ -62,3 +62,9 @@ def test_removed_pipeline_symbols_are_not_documented():
         text = _read(rel)
         for dead in ("pipeline_stage_plan", "domain/pipeline.py", "RunRecorder", "RunHistory", "RunReporter"):
             assert dead not in text, (rel, dead)
+
+
+def test_plugin_runner_is_documented_as_not_wired():
+    for rel in ("AGENTS.md", "CLAUDE.md", "docs/plugins.md"):
+        prose = _prose(rel).lower()
+        assert "pluginrunner" in prose and "not wired" in prose, rel

@@ -67,7 +67,7 @@ as fast as possible, then verify the result mechanically.
 
 ### Native capability contracts
 
-The harness owns the document lifecycle; external plugins are not runtime dependencies. Documents, PDF, and Template Creator plugins may assist authoring or inspection, but the CLI remains complete without them.
+The harness owns the document lifecycle; external plugins are not runtime dependencies. `PluginRunner` is tested but not wired into execution: no build or run executes a plugin, and only the plugin registry (`GET /v2/plugins`) is exposed. Documents, PDF, and Template Creator plugins may assist authoring or inspection, but the CLI remains complete without them.
 
 - **Artifact contracts and provenance.** Transforms declare expected outputs. Generated artifacts and section edits retain input/configuration evidence, hashes, authorship, diffs, and append-only provenance.
 - **Atomic transforms.** Builds happen in a private scratch directory, validate every declared output, then publish. Failed ordinary publication restores the previous files; temporary files are cleaned.
