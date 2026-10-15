@@ -46,7 +46,24 @@ def owned_directory_lock(path: Path, *, timeout: float = 30.0, stale_after: floa
         except (OSError, ValueError, json.JSONDecodeError):
             owner = {}
         if owner.get("token") == token:
-            shutil.rmtree(path, ignore_errors=True)
+            _remove_lock_dir(path)
+
+
+def _remove_lock_dir(path: Path, *, attempts: int = 200) -> None:
+    """Remove a lock directory, retrying while a contender holds owner.json open.
+
+    On Windows a reader that has the owner file open makes the removal fail once;
+    swallowing that error would leave the lock behind and block every later owner.
+    """
+    for _ in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(0.01)
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def _reclaim_stale(path: Path, *, stale_after: float) -> bool:
