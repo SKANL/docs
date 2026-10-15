@@ -114,3 +114,30 @@ def test_apply_corrections_raises_when_find_text_not_present(tmp_path):
 
     with pytest.raises(RuntimeError, match="No se encontró texto objetivo"):
         service.apply_corrections("doc1", config)
+
+
+def test_a_failure_midway_keeps_earlier_ids_recorded_and_a_rerun_resumes(tmp_path):
+    service, workspace = _service(tmp_path)
+    section_repo = JsonSectionRepository(workspace)
+    section_repo.write_section("doc1", 1, "intro", "uno dos tres")
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "c1.yaml").write_text("id: c1\nsection_id: intro\nfind: uno\nreplace: 1\n", encoding="utf-8")
+    (inbox / "c2.yaml").write_text("id: c2\nsection_id: intro\nfind: ausente\nreplace: 2\n", encoding="utf-8")
+    (inbox / "c3.yaml").write_text("id: c3\nsection_id: intro\nfind: tres\nreplace: 3\n", encoding="utf-8")
+    config = _config(tmp_path, [{"id": "intro", "order": 1}])
+    applied_path = Path(config["paths"]["corrections_applied"])
+
+    with pytest.raises(RuntimeError, match="No se encontró texto objetivo"):
+        service.apply_corrections("doc1", config)
+
+    recorded = json.loads(applied_path.read_text(encoding="utf-8"))["applied"]
+    assert [item["id"] for item in recorded] == ["c1"]
+    assert section_repo.read_raw_text(section_repo.section_path("doc1", 1, "intro")) == "1 dos tres"
+
+    (inbox / "c2.yaml").write_text("id: c2\nsection_id: intro\nfind: dos\nreplace: 2\n", encoding="utf-8")
+    assert service.apply_corrections("doc1", config) == 2
+
+    recorded = json.loads(applied_path.read_text(encoding="utf-8"))["applied"]
+    assert [item["id"] for item in recorded] == ["c1", "c2", "c3"]
+    assert section_repo.read_raw_text(section_repo.section_path("doc1", 1, "intro")) == "1 2 3"

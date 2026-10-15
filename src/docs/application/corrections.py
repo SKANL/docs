@@ -22,7 +22,6 @@ class CorrectionsService:
     def apply_corrections(self, doc_id: str, config: dict[str, Any]) -> int:
         inbox = Path(config["paths"]["corrections_inbox_dir"])
         applied_path = Path(config["paths"]["corrections_applied"])
-        applied_path.parent.mkdir(parents=True, exist_ok=True)
         if applied_path.exists():
             applied_state = json.loads(applied_path.read_text(encoding="utf-8"))
         else:
@@ -70,6 +69,9 @@ class CorrectionsService:
             )
             applied_ids.add(correction_id)
             count += 1
+            # Record each id right after its edit: a later failure must not leave this one
+            # applied but unrecorded, or a rerun would apply it twice. The section repository's
+            # raw writer is the atomic seam, so the ledger itself is never left half-written.
+            self.section_repository.write_raw_text(applied_path, pretty_json(applied_state))
 
-        applied_path.write_text(pretty_json(applied_state), encoding="utf-8")
         return count
