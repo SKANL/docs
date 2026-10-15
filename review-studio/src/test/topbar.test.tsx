@@ -37,7 +37,7 @@ describe("topbar", () => {
       cleanup();
       open(hash);
       await waitFor(() => expect(within(topbar()).getByRole("combobox", { name: "Workspace" }).textContent).toContain("Research"));
-      await waitFor(() => expect(within(topbar()).getByRole("combobox", { name: "Document" }).textContent).toContain("Field notes"));
+      await waitFor(() => expect(within(topbar()).getByRole("combobox", { name: "Current document" }).textContent).toContain("Field notes"));
     }
   });
 
@@ -54,7 +54,7 @@ describe("topbar", () => {
   it("switches document inside the active workspace", async () => {
     const useDocument = vi.fn(async (id: string) => ({ ...docs.find(item => item.id === id)!, active: true }));
     open("#/review", makeApi({ useDocument }));
-    const box = await within(topbar()).findByRole("combobox", { name: "Document" });
+    const box = await within(topbar()).findByRole("combobox", { name: "Current document" });
     await waitFor(() => expect(box.textContent).toContain("Field notes"));
     await userEvent.click(box);
     await userEvent.click(await screen.findByRole("option", { name: "Plan" }));
