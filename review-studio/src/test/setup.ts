@@ -11,3 +11,7 @@ if (typeof window !== "undefined") {
   Element.prototype.setPointerCapture ??= () => {};
   Element.prototype.releasePointerCapture ??= () => {};
 }
+
+// Existing tests assert English copy; production defaults to Spanish.
+import { setDefaultLocale } from "../lib/i18n";
+setDefaultLocale("en");
