@@ -5,6 +5,8 @@ import type { DocumentRecord } from "@/api/models";
 import { useActiveContext } from "@/app/active-context";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { useT } from "@/lib/i18n";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -22,6 +24,7 @@ type Props = { workspaceId: string | null; onNotice(message: string): void };
 /** The selected workspace's documents, the current one's readiness, and the operations on them. */
 export function DocumentsSection({ workspaceId, onNotice }: Props) {
   const api = useApi();
+  const { t } = useT();
   const busy = useIsMutating() > 0;
   const active = useActiveContext();
   const currentId = active.data?.documentId ?? null;
@@ -76,7 +79,7 @@ export function DocumentsSection({ workspaceId, onNotice }: Props) {
           <div className="flex flex-wrap gap-1.5 sm:justify-end"><Button type="button" variant={item.id === currentId ? "secondary" : "ghost"} onClick={() => select.mutate(item.id)} disabled={busy || !api.useDocument}>{item.id === currentId ? "Current" : `Use ${item.id}`}</Button>
             <Button type="button" variant="ghost" aria-label={`Rename ${item.id}`} onClick={() => { setRenaming(item); setRenamedId(item.id); }} disabled={busy || !api.renameDocument}>Rename</Button>
             <Button type="button" variant="ghost" aria-label={`Delete ${item.id}`} onClick={() => setDeleting(item)} disabled={busy || !api.deleteDocument}>Delete</Button></div>
-        </li>)}</ul> : !documents.isPending && <p className="py-3 text-sm text-muted-foreground" role="status">No documents yet. Create a document to begin.</p>}
+        </li>)}</ul> : !documents.isPending && <EmptyState title="No documents yet" description="A document is what you build from your sources and deliver." action={{ label: t("empty.createDocument"), onClick: () => setCreateOpen(true) }} />}
     </>}
 
     <DocumentCreateDialog open={createOpen} pending={create.isPending} templates={templates.data ?? []} error={create.isError ? formatApiError(create.error) : undefined} onOpenChange={open => { if (!open) dismissable(create, () => setCreateOpen(false))(); }} onSubmit={input => create.mutate(input)} />

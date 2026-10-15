@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -35,9 +36,10 @@ function ArtifactDetail({ workspaceId, artifact }: { workspaceId: string | null;
 
 function ArtifactsTable({ workspaceId, all, selectedId }: { workspaceId: string | null; all: Artifact[]; selectedId?: string }) {
   const api = useApi();
+  const { t } = useT();
   const [runId, setRunId] = useState("all");
   const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: async () => (await api.listRunPage!()).items });
-  if (all.length === 0) return <EmptyState title="No artifacts" description="Artifacts appear here after a build produces output for a run." />;
+  if (all.length === 0) return <EmptyState title="No artifacts" description="Artifacts appear here after a build produces output for a run." action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />;
   const rows = runId === "all" ? all : all.filter(item => item.runId === runId);
   const selected = selectedId ? all.find(item => item.id === selectedId) : undefined;
   return <div className="grid gap-4">

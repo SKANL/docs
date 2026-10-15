@@ -87,6 +87,13 @@ export const en = {
   "home.noRuns.title": "No runs yet",
   "home.noRuns.body": "A run builds the document from your sources and checks it.",
   "empty.runPipeline": "Open the pipeline",
+  "empty.uploadSources": "Upload sources",
+  "empty.openSections": "Open sections",
+  "empty.reviewTemplates": "Review templates",
+  "empty.addAsset": "Add an asset",
+  "empty.planRun": "Plan or run the pipeline",
+  "empty.publish": "Publish a document",
+  "empty.createDocument": "Create a document",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -179,4 +186,11 @@ export const es: Partial<Record<MessageKey, string>> = {
   "home.noRuns.title": "Aún no hay generaciones",
   "home.noRuns.body": "Una generación construye el documento a partir de tus fuentes y lo comprueba.",
   "empty.runPipeline": "Ir a Generar",
+  "empty.uploadSources": "Subir fuentes",
+  "empty.openSections": "Abrir secciones",
+  "empty.reviewTemplates": "Revisar plantillas",
+  "empty.addAsset": "Añadir un recurso",
+  "empty.planRun": "Planificar o generar",
+  "empty.publish": "Publicar un documento",
+  "empty.createDocument": "Crear un documento",
 };

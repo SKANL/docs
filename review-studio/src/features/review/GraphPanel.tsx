@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { formatApiError } from "@/api/errors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -83,6 +84,7 @@ function QueryResults({ result, scope }: { result: GraphQueryResult; scope: stri
 
 export function GraphPanel({ workspaceId }: { workspaceId: string | null }) {
   const api = useApi();
+  const { t } = useT();
   const [selected, setSelected] = useState<GraphQuery>("claims_without_evidence");
   const [id, setId] = useState("");
   const [missing, setMissing] = useState("");
@@ -103,7 +105,7 @@ export function GraphPanel({ workspaceId }: { workspaceId: string | null }) {
       <QueryBoundary query={graph} title="Could not load the graph" skeleton="h-16 w-full">{data => data.unavailable
         ? <Unavailable warnings={data.warnings} />
         : data.nodes.length === 0
-        ? <EmptyState title="The semantic graph is empty" description="Claims, sources, and artifacts are linked here once a run has produced evidence. Run the pipeline, then come back." />
+        ? <EmptyState title="The semantic graph is empty" description="Claims, sources, and artifacts are linked here once a run has produced evidence. Run the pipeline, then come back." action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />
         : <p className="text-sm">{data.nodes.length} nodes and {data.edges.length} links connect claims, sources, sections, and artifacts.</p>}</QueryBoundary>
     </section>
     <section aria-label="Graph queries" className="grid gap-3 rounded-lg border bg-card p-4">

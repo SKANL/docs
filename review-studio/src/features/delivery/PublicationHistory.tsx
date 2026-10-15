@@ -1,7 +1,8 @@
+import { useT } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
-import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyState, focusById } from "@/components/shared/EmptyState";
 import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Unavailable } from "@/components/shared/Unavailable";
@@ -12,6 +13,7 @@ const when = (iso?: string) => { const date = iso ? new Date(iso) : null; return
 
 /** What the server recorded. A policy or warnings column shows "-" when the record does not carry them; it never guesses. */
 export function PublicationHistory({ workspaceId }: { workspaceId: string | null }) {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const listed = !!api.listPublicationHistory && can("publications.list");
@@ -19,7 +21,7 @@ export function PublicationHistory({ workspaceId }: { workspaceId: string | null
   return <section aria-label="Publication history" className="grid gap-4">
     <h2 className="text-xl font-semibold">Publication history</h2>
     {!listed ? <Unavailable>Publication history is not available on this server.</Unavailable>
-      : <QueryBoundary query={history}>{records => records.length === 0 ? <EmptyState title="Nothing published yet" description="Publications the server accepts are recorded here, with their evidence run." />
+      : <QueryBoundary query={history}>{records => records.length === 0 ? <EmptyState title="Nothing published yet" description="Publications the server accepts are recorded here, with their evidence run." action={{ label: t("empty.publish"), onClick: focusById("publish-document") }} />
       : <Table aria-label="Publication history">
         <TableHeader><TableRow><TableHead>Publication</TableHead><TableHead>Destination</TableHead><TableHead>Policy</TableHead><TableHead>Artifact digest</TableHead><TableHead>Evidence run</TableHead><TableHead>Published</TableHead><TableHead>Warnings</TableHead></TableRow></TableHeader>
         <TableBody>{records.map(item => <TableRow key={item.id}>

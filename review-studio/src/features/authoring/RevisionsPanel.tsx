@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/app/providers";
@@ -58,6 +59,7 @@ function ReviseDialog({ documentId, open, onOpenChange }: { documentId: string; 
 }
 
 export function RevisionsPanel({ documentId }: { documentId: string }) {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const [reviseOpen, setReviseOpen] = useState(false);
@@ -66,7 +68,7 @@ export function RevisionsPanel({ documentId }: { documentId: string }) {
   return <div className="grid gap-6">
     <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Revisions</h2>
       {can("doc.revise") && api.reviseDocument ? <Button type="button" onClick={() => setReviseOpen(true)}>Revise document</Button> : <Unavailable>Revising is not available on this server.</Unavailable>}</div>
-    {!can("revisions.list") ? <Unavailable>Revisions are not available on this server.</Unavailable> : <QueryBoundary query={list}>{revisions => revisions.length === 0 ? <EmptyState title="No revisions yet" description="Saving a section or revising the document records a revision here." />
+    {!can("revisions.list") ? <Unavailable>Revisions are not available on this server.</Unavailable> : <QueryBoundary query={list}>{revisions => revisions.length === 0 ? <EmptyState title="No revisions yet" description="Saving a section or revising the document records a revision here." action={{ label: t("empty.openSections"), to: "/authoring/sections" }} />
       : <ol aria-label="Revision timeline" className="grid gap-3 border-l pl-4">{revisions.map(item => <li key={item.id} className="grid gap-1">
         <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.message}</span><Badge variant="outline">{item.status}</Badge></div>
         <p className="text-sm text-muted-foreground">{item.author} · {item.date} · {item.files} files</p>

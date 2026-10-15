@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -30,9 +31,10 @@ function FindingDetail({ finding }: { finding: FindingRow }) {
 const severities = ["all", "critical", "high", "medium", "low"];
 
 function FindingsTable({ all, selectedId }: { all: FindingRow[]; selectedId?: string }) {
+  const { t } = useT();
   const [filter, setFilter] = useState("");
   const [severity, setSeverity] = useState("all");
-  if (all.length === 0) return <EmptyState title="No findings" description="Findings appear here after a run is verified. A clean workspace has none." />;
+  if (all.length === 0) return <EmptyState title="No findings" description="Findings appear here after a run is verified. A clean workspace has none." action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />;
   const needle = filter.trim().toLowerCase();
   const rows = all.filter(item => (severity === "all" || item.severity === severity) && (!needle || `${item.id} ${item.message} ${item.location} ${item.severity}`.toLowerCase().includes(needle)));
   const selected = selectedId ? all.find(item => item.id === selectedId) : undefined;
