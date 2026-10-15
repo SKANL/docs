@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import { artifact, bundle, finding, inspected, makeReviewApi, openReview, reviewCatalog } from "./reviewHarness";
 
-afterEach(() => { cleanup(); window.location.hash = ""; });
+// Passport, digests and other technical detail only render under Advanced; these tests exercise the full view.
+beforeEach(() => localStorage.setItem("review-studio.advanced", "true"));
+afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); });
 
 const pick = async (label: string, option: string) => {
   await userEvent.click(screen.getByRole("combobox", { name: label }));
