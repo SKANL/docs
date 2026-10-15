@@ -1397,3 +1397,36 @@ def test_graph_queries_without_a_semantic_store_say_so():
 
     assert payload["graph_unavailable"] is True
     assert payload["warnings"] == ["graph unavailable: no semantic graph store configured"]
+
+
+def test_every_registered_route_has_an_enforced_scope_or_is_declared_public():
+    from docs.api.operations import OPERATIONS
+    from docs.api.route_policy import PUBLIC_ROUTES
+
+    application = app()
+    keys = {(m, p) for m, p, _, _ in application.router._routes}
+    keys |= {(op.method, op.path.replace("{", "").replace("}", "")) for op in OPERATIONS}
+    unscoped = {k for k in keys if required_scope(*k) is None and k not in PUBLIC_ROUTES}
+    assert not unscoped, f"routes without a scope entry: {sorted(unscoped)}"
+
+
+def test_authenticated_route_without_scope_entry_is_denied():
+    application = app()
+    application.auth = lambda token: Principal("ada", ALL_SCOPES) if token == "ok" else None
+    application.router.route("GET", "/v2/unscoped-probe")(
+        application._authenticated(lambda request: Response.json({"ok": True}))
+    )
+
+    response = application.dispatch(Request("GET", "/v2/unscoped-probe", headers={"Authorization": "Bearer ok"}))
+
+    assert response.status == 403
+    assert body(response)["error"]["code"] == "no_scope_policy"
+
+
+def test_public_routes_stay_reachable_with_a_valid_token():
+    application = app()
+    application.auth = lambda token: Principal("ada", frozenset()) if token == "ok" else None
+
+    response = application.dispatch(Request("GET", "/v2/capabilities", headers={"Authorization": "Bearer ok"}))
+
+    assert response.status == 200

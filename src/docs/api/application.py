@@ -33,7 +33,7 @@ from .pipeline_routes import PipelineRoutes
 from .quality_routes import QualityRoutes
 from .record_access import as_dict, store_items
 from .registry_routes import RegistryRoutes
-from .route_policy import DYNAMIC_ROOTS, is_dynamic_route, required_scope
+from .route_policy import DYNAMIC_ROOTS, PUBLIC_ROUTES, is_dynamic_route, required_scope
 from .run_routes import RunRoutes
 from .section_routes import SectionRoutes
 from .template_routes import TemplateRoutes
@@ -251,6 +251,8 @@ class ApiApplication:
                 return handler(request)
             principal = bearer_auth(request.headers, validator)
             scope = required_scope(request.method, request.route_path)
+            if scope is None and (request.method.upper(), request.route_path) not in PUBLIC_ROUTES:
+                raise AuthError("no_scope_policy", "Route has no scope policy", 403)
             if scope is not None and scope not in principal.scopes:
                 raise AuthError(
                     "insufficient_scope",
