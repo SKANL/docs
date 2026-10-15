@@ -59,3 +59,11 @@ def test_persistent_permission_error_surfaces(tmp_path: Path, monkeypatch: pytes
     with pytest.raises(PermissionError):
         atomic_write_bytes(tmp_path / "f", b"x")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_atomic_write_text_creates_every_missing_parent_directory(tmp_path):
+    target = tmp_path / "a" / "b" / "c" / "out.json"
+
+    atomic_write_text(target, "{}")
+
+    assert target.read_text(encoding="utf-8") == "{}"

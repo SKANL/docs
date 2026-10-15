@@ -123,3 +123,28 @@ def test_corrupt_registry_raises_and_is_never_modified(workspace, garbage):
 def test_missing_registry_is_still_empty(workspace):
     registry = JsonDocumentRepository(workspace).load_registry()
     assert registry.documents == [] and registry.active == ""
+
+
+def test_every_repository_writes_into_a_missing_parent(workspace, tmp_path):
+    assert not workspace.documents_dir.exists()
+    documents = JsonDocumentRepository(workspace)
+    documents.register(DocumentSummary(id="alpha", title="A", template="t", created_at="t"))
+    documents.write_document(Document(id="alpha", title="A", template="t"))
+    assert workspace.registry_path.is_file()
+    assert (workspace.doc_root("alpha") / "document.json").is_file()
+
+    sections = JsonSectionRepository(workspace)
+    sections.write_section("d", 1, "intro", "text")
+    nested_raw = tmp_path / "no" / "such" / "dir" / "raw.txt"
+    sections.write_raw_text(nested_raw, "raw")
+    assert nested_raw.read_text(encoding="utf-8") == "raw"
+
+    contexts = JsonContextRepository(workspace)
+    topic = Topic(id="t1", title="T", multiline=True, consumed_by=["s1"])
+    assert contexts.write_topic("d2", topic, "body").is_file()
+    contexts.write_requests("d2", "req")
+    assert contexts._requests_path("d2").is_file()
+
+    nested_manifest = tmp_path / "x" / "y" / "manifest.json"
+    JsonEvidenceRepository().write_manifest(nested_manifest, {"a": 1})
+    assert nested_manifest.is_file()
