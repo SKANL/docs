@@ -86,7 +86,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] C1 (D) [8397bddc] Remove dead code with its tests: domain/models/result.py,
       RunRecorderService/RunHistoryService/RunReporter (+composition wiring),
       domain/pipeline.py legacy stage sets. Confirm no callers first.
-- [ ] H13 (D) From review of batch 4 (approved, lineage review-ac887632da2641c9,
+- [x] H13 (D) [902f5db6] From review of batch 4 (approved, lineage review-ac887632da2641c9,
       acknowledged): (a) filetype_detector_adapter.detect() must not raise when
       `filetype` is missing (class contract says it never raises; fall back to
       extension detection); (b) revision diff numbering must not reuse a number
