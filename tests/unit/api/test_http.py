@@ -175,3 +175,23 @@ def test_typed_client_errors_are_not_logged_as_failures(caplog):
     with caplog.at_level("ERROR", logger="docs.api"):
         assert router.dispatch(Request("GET", "/v2/missing")).status == 404
     assert not [r for r in caplog.records if r.name == "docs.api"]
+
+
+def test_cursor_signed_with_another_secret_is_rejected():
+    from docs.api import http
+
+    original = http._cursor_secret
+    page = paginate([1, 2, 3], limit=2)
+    try:
+        http.set_cursor_secret(b"a-different-install-secret-0123456789")
+        with pytest.raises(APIError, match="cursor"):
+            paginate([1, 2, 3], limit=2, cursor=page["next_cursor"])
+    finally:
+        http.set_cursor_secret(original)
+
+
+def test_cursor_secret_is_not_the_old_hardcoded_constant():
+    from docs.api import http
+
+    assert http._cursor_secret != b"docs-api-cursor-v1"
+    assert len(http._cursor_secret) >= 32

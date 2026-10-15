@@ -586,3 +586,36 @@ def test_transport_generates_one_stable_request_id_and_replaces_duplicates():
     assert len(request_ids) == 1
     assert request_ids[0].encode() == body
     assert re.fullmatch(r"[A-Za-z0-9._-]{1,128}", request_ids[0])
+
+
+@pytest.mark.parametrize(
+    ("host", "allowed"),
+    [
+        ("127.0.0.1:8000", True),
+        ("localhost:8000", True),
+        ("[::1]:8000", True),
+        ("LOCALHOST:8000", True),
+        ("evil.test:8000", False),
+        ("evil.test", False),
+        ("127.0.0.1:9999", False),
+        ("localhost.evil.test:8000", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_loopback_only_transport_validates_the_host_header(host, allowed):
+    app = ApiTransport(echo_app, TransportConfig(loopback_hosts_only=True))
+
+    captured, body = invoke(app, headers={} if host is None else {"Host": host})
+
+    if allowed:
+        assert captured["status"].startswith("200")
+    else:
+        assert captured["status"].startswith("403")
+        assert json_body(body)["error"]["code"] == "host_denied"
+
+
+def test_transport_does_not_check_host_unless_asked():
+    captured, _ = invoke(ApiTransport(echo_app, TransportConfig()), headers={"Host": "anything.test"})
+
+    assert captured["status"].startswith("200")

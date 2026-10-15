@@ -11,13 +11,14 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from docs.api.application import ApiApplication
-from docs.api.http import Router
+from docs.api.http import Router, set_cursor_secret
 from docs.api.server import GracefulHTTPServer, TransportConfig, create_server, serve
 from docs.application.status_reader import StatusReader
 from docs.application.workspaces import WorkspaceRegistry, WorkspaceRegistryError
 from docs.composition import RuntimeStores, open_provenance_ledger, open_workspace_registry
 from docs.plugins.registry import PluginRegistry
 from docs.sidecar.config import SidecarConfig
+from docs.sidecar.cursor_secret import load_or_create_cursor_secret
 from docs.sidecar.document_actions import DocumentActions, workspace_services
 from docs.sidecar.health import HealthApplication
 from docs.sidecar.stores import (
@@ -65,6 +66,7 @@ def build_application(config: SidecarConfig) -> HealthApplication:
         # An unusable workspace degrades /health instead of killing the process.
         return _unavailable(config, exc.code)
     _seed_builtin_templates(config.workspace)
+    set_cursor_secret(load_or_create_cursor_secret(config.workspace))
     # Plugin discovery is optional and declarative: manifests are inspected
     # without importing or executing plugin code. The core remains fully
     # operational when the workspace has no plugins.
@@ -143,7 +145,8 @@ def build_server(config: SidecarConfig) -> GracefulHTTPServer:
         port=config.port,
         mode="offline",
         workspace=config.workspace,
-        max_request_body=120 * 1024 * 1024,
+        max_request_body=config.max_body_bytes,
+        loopback_hosts_only=True,
         cors_origins=config.cors_origins,
     )
     application = build_application(config)
