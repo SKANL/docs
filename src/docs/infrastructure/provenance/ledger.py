@@ -5,10 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import stat
-import threading
-import time
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,8 +14,11 @@ from typing import Any
 from docs.domain.identity import canonical_json, sha256_content
 from docs.domain.paths import require_within
 from docs.infrastructure.atomic_write import atomic_write_text
+from docs.infrastructure.locking import owned_directory_lock
 
-_PROCESS_LOCK = threading.Lock()
+
+class LedgerCorruptError(ValueError):
+    """The provenance ledger exists but is not a JSON object; it is left untouched."""
 
 
 def _without_optional_artifact_metadata(payload: dict[str, Any]) -> dict[str, Any]:
@@ -206,70 +206,24 @@ class ProvenanceLedger:
     def _load_payload(self) -> dict[str, dict[str, dict[str, Any]]]:
         if not self._log_path.exists():
             return {"runs": {}, "attestations": {}}
-        return json.loads(self._log_path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(self._log_path.read_text(encoding="utf-8"))
+        except ValueError:
+            payload = None
+        if not isinstance(payload, dict):
+            # Never reset: an empty ledger would silently erase every recorded hash.
+            raise LedgerCorruptError(
+                f"El registro de procedencia está dañado y no se modificó: {self._log_path}. "
+                "Repárelo o restaure una copia antes de continuar."
+            )
+        return payload
 
     def _write_payload(self, payload: dict[str, dict[str, dict[str, Any]]]) -> None:
         atomic_write_text(self._log_path, canonical_json(payload), fsync=True)
 
     @contextmanager
     def _lock(self) -> Iterator[None]:
-        """Serialize read/merge/write updates without a third-party lock dependency."""
-        with _PROCESS_LOCK:
-            self._log_path.parent.mkdir(parents=True, exist_ok=True)
-            lock_path = self._log_path.with_name(self._log_path.name + ".lock")
-            deadline = time.monotonic() + 10
-            while True:
-                try:
-                    lock_path.mkdir()
-                    (lock_path / "owner.json").write_text(
-                        json.dumps({"pid": os.getpid(), "created_at": time.time()}, sort_keys=True),
-                        encoding="utf-8",
-                    )
-                    break
-                except FileExistsError:
-                    if self._claim_stale_lock(lock_path):
-                        try:
-                            shutil.rmtree(lock_path)
-                        except OSError as exc:
-                            raise RuntimeError(f"unable to reclaim stale provenance lock: {lock_path}") from exc
-                        continue
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError(f"timed out acquiring provenance lock: {lock_path}") from None
-                    time.sleep(0.01)
-            try:
-                yield
-            finally:
-                shutil.rmtree(lock_path, ignore_errors=True)
-
-    @staticmethod
-    def _stale_lock(lock_path: Path) -> bool:
-        if (lock_path / ".reclaim").exists():
-            return False
-        try:
-            owner = json.loads((lock_path / "owner.json").read_text(encoding="utf-8"))
-            pid = int(owner["pid"])
-            created_at = float(owner["created_at"])
-        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
-            return False
-
-        if time.time() - created_at <= 30:
-            return False
-        try:
-            os.kill(pid, 0)
-        except (OSError, ProcessLookupError):
-            return True
-        except PermissionError:
-            return False
-        return False
-
-    @staticmethod
-    def _claim_stale_lock(lock_path: Path) -> bool:
-        if not ProvenanceLedger._stale_lock(lock_path):
-            return False
-        try:
-            (lock_path / ".reclaim").mkdir()
-        except FileExistsError:
-            return False
-        except OSError:
-            return False
-        return True
+        """Serialize read/merge/write updates; the owner token keeps cleanup from evicting a newer owner."""
+        lock_path = self._log_path.with_name(self._log_path.name + ".lock")
+        with owned_directory_lock(lock_path, timeout=10):
+            yield
