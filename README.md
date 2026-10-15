@@ -150,7 +150,7 @@ The runtime center is a contract-validated pipeline DAG. The composition root co
 
 ```bash
 uv run pytest
-uv run ruff check src tests
+uv run ruff check src tests tools
 uv run mypy src tools
 ```
 

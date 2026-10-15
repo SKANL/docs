@@ -68,3 +68,9 @@ def test_plugin_runner_is_documented_as_not_wired():
     for rel in ("AGENTS.md", "CLAUDE.md", "docs/plugins.md"):
         prose = _prose(rel).lower()
         assert "pluginrunner" in prose and "not wired" in prose, rel
+
+
+def test_ruff_scope_includes_tools_everywhere():
+    assert "ruff check src tests tools" in _read(".github/workflows/quality.yml")
+    for rel in ("CLAUDE.md", "docs/ci.md", "docs/qa.md", "README.md"):
+        assert "ruff check src tests tools" in _read(rel), rel

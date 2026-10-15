@@ -15,7 +15,8 @@ contract now lives in `openspec/specs/`.
   `--help` per group). `document plan` prints the ordered stages;
   `FULL_STAGE_IDS` in `application/pipeline_service.py` is the authoritative
   list. The legacy `prep|ingest|assemble|all` stage sets were removed.
-- Lint/typecheck: `uv run ruff check .` / `uv run mypy` — both DECLARED in
+- Lint/typecheck: `uv run ruff check src tests tools` / `uv run mypy src tools`
+  (the exact scopes CI runs; `ruff check .` is also clean) — both DECLARED in
   `[dependency-groups] dev`, with their rulesets declared in
   `pyproject.toml`. Keep the `uv run` prefix: an undeclared tool falls
   through to whatever is on PATH under a different interpreter that cannot

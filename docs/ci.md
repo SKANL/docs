@@ -20,7 +20,7 @@ The `toolchains` job exercises available optional-tool paths, but it does not ru
 
 ```bash
 uv sync --locked
-uv run ruff check src tests
+uv run ruff check src tests tools
 uv run mypy src tools
 uv run pytest -q --cov=src --cov-report=xml:coverage.xml --cov-report=term --cov-fail-under=86
 uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=70
