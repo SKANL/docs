@@ -20,13 +20,13 @@ function makeApi(overrides: Partial<ReviewApi> = {}): ReviewApi {
   } as unknown as ReviewApi;
 }
 
-afterEach(() => { cleanup(); window.location.hash = ""; });
+afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); });
 
 describe("application shell", () => {
   it("moves focus to the main region when the route changes", async () => {
     window.location.hash = "#/";
     render(<App api={makeApi()} />);
-    await userEvent.click(within(screen.getByRole("navigation", { name: "Task areas" })).getByRole("link", { name: "Pipeline" }));
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Task areas" })).getByRole("link", { name: "Runs" }));
     await waitFor(() => expect(document.activeElement?.id).toBe("main"));
     // Feature areas are lazy chunks: the heading arrives after the first import resolves.
     expect(await screen.findByRole("heading", { name: "Pipeline" }, { timeout: 5000 })).toBeTruthy();
@@ -57,7 +57,7 @@ describe("application shell", () => {
     render(<App api={makeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: "Open command menu" }));
     const palette = await screen.findByRole("dialog", { name: /command palette/i });
-    expect(within(palette).getByText("Authoring")).toBeTruthy();
+    expect(within(palette).getByText("Runs")).toBeTruthy();
     await waitFor(() => expect(within(palette).getByText("workspace list")).toBeTruthy());
     expect(within(palette).queryByText("stamp")).toBeNull();
   });
