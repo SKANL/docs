@@ -240,11 +240,38 @@ def test_lock_recovers_stale_owner_metadata(tmp_path: Path) -> None:
     log = tmp_path / "provenance-v2.json"
     lock = log.with_name(log.name + ".lock")
     lock.mkdir()
-    (lock / "owner.json").write_text(json.dumps({"pid": 999999, "created_at": 0}), encoding="utf-8")
+    # A pid above any OS pid range (no such process) plus an old timestamp. An exited child's pid is
+    # not usable here: on Windows `os.kill(pid, 0)` reports a dead pid as alive.
+    dead_pid = 2_147_483_646
+    (lock / "owner.json").write_text(
+        json.dumps({"pid": dead_pid, "token": "crashed-owner", "created_at": time.time() - 3600}),
+        encoding="utf-8",
+    )
 
     ProvenanceLedger(log).record_run("after-stale-lock", inputs=(source,), outputs=())
 
     assert ProvenanceLedger(log).load_run("after-stale-lock") is not None
+    assert not lock.exists()
+
+
+def test_live_owner_lock_times_out_and_is_left_untouched(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from docs.infrastructure.provenance import ledger as ledger_module
+
+    source = tmp_path / "source.md"
+    source.write_text("source", encoding="utf-8")
+    log = tmp_path / "provenance-v2.json"
+    lock = log.with_name(log.name + ".lock")
+    lock.mkdir()
+    owner = json.dumps({"pid": os.getpid(), "token": "live-owner", "created_at": time.time()})
+    (lock / "owner.json").write_text(owner, encoding="utf-8")
+    real_lock = ledger_module.owned_directory_lock
+    monkeypatch.setattr(ledger_module, "owned_directory_lock", lambda path, **_: real_lock(path, timeout=0.2))
+
+    with pytest.raises(TimeoutError):
+        ProvenanceLedger(log).record_run("blocked", inputs=(source,), outputs=())
+
+    assert (lock / "owner.json").read_text(encoding="utf-8") == owner
+    assert not log.exists()
 
 
 def test_lock_cleanup_never_evicts_a_newer_owner(tmp_path: Path) -> None:
