@@ -10,10 +10,11 @@ from docs.domain.ports.document_repository import (
     DocumentNotFoundError,
     DocumentRepository,
 )
-from docs.domain.ports.registry_repository import Registry, RegistryRepository
+from docs.domain.ports.registry_repository import Registry, RegistryCorruptError, RegistryRepository
 from docs.domain.ports.template_repository import TemplateRepository
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_format import validate_workspace_marker
+from docs.infrastructure.atomic_write import atomic_write_text
 
 
 class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRepository):
@@ -27,17 +28,20 @@ class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRep
     # registry -----------------------------------------------------------------
     def load_registry(self) -> Registry:
         path = self.workspace.registry_path
-        if path.exists():
-            try:
-                return Registry.model_validate_json(path.read_text(encoding="utf-8"))
-            except ValueError:
-                pass
-        return Registry()
+        if not path.exists():
+            return Registry()
+        try:
+            return Registry.model_validate_json(path.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            # Never reset: an empty registry would be saved over the user's document list.
+            raise RegistryCorruptError(
+                f"El registro de documentos está dañado y no se modificó: {path}. "
+                "Repárelo o restaure una copia antes de continuar."
+            ) from exc
 
     def save_registry(self, registry: Registry) -> None:
         path = self.workspace.registry_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(registry.to_json(), encoding="utf-8")
+        atomic_write_text(path, registry.to_json())
 
     def active_id(self) -> str:
         return self.load_registry().active
@@ -79,8 +83,7 @@ class JsonDocumentRepository(RegistryRepository, DocumentRepository, TemplateRep
 
     def write_document(self, document: Document) -> None:
         path = self._document_json(document.id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(document.to_json(), encoding="utf-8")
+        atomic_write_text(path, document.to_json())
 
     # templates ----------------------------------------------------------------
     def load_template(self, name: str) -> Template:

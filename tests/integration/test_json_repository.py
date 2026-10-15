@@ -89,25 +89,6 @@ def test_repository_rejects_current_unversioned_fixture_without_mutating_it() ->
     } == before
 
 
-def test_malformed_document_registry_falls_back_to_empty_without_mutating_bytes(tmp_path: Path) -> None:
-    write_workspace_marker(tmp_path)
-    documents_dir = tmp_path / "documents"
-    documents_dir.mkdir()
-    registry_path = documents_dir / "registry.json"
-    original = b'{"schema": 1, "documents": ['
-    registry_path.write_bytes(original)
-    malformed_repo = JsonDocumentRepository(
-        Workspace(documents_dir=documents_dir, templates_dir=tmp_path / "templates")
-    )
-
-    registry = malformed_repo.load_registry()
-
-    assert registry.schema_version == 1
-    assert registry.active == ""
-    assert registry.documents == []
-    assert registry_path.read_bytes() == original
-
-
 def test_repository_rejects_malformed_workspace_marker_before_any_write(tmp_path: Path) -> None:
     (tmp_path / "workspace.json").write_text("not-json", encoding="utf-8")
 

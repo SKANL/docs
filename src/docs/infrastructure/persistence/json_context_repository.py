@@ -7,6 +7,7 @@ from docs.domain.identity import pretty_json
 from docs.domain.models.template import ContextSchema, Topic
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_format import validate_workspace_marker
+from docs.infrastructure.atomic_write import atomic_write_text
 from docs.infrastructure.persistence.context_markdown import parse_topic, render_topic
 
 
@@ -35,7 +36,7 @@ class JsonContextRepository:
     def write_topic(self, doc_id: str, topic: Topic, values: str | dict[str, str]) -> Path:
         path = self._topic_path(doc_id, topic.id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(render_topic(topic, values), encoding="utf-8")
+        atomic_write_text(path, render_topic(topic, values))
         return path
 
     def topic_exists(self, doc_id: str, topic_id: str) -> bool:
@@ -69,10 +70,7 @@ class JsonContextRepository:
 
         index = {"schema": 1, "topics": topic_entries, "by_section": by_section}
         json_path = context_dir / "index.json"
-        json_path.write_text(
-            pretty_json(index),
-            encoding="utf-8",
-        )
+        atomic_write_text(json_path, pretty_json(index))
 
         md_lines = ["| Tema | Archivo | Completo | Consumido por |", "| :---- | :---- | :---- | :---- |"]
         for status in statuses:
@@ -81,7 +79,7 @@ class JsonContextRepository:
             consumed = ", ".join(topic.consumed_by) or "—"
             md_lines.append(f"| {status.title} | {status.id}.md | {complete} | {consumed} |")
         md_path = context_dir / "index.md"
-        md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+        atomic_write_text(md_path, "\n".join(md_lines) + "\n")
 
         return json_path
 
@@ -95,5 +93,5 @@ class JsonContextRepository:
     def write_requests(self, doc_id: str, text: str) -> Path:
         path = self._requests_path(doc_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        atomic_write_text(path, text)
         return path
