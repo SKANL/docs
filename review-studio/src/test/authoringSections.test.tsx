@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeApi, openAuthoring } from "./authoringHarness";
 
-afterEach(() => { cleanup(); window.location.hash = ""; });
+beforeEach(() => { localStorage.setItem("review-studio.mode", "write"); localStorage.setItem("review-studio.advanced", "true"); });
+afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); });
 
 const bodyBox = () => screen.getByRole("textbox", { name: "Section body" }) as HTMLTextAreaElement;
 

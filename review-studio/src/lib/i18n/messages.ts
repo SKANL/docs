@@ -2,6 +2,9 @@
 export const en = {
   "app.skip": "Skip to content",
   "nav.areas": "Task areas",
+  "sections.edit": "Edit section",
+  "sources.importOnly": "Import without converting",
+  "pipeline.deliverHint": "To release or publish, use Deliver.",
   "review.tab.findings": "Findings",
   "review.tab.artifacts": "Artifacts",
   "review.tab.compare": "Compare",
@@ -109,6 +112,9 @@ export type MessageKey = keyof typeof en;
 export const es: Partial<Record<MessageKey, string>> = {
   "app.skip": "Saltar al contenido",
   "nav.areas": "Áreas de trabajo",
+  "sections.edit": "Editar sección",
+  "sources.importOnly": "Importar sin convertir",
+  "pipeline.deliverHint": "Para publicar una versión final, usa Entregar.",
   "review.tab.findings": "Hallazgos",
   "review.tab.artifacts": "Artefactos",
   "review.tab.compare": "Comparar",

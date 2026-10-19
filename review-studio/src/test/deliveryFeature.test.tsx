@@ -1,18 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import type { PublicationRecord } from "../api/domains/delivery";
 import { deliveryApi, deliveryCatalog, packaged, published, record } from "./deliveryHarness";
 import { openPipeline } from "./pipelineHarness";
 
-afterEach(() => { cleanup(); window.location.hash = ""; });
+beforeEach(() => { localStorage.setItem("review-studio.advanced", "true"); });
+afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); });
 
 const open = (api: Parameters<typeof openPipeline>[1]) => openPipeline("/delivery", api);
 const startPublish = async (destination = "final.html") => {
-  await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
-  const dialog = await screen.findByRole("dialog", { name: "Publish" });
+  await userEvent.click(await screen.findByRole("button", { name: "Deliver" }));
+  const dialog = await screen.findByRole("dialog", { name: "Deliver" });
   await userEvent.type(within(dialog).getByRole("textbox", { name: "Destination" }), destination);
   await userEvent.click(within(dialog).getByRole("button", { name: "Review publish" }));
   return dialog;
@@ -87,8 +88,8 @@ describe("delivery: publish", () => {
     const publishDocument = vi.fn(async () => published);
     const { api } = deliveryApi({ publishDocument });
     open(api);
-    await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
-    const dialog = await screen.findByRole("dialog", { name: "Publish" });
+    await userEvent.click(await screen.findByRole("button", { name: "Deliver" }));
+    const dialog = await screen.findByRole("dialog", { name: "Deliver" });
     await userEvent.type(within(dialog).getByRole("textbox", { name: "Destination" }), "a.html");
     await userEvent.click(within(dialog).getByRole("combobox", { name: "Policy" }));
     await userEvent.click(await screen.findByRole("option", { name: "draft" }));
@@ -150,7 +151,7 @@ describe("delivery: history and gating", () => {
     const { api } = deliveryApi({ getCapabilities: async () => deliveryCatalog("document.publish", "document.release") });
     open(api);
     await screen.findByRole("button", { name: "Package" });
-    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deliver" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Start release run" })).toBeNull();
   });
 
@@ -166,6 +167,6 @@ describe("delivery: history and gating", () => {
     const { api } = deliveryApi({ getCurrentDocument: async () => ({ current_document_id: null, document: null }) });
     open(api);
     expect(await screen.findByRole("heading", { name: "Select a document first" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deliver" })).toBeNull();
   });
 });

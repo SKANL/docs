@@ -235,19 +235,20 @@ describe("document detail and source import", () => {
 
   it("imports a source file into the document from the authoring Sources tab", async () => {
     const importSourceFile = vi.fn(async (id: string, input: { filename: string }) => ({ document_id: id, filename: input.filename, path: `documents/${id}/imports/${input.filename}`, sha256: "f".repeat(64), size: 3, mime_type: "text/markdown", deduplicated: true }));
-    openAt("/authoring/sources", toolsApi({ importSourceFile }));
-    const form = await screen.findByRole("region", { name: "Import source file" });
-    await userEvent.upload(within(form).getByLabelText("Source file"), new File(["abc"], "notes.md", { type: "text/markdown" }));
-    await userEvent.click(within(form).getByRole("button", { name: "Import source file" }));
+    localStorage.setItem("review-studio.advanced", "true");
+    openAt("/authoring/sources", toolsApi({ importSourceFile, ingestSources: async () => ({}) }));
+    await userEvent.upload(await screen.findByLabelText("Source files"), new File(["abc"], "notes.md", { type: "text/markdown" }));
+    await userEvent.click(screen.getByRole("button", { name: "Import without converting" }));
     await waitFor(() => expect(importSourceFile).toHaveBeenCalledWith("doc-1", { filename: "notes.md", content_base64: "YWJj" }));
-    const result = await within(form).findByRole("status");
+    const result = (await screen.findByText(/Already imported/)).closest("li")!;
     expect(result.textContent).toContain("documents/doc-1/imports/notes.md");
     expect(result.textContent).toContain("Already imported");
   });
 
   it("hides source import when the capability is unavailable", async () => {
-    openAt("/authoring/sources", toolsApi({ getCapabilities: async () => toolsCatalog("document.import") }));
+    localStorage.setItem("review-studio.advanced", "true");
+    openAt("/authoring/sources", toolsApi({ getCapabilities: async () => toolsCatalog("document.import"), ingestSources: async () => ({}) }));
     await screen.findByRole("heading", { name: "Sources" });
-    await waitFor(() => expect(screen.queryByRole("region", { name: "Import source file" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Import without converting" })).toBeNull());
   });
 });

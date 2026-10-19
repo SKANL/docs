@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useApi } from "@/app/providers";
+import { useMode } from "@/app/mode";
+import { useT } from "@/lib/i18n";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,43 +37,36 @@ function IngestResult({ result }: { result: SourceIngestResult }) {
   </section>;
 }
 
-function ImportSource({ documentId }: { documentId: string }) {
-  const api = useApi();
-  const [file, setFile] = useState<File | null>(null);
-  const imported = useAction(async () => api.importSourceFile!(documentId, { filename: file!.name, content_base64: await fileToBase64(file!) }), {
-    success: result => `Imported ${result.filename}.`, invalidate: [authoringKeys.classification(documentId)], onDone: () => setFile(null),
-  });
-  return <section aria-label="Import source file" className="grid max-w-xl gap-3">
-    <h3 className="text-lg font-semibold">Import source file</h3>
-    <p className="text-sm text-muted-foreground">Stores one file with the document as a hash-named copy, without converting it. Importing the same file again changes nothing.</p>
-    <form className="grid gap-3" onSubmit={event => { event.preventDefault(); if (file) imported.mutate(undefined); }}>
-      <Label htmlFor="import-file">Source file</Label>
-      <Input id="import-file" type="file" onChange={event => setFile(event.target.files?.[0] ?? null)} />
-      <Button type="submit" variant="outline" className="w-fit" disabled={!file || imported.isPending}>{imported.isPending ? "Importing…" : "Import source file"}</Button>
-    </form>
-    <ActionError action={imported} what="import the file" />
-    {imported.data && <p role="status" className="text-sm">{imported.data.deduplicated ? "Already imported: " : "Imported: "}<code>{imported.data.path}</code> ({imported.data.size} bytes)</p>}
-  </section>;
-}
-
 export function SourcesPanel({ documentId }: { documentId: string }) {
   const api = useApi();
   const can = useCapability();
+  const { advanced } = useMode();
+  const { t } = useT();
   const [files, setFiles] = useState<File[]>([]);
   const ingest = useAction(
     async () => api.ingestSources!(documentId, await Promise.all(files.map(async file => ({ filename: file.name, content_base64: await fileToBase64(file) })))),
     { success: result => result.succeeded ? "Sources ingested." : "Ingestion finished with failures.", invalidate: [authoringKeys.classification(documentId), authoringKeys.sections(documentId)] },
   );
+  // Stores each file as a hash-named copy without converting it; the same upload, a different verb.
+  const imported = useAction(
+    async () => Promise.all(files.map(async file => api.importSourceFile!(documentId, { filename: file.name, content_base64: await fileToBase64(file) }))),
+    { success: results => `Imported ${results.map(result => result.filename).join(", ")}.`, invalidate: [authoringKeys.classification(documentId)], onDone: () => setFiles([]) },
+  );
+  const canImport = advanced && can("document.import") && !!api.importSourceFile;
   return <div className="grid gap-6">
     <h2 className="text-xl font-semibold">Sources</h2>
     {can("source.ingest") && api.ingestSources ? <form className="grid max-w-xl gap-3" onSubmit={event => { event.preventDefault(); ingest.mutate(undefined); }}>
       <Label htmlFor="source-files">Source files</Label>
       <Input id="source-files" type="file" multiple onChange={event => setFiles(Array.from(event.target.files ?? []))} />
       <p className="text-sm text-muted-foreground">Upload new files, or leave empty to ingest what is already in the inbox.</p>
-      <Button type="submit" className="w-fit" disabled={ingest.isPending}>{ingest.isPending ? "Ingesting…" : "Ingest sources"}</Button>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={ingest.isPending}>{ingest.isPending ? "Ingesting…" : "Ingest sources"}</Button>
+        {canImport && <Button type="button" variant="outline" disabled={files.length === 0 || imported.isPending} onClick={() => imported.mutate(undefined)}>{imported.isPending ? "Importing…" : t("sources.importOnly")}</Button>}
+      </div>
     </form> : <Unavailable>Source ingestion is not available on this server.</Unavailable>}
     <ActionError action={ingest} what="ingest sources" />
     {ingest.data && <IngestResult result={ingest.data} />}
-    {can("document.import") && api.importSourceFile && <ImportSource documentId={documentId} />}
+    <ActionError action={imported} what="import the files" />
+    {imported.data && <ul role="status" className="grid gap-1 text-sm">{imported.data.map(result => <li key={result.path}>{result.deduplicated ? "Already imported: " : "Imported: "}<code>{result.path}</code> ({result.size} bytes)</li>)}</ul>}
   </div>;
 }

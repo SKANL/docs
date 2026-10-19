@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ContextPacked, ReviewFinding, ReviewResult } from "@/api/domains/authoring";
 import { ActionError, useAction } from "@/lib/actions";
 import { useCapability } from "@/lib/capability-registry";
+import { useMode } from "@/app/mode";
 import { authoringKeys, useSections } from "./data";
 
 function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; onOpenSection(id: string): void }) {
@@ -36,6 +37,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const { t } = useT();
   const api = useApi();
   const can = useCapability();
+  const { mode, advanced } = useMode();
   const sections = useSections(documentId);
   // `?section=` lets a review finding open the section it points at.
   const [params] = useSearchParams();
@@ -44,6 +46,8 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const [pending, setPending] = useState<{ id: string; focus: boolean } | null>(null);
   const [review, setReview] = useState<ReviewResult | null>(null);
   const [packed, setPacked] = useState<ContextPacked | null>(null);
+  // Supervise leans on reading and reviewing: the body is read-only until the person asks to edit it.
+  const [editing, setEditing] = useState(false);
   const [stampOpen, setStampOpen] = useState(false);
   const [packOpen, setPackOpen] = useState(false);
   const [by, setBy] = useState("");
@@ -59,6 +63,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const body = draft ?? active?.body ?? "";
   const dirty = (id: string) => drafts[id] !== undefined && drafts[id] !== items.find(item => item.id === id)?.body;
   const anyDirty = items.some(item => dirty(item.id));
+  const editable = mode === "write" || editing || anyDirty;
 
   useEffect(() => {
     if (focusAfterSelect.current) { focusAfterSelect.current = false; editor.current?.focus(); }
@@ -97,7 +102,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Sections</h2>
         <div className="flex flex-wrap gap-2">
           {can("review-document") && api.reviewDocument && <Button type="button" variant="outline" disabled={reviewDocument.isPending} onClick={() => reviewDocument.mutate(undefined)}>Review document</Button>}
-          {can("pack-context") && api.packContext && <Button type="button" variant="outline" onClick={() => { pack.reset(); setPackOpen(true); }}>Pack context</Button>}
+          {advanced && can("pack-context") && api.packContext && <Button type="button" variant="outline" onClick={() => { pack.reset(); setPackOpen(true); }}>Pack context</Button>}
         </div></div>
       <ActionError action={reviewDocument} what="review the document" />
       <div className="grid gap-4 md:grid-cols-[14rem_1fr]">
@@ -106,12 +111,14 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
             <span>{item.id}</span>{dirty(item.id) && <Badge variant="outline">unsaved</Badge>}</Button></li>)}</ul></nav>
         <div className="grid gap-3">
           <Label htmlFor="section-body">Section body</Label>
-          <Textarea id="section-body" ref={editor} rows={14} value={body} onChange={event => activeId && setDrafts(current => ({ ...current, [activeId]: event.target.value }))} />
+          <Textarea id="section-body" ref={editor} rows={14} value={body} readOnly={!editable} onChange={event => activeId && setDrafts(current => ({ ...current, [activeId]: event.target.value }))} />
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={!activeId || !dirty(activeId) || save.isPending} onClick={() => save.mutate({ id: activeId!, text: body })}>{save.isPending ? "Saving…" : "Save section"}</Button>
-            {can("build-section") && api.buildSection && <Button type="button" variant="outline" disabled={build.isPending} onClick={() => build.mutate(activeId!)}>Build section</Button>}
-            {can("review-section") && api.reviewSection && <Button type="button" variant="outline" disabled={reviewSection.isPending} onClick={() => reviewSection.mutate(activeId!)}>Review section</Button>}
-            {can("stamp-section") && api.stampSection && <Button type="button" variant="outline" onClick={() => { stamp.reset(); setStampOpen(true); }}>Stamp section</Button>}
+            {editable
+              ? <Button type="button" variant={mode === "write" ? "default" : "outline"} disabled={!activeId || !dirty(activeId) || save.isPending} onClick={() => save.mutate({ id: activeId!, text: body })}>{save.isPending ? "Saving…" : "Save section"}</Button>
+              : <Button type="button" variant="outline" onClick={() => { setEditing(true); editor.current?.focus(); }}>{t("sections.edit")}</Button>}
+            {can("review-section") && api.reviewSection && <Button type="button" variant={mode === "supervise" ? "default" : "outline"} disabled={reviewSection.isPending} onClick={() => reviewSection.mutate(activeId!)}>Review section</Button>}
+            {advanced && can("build-section") && api.buildSection && <Button type="button" variant="outline" disabled={build.isPending} onClick={() => build.mutate(activeId!)}>Build section</Button>}
+            {advanced && can("stamp-section") && api.stampSection && <Button type="button" variant="outline" onClick={() => { stamp.reset(); setStampOpen(true); }}>Stamp section</Button>}
           </div>
           <ActionError action={save} what="save the section" />
           <ActionError action={build} what="build the section" />
