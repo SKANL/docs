@@ -3,7 +3,7 @@ mod health;
 mod resolve;
 mod supervisor;
 
-use app_data::{append_startup_log, initialize_app_data};
+use app_data::{append_startup_log, initialize_app_data, read_log_tail};
 pub use health::Health;
 use resolve::resolve_sidecar_executable;
 pub use supervisor::{SidecarSupervisor, SupervisorError};
@@ -58,6 +58,16 @@ fn sidecar_restart(
     sidecar_start(app, supervisor)
 }
 
+/// Tail of the sidecar log for the failure screen's "View log" button.
+#[tauri::command]
+fn sidecar_log(app: tauri::AppHandle) -> Result<String, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("app data directory: {error}"))?;
+    Ok(read_log_tail(&root, 16 * 1024))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(
@@ -70,7 +80,8 @@ pub fn run() {
             sidecar_handshake,
             sidecar_health,
             sidecar_start,
-            sidecar_restart
+            sidecar_restart,
+            sidecar_log
         ])
         .setup(|app| {
             initialize_app_data(app.handle())?;
