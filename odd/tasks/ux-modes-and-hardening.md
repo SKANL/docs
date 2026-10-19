@@ -150,7 +150,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       to match its scope.
 - [x] U10 (D) i18n: dictionary layer, Spanish default + English, palette shows
       labels not raw CLI strings.
-- [ ] U11 (D) Desktop: startup screen, sidecar failure screen with Retry and
+- [x] U11 (D) Desktop: startup screen, sidecar failure screen with Retry and
       View log via existing Tauri commands.
 - [ ] U12 (I) Verify in a running app: screenshots, a11y pass, parity matrix
       regenerated, specs updated.
