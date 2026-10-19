@@ -5,7 +5,7 @@ import { useT } from "@/lib/i18n";
 type Health = { ready: boolean; state: string };
 type Phase = "booting" | "ready" | "failed";
 
-const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const inTauri = () => typeof window !== "undefined" && typeof (window as unknown as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === "function";
 // Plain IPC call: avoids a direct @tauri-apps/api dependency for three commands.
 const invoke = <T,>(command: string) => (window as unknown as { __TAURI_INTERNALS__: { invoke(command: string): Promise<T> } }).__TAURI_INTERNALS__.invoke(command);
 
