@@ -1,4 +1,3 @@
-import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -14,19 +13,22 @@ import { ActionError, useAction } from "@/lib/actions";
 import { Unavailable } from "@/components/shared/Unavailable";
 import { useActiveContext } from "@/app/active-context";
 import { useCapability } from "@/lib/capability-registry";
+import { useT } from "@/lib/i18n";
 
 function QaResult({ result }: { result: QaDocxResult }) {
-  return <section aria-label="QA result" className="grid gap-2 rounded-lg border bg-card p-4">
-    <div className="flex items-center gap-2"><h3 className="text-lg font-semibold">Result</h3>
-      <Badge variant={result.degraded ? "secondary" : result.passed ? "default" : "destructive"}>{result.degraded ? "degraded" : result.passed ? "passed" : "failed"}</Badge>
-      {result.strict && <Badge variant="outline">strict</Badge>}</div>
-    {result.degraded && <Alert variant="destructive" role="alert"><AlertTitle>Degraded</AlertTitle><AlertDescription>The visual check did not fully run: {result.degraded_reason ?? "no reason was reported"}.</AlertDescription></Alert>}
+  const { t } = useT();
+  return <section aria-label={t("rv.qa.resultLabel")} className="grid gap-2 rounded-lg border bg-card p-4">
+    <div className="flex items-center gap-2"><h3 className="text-lg font-semibold">{t("rv.qa.result")}</h3>
+      <Badge variant={result.degraded ? "secondary" : result.passed ? "default" : "destructive"}>{result.degraded ? t("rv.qa.degraded") : result.passed ? t("rv.qa.passed") : t("rv.qa.failed")}</Badge>
+      {result.strict && <Badge variant="outline">{t("rv.qa.strictBadge")}</Badge>}</div>
+    {result.degraded && <Alert variant="destructive" role="alert"><AlertTitle>{t("rv.qa.degradedTitle")}</AlertTitle><AlertDescription>{t("rv.qa.degradedBody", { reason: result.degraded_reason ?? t("rv.qa.noReason") })}</AlertDescription></Alert>}
     {result.message && <p className="text-sm">{result.message}</p>}
-    <p className="text-sm text-muted-foreground">Checked {result.docx}{result.report ? `; report at ${result.report}` : ""}.</p>
+    <p className="text-sm text-muted-foreground">{result.report ? t("rv.qa.checkedReport", { docx: result.docx, report: result.report }) : t("rv.qa.checked", { docx: result.docx })}</p>
   </section>;
 }
 
 export function QaPanel() {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const active = useActiveContext();
@@ -34,31 +36,31 @@ export function QaPanel() {
   const [result, setResult] = useState<QaDocxResult | null>(null);
   const [confirming, setConfirming] = useState(false);
   const documentId = active.data?.documentId ?? "";
-  const qa = useAction(() => api.runQaDocx!(documentId, { strict }), { success: () => "DOCX QA finished.", onDone: setResult });
+  const qa = useAction(() => api.runQaDocx!(documentId, { strict }), { success: () => t("rv.qa.finished"), onDone: setResult });
   const corrections = useAction(() => api.applyCorrections!(documentId), {
-    success: ({ applied }) => `Applied ${applied} correction${applied === 1 ? "" : "s"}.`, onDone: () => setConfirming(false),
+    success: ({ applied }) => t(applied === 1 ? "rv.qa.applied.one" : "rv.qa.applied.other", { count: applied }), onDone: () => setConfirming(false),
   });
   if (active.isPending) return null;
-  if (!documentId) return <EmptyState title="Select a document first" description="Quality checks run on the current document."><Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button></EmptyState>;
+  if (!documentId) return <EmptyState title={t("rv.qa.selectDoc.title")} description={t("rv.qa.selectDoc.body")}><Button asChild><Link to="/configure/workspaces">{t("rv.openWorkspaces")}</Link></Button></EmptyState>;
   const canQa = can("qa-docx") && !!api.runQaDocx;
   const canFix = can("apply-corrections") && !!api.applyCorrections;
   return <div className="grid gap-6">
-    <p className="text-sm text-muted-foreground">Document <b>{documentId}</b></p>
-    {!canQa && <Unavailable>Rendered DOCX QA is not available on this server.</Unavailable>}
-    {canQa && <section aria-label="DOCX quality check" className="grid gap-3 rounded-lg border bg-card p-4">
-      <h3 className="text-lg font-semibold">DOCX quality check</h3>
-      <p className="text-sm text-muted-foreground">Renders the built DOCX and checks the pages. Without a render toolchain the result is reported as degraded, with the reason.</p>
-      <div className="flex items-center gap-2"><Switch id="qa-strict" checked={strict} onCheckedChange={setStrict} /><Label htmlFor="qa-strict">Strict mode</Label></div>
-      <Button type="button" className="w-fit" disabled={qa.isPending} onClick={() => qa.mutate(undefined)}>Run DOCX QA</Button>
-      <ActionError action={qa} what="run DOCX QA" />
+    <p className="text-sm text-muted-foreground">{t("rv.qa.document")} <b>{documentId}</b></p>
+    {!canQa && <Unavailable>{t("rv.qa.unavailable")}</Unavailable>}
+    {canQa && <section aria-label={t("rv.qa.checkLabel")} className="grid gap-3 rounded-lg border bg-card p-4">
+      <h3 className="text-lg font-semibold">{t("rv.qa.checkLabel")}</h3>
+      <p className="text-sm text-muted-foreground">{t("rv.qa.checkBody")}</p>
+      <div className="flex items-center gap-2"><Switch id="qa-strict" checked={strict} onCheckedChange={setStrict} /><Label htmlFor="qa-strict">{t("rv.qa.strict")}</Label></div>
+      <Button type="button" className="w-fit" disabled={qa.isPending} onClick={() => qa.mutate(undefined)}>{t("rv.qa.run")}</Button>
+      <ActionError action={qa} what={t("act.runQa")} />
     </section>}
     {result && <QaResult result={result} />}
-    {canFix && <section aria-label="Corrections" className="grid gap-3 rounded-lg border bg-card p-4">
-      <h3 className="text-lg font-semibold">Corrections</h3>
-      <p className="text-sm text-muted-foreground">Applies the pending section corrections to the document sources.</p>
-      <Button type="button" variant="outline" className="w-fit" onClick={() => setConfirming(true)}>Apply corrections</Button>
+    {canFix && <section aria-label={t("rv.qa.corrections")} className="grid gap-3 rounded-lg border bg-card p-4">
+      <h3 className="text-lg font-semibold">{t("rv.qa.corrections")}</h3>
+      <p className="text-sm text-muted-foreground">{t("rv.qa.correctionsBody")}</p>
+      <Button type="button" variant="outline" className="w-fit" onClick={() => setConfirming(true)}>{t("rv.qa.apply")}</Button>
     </section>}
-    <ConfirmActionDialog open={confirming} onOpenChange={setConfirming} title="Apply pending corrections?" description={`This edits the section files of ${documentId}. Review them in Authoring afterwards.`}
-      confirmLabel="Apply corrections" pending={corrections.isPending} error={corrections.isError ? formatApiError(corrections.error) : undefined} onConfirm={() => corrections.mutate(undefined)} />
+    <ConfirmActionDialog open={confirming} onOpenChange={setConfirming} title={t("rv.qa.applyTitle")} description={t("rv.qa.applyBody", { id: documentId })}
+      confirmLabel={t("rv.qa.apply")} pending={corrections.isPending} error={corrections.error} onConfirm={() => corrections.mutate(undefined)} />
   </div>;
 }
