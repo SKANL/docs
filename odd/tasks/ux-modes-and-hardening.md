@@ -116,12 +116,21 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] U3 (D) [fc61fdc4] Navigation by mode/advanced (Supervisar: Inicio, Revisar, Entregar,
       Ejecuciones; Redactar adds Redactar; Avanzado adds Herramientas and
       Configuración técnica). Route map and palette follow the same rule.
-- [ ] U4 (D) Home rewrite: what the product is, the 4-step flow, first-run mode
+- [x] U4 (D) [2d5eaa11] Home rewrite: what the product is, the 4-step flow, first-run mode
       chooser, one next action; distinguish "no workspace" from "no document";
       per-document (not workspace-wide) finding count.
-- [ ] U5 (D) One vocabulary + in-context glossary; jargon (passport,
+- [x] U5 (D) [9f72e602] One vocabulary + in-context glossary; jargon (passport,
       attestation, digest, node ids) only under Avanzado.
-- [ ] U6 (D) Empty states always carry a next-step button.
+- [x] U6 (D) [fa09a21a] Empty states always carry a next-step button.
+- [ ] U13 (D) From review of U4-U6 (approved, lineage review-c1e85141720fffe5,
+      acknowledged): Home findings count must not fail open (findings without a
+      run_id or outside the 100-run window are silently dropped: show a
+      'partial count' notice or prefer a server-side document filter if the API
+      supports it; do not claim 0 when unknown); Publications empty-state action
+      only when document.publish is available; Spanish plural agreement for
+      home.findings ('abierto/abiertos'); shared constants for focus-target ids;
+      Advanced-only rows flagged structurally instead of matching the 'SHA-256'
+      label; align wording 'open' vs status==='failed'.
 - [ ] U7 (D) Sections: primary actions (edit, save, review) vs advanced (stamp,
       pack context, build section); merge duplicate upload forms in Sources;
       single release entry point.
@@ -217,5 +226,13 @@ upload from nav (solve in U4 via Home next-action, both modes).
 Frontend baseline: 3 timing-flaky tests under load (pipelineFeature, reviewFeature,
 toolsFeature), pre-existing.
 
+Review of U4-U6 (base 902f5db6): the full range 8397bddc..HEAD (60 files, 1633
+lines) was refused by the native reviewer (lens_context_budget_exceeded, no
+authority created) and was split. U4-U6 slice (28 files, 628 lines): APPROVED and
+acknowledged, 11 advisory findings -> U13. The earlier slice (C3/C2/C4 docs, i18n,
+U1-U3, H13) cannot be isolated by a base-diff review (head is fixed at HEAD):
+left unreviewed natively, covered by tests only. .atl/skill-registry files
+modified by the session hook are unrelated and left uncommitted.
+
 ## Next step
-H13, then U4-U9, U10 sweep, U11, U12 (+ update e2e).
+U7-U9 + U13, then U10 sweep, U11, U12 (+ update Playwright e2e).
