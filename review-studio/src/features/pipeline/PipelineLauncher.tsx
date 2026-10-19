@@ -17,15 +17,14 @@ import type { OutputFormat, RunPolicy } from "@/api/domains/pipeline";
 
 const formats: OutputFormat[] = ["docx", "pdf", "html"];
 const policies: RunPolicy[] = ["draft", "strict", "release"];
-const stageActions = [["prepare", "Prepare", "document.prepare"], ["build", "Build", "document.build"], ["verify", "Verify", "document.verify"]] as const;
+const stageActions = [["prepare", "document.prepare"], ["build", "document.build"], ["verify", "document.verify"]] as const;
 
-function Choice({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange(value: string): void }) {
-  const id = `pipeline-${label.toLowerCase().replace(/\W+/g, "-")}`;
+function Choice({ id, label, value, options, optionLabel = option => option, onChange }: { id: string; label: string; value: string; options: readonly string[]; optionLabel?(option: string): string; onChange(value: string): void }) {
   return <div className="grid gap-1">
     <Label htmlFor={id}>{label}</Label>
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger id={id} aria-label={label} className="w-36"><SelectValue /></SelectTrigger>
-      <SelectContent>{options.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}</SelectContent>
+      <SelectContent>{options.map(option => <SelectItem key={option} value={option}>{optionLabel(option)}</SelectItem>)}</SelectContent>
     </Select>
   </div>;
 }
@@ -51,36 +50,36 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
 
   const openRun = (result: { id?: unknown }) => { if (result.id) navigate(`/pipeline/runs/${encodeURIComponent(String(result.id))}`); };
   const invalidate = [["pipeline", workspaceId, "runs"]];
-  const run = useAction(() => api.runDocument!(documentId!, { format, policy }), { success: result => `Started run ${result.id}.`, invalidate, onDone: openRun });
+  const run = useAction(() => api.runDocument!(documentId!, { format, policy }), { success: result => t("pl.started", { id: String(result.id) }), invalidate, onDone: openRun });
   const step = useAction((kind: "prepare" | "build" | "verify") => api.documentAction!(documentId!, kind, workspaceId!, format), {
-    success: (result, kind) => kind === "prepare" ? `Prepared ${documentId}.` : `Started ${kind} run ${String(result.id ?? "")}`.trim() + ".",
+    success: (result, kind) => kind === "prepare" ? t("pl.prepared", { id: documentId! }) : t("pl.startedStep", { kind: t(`pl.step.${kind}`).toLowerCase(), id: String(result.id ?? "") }),
     invalidate,
     onDone: (result, kind) => { if (kind !== "prepare") openRun(result); },
   });
 
-  if (!documentId) return <EmptyState title="Select a document first" description="The pipeline runs against the current document. Choose or create one before planning a run.">
-    <Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button>
+  if (!documentId) return <EmptyState title={t("pl.selectDoc.title")} description={t("pl.selectDoc.body")}>
+    <Button asChild><Link to="/configure/workspaces">{t("pl.openWorkspaces")}</Link></Button>
   </EmptyState>;
 
   const busy = run.isPending || step.isPending;
-  return <section aria-label="Launch" className="grid gap-4 rounded-lg border bg-card p-4">
+  return <section aria-label={t("pl.launch")} className="grid gap-4 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-end gap-4">
-      <Choice label="Output format" value={format} options={formats} onChange={next => setFormat(next as OutputFormat)} />
-      <Choice label="Policy" value={policy} options={advanced ? policies : policies.filter(item => item !== "release")} onChange={next => setPolicy(next as RunPolicy)} />
+      <Choice id="pipeline-format" label={t("pl.format")} value={format} options={formats} onChange={next => setFormat(next as OutputFormat)} />
+      <Choice id="pipeline-policy" label={t("pl.policy")} value={policy} options={advanced ? policies : policies.filter(item => item !== "release")} optionLabel={option => t(`pl.policy.${option as RunPolicy}`)} onChange={next => setPolicy(next as RunPolicy)} />
     </div>
-    {can("document.plan") && api.planPipeline && <QueryBoundary query={plan} title="Could not plan the pipeline" skeleton="h-16 w-full">{data => <div className="grid gap-2 text-sm">
-        <p className="font-medium">Plan for {data.document_id} ({data.pipeline_id})</p>
-        <ol aria-label="Pipeline stages" className="flex flex-wrap gap-2">{data.stages.map(stage => <li key={stage} className="rounded-md border px-2 py-1">{stage}</li>)}</ol>
-        {data.external_artifacts.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="text-muted-foreground">Needs these inputs:</span>
+    {can("document.plan") && api.planPipeline && <QueryBoundary query={plan} title={t("pl.planFailed")} skeleton="h-16 w-full">{data => <div className="grid gap-2 text-sm">
+        <p className="font-medium">{t("pl.planFor", { document: data.document_id, pipeline: data.pipeline_id })}</p>
+        <ol aria-label={t("pl.stages")} className="flex flex-wrap gap-2">{data.stages.map(stage => <li key={stage} className="rounded-md border px-2 py-1">{stage}</li>)}</ol>
+        {data.external_artifacts.length > 0 && <div className="flex flex-wrap items-center gap-2"><span className="text-muted-foreground">{t("pl.needs")}</span>
           <ul className="flex flex-wrap gap-2">{data.external_artifacts.map(name => <li key={name} className="rounded-md bg-muted px-2 py-0.5">{name}</li>)}</ul></div>}
       </div>}</QueryBoundary>}
     <div className="flex flex-wrap items-center gap-2">
-      {can("document.run") && api.runDocument && <Button id={focusTargets.runPipeline} type="button" disabled={busy} onClick={() => run.mutate(undefined)}>Run pipeline</Button>}
-      {api.documentAction && stageActions.filter(([, , capability]) => can(capability)).map(([kind, label]) =>
-        <Button key={kind} type="button" variant="outline" disabled={busy} onClick={() => step.mutate(kind)}>{label}</Button>)}
+      {can("document.run") && api.runDocument && <Button id={focusTargets.runPipeline} type="button" disabled={busy} onClick={() => run.mutate(undefined)}>{t("pl.run")}</Button>}
+      {api.documentAction && stageActions.filter(([, capability]) => can(capability)).map(([kind]) =>
+        <Button key={kind} type="button" variant="outline" disabled={busy} onClick={() => step.mutate(kind)}>{t(`pl.step.${kind}`)}</Button>)}
     </div>
     <p className="text-sm text-muted-foreground">{t("pipeline.deliverHint")} <Link className="font-medium underline underline-offset-4" to="/delivery">{t("term.deliver")}</Link></p>
-    <ActionError action={run} what="start the run" />
-    <ActionError action={step} what="run the step" />
+    <ActionError action={run} what={t("act.startRun")} />
+    <ActionError action={step} what={t("act.runStep")} />
   </section>;
 }

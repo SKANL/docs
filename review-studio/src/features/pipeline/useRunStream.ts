@@ -43,7 +43,7 @@ export function useRunStream(runId: string | undefined, { workspaceId = null, ba
           delay = backoffMs;
         } catch (error) {
           if (signal.aborted) return;
-          update({ error: error instanceof Error ? error.message : "The progress stream failed." });
+          update({ error: error instanceof Error ? error.message : String(error) });
         }
         // The server closes a long stream before the run ends; reconnect with a growing pause until terminal.
         if (!done) { await sleep(delay, signal); delay = Math.min(delay * 2, BACKOFF_CAP_MS); }

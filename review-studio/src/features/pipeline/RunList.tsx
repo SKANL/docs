@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCapability } from "@/lib/capability-registry";
+import { statusKey } from "@/lib/i18n";
 import { Unavailable } from "@/components/shared/Unavailable";
 import { isTerminalStatus } from "@/api/domains/pipeline";
 import { RunStatusBadge } from "@/components/shared/StatusBadge";
@@ -43,22 +44,22 @@ export function RunList({ workspaceId }: { workspaceId: string | null }) {
   });
   const items = runs.data?.pages.flatMap(page => page.items) ?? [];
 
-  return <section aria-label="Run history" className="grid gap-4">
-    <h2 className="text-xl font-semibold">Runs</h2>
-    {!can("run.list") || !api.listRunPage ? <Unavailable>Run history is not available on this server.</Unavailable> : <>
+  return <section aria-label={t("pl.history")} className="grid gap-4">
+    <h2 className="text-xl font-semibold">{t("pl.runs")}</h2>
+    {!can("run.list") || !api.listRunPage ? <Unavailable>{t("pl.historyUnavailable")}</Unavailable> : <>
       <div className="flex flex-wrap items-end gap-4">
-        <div className="grid gap-1"><Label htmlFor="run-status">Status</Label>
+        <div className="grid gap-1"><Label htmlFor="run-status">{t("pl.status")}</Label>
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger id="run-status" aria-label="Status" className="w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>{statuses.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+            <SelectTrigger id="run-status" aria-label={t("pl.status")} className="w-40"><SelectValue /></SelectTrigger>
+            <SelectContent>{statuses.map(value => <SelectItem key={value} value={value}>{t(statusKey("run.status", value) ?? "run.status.all")}</SelectItem>)}</SelectContent>
           </Select></div>
-        <div className="grid gap-1"><Label htmlFor="run-document">Document</Label>
+        <div className="grid gap-1"><Label htmlFor="run-document">{t("pl.document")}</Label>
           <Input id="run-document" className="w-56" value={documentText} onChange={event => setDocumentText(event.target.value)} /></div>
       </div>
-      <QueryBoundary query={runs}>{() => items.length === 0 ? <EmptyState title="No runs yet" description="Runs appear here once you launch the pipeline for a document." action={{ label: t("empty.planRun"), onClick: focusById(focusTargets.runPipeline) }} />
+      <QueryBoundary query={runs}>{() => items.length === 0 ? <EmptyState title={t("pl.none.title")} description={t("pl.none.body")} action={{ label: t("empty.planRun"), onClick: focusById(focusTargets.runPipeline) }} />
         : <>
-          <Table aria-label="Runs">
-            <TableHeader><TableRow><TableHead>Run</TableHead><TableHead>Document</TableHead><TableHead>Status</TableHead><TableHead>Format</TableHead><TableHead>Started</TableHead></TableRow></TableHeader>
+          <Table aria-label={t("pl.runs")}>
+            <TableHeader><TableRow><TableHead>{t("pl.runCol")}</TableHead><TableHead>{t("pl.document")}</TableHead><TableHead>{t("pl.status")}</TableHead><TableHead>{t("pl.formatCol")}</TableHead><TableHead>{t("pl.startedCol")}</TableHead></TableRow></TableHeader>
             <TableBody>{items.map(item => <TableRow key={item.id}>
               <TableCell><Link className="font-medium underline-offset-4 hover:underline" to={`/pipeline/runs/${encodeURIComponent(item.id)}`}>{item.id}</Link></TableCell>
               <TableCell>{item.documentId ?? "-"}</TableCell>
@@ -67,7 +68,7 @@ export function RunList({ workspaceId }: { workspaceId: string | null }) {
               <TableCell>{when(item.createdAt)}</TableCell>
             </TableRow>)}</TableBody>
           </Table>
-          {runs.hasNextPage && <Button type="button" variant="outline" className="w-fit" disabled={runs.isFetchingNextPage} onClick={() => void runs.fetchNextPage()}>Load more</Button>}
+          {runs.hasNextPage && <Button type="button" variant="outline" className="w-fit" disabled={runs.isFetchingNextPage} onClick={() => void runs.fetchNextPage()}>{t("pl.loadMore")}</Button>}
         </>}</QueryBoundary>
     </>}
   </section>;

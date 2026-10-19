@@ -1,5 +1,5 @@
 import type { Status } from "@/api/models";
-import { useT } from "@/lib/i18n";
+import { statusKey, useT } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -29,5 +29,7 @@ export function StatusBadge({ status }: { status: Status }) {
 
 /** A run's lifecycle status, shown as the server words it. */
 export function RunStatusBadge({ status }: { status: string }) {
-  return <Badge variant={badge[toneOf(status)]}>{status}</Badge>;
+  const { t } = useT();
+  const key = statusKey("run.status", status);
+  return <Badge variant={badge[toneOf(status)]}>{key ? t(key) : status}</Badge>;
 }

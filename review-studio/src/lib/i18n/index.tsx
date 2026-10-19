@@ -22,6 +22,9 @@ export function translate(locale: Locale, key: string, vars?: Record<string, str
 /** True when `key` is a known message key; lets dynamic keys (like server capability ids) fall back instead of showing the raw key. */
 export const hasMessage = (key: string): key is MessageKey => key in en;
 
+/** A server status word in the current language; an unknown word is shown as the server sent it. */
+export const statusKey = (prefix: string, status: string): MessageKey | null => hasMessage(`${prefix}.${status}`) ? `${prefix}.${status}` as MessageKey : null;
+
 type I18n = { locale: Locale; setLocale(locale: Locale): void; t(key: MessageKey, vars?: Record<string, string | number>): string };
 const I18nContext = createContext<I18n | null>(null);
 
