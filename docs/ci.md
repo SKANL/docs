@@ -4,6 +4,8 @@ The repository's GitHub Actions workflows are the source of truth for continuous
 
 ## Jobs
 
+The workflows define three quality jobs (one each in `quality.yml`, `toolchains.yml`, `architecture.yml`); `security.yml`, `package.yml` and the release workflows are separate.
+
 | Job | Checks |
 |---|---|
 | `quality` | Installs Pandoc and Python 3.11 with `uv`, synchronizes locked dependencies, then runs linting, type checks, the Tauri sidecar contract, tests, project coverage, and differential coverage. Project coverage must meet `86%`; differential coverage against `origin/main` must meet `70%`. |
@@ -18,7 +20,7 @@ The `toolchains` job exercises available optional-tool paths, but it does not ru
 
 ```bash
 uv sync --locked
-uv run ruff check src tests
+uv run ruff check src tests tools
 uv run mypy src tools
 uv run pytest -q --cov=src --cov-report=xml:coverage.xml --cov-report=term --cov-fail-under=86
 uv run diff-cover coverage.xml --compare-branch=origin/main --fail-under=70
@@ -28,7 +30,7 @@ uv run pytest tests/architecture -q
 For behavior, add focused checks:
 
 ```bash
-uv run pytest tests/integration/test_v2_source_commands.py tests/integration/test_v2_cli.py tests/integration/test_v2_artifact_commands.py -q
+uv run pytest tests/integration/test_cli_core.py tests/integration/test_cli_doc.py -q
 ```
 
 Do not make CI depend on an authoring plugin. The optional-toolchain workflow explicitly provisions its capability set; the product runtime remains native and reports missing capabilities through its own policy.

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Provide a `DocumentRendererPort` abstraction resolved by target output format, with DOCX as the primary adapter, and prove the port is genuinely extensible to other formats without modifying domain/pipeline code.
+Provide a `DocumentRendererPort` abstraction resolved by target output format, with DOCX as the primary adapter, and prove the port is genuinely extensible to other formats without modifying domain pipeline code.
 
 Implemented by the `DocumentRendererPort` registry resolved in the composition root by `resolve_renderer`, with `DocxRendererAdapter`, `HtmlRendererAdapter` and `PdfRendererAdapter` as its members.
 
@@ -20,7 +20,7 @@ The system MUST expose a `DocumentRendererPort` with a defined contract that any
 
 ### Requirement: Format-Registry Resolution at Composition Root
 
-The system MUST resolve the concrete renderer from the configured output format at the composition root; domain/pipeline code MUST NOT branch on format.
+The system MUST resolve the concrete renderer from the configured output format at the composition root; domain pipeline code MUST NOT branch on format.
 
 #### Scenario: Resolve DOCX from config
 
@@ -37,14 +37,14 @@ The system MUST resolve the concrete renderer from the configured output format 
 
 ### Requirement: Extensibility Proof via Test Fake
 
-The system MUST include at least one test-only fake renderer for a second format, proving the port is swappable without modifying domain/pipeline code.
+The system MUST include at least one test-only fake renderer for a second format, proving the port is swappable without modifying domain pipeline code.
 
 #### Scenario: Fake renderer proves extensibility
 
 - GIVEN a test-only fake renderer registered for a second format (e.g., "txt")
 - WHEN the pipeline renders using that format
 - THEN rendering succeeds through the fake
-- AND no changes to `domain/pipeline.py` were required to support it
+- AND no changes to `domain/pipeline_kernel.py` were required to support it
 
 ### Requirement: Config-Driven Assemble Stage Plan
 

@@ -32,7 +32,7 @@ jobs:
           sudo tar -xzf /tmp/pandoc.tar.gz --strip-components=1 -C /usr/local pandoc-3.1.11/bin/pandoc
       - run: uv python install 3.11
       - run: uv sync --locked
-      - run: uv run ruff check src tests
+      - run: uv run ruff check src tests tools
       - name: Check Tauri sidecar packaging contract
         run: python desktop/scripts/check-sidecar-packaging.py
       - run: uv run mypy src tools

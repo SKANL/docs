@@ -67,7 +67,7 @@ as fast as possible, then verify the result mechanically.
 
 ### Native capability contracts
 
-The harness owns the document lifecycle; external plugins are not runtime dependencies. Documents, PDF, and Template Creator plugins may assist authoring or inspection, but the CLI remains complete without them.
+The harness owns the document lifecycle; external plugins are not runtime dependencies. `PluginRunner` is tested but not wired into execution: no build or run executes a plugin, and only the plugin registry (`GET /v2/plugins`) is exposed. Documents, PDF, and Template Creator plugins may assist authoring or inspection, but the CLI remains complete without them.
 
 - **Artifact contracts and provenance.** Transforms declare expected outputs. Generated artifacts and section edits retain input/configuration evidence, hashes, authorship, diffs, and append-only provenance.
 - **Atomic transforms.** Builds happen in a private scratch directory, validate every declared output, then publish. Failed ordinary publication restores the previous files; temporary files are cleaned.
@@ -157,12 +157,15 @@ Two `docs doctor` checks worth knowing up front:
 
 | Group | Purpose |
 |---|---|
-| `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise`, `document publish` |
+| `doc` | document CRUD: `init`, `new`, `list`, `current`, `show`, `use`, `rename`, `delete`, `status`, `revise` |
 | `template` | template CRUD: `list [--available]`, `use <builtin-id>`, `show`, `init`, `validate` |
 | `context` | atomic context fields: `status`, `elicit`, `ingest`, `show`, `set`, `rm` |
 | (flat, no prefix) | `doctor`, `stamp`, `guide`, `translate`, `build-section`, `stamp-section`, `pack-context`, `review-section`, `review-document`, `collect-sources`, `build-rules`, `review-rules`, `collect-issues`, `collect-code-evidence`, `build-ledger`, `graph <query>` |
 | `asset` | asset registration commands |
-| `docx` | low-level `.docx` inspection commands |
+| `source` | source ingestion: `ingest` |
+| `document` | pipeline and lifecycle: `prepare`, `ingest`, `classify`, `import`, `status`, `plan`, `build`, `verify`, `run`, `release`, `passport`, `evidence`, `baseline`, `inspect`, `diff`, `package`, `publish` |
+| `workspace` | persistent workspaces: `list`, `create`, `use`, `rename`, `delete`, `status` |
+| `run` | durable runs: `list`, `show`, `cancel`, `retry`, `watch` |
 
 ### Traceability queries: `docs graph`
 
@@ -249,13 +252,12 @@ A scanned or image-only PDF is **refused** with a message naming OCR, never
 half-translated. Non-Latin target scripts (Cyrillic, CJK, Arabic) are out of
 reach in this phase: base-14 fonts have no coverage for them.
 
-### Pipeline stage sets
+### Document pipeline
 
 #### Contract-driven pipeline
 
 The native runtime exposes `docs document build --json` and
-`docs document verify --json`. 
-existing callers. These commands resolve the active document, execute
+`docs document verify --json`. These commands resolve the active document, execute
 the contract-driven stage DAG, run DOCX audit/visual QA adapters, record
 provenance only after successful verification, and write verified build artifacts
 under `output/current/` when the selected full pipeline and policy permit publication.
