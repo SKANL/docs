@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("renders real workspace, run, artifact, and provenance data", async ({ page }) => {
   await page.goto("/#/pipeline");
@@ -15,7 +15,7 @@ test("Home shows the current document, recent runs and one next action", async (
   await page.goto("/#/");
   await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
   await expect(page.getByRole("region", { name: "Recent runs" }).getByRole("link").first()).toBeVisible();
-  await expect(page.getByRole("region", { name: "Next safe action" }).getByRole("link")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Next step" }).getByRole("link")).toHaveCount(1);
 });
 
 test("supports skip-link keyboard navigation and visible focus", async ({ page }) => {

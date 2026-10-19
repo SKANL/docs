@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("lists the seeded run, opens its receipt, and watches a new html run to the end", async ({ page }) => {
   test.setTimeout(120_000);

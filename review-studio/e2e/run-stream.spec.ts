@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 const frame = (id: string, message: string) => `event: progress\ndata: ${JSON.stringify({ type: "progress", progress: 42, message, run: { id, status: "running" } })}\n\n`;
 

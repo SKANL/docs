@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("packages, is denied a draft publish by the server, and opens the publication history", async ({ page }) => {
   test.setTimeout(120_000);
@@ -25,8 +25,8 @@ test("packages, is denied a draft publish by the server, and opens the publicati
   // Publish with the draft policy: the server decides, and its reason is shown verbatim without any success claim.
   // The seeded fixture has no build output, so the server answers with its honest 409 (publish_source_unavailable)
   // before policy is evaluated; the policy denial itself is pinned in the Vitest feature tests.
-  await page.getByRole("button", { name: "Publish" }).click();
-  const publishDialog = page.getByRole("dialog", { name: "Publish" });
+  await page.getByRole("button", { name: "Deliver", exact: true }).click();
+  const publishDialog = page.getByRole("dialog", { name: "Deliver" });
   await publishDialog.getByRole("textbox", { name: "Destination" }).fill("e2e/final.html");
   await publishDialog.getByRole("combobox", { name: "Policy" }).click();
   await page.getByRole("option", { name: "draft" }).click();

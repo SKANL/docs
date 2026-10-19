@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("follows the seeded run to its evidence, inspects an artifact, and promotes (or honestly refuses) a baseline", async ({ page }) => {
   test.setTimeout(90_000);

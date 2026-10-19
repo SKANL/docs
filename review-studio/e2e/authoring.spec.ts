@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("authors the seeded document through the real sidecar", async ({ page }) => {
   test.setTimeout(90_000);
