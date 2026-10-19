@@ -1,5 +1,7 @@
-/** English is the source of truth for keys; Spanish is the default shown locale. */
-export const en = {
+import { capabilities } from "./messages.capabilities";
+
+/** English is the source of truth for keys; Spanish is the default shown locale. Each area file adds a pair with the same keys. */
+const baseEn = {
   "app.skip": "Skip to content",
   "nav.areas": "Task areas",
   "error.title": "Something went wrong",
@@ -124,9 +126,7 @@ export const en = {
   "empty.createDocument": "Create a document",
 } as const;
 
-export type MessageKey = keyof typeof en;
-
-export const es: Partial<Record<MessageKey, string>> = {
+const baseEs: Record<keyof typeof baseEn, string> = {
   "app.skip": "Saltar al contenido",
   "nav.areas": "Áreas de trabajo",
   "error.title": "Algo salió mal",
@@ -250,3 +250,8 @@ export const es: Partial<Record<MessageKey, string>> = {
   "empty.publish": "Publicar un documento",
   "empty.createDocument": "Crear un documento",
 };
+
+export const en = { ...baseEn, ...capabilities.en };
+export type MessageKey = keyof typeof en;
+/** Exhaustive: a key missing in Spanish (or extra) is a compile error. */
+export const es: Record<MessageKey, string> = { ...baseEs, ...capabilities.es };

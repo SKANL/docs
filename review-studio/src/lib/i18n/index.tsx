@@ -19,6 +19,9 @@ export function translate(locale: Locale, key: string, vars?: Record<string, str
   return vars ? text.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match)) : text;
 }
 
+/** True when `key` is a known message key; lets dynamic keys (like server capability ids) fall back instead of showing the raw key. */
+export const hasMessage = (key: string): key is MessageKey => key in en;
+
 type I18n = { locale: Locale; setLocale(locale: Locale): void; t(key: MessageKey, vars?: Record<string, string | number>): string };
 const I18nContext = createContext<I18n | null>(null);
 
