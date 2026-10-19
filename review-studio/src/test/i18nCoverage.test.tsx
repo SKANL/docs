@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { ApiError } from "../api/errors";
 import { makeApi } from "./authoringHarness";
+import { deliveryApi } from "./deliveryHarness";
 import { openPipeline, streamingApi } from "./pipelineHarness";
 import type { ReviewApi } from "../api/models";
 import { en, es } from "../lib/i18n/messages";
@@ -96,5 +97,17 @@ describe("review screen", () => {
     expect(screen.getByText("alta")).toBeTruthy();
     expect(screen.getByText("sección intro · página 3")).toBeTruthy();
     expect(screen.queryByText("section intro · page 3")).toBeNull();
+  }, 20_000);
+});
+
+describe("delivery screen", () => {
+  it("renders the delivery area in Spanish", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    localStorage.setItem("review-studio.advanced", "true");
+    openPipeline("/delivery", deliveryApi().api);
+    expect(await screen.findByRole("heading", { name: "Entrega" }, { timeout: 5000 })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Historial de publicaciones" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Empaquetar" })).toBeTruthy();
+    expect(screen.queryByText("Package")).toBeNull();
   }, 20_000);
 });

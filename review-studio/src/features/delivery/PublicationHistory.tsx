@@ -20,12 +20,12 @@ export function PublicationHistory({ workspaceId }: { workspaceId: string | null
   const canPublish = can("document.publish") && !!api.publishDocument;
   const listed = !!api.listPublicationHistory && can("publications.list");
   const history = useQuery({ queryKey: deliveryKeys.publications(workspaceId), queryFn: () => api.listPublicationHistory!(), enabled: listed });
-  return <section aria-label="Publication history" className="grid gap-4">
-    <h2 className="text-xl font-semibold">Publication history</h2>
-    {!listed ? <Unavailable>Publication history is not available on this server.</Unavailable>
-      : <QueryBoundary query={history}>{records => records.length === 0 ? <EmptyState title="Nothing published yet" description="Publications the server accepts are recorded here, with their evidence run." action={canPublish ? { label: t("empty.publish"), onClick: focusById(focusTargets.publishDocument) } : undefined} />
-      : <Table aria-label="Publication history">
-        <TableHeader><TableRow><TableHead>Publication</TableHead><TableHead>Destination</TableHead><TableHead>Policy</TableHead><TableHead>Artifact digest</TableHead><TableHead>Evidence run</TableHead><TableHead>Published</TableHead><TableHead>Warnings</TableHead></TableRow></TableHeader>
+  return <section aria-label={t("dl.hist.heading")} className="grid gap-4">
+    <h2 className="text-xl font-semibold">{t("dl.hist.heading")}</h2>
+    {!listed ? <Unavailable>{t("dl.hist.unavailable")}</Unavailable>
+      : <QueryBoundary query={history}>{records => records.length === 0 ? <EmptyState title={t("dl.hist.none.title")} description={t("dl.hist.none.body")} action={canPublish ? { label: t("empty.publish"), onClick: focusById(focusTargets.publishDocument) } : undefined} />
+      : <Table aria-label={t("dl.hist.heading")}>
+        <TableHeader><TableRow><TableHead>{t("dl.hist.publication")}</TableHead><TableHead>{t("dl.pub.destination")}</TableHead><TableHead>{t("dl.policy")}</TableHead><TableHead>{t("dl.artifactDigest")}</TableHead><TableHead>{t("dl.evidenceRun")}</TableHead><TableHead>{t("dl.hist.published")}</TableHead><TableHead>{t("dl.hist.warnings")}</TableHead></TableRow></TableHeader>
         <TableBody>{records.map(item => <TableRow key={item.id}>
           <TableCell className="font-medium">{item.id}</TableCell>
           <TableCell className="break-all">{item.destination || "-"}</TableCell>

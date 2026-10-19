@@ -20,14 +20,15 @@ import { ReleasePanel } from "./ReleasePanel";
 
 /** Shown only after the server returned a 201 for this publication. */
 function PublicationResultPanel({ result }: { result: PublicationResult }) {
-  return <section role="status" aria-label="Publication result" className="grid gap-2 rounded-lg border bg-card p-4">
-    <p className="font-medium">Published {result.destination}</p>
+  const { t } = useT();
+  return <section role="status" aria-label={t("dl.result")} className="grid gap-2 rounded-lg border bg-card p-4">
+    <p className="font-medium">{t("dl.published", { destination: result.destination })}</p>
     <Facts rows={[
-      ["Policy", result.policy], ["Format", result.format], ["Manifest", result.manifest],
-      ["Artifact digest", <CopyDigest key="a" value={result.artifact_sha256} />], ["Manifest digest", <CopyDigest key="m" value={result.manifest_sha256} />],
-      ["Evidence run", result.provenance_run ? <Link key="r" className="underline-offset-4 hover:underline" to={`/review/evidence/${encodeURIComponent(result.provenance_run)}`}>{result.provenance_run}</Link> : undefined],
+      [t("dl.policy"), result.policy], [t("dl.format"), result.format], [t("dl.manifest"), result.manifest],
+      [t("dl.artifactDigest"), <CopyDigest key="a" value={result.artifact_sha256} />], [t("dl.manifestDigest"), <CopyDigest key="m" value={result.manifest_sha256} />],
+      [t("dl.evidenceRun"), result.provenance_run ? <Link key="r" className="underline-offset-4 hover:underline" to={`/review/evidence/${encodeURIComponent(result.provenance_run)}`}>{result.provenance_run}</Link> : undefined],
     ]} />
-    {result.warnings.length > 0 && <ul aria-label="Publication warnings" className="list-disc pl-5 text-sm">{result.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
+    {result.warnings.length > 0 && <ul aria-label={t("dl.warnings")} className="list-disc pl-5 text-sm">{result.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
   </section>;
 }
 
@@ -40,18 +41,18 @@ function DeliveryView({ header, context }: { header: ReactNode; context: ActiveC
   const [published, setPublished] = useState<PublicationResult | null>(null);
   const { workspaceId, workspaceName, documentId, documentTitle } = context;
   if (!documentId) return <div className="grid gap-6">{header}
-    <EmptyState title="Select a document first" description="Delivery acts on the current document. Choose or create one before packaging or publishing.">
-      <Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button>
+    <EmptyState title={t("dl.selectDoc.title")} description={t("dl.selectDoc.body")}>
+      <Button asChild><Link to="/configure/workspaces">{t("dl.openWorkspaces")}</Link></Button>
     </EmptyState></div>;
 
   return <div className="grid gap-6">
     {header}
-    <section aria-label="Active context" className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border bg-card px-4 py-3 text-sm">
-      <span><span className="text-muted-foreground">Workspace</span> {workspaceName}</span>
-      <span><span className="text-muted-foreground">Document</span> {documentId}{documentTitle ? ` (${documentTitle})` : ""}</span>
+    <section aria-label={t("au.activeContext")} className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border bg-card px-4 py-3 text-sm">
+      <span><span className="text-muted-foreground">{t("ctx.workspace")}</span> {workspaceName}</span>
+      <span><span className="text-muted-foreground">{t("au.document")}</span> {documentId}{documentTitle ? ` (${documentTitle})` : ""}</span>
     </section>
-    <section aria-label="Deliver" className="flex flex-wrap items-center gap-2">
-      {can("document.package") && api.packageDocument && <Button type="button" variant="outline" onClick={() => setDialog("package")}>Package</Button>}
+    <section aria-label={t("dl.deliver")} className="flex flex-wrap items-center gap-2">
+      {can("document.package") && api.packageDocument && <Button type="button" variant="outline" onClick={() => setDialog("package")}>{t("dl.package")}</Button>}
       {can("document.publish") && api.publishDocument && <Button id={focusTargets.publishDocument} type="button" onClick={() => setDialog("publish")}>{t("term.deliver")}</Button>}
     </section>
     {published && <PublicationResultPanel result={published} />}
@@ -63,7 +64,8 @@ function DeliveryView({ header, context }: { header: ReactNode; context: ActiveC
 }
 
 export function DeliveryRoute() {
+  const { t } = useT();
   const active = useActiveContext();
-  const header = <PageHeader eyebrow="Task area" title="Delivery" description="Package the build, publish a verified artifact, start a release, and review what was published." />;
+  const header = <PageHeader eyebrow={t("dl.eyebrow")} title={t("dl.title")} description={t("dl.description")} />;
   return <QueryBoundary query={active} header={header}>{context => <DeliveryView header={header} context={context} />}</QueryBoundary>;
 }
