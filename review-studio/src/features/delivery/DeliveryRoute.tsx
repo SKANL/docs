@@ -1,3 +1,4 @@
+import { focusTargets } from "@/lib/focus-targets";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -47,7 +48,7 @@ function DeliveryView({ header, context }: { header: ReactNode; context: ActiveC
     </section>
     <section aria-label="Deliver" className="flex flex-wrap items-center gap-2">
       {can("document.package") && api.packageDocument && <Button type="button" variant="outline" onClick={() => setDialog("package")}>Package</Button>}
-      {can("document.publish") && api.publishDocument && <Button id="publish-document" type="button" onClick={() => setDialog("publish")}>Publish</Button>}
+      {can("document.publish") && api.publishDocument && <Button id={focusTargets.publishDocument} type="button" onClick={() => setDialog("publish")}>Publish</Button>}
     </section>
     {published && <PublicationResultPanel result={published} />}
     {can("document.release") && api.runDocument && <ReleasePanel workspaceId={workspaceId} documentId={documentId} />}

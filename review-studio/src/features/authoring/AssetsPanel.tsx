@@ -1,3 +1,4 @@
+import { focusTargets } from "@/lib/focus-targets";
 import { useT } from "@/lib/i18n";
 import { formatApiError } from "@/api/errors";
 import { useState } from "react";
@@ -40,12 +41,12 @@ export function AssetsPanel({ documentId }: { documentId: string }) {
       <Button type="submit" variant="outline">Apply filter</Button>
     </form>}
     {!(can("asset.list") && api.listAssets) ? <Unavailable>Listing assets is not available on this server.</Unavailable>
-      : <QueryBoundary query={list}>{({ items }) => items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} action={{ label: t("empty.addAsset"), onClick: focusById("asset-file") }} />
+      : <QueryBoundary query={list}>{({ items }) => items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} action={{ label: t("empty.addAsset"), onClick: focusById(focusTargets.assetFile) }} />
       : <Table aria-label="Document assets"><TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="w-24"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
         <TableBody>{items.map(item => <TableRow key={item.name}><TableCell>{item.name}</TableCell>
           <TableCell>{can("asset.rm") && <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${item.name}`} onClick={() => { remove.reset(); setRemoving(item.name); }}>Remove</Button>}</TableCell></TableRow>)}</TableBody></Table>}</QueryBoundary>}
     {can("asset.add") && api.addAsset ? <form className="grid max-w-xl gap-3" onSubmit={event => { event.preventDefault(); if (file) add.mutate(undefined); }}>
-      <div className="grid gap-1"><Label htmlFor="asset-file">Asset file</Label><Input id="asset-file" type="file" onChange={event => setFile(event.target.files?.[0] ?? null)} /></div>
+      <div className="grid gap-1"><Label htmlFor={focusTargets.assetFile}>Asset file</Label><Input id={focusTargets.assetFile} type="file" onChange={event => setFile(event.target.files?.[0] ?? null)} /></div>
       <div className="grid gap-1"><Label htmlFor="asset-name">Asset name (optional)</Label><Input id="asset-name" value={name} onChange={event => setName(event.target.value)} /></div>
       <Button type="submit" className="w-fit" disabled={!file || add.isPending}>{add.isPending ? "Adding…" : "Add asset"}</Button>
     </form> : <Unavailable>Adding assets is not available on this server.</Unavailable>}

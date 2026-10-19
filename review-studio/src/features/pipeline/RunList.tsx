@@ -1,3 +1,4 @@
+import { focusTargets } from "@/lib/focus-targets";
 import { useT } from "@/lib/i18n";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -54,7 +55,7 @@ export function RunList({ workspaceId }: { workspaceId: string | null }) {
         <div className="grid gap-1"><Label htmlFor="run-document">Document</Label>
           <Input id="run-document" className="w-56" value={documentText} onChange={event => setDocumentText(event.target.value)} /></div>
       </div>
-      <QueryBoundary query={runs}>{() => items.length === 0 ? <EmptyState title="No runs yet" description="Runs appear here once you launch the pipeline for a document." action={{ label: t("empty.planRun"), onClick: focusById("run-pipeline") }} />
+      <QueryBoundary query={runs}>{() => items.length === 0 ? <EmptyState title="No runs yet" description="Runs appear here once you launch the pipeline for a document." action={{ label: t("empty.planRun"), onClick: focusById(focusTargets.runPipeline) }} />
         : <>
           <Table aria-label="Runs">
             <TableHeader><TableRow><TableHead>Run</TableHead><TableHead>Document</TableHead><TableHead>Status</TableHead><TableHead>Format</TableHead><TableHead>Started</TableHead></TableRow></TableHeader>
