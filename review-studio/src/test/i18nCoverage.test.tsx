@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { ApiError } from "../api/errors";
+import { makeApi } from "./authoringHarness";
 import type { ReviewApi } from "../api/models";
 import { en, es } from "../lib/i18n/messages";
 
@@ -53,5 +54,20 @@ describe("language switch", () => {
     const alert = await within(dialog).findByRole("alert");
     expect(alert.textContent).toContain(en["error.conflict"]);
     expect(alert.querySelector("details")!.textContent).toContain("UNIQUE constraint failed");
+  });
+});
+
+describe("authoring screen", () => {
+  it("renders tabs, sources and sections in Spanish", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    localStorage.setItem("review-studio.mode", "write");
+    window.location.hash = "#/authoring/sources";
+    render(<App api={makeApi({ ingestSources: async () => ({}) } as never)} />);
+    expect(await screen.findByLabelText("Archivos de fuentes", {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Clasificación" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("tab", { name: "Secciones" }));
+    expect(await screen.findByRole("button", { name: "Guardar sección" })).toBeTruthy();
+    expect(screen.getByLabelText("Contenido de la sección")).toBeTruthy();
+    expect(screen.queryByText("Section body")).toBeNull();
   });
 });

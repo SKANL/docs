@@ -18,7 +18,7 @@ describe("Sources import", () => {
     openAt("/authoring/sources", toolsApi({ importSourceFile, ingestSources: async () => ({}) }));
     await userEvent.upload(await screen.findByLabelText("Source files"), [md("ok.md"), md("bad.md")]);
     await userEvent.click(screen.getByRole("button", { name: "Import without converting" }));
-    expect(await screen.findByText(/ok.md/)).toBeTruthy();
+    expect(await screen.findByText("documents/doc-1/imports/ok.md")).toBeTruthy();
     expect((await screen.findByRole("alert")).textContent).toContain("bad.md");
   });
 
