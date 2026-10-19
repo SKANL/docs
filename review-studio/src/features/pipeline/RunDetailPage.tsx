@@ -76,7 +76,7 @@ export function RunDetailPage() {
         <p>Final status: <b>{status}</b></p>
         <Button asChild variant="link" className="h-auto w-fit p-0"><Link to={`/review/evidence/${encodeURIComponent(runId)}`}>Review evidence for this run</Link></Button>
       </section>}
-      {retry.isError && <ErrorState title="Could not retry the run" message={formatApiError(retry.error)} onRetry={() => retry.mutate(undefined)} retrying={retry.isPending} />}
+      {retry.isError && <ErrorState title="Could not retry the run" error={retry.error} onRetry={() => retry.mutate(undefined)} retrying={retry.isPending} />}
       <ConfirmActionDialog open={confirmCancel} onOpenChange={setConfirmCancel} title="Cancel this run?" description="The run stops at its next safe point. Work already written to the workspace stays."
         confirmLabel="Cancel this run" pending={cancel.isPending} error={cancel.isError ? formatApiError(cancel.error) : undefined} onConfirm={() => cancel.mutate(undefined)} />
     </div>;

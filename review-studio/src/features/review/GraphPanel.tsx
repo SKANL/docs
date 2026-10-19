@@ -1,5 +1,4 @@
 import { useT } from "@/lib/i18n";
-import { formatApiError } from "@/api/errors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -128,7 +127,7 @@ export function GraphPanel({ workspaceId }: { workspaceId: string | null }) {
         <Button type="button" disabled={run.isPending} onClick={start}>Run query</Button>
       </div>
       {missing && <p className="text-sm text-destructive" role="alert">{missing}</p>}
-      {run.isError && <ErrorState title="Could not run the query" message={formatApiError(run.error)} onRetry={start} retrying={run.isPending} />}
+      {run.isError && <ErrorState title="Could not run the query" error={run.error} onRetry={start} retrying={run.isPending} />}
       {run.data && <QueryResults result={run.data} scope={scope} />}
     </section>
   </div>;

@@ -1,4 +1,3 @@
-import { formatApiError } from "@/api/errors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -28,7 +27,7 @@ function IssueCodeLookup() {
       <div className="grid gap-1"><Label htmlFor="issue-code">Issue code</Label><Input id="issue-code" autoComplete="off" placeholder="e.g. QA.001" value={code} onChange={event => setCode(event.target.value)} /></div>
       <Button type="submit" variant="outline" disabled={!code.trim() || explain.isPending}>Explain code</Button>
     </form>
-    {explain.isError && <ErrorState title="Could not explain the code" message={formatApiError(explain.error)} />}
+    {explain.isError && <ErrorState title="Could not explain the code" error={explain.error} />}
     {explain.data && <section aria-label="Issue code explanation" className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
       <p className="font-medium"><code>{explain.data.code}</code> <span className="text-muted-foreground">{explain.data.family}{explain.data.family_description ? ` · ${explain.data.family_description}` : ""}</span></p>
       <p><span className="text-muted-foreground">Meaning</span> {explain.data.meaning}</p>

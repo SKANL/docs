@@ -37,7 +37,7 @@ export function WorkspaceSection({ workspaces, loading, onNotice }: Props) {
 
   return <section className={sectionClass} aria-labelledby="workspace-heading">
     <div className="flex items-center justify-between gap-4"><div><p className={kickerClass}>Operating context</p><h2 id="workspace-heading" className="text-xl font-semibold">Workspace</h2></div>{selected && <span className="text-sm text-muted-foreground">{status.data?.active ? "Active on service" : "Selected on this device"}</span>}</div>
-    {select.isError && <ErrorState message={formatApiError(select.error)} />}
+    {select.isError && <ErrorState error={select.error} />}
     {workspaces.length > 0 ? <>
       <WorkspaceSwitcher workspaces={workspaces} selectedId={selected?.id ?? ""} busy={busy} canCreate={Boolean(api.createWorkspace)} canSelect={Boolean(api.selectWorkspace)} onSelect={id => { if (id !== selected?.id) select.mutate(id); }} onCreate={() => setForm("create")} />
       {selected && <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="grid min-w-0 gap-1"><span className="text-xs font-medium text-muted-foreground">Storage location</span><code className="text-sm break-all text-muted-foreground">{selected.root}</code></div><div className="flex flex-wrap gap-1.5 sm:justify-end">
