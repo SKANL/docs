@@ -29,7 +29,7 @@ export function PublishDialog({ open, workspaceId, documentId, onOpenChange, onP
   const [policy, setPolicy] = useState<RunPolicy>("release");
   const [format, setFormat] = useState(SERVER_DEFAULT);
   const publish = useAction((input: PublishInput) => api.publishDocument!(documentId, input), {
-    success: result => `Published ${result.destination}.`,
+    success: result => t("dl.publishedToast", { destination: result.destination }),
     invalidate: [deliveryKeys.publications(workspaceId)],
     onDone: result => { onOpenChange(false); onPublished(result); },
   });
@@ -41,39 +41,39 @@ export function PublishDialog({ open, workspaceId, documentId, onOpenChange, onP
   return <Dialog open={open} onOpenChange={next => { if (!publish.isPending) onOpenChange(next); }}>
     <DialogContent showCloseButton={false} aria-describedby="publish-description">
       <DialogHeader><DialogTitle>{t("term.deliver")}</DialogTitle>
-        <DialogDescription id="publish-description">Copies the verified build output to a destination inside the document&apos;s release folder. The server decides whether the policy allows it.</DialogDescription></DialogHeader>
+        <DialogDescription id="publish-description">{t("dl.pub.body")}</DialogDescription></DialogHeader>
       {step === "form" ? <form onSubmit={review} className="grid gap-4">
-        <div className="grid gap-2"><Label htmlFor="publish-destination">Destination</Label>
+        <div className="grid gap-2"><Label htmlFor="publish-destination">{t("dl.pub.destination")}</Label>
           <Input id="publish-destination" autoComplete="off" required placeholder="final/report.html" value={destination} onChange={event => setDestination(event.target.value)} />
-          <p className="text-xs text-muted-foreground">Relative to the release folder. Absolute paths and &quot;..&quot; are refused by the server.</p></div>
+          <p className="text-xs text-muted-foreground">{t("dl.pub.hint")}</p></div>
         <div className="flex flex-wrap gap-4">
-          <div className="grid gap-2"><Label htmlFor="publish-policy">Policy</Label>
+          <div className="grid gap-2"><Label htmlFor="publish-policy">{t("dl.policy")}</Label>
             <Select value={policy} onValueChange={value => setPolicy(value as RunPolicy)}>
-              <SelectTrigger id="publish-policy" aria-label="Policy" className="w-36"><SelectValue /></SelectTrigger>
-              <SelectContent>{policies.map(value => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent>
+              <SelectTrigger id="publish-policy" aria-label={t("dl.policy")} className="w-36"><SelectValue /></SelectTrigger>
+              <SelectContent>{policies.map(value => <SelectItem key={value} value={value}>{t(`pl.policy.${value}`)}</SelectItem>)}</SelectContent>
             </Select></div>
-          <div className="grid gap-2"><Label htmlFor="publish-format">Format</Label>
+          <div className="grid gap-2"><Label htmlFor="publish-format">{t("dl.format")}</Label>
             <Select value={format} onValueChange={setFormat}>
-              <SelectTrigger id="publish-format" aria-label="Format" className="w-36"><SelectValue /></SelectTrigger>
-              <SelectContent>{formats.map(value => <SelectItem key={value} value={value}>{value === SERVER_DEFAULT ? "server default" : value}</SelectItem>)}</SelectContent>
+              <SelectTrigger id="publish-format" aria-label={t("dl.format")} className="w-36"><SelectValue /></SelectTrigger>
+              <SelectContent>{formats.map(value => <SelectItem key={value} value={value}>{value === SERVER_DEFAULT ? t("dl.pub.serverDefault") : value}</SelectItem>)}</SelectContent>
             </Select></div>
         </div>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" disabled={!request.destination}>Review publish</Button>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+          <Button type="submit" disabled={!request.destination}>{t("dl.pub.review")}</Button>
         </DialogFooter>
       </form> : <div className="grid gap-4">
-        <dl aria-label="Publish summary" className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
-          <dt className="text-muted-foreground">Document</dt><dd>{documentId}</dd>
-          <dt className="text-muted-foreground">Destination</dt><dd className="break-all">{request.destination}</dd>
-          <dt className="text-muted-foreground">Policy</dt><dd>{policy}</dd>
-          <dt className="text-muted-foreground">Format</dt><dd>{format === SERVER_DEFAULT ? "server default" : format}</dd>
+        <dl aria-label={t("dl.pub.summary")} className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
+          <dt className="text-muted-foreground">{t("dl.pub.document")}</dt><dd>{documentId}</dd>
+          <dt className="text-muted-foreground">{t("dl.pub.destination")}</dt><dd className="break-all">{request.destination}</dd>
+          <dt className="text-muted-foreground">{t("dl.policy")}</dt><dd>{t(`pl.policy.${policy}`)}</dd>
+          <dt className="text-muted-foreground">{t("dl.format")}</dt><dd>{format === SERVER_DEFAULT ? t("dl.pub.serverDefault") : format}</dd>
         </dl>
-        <p className="text-sm text-muted-foreground">Nothing is published until the server confirms it. If the policy denies this, the reason appears here.</p>
-        <ActionError action={publish} what="publish" />
+        <p className="text-sm text-muted-foreground">{t("dl.pub.notice")}</p>
+        <ActionError action={publish} what={t("act.publish")} />
         <DialogFooter>
-          <Button type="button" variant="ghost" disabled={publish.isPending} onClick={() => { publish.reset(); setStep("form"); }}>Back</Button>
-          <Button type="button" disabled={publish.isPending} onClick={() => publish.mutate(request)}>{publish.isPending ? "Publishing…" : "Confirm and publish"}</Button>
+          <Button type="button" variant="ghost" disabled={publish.isPending} onClick={() => { publish.reset(); setStep("form"); }}>{t("dl.pub.back")}</Button>
+          <Button type="button" disabled={publish.isPending} onClick={() => publish.mutate(request)}>{publish.isPending ? t("dl.pub.publishing") : t("dl.pub.confirm")}</Button>
         </DialogFooter>
       </div>}
     </DialogContent>
