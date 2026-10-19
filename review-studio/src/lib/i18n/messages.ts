@@ -1,6 +1,7 @@
 import { capabilities } from "./messages.capabilities";
 import { authoring } from "./messages.authoring";
 import { pipeline } from "./messages.pipeline";
+import { review } from "./messages.review";
 import { ui } from "./messages.ui";
 
 /** English is the source of truth for keys; Spanish is the default shown locale. Each area file adds a pair with the same keys. */
@@ -254,7 +255,7 @@ const baseEs: Record<keyof typeof baseEn, string> = {
   "empty.createDocument": "Crear un documento",
 };
 
-export const en = { ...baseEn, ...capabilities.en, ...ui.en, ...authoring.en, ...pipeline.en };
+export const en = { ...baseEn, ...capabilities.en, ...ui.en, ...authoring.en, ...pipeline.en, ...review.en };
 export type MessageKey = keyof typeof en;
 /** Exhaustive: a key missing in Spanish (or extra) is a compile error. */
-export const es: Record<MessageKey, string> = { ...baseEs, ...capabilities.es, ...ui.es, ...authoring.es, ...pipeline.es };
+export const es: Record<MessageKey, string> = { ...baseEs, ...capabilities.es, ...ui.es, ...authoring.es, ...pipeline.es, ...review.es };

@@ -84,3 +84,17 @@ describe("pipeline screen", () => {
     expect(screen.queryByText("Run pipeline")).toBeNull();
   }, 20_000);
 });
+
+describe("review screen", () => {
+  it("renders findings and their severity words in Spanish", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    window.location.hash = "#/review/findings";
+    const finding = { id: "f-1", severity: "high", message: "Missing citation", run_id: "r1", section: "intro", page: 3 };
+    render(<App api={area({ listFindings: async () => [finding], getCapabilities: async () => ({ groups: [{ id: "g", capabilities: [{ id: "findings.list", cli_command: null, route: "GET /v2/findings", scopes: [], surface: "web+desktop", slice: "S4", status: "available" }] }] }) })} />);
+    expect(await screen.findByLabelText("Filtrar hallazgos", {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Gravedad" })).toBeTruthy();
+    expect(screen.getByText("alta")).toBeTruthy();
+    expect(screen.getByText("sección intro · página 3")).toBeTruthy();
+    expect(screen.queryByText("section intro · page 3")).toBeNull();
+  }, 20_000);
+});

@@ -35,7 +35,7 @@ function ReviewView({ header, context }: { header: ReactNode; context: ActiveCon
   const { t } = useT();
   const { workspaceId } = context;
   if (!workspaceId) return <div className="grid gap-6">{header}
-    <EmptyState title="Select a workspace first" description="Findings, artifacts, and evidence belong to a workspace."><Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button></EmptyState></div>;
+    <EmptyState title={t("rv.selectWorkspace.title")} description={t("rv.selectWorkspace.body")}><Button asChild><Link to="/configure/workspaces">{t("rv.openWorkspaces")}</Link></Button></EmptyState></div>;
   const current = tabs.some(([name]) => name === tab) ? tab : "findings";
   return <div className="grid gap-6">
     {header}
@@ -44,7 +44,7 @@ function ReviewView({ header, context }: { header: ReactNode; context: ActiveCon
       {/* Every trigger names its panel through aria-controls, so the active panel must be a real tabpanel. */}
       <TabsContent value={current}>
         {gate[current] && !can(gate[current])
-          ? <Unavailable>{`${t(tabs.find(([name]) => name === current)![1])} is not available on this server.`}</Unavailable>
+          ? <Unavailable>{t("rv.tabUnavailable", { tab: t(tabs.find(([name]) => name === current)![1]) })}</Unavailable>
           : <>
         {current === "findings" && <FindingsPanel workspaceId={workspaceId} selectedId={id} />}
         {current === "artifacts" && <ArtifactsPanel workspaceId={workspaceId} selectedId={id} />}
@@ -61,7 +61,8 @@ function ReviewView({ header, context }: { header: ReactNode; context: ActiveCon
 
 /** `/review/:tab/:id`: the id is a finding, an artifact, or a run depending on the tab. */
 export function ReviewRoute() {
+  const { t } = useT();
   const active = useActiveContext();
-  const header = <PageHeader eyebrow="Task area" title="Review" description="Follow a failing run to its finding, previews, input evidence, and the next operation." />;
+  const header = <PageHeader eyebrow={t("rv.eyebrow")} title={t("rv.title")} description={t("rv.description")} />;
   return <QueryBoundary query={active} header={header}>{context => <ReviewView header={header} context={context} />}</QueryBoundary>;
 }

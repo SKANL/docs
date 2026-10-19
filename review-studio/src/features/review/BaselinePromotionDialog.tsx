@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, formatApiError } from "@/api/errors";
+import { ApiError } from "@/api/errors";
 import type { BaselinePromotion } from "@/api/domains/review";
 import { useApi } from "@/app/providers";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ActionError, useAction } from "@/lib/actions";
 import { Digest } from "@/components/shared/Facts";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { useT } from "@/lib/i18n";
 import { reviewKeys } from "./data";
 
 /**
@@ -15,11 +17,12 @@ import { reviewKeys } from "./data";
  * explicit second confirmation: the first attempt never sends `update`.
  */
 export function BaselinePromotionDialog({ workspaceId, runId, onClose }: { workspaceId: string | null; runId: string; onClose(): void }) {
+  const { t } = useT();
   const api = useApi();
   const [name, setName] = useState(runId);
   const [done, setDone] = useState<BaselinePromotion | null>(null);
   const promote = useAction((update: boolean) => api.promoteBaseline!({ runId, name: name.trim() || undefined, update }), {
-    success: result => `Baseline ${result.name} saved.`,
+    success: result => t("rv.promo.done", { name: result.name }),
     invalidate: [reviewKeys.baselines(workspaceId)],
     onDone: setDone,
   });
@@ -28,25 +31,25 @@ export function BaselinePromotionDialog({ workspaceId, runId, onClose }: { works
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Promote to baseline</DialogTitle>
-        <DialogDescription>Run {runId}&apos;s rendered pages become the approved reference that later runs are compared against.</DialogDescription>
+        <DialogTitle>{t("rv.promo.title")}</DialogTitle>
+        <DialogDescription>{t("rv.promo.body", { id: runId })}</DialogDescription>
       </DialogHeader>
       {done ? <div className="grid gap-2 text-sm" role="status">
-        <p>{done.replaced ? "Replaced the existing baseline at" : "Saved a new baseline at"} <b>{done.destination}</b>.</p>
+        <p>{done.replaced ? t("rv.promo.replaced") : t("rv.promo.saved")} <b>{done.destination}</b>.</p>
         <ul className="grid gap-1">{done.pages.map(page => <li key={page.name} className="flex flex-wrap gap-2"><span>{page.name}</span><Digest value={page.sha256} /></li>)}</ul>
       </div> : <div className="grid gap-4">
-        <div className="grid gap-1"><Label htmlFor="baseline-name">Baseline name</Label>
+        <div className="grid gap-1"><Label htmlFor="baseline-name">{t("rv.promo.name")}</Label>
           <Input id="baseline-name" value={name} disabled={busy} onChange={event => { setName(event.target.value); promote.reset(); }} /></div>
         {exists && <div className="grid gap-2 rounded-md border border-destructive/40 p-3 text-sm" role="alert">
-          <p>{formatApiError(promote.error)}</p>
-          <p>Replacing overwrites the approved pages of this baseline. Confirm only if the new render is the correct reference.</p>
-          <Button type="button" variant="destructive" className="w-fit" disabled={busy} onClick={() => promote.mutate(true)}>Replace existing baseline</Button>
+          <ErrorState error={promote.error} />
+          <p>{t("rv.promo.replaceWarning")}</p>
+          <Button type="button" variant="destructive" className="w-fit" disabled={busy} onClick={() => promote.mutate(true)}>{t("rv.promo.replace")}</Button>
         </div>}
-        {!exists && <ActionError action={promote} what="promote the baseline" />}
+        {!exists && <ActionError action={promote} what={t("act.promoteBaseline")} />}
       </div>}
       <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>{done ? "Close" : "Cancel"}</Button>
-        {!done && <Button type="button" disabled={busy || exists} onClick={() => promote.mutate(false)}>Promote baseline</Button>}
+        <Button type="button" variant="outline" onClick={onClose}>{done ? t("common.close") : t("common.cancel")}</Button>
+        {!done && <Button type="button" disabled={busy || exists} onClick={() => promote.mutate(false)}>{t("rv.promo.promote")}</Button>}
       </DialogFooter>
     </DialogContent>
   </Dialog>;
