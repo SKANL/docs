@@ -217,16 +217,16 @@ def test_batches_all_pending_pdfs_in_one_convert_call(tmp_path: Path, monkeypatc
     out_dir.mkdir()
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(shutil.which("java")))
 
-    import docs.infrastructure.ingest.opendataloader_pdf_adapter as mod
+    import opendataloader_pdf as mod_pkg  # the adapter imports it lazily, at call time
 
-    real_convert = mod.opendataloader_pdf.convert
+    real_convert = mod_pkg.convert
     calls: list[list[str]] = []
 
     def _spy_convert(input_path, **kwargs):
         calls.append(list(input_path) if isinstance(input_path, list) else [input_path])
         return real_convert(input_path, **kwargs)
 
-    monkeypatch.setattr(mod.opendataloader_pdf, "convert", _spy_convert)
+    monkeypatch.setattr(mod_pkg, "convert", _spy_convert)
 
     output_a = adapter.ingest(src_a, out_dir, "pdf")
     output_b = adapter.ingest(src_b, out_dir, "pdf")
@@ -289,16 +289,16 @@ def test_requests_external_raster_image_extraction(tmp_path: Path, monkeypatch):
     out_dir.mkdir()
     adapter = OpendataloaderPdfAdapter(_FakeToolResolver(shutil.which("java")))
 
-    import docs.infrastructure.ingest.opendataloader_pdf_adapter as mod
+    import opendataloader_pdf as mod_pkg  # the adapter imports it lazily, at call time
 
-    real_convert = mod.opendataloader_pdf.convert
+    real_convert = mod_pkg.convert
     calls: list[dict[str, Any]] = []
 
     def _spy_convert(input_path, **kwargs):
         calls.append(kwargs)
         return real_convert(input_path, **kwargs)
 
-    monkeypatch.setattr(mod.opendataloader_pdf, "convert", _spy_convert)
+    monkeypatch.setattr(mod_pkg, "convert", _spy_convert)
 
     adapter.ingest(src, out_dir, "pdf")
 

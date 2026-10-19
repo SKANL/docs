@@ -8,8 +8,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import opendataloader_pdf
-
 from docs.domain.ingest_naming import ingested_output_path, sha256_hex
 from docs.domain.ports.tool_resolver_port import ToolResolverPort
 from docs.infrastructure.ingest.atomic_ingest_write import atomic_finalize, scratch_dir
@@ -100,8 +98,12 @@ class OpendataloaderPdfAdapter:
             for candidate, staged in staged_by_candidate.items():
                 shutil.copyfile(candidate, staged)
 
-            batch_error: subprocess.CalledProcessError | None = None
+            batch_error: Exception | None = None
             try:
+                # Lazy: a missing library costs this converter (the text-layer
+                # fallback below still runs), not the whole CLI; doctor reports it.
+                import opendataloader_pdf
+
                 with java_on_path(java):
                     opendataloader_pdf.convert(
                         input_path=[str(staged) for staged in staged_by_candidate.values()],
@@ -124,7 +126,7 @@ class OpendataloaderPdfAdapter:
                         hybrid="off",
                         quiet=True,
                     )
-            except subprocess.CalledProcessError as exc:
+            except (subprocess.CalledProcessError, ImportError) as exc:
                 batch_error = exc
 
             for candidate in candidates:
@@ -144,7 +146,7 @@ class OpendataloaderPdfAdapter:
                         atomic_finalize(tmp_media, final_media_dir)
                     self._results[candidate] = atomic_finalize(tmp_output, final)
                 else:
-                    cause = (batch_error.stdout or str(batch_error)) if batch_error else (
+                    cause = (getattr(batch_error, "stdout", None) or str(batch_error)) if batch_error else (
                         "opendataloader-pdf no generó salida para este archivo."
                     )
                     self._results[candidate] = RuntimeError(

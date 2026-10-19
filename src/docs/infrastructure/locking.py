@@ -32,7 +32,9 @@ def owned_directory_lock(path: Path, *, timeout: float = 30.0, stale_after: floa
                 encoding="utf-8",
             )
             break
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
+            # Windows reports a lock directory that a releasing owner is still
+            # deleting as access denied, not as existing: both mean "contended".
             if _reclaim_stale(path, stale_after=stale_after):
                 continue
             if time.monotonic() >= deadline:

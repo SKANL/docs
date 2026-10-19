@@ -9,6 +9,8 @@ style (`application/corrections.py`), reuses `ReviewService.review_section`/
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +40,11 @@ class RevisionService:
         review_service: ReviewService,
         context_service: ContextService,
         evidence_repository: EvidenceRepository,
+        provenance_lock: Callable[[Path], AbstractContextManager[None]] | None = None,
     ) -> None:
+        # The composition root injects the inter-process lock; the default
+        # (no lock) keeps single-writer callers and unit tests infrastructure-free.
+        self._provenance_lock = provenance_lock or (lambda _directory: nullcontext())
         self.section_repository = section_repository
         self.review_service = review_service
         self.context_service = context_service
@@ -100,9 +106,8 @@ class RevisionService:
         ]
 
         before_hash = self.evidence_repository.hash_text(before)
-        diff_path = self._write_diff(config, f"{section.order:03d}-{section.id}", diff)
-        self._append_log_entry(
-            config, request=request, target_id=section.id, diff_path=diff_path,
+        diff_path = self._record(
+            config, f"{section.order:03d}-{section.id}", diff, request=request, target_id=section.id,
             before_hash=before_hash, after_hash=after_hash, ripple=[], ts=now, issues=issues,
         )
 
@@ -158,9 +163,8 @@ class RevisionService:
 
         before_hash = self.evidence_repository.hash_text(before)
         after_hash = self.evidence_repository.hash_text(after)
-        diff_path = self._write_diff(config, f"topic-{topic_id}", diff)
-        self._append_log_entry(
-            config, request=request, target_id=topic_id, diff_path=diff_path,
+        diff_path = self._record(
+            config, f"topic-{topic_id}", diff, request=request, target_id=topic_id,
             before_hash=before_hash, after_hash=after_hash, ripple=dependent_sections, ts=now, issues=issues,
         )
 
@@ -184,18 +188,27 @@ class RevisionService:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def _write_diff(self, config: dict[str, Any], prefix: str, diff: str) -> str:
+    def _record(self, config: dict[str, Any], prefix: str, diff: str, **entry: Any) -> str:
+        """Allocate the diff number and append the log entry as one critical
+        section: the glob-count numbering and the log read-modify-write would
+        otherwise race (lost entries, overwritten diffs)."""
         revisions_dir = self._revisions_dir(config)
+        with self._provenance_lock(revisions_dir):
+            diff_path = self._write_diff(revisions_dir, prefix, diff)
+            self._append_log_entry(revisions_dir, diff_path=diff_path, **entry)
+        return diff_path
+
+    def _write_diff(self, revisions_dir: Path, prefix: str, diff: str) -> str:
         n = len(list(revisions_dir.glob(f"{prefix}.*.diff"))) + 1
         path = revisions_dir / f"{prefix}.{n}.diff"
-        path.write_text(diff, encoding="utf-8")
+        self.section_repository.write_raw_text(path, diff)
         return str(path)
 
     def _append_log_entry(
-        self, config: dict[str, Any], *, request: str, target_id: str, diff_path: str,
+        self, revisions_dir: Path, *, request: str, target_id: str, diff_path: str,
         before_hash: str, after_hash: str, ripple: list[str], ts: str, issues: list[Issue],
     ) -> None:
-        log_path = self._revisions_dir(config) / "revision-log.json"
+        log_path = revisions_dir / "revision-log.json"
         state: dict[str, Any] = (
             json.loads(log_path.read_text(encoding="utf-8"))
             if log_path.exists()
@@ -214,6 +227,5 @@ class RevisionService:
         # Entries had no id; the content hash gives revisions a stable graph key.
         entry["id"] = sha256_content(entry)
         state.setdefault("entries", []).append(entry)
-        log_path.write_text(
-            pretty_json(state), encoding="utf-8"
-        )
+        # The raw writer is the atomic seam (temp + rename), so the log is never half-written.
+        self.section_repository.write_raw_text(log_path, pretty_json(state))

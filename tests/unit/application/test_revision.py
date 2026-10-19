@@ -291,3 +291,52 @@ def test_resolve_target_classifies_section_and_topic_ids(tmp_path, service):
     assert service.resolve_target(template, "alumno") == "topic"
     with pytest.raises(ValueError, match="revise"):
         service.resolve_target(template, "no-existe")
+
+
+# ── Hardening H8: provenance is atomic and collision-safe ───────────────
+
+def test_concurrent_revisions_neither_lose_log_entries_nor_overwrite_a_diff(
+    tmp_path, section_repo, spy_review, context_service
+):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from docs.infrastructure.locking import owned_directory_lock
+
+    service = RevisionService(
+        section_repo, spy_review, context_service, JsonEvidenceRepository(),
+        provenance_lock=lambda directory: owned_directory_lock(directory / ".revision.lock"),
+    )
+    config = _config(tmp_path)
+
+    # The provenance step is the unit under test; section writes race on their own file.
+    def record(i: int) -> str:
+        return service._record(
+            config, "001-introduccion", f"diff {i}", request=f"cambio {i}", target_id="introduccion",
+            before_hash="a", after_hash="b", ripple=[], ts=f"t{i}", issues=[],
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        diff_paths = list(pool.map(record, range(8)))
+
+    revisions = Path(config["paths"]["sections_dir"]) / "_revisions"
+    state = json.loads((revisions / "revision-log.json").read_text(encoding="utf-8"))
+    assert len(state["entries"]) == 8
+    assert len(set(diff_paths)) == 8
+    assert len(list(revisions.glob("*.diff"))) == 8
+
+
+def test_interrupted_log_write_keeps_the_previous_log_intact(tmp_path, section_repo, service, monkeypatch):
+    _write_section(section_repo, 1, "introduccion", "V1")
+    config = _config(tmp_path)
+    service.revise("alpha", _template(), config, "introduccion", "V2", "uno", normative=_NORMATIVE, now="t1")
+    log_path = Path(config["paths"]["sections_dir"]) / "_revisions" / "revision-log.json"
+    before = log_path.read_text(encoding="utf-8")
+
+    def interrupted(path, text):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(section_repo, "write_raw_text", interrupted)
+    with pytest.raises(OSError):
+        service.revise("alpha", _template(), config, "introduccion", "V3", "dos", normative=_NORMATIVE, now="t2")
+
+    assert log_path.read_text(encoding="utf-8") == before
