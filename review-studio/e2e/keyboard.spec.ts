@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("keyboard only: skip link, command palette, and focus return", async ({ page }) => {
   await page.goto("/#/");
@@ -20,7 +20,7 @@ test("keyboard only: skip link, command palette, and focus return", async ({ pag
 
   // Typing narrows the list and Enter navigates.
   await page.keyboard.press("Control+K");
-  await page.keyboard.type("Authoring");
+  await page.keyboard.type("Write");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#\/authoring/);
   await expect(page.getByRole("heading", { name: "Authoring" })).toBeVisible();
@@ -53,6 +53,7 @@ test("keyboard only: create a document, cancel a delete with Esc, then confirm i
   await page.keyboard.press("Enter");
   const dialog = page.getByRole("dialog", { name: "Create document" });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Document ID" })).toBeFocused(); // typing before focus lands drops characters
   await page.keyboard.type("kbd-journey");
   await page.keyboard.press("Tab");
   await page.keyboard.type("Keyboard journey");

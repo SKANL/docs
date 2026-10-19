@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 /** Diagnostics act on the current document; select the seeded one through the UI when it is not already current. */
 async function ensureCurrentDocument(page: Page) {
