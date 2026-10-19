@@ -56,10 +56,10 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] H3 (D) [59381a59] API fails closed: a registered route with no scope entry is denied;
       add a test that introspects every registered route and asserts a scope.
 - [x] H4 (D) [b86c7272] corrections: persist each applied id as it is applied, atomically.
-- [ ] H5 (D) Sidecar: validate Host header (loopback names only); align body
+- [x] H5 (D) [ab63ca1f] Sidecar: validate Host header (loopback names only); align body
       limits (128 MB vs 120 MB); replace hardcoded cursor HMAC secret with a
       per-install secret.
-- [ ] H6 (D) java_on_path stops mutating os.environ (pass env to the subprocess).
+- [x] H6 (D) [dc03af4a] java_on_path stops mutating os.environ (pass env to the subprocess).
 - [ ] H8 (D) application/revision.py (~L179) has the same read-modify-write
       ordering as corrections (revision-log.json append + .diff numbering by
       glob count, unlocked, non-atomic): make it atomic and collision-safe.
@@ -76,7 +76,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       owner.json open and orphaned the lock (26/30 contended trials). Release
       now retries; test_locking.py added (RED observed). This was the
       "unexplained intermittent failure" (concurrent provenance test).
-- [ ] H12 (D) `_reclaim_stale` uses `os.kill(pid, 0)`, which on Windows reports
+- [x] H12 (D) [80838dfc] `_reclaim_stale` uses `os.kill(pid, 0)`, which on Windows reports
       an exited pid as alive, so a crashed owner's lock is never reclaimed.
       Use a real liveness check (OpenProcess/psutil-free) with a test.
 - [ ] H7 (D) composition: hard imports (opendataloader_pdf, filetype, pypdfium2)
@@ -177,5 +177,11 @@ as the lock-release bug above (H11), fixed it, and observed: test_locking +
 test_provenance 23 passed, ruff clean, mypy clean, tests/architecture 131
 passed, API+parity 471 passed (writer). Full suite NOT run.
 
+Batch 3 (H12, H6, H5): writer complete; tests/architecture + 6 touched files
+225 passed, ruff and mypy clean. Native review for 06d77516..ab63ca1f: tier high
+(20 files, 574 lines), user DECLINED this candidate (no receipt). Reviewed
+boundary stays 06d77516 conceptually; next assess uses base ab63ca1f.
+Known limit: java_on_path swaps a module-level subprocess wrapper (not thread-safe).
+
 ## Next step
-Native review of 06d77516..HEAD (assess), then H12, H5, H6, H8, H7, then C1-C4 and U1-U12.
+H8, H7, then C1-C4 and U1-U12.

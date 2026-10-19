@@ -81,6 +81,9 @@ class _ClosingIterator:
             close()
 
 
+_LOOPBACK_HOST_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 @dataclass(frozen=True)
 class TransportConfig:
     """Deployment-only settings; runtime routing and authentication stay in the app."""
@@ -94,6 +97,9 @@ class TransportConfig:
     graceful_shutdown_timeout: float = 10.0
     allow_public_bind: bool = False
     mode: str = "production"
+    # Local sidecar: refuse any Host header that is not a loopback name on the bound port
+    # (DNS-rebinding defence). Off for reverse-proxied deployments.
+    loopback_hosts_only: bool = False
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, Any]) -> TransportConfig:
@@ -163,7 +169,9 @@ class ApiTransport:
         application_response: _ApplicationResponse | None = None
         response: Response | None = None
         try:
-            if origin and origin.rstrip("/") not in self.config.cors_origins:
+            if self.config.loopback_hosts_only and not self._host_allowed(environ):
+                response = Response.error("host_denied", "Host is not allowed", 403)
+            elif origin and origin.rstrip("/") not in self.config.cors_origins:
                 response = Response.error("cors_denied", "Origin is not allowed", 403)
             elif method == "OPTIONS" and origin:
                 response = Response(204, b"", {})
@@ -217,6 +225,19 @@ class ApiTransport:
             raise
         self._log_access(method, route, status, request_id, started)
         return body
+
+    def _host_allowed(self, environ: Mapping[str, Any]) -> bool:
+        host = self._header(environ, "host")
+        if not host:
+            return False
+        # SERVER_PORT comes from the bound socket, so it is the real port even for port 0.
+        bound_port = str(environ.get("SERVER_PORT") or self.config.port)
+        try:
+            parsed = urlsplit(f"//{host}")
+            name, port = parsed.hostname, parsed.port
+        except ValueError:
+            return False
+        return name in _LOOPBACK_HOST_NAMES and str(port if port is not None else 80) == bound_port
 
     def _dispatch_application(
         self, environ: Mapping[str, Any], path: str, request_id: str

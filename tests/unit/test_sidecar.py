@@ -875,3 +875,43 @@ def test_sidecar_serves_evidence_baseline_and_inspect_from_real_workspace_stores
         assert call("GET", "/v2/baselines")[0] == 200  # the PNG directory does not break the JSON listing
     finally:
         health_app.shutdown()
+
+
+def test_sidecar_transport_shares_the_configured_body_limit_and_checks_hosts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import types
+
+    import docs.sidecar.app as sidecar_app
+
+    seen = {}
+
+    def capture(application, transport):
+        seen["transport"] = transport
+        return types.SimpleNamespace()
+
+    monkeypatch.setattr(sidecar_app, "create_server", capture)
+    sidecar_app.build_server(SidecarConfig(port=0, workspace=tmp_path, max_body_bytes=777))
+
+    assert seen["transport"].max_request_body == 777
+    assert seen["transport"].loopback_hosts_only is True
+
+
+def test_sidecar_rejects_a_foreign_host_header(tmp_path: Path) -> None:
+    import http.client
+
+    server = build_server(SidecarConfig(host="127.0.0.1", port=0, workspace=tmp_path))
+    thread = threading.Thread(target=run, args=(server,), daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        for host, status in ((f"127.0.0.1:{port}", 200), ("rebind.evil.test", 403)):
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            connection.putrequest("GET", "/health", skip_host=True)
+            connection.putheader("Host", host)
+            connection.endheaders()
+            assert connection.getresponse().status == status
+            connection.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)

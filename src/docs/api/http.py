@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import logging
+import secrets
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -139,16 +140,27 @@ def error_response(error: Exception) -> Response:
 
 _log = logging.getLogger("docs.api")
 
-_CURSOR_SECRET = b"docs-api-cursor-v1"
+# Per-process random by default; a host with durable state (the sidecar) installs a persistent
+# per-install secret via `set_cursor_secret`. Cursors signed under any other secret are invalid.
+_cursor_secret = secrets.token_bytes(32)
 
 
-def _cursor(payload: dict[str, Any], secret: bytes = _CURSOR_SECRET) -> str:
+def set_cursor_secret(secret: bytes) -> None:
+    global _cursor_secret  # noqa: PLW0603 - one process-wide signing key by design
+    if len(secret) < 32:
+        raise ValueError("cursor secret must be at least 32 bytes")
+    _cursor_secret = secret
+
+
+def _cursor(payload: dict[str, Any]) -> str:
+    secret = _cursor_secret
     encoded = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()).decode().rstrip("=")
     signature = hmac.new(secret, encoded.encode(), hashlib.sha256).digest()
     return f"{encoded}.{base64.urlsafe_b64encode(signature).decode().rstrip('=')}"
 
 
-def _decode(cursor: str, secret: bytes = _CURSOR_SECRET) -> dict[str, Any]:
+def _decode(cursor: str) -> dict[str, Any]:
+    secret = _cursor_secret
     try:
         encoded, supplied = cursor.split(".", 1)
         expected = hmac.new(secret, encoded.encode(), hashlib.sha256).digest()
