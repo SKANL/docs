@@ -2,6 +2,7 @@ import { capabilities } from "./messages.capabilities";
 import { authoring } from "./messages.authoring";
 import { delivery } from "./messages.delivery";
 import { pipeline } from "./messages.pipeline";
+import { tools } from "./messages.tools";
 import { review } from "./messages.review";
 import { ui } from "./messages.ui";
 
@@ -256,7 +257,7 @@ const baseEs: Record<keyof typeof baseEn, string> = {
   "empty.createDocument": "Crear un documento",
 };
 
-export const en = { ...baseEn, ...capabilities.en, ...ui.en, ...authoring.en, ...pipeline.en, ...review.en, ...delivery.en };
+export const en = { ...baseEn, ...capabilities.en, ...ui.en, ...authoring.en, ...pipeline.en, ...review.en, ...delivery.en, ...tools.en };
 export type MessageKey = keyof typeof en;
 /** Exhaustive: a key missing in Spanish (or extra) is a compile error. */
-export const es: Record<MessageKey, string> = { ...baseEs, ...capabilities.es, ...ui.es, ...authoring.es, ...pipeline.es, ...review.es, ...delivery.es };
+export const es: Record<MessageKey, string> = { ...baseEs, ...capabilities.es, ...ui.es, ...authoring.es, ...pipeline.es, ...review.es, ...delivery.es, ...tools.es };

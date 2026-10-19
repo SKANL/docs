@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { ApiError } from "../api/errors";
 import { makeApi } from "./authoringHarness";
+import { openAt, toolsApi } from "./toolsHarness";
 import { deliveryApi } from "./deliveryHarness";
 import { openPipeline, streamingApi } from "./pipelineHarness";
 import type { ReviewApi } from "../api/models";
@@ -109,5 +110,19 @@ describe("delivery screen", () => {
     expect(await screen.findByRole("heading", { name: "Historial de publicaciones" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Empaquetar" })).toBeTruthy();
     expect(screen.queryByText("Package")).toBeNull();
+  }, 20_000);
+});
+
+describe("configure screens", () => {
+  it("renders templates and diagnostics in Spanish", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    openAt("/configure/templates", toolsApi());
+    expect(await screen.findByRole("table", { name: "Plantillas instaladas" }, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Catálogo integrado" })).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "Secciones de configuración" })).toBeTruthy();
+    expect(screen.queryByText("Installed templates")).toBeNull();
+    cleanup();
+    openAt("/configure/diagnostics", toolsApi());
+    expect(await screen.findByRole("table", { name: "Comprobaciones de diagnóstico" }, { timeout: 5000 })).toBeTruthy();
   }, 20_000);
 });
