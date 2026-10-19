@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { formatApiError } from "@/api/errors";
 import { useActiveContext } from "@/app/active-context";
 import { useApi } from "@/app/providers";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAction } from "@/lib/actions";
+import { errorMessageKey } from "@/lib/friendly-error";
 import { useT } from "@/lib/i18n";
 import { refreshWorkspaceData, useWorkspaces, workspaceKeys } from "./data";
 
@@ -32,6 +32,6 @@ export function ContextSwitcher() {
       <SelectTrigger size="sm" aria-label={t("ctx.document")} className="w-44"><SelectValue placeholder={workspaceId ? t("ctx.noDocument") : t("ctx.choose")} /></SelectTrigger>
       <SelectContent>{docs.map(item => <SelectItem key={item.id} value={item.id}>{item.title || item.id}</SelectItem>)}</SelectContent>
     </Select>
-    {failure && <span role="alert" className="text-xs text-destructive">{t("ctx.switchFailed", { message: formatApiError(failure) })}</span>}
+    {failure && <span role="alert" className="text-xs text-destructive">{t("ctx.switchFailed", { message: t(errorMessageKey(failure)) })}</span>}
   </div>;
 }

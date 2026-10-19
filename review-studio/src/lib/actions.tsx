@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { useT } from "@/lib/i18n";
 
 type ActionOptions<V, R> = {
   /** The confirmation for a finished action; omit it for an action that needs none. */
@@ -25,8 +26,9 @@ export function useAction<V, R>(fn: (variables: V) => Promise<R>, options: Actio
   });
 }
 
-/** Structured server error with a retry that replays the last variables. */
+/** Structured server error with a retry that replays the last variables. `what` is a translated verb phrase ("save the section"). */
 export function ActionError({ action, what }: { action: UseMutationResult<any, Error, any>; what: string }) {
+  const { t } = useT();
   if (!action.isError) return null;
-  return <ErrorState title={`Could not ${what}`} error={action.error} onRetry={() => action.mutate(action.variables)} retrying={action.isPending} />;
+  return <ErrorState title={t("action.failed", { what })} error={action.error} onRetry={() => action.mutate(action.variables)} retrying={action.isPending} />;
 }

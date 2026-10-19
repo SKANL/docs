@@ -216,7 +216,7 @@ describe("workspace and document journeys", () => {
     window.location.hash = "#/configure/workspaces";
     render(<App api={makeApi({ getCurrentDocument: async () => ({ current_document_id: document.id, document }), getDocumentStatus })} />);
 
-    const retry = await screen.findByRole("button", { name: "Retry document status" });
+    const retry = await screen.findByRole("button", { name: "Try again" });
     expect(screen.getByRole("alert").textContent).toContain("Status service unavailable");
     fireEvent.click(retry);
 
