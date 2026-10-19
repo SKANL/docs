@@ -122,7 +122,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] U5 (D) [9f72e602] One vocabulary + in-context glossary; jargon (passport,
       attestation, digest, node ids) only under Avanzado.
 - [x] U6 (D) [fa09a21a] Empty states always carry a next-step button.
-- [ ] U13 (D) From review of U4-U6 (approved, lineage review-c1e85141720fffe5,
+- [x] U13 (D) [abae854d] From review of U4-U6 (approved, lineage review-c1e85141720fffe5,
       acknowledged): Home findings count must not fail open (findings without a
       run_id or outside the 100-run window are silently dropped: show a
       'partial count' notice or prefer a server-side document filter if the API
@@ -131,12 +131,12 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       home.findings ('abierto/abiertos'); shared constants for focus-target ids;
       Advanced-only rows flagged structurally instead of matching the 'SHA-256'
       label; align wording 'open' vs status==='failed'.
-- [ ] U7 (D) Sections: primary actions (edit, save, review) vs advanced (stamp,
+- [x] U7 (D) [8cbc1dfc] Sections: primary actions (edit, save, review) vs advanced (stamp,
       pack context, build section); merge duplicate upload forms in Sources;
       single release entry point.
-- [ ] U8 (D) Review: basic tabs (Findings, Artifacts, Compare) vs advanced
+- [x] U8 (D) [98154674] Review: basic tabs (Findings, Artifacts, Compare) vs advanced
       (Evidence, Baselines, Quality, Graph).
-- [ ] U9 (D) Friendly error mapping with collapsible technical details.
+- [x] U9 (D) [e1148967] Friendly error mapping with collapsible technical details.
 - [ ] U10 (D) i18n: dictionary layer, Spanish default + English, palette shows
       labels not raw CLI strings.
 - [ ] U11 (D) Desktop: startup screen, sidecar failure screen with Retry and
@@ -234,5 +234,12 @@ U1-U3, H13) cannot be isolated by a base-diff review (head is fixed at HEAD):
 left unreviewed natively, covered by tests only. .atl/skill-registry files
 modified by the session hook are unrelated and left uncommitted.
 
+Batch 8 (U13, U7, U8, U9): done; typecheck + lint clean; vitest per-file green;
+the full npm test showed 4 home.test failures at ~1.1 s each under load (passed
+30/30 on its own right after), plus 2 known-flaky tests that passed on rerun.
+Follow-ups: dialogs (ConfirmActionDialog, WorkspaceFormDialog, DocumentCreateDialog,
+rename) and ApiStatus/DocumentStatusPanel/context switcher still use formatApiError
+text; fold into U10 sweep. Mutation error toasts do not exist (ActionError covers).
+
 ## Next step
-U7-U9 + U13, then U10 sweep, U11, U12 (+ update Playwright e2e).
+U10 sweep (translate remaining panels + palette labels + dialog errors), U11, U12.
