@@ -8,6 +8,8 @@ import { Unavailable } from "@/components/shared/Unavailable";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCapability } from "@/lib/capability-registry";
+import { useMode } from "@/app/mode";
+import { useT, type MessageKey } from "@/lib/i18n";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { BaselinesPanel } from "./BaselinesPanel";
 import { DiffPanel } from "./DiffViewer";
@@ -16,7 +18,11 @@ import { FindingsPanel } from "./FindingsPanel";
 import { GraphPanel } from "./GraphPanel";
 import { QaPanel } from "./QaPanel";
 
-const tabs = [["findings", "Findings"], ["artifacts", "Artifacts"], ["evidence", "Evidence"], ["baselines", "Baselines"], ["diff", "Diff"], ["qa", "Quality checks"], ["graph", "Graph"]] as const;
+/** [url segment, label key, Advanced only]. A hidden tab keeps its URL: it renders when linked to, it is just not listed. */
+const tabs: ReadonlyArray<readonly [string, MessageKey, boolean]> = [
+  ["findings", "review.tab.findings", false], ["artifacts", "review.tab.artifacts", false], ["evidence", "review.tab.evidence", true],
+  ["baselines", "review.tab.baselines", true], ["diff", "review.tab.compare", false], ["qa", "review.tab.qa", true], ["graph", "review.tab.graph", true],
+];
 
 /** Tabs that render a read model the server catalogue lists under its own capability id. */
 const gate: Record<string, string> = { findings: "findings.list", artifacts: "artifacts.list", baselines: "baselines.list", graph: "graph.read" };
@@ -25,6 +31,8 @@ function ReviewView({ header, context }: { header: ReactNode; context: ActiveCon
   const { tab = "findings", id } = useParams();
   const navigate = useNavigate();
   const can = useCapability();
+  const { advanced } = useMode();
+  const { t } = useT();
   const { workspaceId } = context;
   if (!workspaceId) return <div className="grid gap-6">{header}
     <EmptyState title="Select a workspace first" description="Findings, artifacts, and evidence belong to a workspace."><Button asChild><Link to="/configure/workspaces">Open workspaces and documents</Link></Button></EmptyState></div>;
@@ -32,11 +40,11 @@ function ReviewView({ header, context }: { header: ReactNode; context: ActiveCon
   return <div className="grid gap-6">
     {header}
     <Tabs value={current} onValueChange={next => navigate(`/review/${next}`)}>
-      <TabsList className="h-auto flex-wrap">{tabs.map(([name, label]) => <TabsTrigger key={name} value={name}>{label}</TabsTrigger>)}</TabsList>
+      <TabsList className="h-auto flex-wrap">{tabs.filter(([name, , advancedOnly]) => advanced || !advancedOnly || name === current).map(([name, label]) => <TabsTrigger key={name} value={name}>{t(label)}</TabsTrigger>)}</TabsList>
       {/* Every trigger names its panel through aria-controls, so the active panel must be a real tabpanel. */}
       <TabsContent value={current}>
         {gate[current] && !can(gate[current])
-          ? <Unavailable>{`${tabs.find(([name]) => name === current)![1]} is not available on this server.`}</Unavailable>
+          ? <Unavailable>{`${t(tabs.find(([name]) => name === current)![1])} is not available on this server.`}</Unavailable>
           : <>
         {current === "findings" && <FindingsPanel workspaceId={workspaceId} selectedId={id} />}
         {current === "artifacts" && <ArtifactsPanel workspaceId={workspaceId} selectedId={id} />}
