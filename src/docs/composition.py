@@ -36,7 +36,6 @@ from docs.application.qa import QaService
 from docs.application.render_verification import RenderVerificationService
 from docs.application.review import ReviewService
 from docs.application.revision import RevisionService
-from docs.application.run_history import RunHistoryService, RunRecorderService
 from docs.application.section import SectionService
 from docs.application.source_pipeline import SourcePipeline
 from docs.application.status import StatusService
@@ -282,8 +281,6 @@ class ApplicationComposition:
     section: SectionService
     status: StatusService
     revision: RevisionService
-    history: RunHistoryService
-    run_recorder: RunRecorderService
     verification: DocumentVerificationService
     structural_audit_service: StructuralAuditService
     artifact_reports: ArtifactReportService
@@ -487,8 +484,6 @@ class ApplicationComposition:
             self.section_repository, self.review, self.context, self.evidence_repository,
             provenance_lock=lambda directory: owned_directory_lock(directory / ".revision.lock"),
         )
-        self.history = RunHistoryService(self.workspace)
-        self.run_recorder = RunRecorderService(self.workspace, self.source_repository)
         self.verification = DocumentVerificationService(
             self.review, self.evidence_repository, self.format_audit, self.qa
         )

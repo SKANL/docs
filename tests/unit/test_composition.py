@@ -44,8 +44,6 @@ DEPENDENCY_FIELDS = {
     "section",
     "status",
     "revision",
-    "history",
-    "run_recorder",
     "verification",
     "structural_audit_service",
     "artifact_reports",
