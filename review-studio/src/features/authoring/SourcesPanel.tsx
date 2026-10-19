@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { SourceIngestResult } from "@/api/domains/authoring";
 import { ActionError, useAction } from "@/lib/actions";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Unavailable } from "@/components/shared/Unavailable";
 import { fileToBase64 } from "@/lib/files";
 import { useCapability } from "@/lib/capability-registry";
@@ -48,25 +49,35 @@ export function SourcesPanel({ documentId }: { documentId: string }) {
     { success: result => result.succeeded ? "Sources ingested." : "Ingestion finished with failures.", invalidate: [authoringKeys.classification(documentId), authoringKeys.sections(documentId)] },
   );
   // Stores each file as a hash-named copy without converting it; the same upload, a different verb.
+  // Files are stored one by one: a failure must not hide the ones already stored, so nothing here rejects.
   const imported = useAction(
-    async () => Promise.all(files.map(async file => api.importSourceFile!(documentId, { filename: file.name, content_base64: await fileToBase64(file) }))),
-    { success: results => `Imported ${results.map(result => result.filename).join(", ")}.`, invalidate: [authoringKeys.classification(documentId)], onDone: () => setFiles([]) },
+    async () => {
+      const outcomes = await Promise.allSettled(files.map(async file => api.importSourceFile!(documentId, { filename: file.name, content_base64: await fileToBase64(file) })));
+      return {
+        stored: outcomes.flatMap(outcome => outcome.status === "fulfilled" ? [outcome.value] : []),
+        failed: outcomes.flatMap((outcome, index) => outcome.status === "rejected" ? [{ name: files[index]!.name, reason: outcome.reason as unknown }] : []),
+      };
+    },
+    { success: ({ stored }) => stored.length ? `Imported ${stored.map(result => result.filename).join(", ")}.` : "", invalidate: [authoringKeys.classification(documentId)], onDone: () => { setFiles([]); setInputKey(key => key + 1); } },
   );
+  // A fresh key remounts the input: clearing state alone would leave the old selection showing in the form.
+  const [inputKey, setInputKey] = useState(0);
+  const canIngest = can("source.ingest") && !!api.ingestSources;
   const canImport = advanced && can("document.import") && !!api.importSourceFile;
   return <div className="grid gap-6">
     <h2 className="text-xl font-semibold">Sources</h2>
-    {can("source.ingest") && api.ingestSources ? <form className="grid max-w-xl gap-3" onSubmit={event => { event.preventDefault(); ingest.mutate(undefined); }}>
+    {canIngest || canImport ? <form className="grid max-w-xl gap-3" onSubmit={event => { event.preventDefault(); if (canIngest) ingest.mutate(undefined); }}>
       <Label htmlFor="source-files">Source files</Label>
-      <Input id="source-files" type="file" multiple onChange={event => setFiles(Array.from(event.target.files ?? []))} />
-      <p className="text-sm text-muted-foreground">Upload new files, or leave empty to ingest what is already in the inbox.</p>
+      <Input key={inputKey} id="source-files" type="file" multiple onChange={event => setFiles(Array.from(event.target.files ?? []))} />
+      {canIngest && <p className="text-sm text-muted-foreground">Upload new files, or leave empty to ingest what is already in the inbox.</p>}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={ingest.isPending}>{ingest.isPending ? "Ingesting…" : "Ingest sources"}</Button>
+        {canIngest && <Button type="submit" disabled={ingest.isPending}>{ingest.isPending ? "Ingesting…" : "Ingest sources"}</Button>}
         {canImport && <Button type="button" variant="outline" disabled={files.length === 0 || imported.isPending} onClick={() => imported.mutate(undefined)}>{imported.isPending ? "Importing…" : t("sources.importOnly")}</Button>}
       </div>
     </form> : <Unavailable>Source ingestion is not available on this server.</Unavailable>}
     <ActionError action={ingest} what="ingest sources" />
     {ingest.data && <IngestResult result={ingest.data} />}
-    <ActionError action={imported} what="import the files" />
-    {imported.data && <ul role="status" className="grid gap-1 text-sm">{imported.data.map(result => <li key={result.path}>{result.deduplicated ? "Already imported: " : "Imported: "}<code>{result.path}</code> ({result.size} bytes)</li>)}</ul>}
+    {imported.data && imported.data.failed.length > 0 && <ErrorState title={t("sources.importFailed", { files: imported.data.failed.map(item => item.name).join(", ") })} error={imported.data.failed[0]!.reason} />}
+    {imported.data && imported.data.stored.length > 0 && <ul role="status" className="grid gap-1 text-sm">{imported.data.stored.map(result => <li key={result.path}>{result.deduplicated ? "Already imported: " : "Imported: "}<code>{result.path}</code> ({result.size} bytes)</li>)}</ul>}
   </div>;
 }

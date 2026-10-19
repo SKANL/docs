@@ -48,6 +48,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const [packed, setPacked] = useState<ContextPacked | null>(null);
   // Supervise leans on reading and reviewing: the body is read-only until the person asks to edit it.
   const [editing, setEditing] = useState(false);
+  const [editingScope, setEditingScope] = useState("");
   const [stampOpen, setStampOpen] = useState(false);
   const [packOpen, setPackOpen] = useState(false);
   const [by, setBy] = useState("");
@@ -59,6 +60,9 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const items = sections.data ?? [];
   const activeId = selected ?? items[0]?.id ?? null;
   const active = items.find(item => item.id === activeId);
+  // Editing lapses when the document, working mode or section changes (state reset during render, no effect).
+  const scope = `${documentId}|${mode}|${activeId}`;
+  if (scope !== editingScope) { setEditingScope(scope); setEditing(false); }
   const draft = activeId ? drafts[activeId] : undefined;
   const body = draft ?? active?.body ?? "";
   const dirty = (id: string) => drafts[id] !== undefined && drafts[id] !== items.find(item => item.id === id)?.body;

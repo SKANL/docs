@@ -38,7 +38,9 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
   const { t } = useT();
   const navigate = useNavigate();
   const [format, setFormat] = useState<OutputFormat>("docx");
-  const [policy, setPolicy] = useState<RunPolicy>("draft");
+  const [chosenPolicy, setPolicy] = useState<RunPolicy>("draft");
+  // "release" only exists under Advanced; turning Advanced off must not leave it selected.
+  const policy: RunPolicy = !advanced && chosenPolicy === "release" ? "draft" : chosenPolicy;
   const { workspaceId, documentId } = context;
 
   const plan = useQuery({

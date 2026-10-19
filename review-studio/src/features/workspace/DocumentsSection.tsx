@@ -71,9 +71,9 @@ export function DocumentsSection({ workspaceId, onNotice }: Props) {
     {!workspaceId ? <p className="text-sm text-muted-foreground">Select or create a workspace before managing documents.</p> : <>
       {currentId && <DocumentDetailPanel documentId={currentId} />}
       <DocumentStatusPanel document={current} status={status.data ?? null} loading={status.isPending && status.fetchStatus !== "idle"} error={status.isError ? formatApiError(status.error, "document status") : undefined} onRetry={() => void status.refetch()} />
-      {select.isError && <ErrorState message={formatApiError(select.error)} />}
+      {select.isError && <ErrorState error={select.error} />}
       {selectionError && <ErrorState message={selectionError} />}
-      {documents.isError ? <ErrorState message={formatApiError(documents.error, "documents")} onRetry={() => void documents.refetch()} />
+      {documents.isError ? <ErrorState error={documents.error} onRetry={() => void documents.refetch()} />
         : list.length ? <ul className="grid gap-1" aria-label="Workspace documents">{list.map(item => <li key={item.id} className={cn("flex flex-col gap-3 rounded-md border-b px-2 py-3 sm:flex-row sm:items-center sm:justify-between", item.id === currentId && "border-transparent bg-muted")}>
           <div className="grid min-w-0 gap-1"><strong>{item.title || item.id}</strong><span className="text-sm break-words text-muted-foreground">{item.id}{item.template ? ` · ${item.template}` : ""}</span></div>
           <div className="flex flex-wrap gap-1.5 sm:justify-end"><Button type="button" variant={item.id === currentId ? "secondary" : "ghost"} onClick={() => select.mutate(item.id)} disabled={busy || !api.useDocument}>{item.id === currentId ? "Current" : `Use ${item.id}`}</Button>

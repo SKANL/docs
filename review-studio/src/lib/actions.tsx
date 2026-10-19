@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
-import { formatApiError } from "@/api/errors";
 import { ErrorState } from "@/components/shared/ErrorState";
 
 type ActionOptions<V, R> = {
@@ -29,5 +28,5 @@ export function useAction<V, R>(fn: (variables: V) => Promise<R>, options: Actio
 /** Structured server error with a retry that replays the last variables. */
 export function ActionError({ action, what }: { action: UseMutationResult<any, Error, any>; what: string }) {
   if (!action.isError) return null;
-  return <ErrorState title={`Could not ${what}`} message={formatApiError(action.error)} onRetry={() => action.mutate(action.variables)} retrying={action.isPending} />;
+  return <ErrorState title={`Could not ${what}`} error={action.error} onRetry={() => action.mutate(action.variables)} retrying={action.isPending} />;
 }

@@ -1,4 +1,3 @@
-import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -102,7 +101,7 @@ function HomeView({ header, context }: { header: ReactNode; context: ActiveConte
       {documentId ? <>
         <h2 className="text-xl font-semibold">{context.documentTitle || documentId}</h2>
         <p className="text-sm text-muted-foreground">{context.workspaceName} · {documentId}</p>
-        {status.isError ? <p role="alert" className="text-sm text-destructive">{formatApiError(status.error)}</p>
+        {status.isError ? <ErrorState error={status.error} onRetry={() => void status.refetch()} />
           : status.data ? <Badge variant="outline" className={status.data.succeeded === true ? "w-fit border-success/40 text-success" : "w-fit border-warning/50 text-warning"}>{status.data.succeeded === true ? t("home.ready") : t("home.attention")}</Badge>
           : <Skeleton className="h-5 w-24" />}
       </> : <p className="text-sm text-muted-foreground">{t(workspaceId ? "home.noDocument" : "home.noWorkspace")}</p>}
@@ -113,12 +112,12 @@ function HomeView({ header, context }: { header: ReactNode; context: ActiveConte
         {blockers.length ? <ul className="list-disc pl-5 text-sm text-destructive">{blockers.map((blocker, index) => <li key={index}>{typeof blocker === "string" ? blocker : String((blocker as { message?: unknown }).message ?? t("home.blocked"))}</li>)}</ul>
           : <p className="text-sm text-muted-foreground">{t("home.noBlockers")}</p>}
         {findings.data && (runs.data || !api.listRunPage) && <p className="flex items-center gap-1 text-sm text-muted-foreground">{!runs.data ? t("home.findings.unavailable") : partial ? t("home.findings.partial", { count: failing, window: RUN_WINDOW }) : t(failing === 1 ? "home.findings.one" : "home.findings.other", { count: failing })}<GlossaryHint term="finding" /></p>}
-        {sources.isError && <ErrorState message={formatApiError(sources.error)} onRetry={() => void sources.refetch()} />}
-        {findings.isError && <ErrorState message={formatApiError(findings.error)} onRetry={() => void findings.refetch()} />}
+        {sources.isError && <ErrorState error={sources.error} onRetry={() => void sources.refetch()} />}
+        {findings.isError && <ErrorState error={findings.error} onRetry={() => void findings.refetch()} />}
       </section>
       <section aria-label={t("home.recent")} className="grid gap-2">
         <h2 className="text-lg font-semibold">{t("home.recent")}</h2>
-        {runs.isError ? <ErrorState message={formatApiError(runs.error)} onRetry={() => void runs.refetch()} />
+        {runs.isError ? <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
           : recent.length ? <ul className="grid gap-1">{recent.map(item => <li key={item.id} className="flex items-center gap-3 text-sm"><Link className="underline underline-offset-4" to={`/pipeline/runs/${encodeURIComponent(item.id)}`}>{item.id}</Link><RunStatusBadge status={item.status} /></li>)}</ul>
           : runs.data && <EmptyState title={t("home.noRuns.title")} description={t("home.noRuns.body")} action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />}
       </section>
