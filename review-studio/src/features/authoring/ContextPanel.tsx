@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -16,6 +17,7 @@ import { useCapability } from "@/lib/capability-registry";
 import { authoringKeys, useContextStatus } from "./data";
 
 export function ContextPanel({ documentId }: { documentId: string }) {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const status = useContextStatus(documentId);
@@ -35,7 +37,7 @@ export function ContextPanel({ documentId }: { documentId: string }) {
   return <div className="grid gap-6">
     <h2 className="text-xl font-semibold">Context</h2>
     {!can("context.status") ? <Unavailable>Context status is not available on this server.</Unavailable>
-      : <QueryBoundary query={status}>{({ topics }) => topics.length === 0 ? <EmptyState title="No context topics" description="The template declares no context topics for this document." />
+      : <QueryBoundary query={status}>{({ topics }) => topics.length === 0 ? <EmptyState title="No context topics" description="The template declares no context topics for this document." action={{ label: t("empty.reviewTemplates"), to: "/configure/templates" }} />
       : <ul className="grid gap-3 sm:grid-cols-2" aria-label="Context topics">{topics.map(item => <li key={item.id}><Card>
         <CardHeader><CardTitle className="flex flex-wrap items-center gap-2 text-base"><span>{item.title}</span>
           <Badge variant={item.missing ? "destructive" : "secondary"}>{item.missing ? "Missing" : "Ready"}</Badge>{item.required && <Badge variant="outline">Required</Badge>}</CardTitle></CardHeader>

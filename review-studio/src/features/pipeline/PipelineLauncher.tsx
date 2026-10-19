@@ -68,7 +68,7 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
           <ul className="flex flex-wrap gap-2">{data.external_artifacts.map(name => <li key={name} className="rounded-md bg-muted px-2 py-0.5">{name}</li>)}</ul></div>}
       </div>}</QueryBoundary>}
     <div className="flex flex-wrap items-center gap-2">
-      {can("document.run") && api.runDocument && <Button type="button" disabled={busy} onClick={() => run.mutate(undefined)}>Run pipeline</Button>}
+      {can("document.run") && api.runDocument && <Button id="run-pipeline" type="button" disabled={busy} onClick={() => run.mutate(undefined)}>Run pipeline</Button>}
       {api.documentAction && stageActions.filter(([, , capability]) => can(capability)).map(([kind, label]) =>
         <Button key={kind} type="button" variant="outline" disabled={busy} onClick={() => step.mutate(kind)}>{label}</Button>)}
     </div>

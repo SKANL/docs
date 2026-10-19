@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -41,11 +42,12 @@ function QueueRow({ documentId, item, canConfirm }: { documentId: string; item: 
 }
 
 export function ClassificationPanel({ documentId }: { documentId: string }) {
+  const { t } = useT();
   const can = useCapability();
   const queue = useClassification(documentId);
   return <div className="grid gap-4">
     <h2 className="text-xl font-semibold">Classification</h2>
-    <QueryBoundary query={queue}>{items => items.length === 0 ? <EmptyState title="No classification pending" description="Ingest sources first. Classification appears here when a source needs a confirmed role." />
+    <QueryBoundary query={queue}>{items => items.length === 0 ? <EmptyState title="No classification pending" description="Ingest sources first. Classification appears here when a source needs a confirmed role." action={{ label: t("empty.uploadSources"), to: "/authoring/sources" }} />
       : <ul className="grid gap-3" aria-label="Classification queue">{items.map(item => <QueueRow key={String(item.relative_path)} documentId={documentId} item={item} canConfirm={can("document.classify")} />)}</ul>}</QueryBoundary>
   </div>;
 }

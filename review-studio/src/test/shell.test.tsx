@@ -26,7 +26,7 @@ describe("application shell", () => {
   it("moves focus to the main region when the route changes", async () => {
     window.location.hash = "#/";
     render(<App api={makeApi()} />);
-    await userEvent.click(within(screen.getByRole("navigation", { name: "Task areas" })).getByRole("link", { name: "Runs" }));
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Task areas" })).getByRole("link", { name: "Run" }));
     await waitFor(() => expect(document.activeElement?.id).toBe("main"));
     // Feature areas are lazy chunks: the heading arrives after the first import resolves.
     expect(await screen.findByRole("heading", { name: "Pipeline" }, { timeout: 5000 })).toBeTruthy();
@@ -57,7 +57,7 @@ describe("application shell", () => {
     render(<App api={makeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: "Open command menu" }));
     const palette = await screen.findByRole("dialog", { name: /command palette/i });
-    expect(within(palette).getByText("Runs")).toBeTruthy();
+    expect(within(palette).getByText("Run")).toBeTruthy();
     await waitFor(() => expect(within(palette).getByText("workspace list")).toBeTruthy());
     expect(within(palette).queryByText("stamp")).toBeNull();
   });
@@ -65,7 +65,7 @@ describe("application shell", () => {
   it("navigates from a palette item", async () => {
     render(<App api={makeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: "Open command menu" }));
-    await userEvent.click(await screen.findByRole("option", { name: /Delivery/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /Deliver/ }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Delivery" })).toBeTruthy());
     expect(window.location.hash).toBe("#/delivery");
   });

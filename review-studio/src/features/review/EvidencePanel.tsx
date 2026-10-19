@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
+import { useMode } from "@/app/mode";
+import { GlossaryHint } from "@/components/shared/GlossaryHint";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +25,8 @@ function PassportSummary({ passport }: { passport: Record<string, unknown> }) {
   const stages = entries.filter(entry => entry.stage === "pipeline_stage");
   const worker = entries.find(entry => entry.stage === "worker");
   return <section aria-label="Passport summary" className="grid gap-3 rounded-lg border bg-card p-4">
-    <h3 className="text-lg font-semibold">Passport</h3>
-    <p className="text-sm text-muted-foreground">{entries.length} attestation{entries.length === 1 ? "" : "s"} recorded for this run.</p>
+    <h3 className="flex items-center gap-1 text-lg font-semibold">Passport<GlossaryHint term="passport" /></h3>
+    <p className="flex items-center gap-1 text-sm text-muted-foreground">{entries.length} attestation{entries.length === 1 ? "" : "s"} recorded for this run.<GlossaryHint term="attestation" /></p>
     {typeof worker?.retry_of === "string" && <p className="text-sm" role="status">Retry attempt {String(worker.attempt ?? "-")} derived from run {worker.retry_of}.</p>}
     {stages.length > 0 && <ul className="grid gap-2" aria-label="Pipeline stages">{stages.map((entry, index) => {
       const receipt = record(entry.receipt);
@@ -39,6 +41,7 @@ function PassportSummary({ passport }: { passport: Record<string, unknown> }) {
 function EvidenceView({ workspaceId, runId, evidence }: { workspaceId: string | null; runId: string; evidence: EvidenceBundle }) {
   const api = useApi();
   const can = useCapability();
+  const { advanced } = useMode();
   const [promoting, setPromoting] = useState(false);
   const findings = evidence.findings.map(toFindingRow);
   return <div className="grid gap-6">
@@ -49,18 +52,18 @@ function EvidenceView({ workspaceId, runId, evidence }: { workspaceId: string | 
         {can("document.baseline") && api.promoteBaseline && <Button type="button" onClick={() => setPromoting(true)}>Promote to baseline</Button>}
       </div>
     </div>
-    <section aria-label="Evidence digest" className="grid gap-2 rounded-lg border bg-card p-4">
-      <Facts rows={[["Evidence SHA-256", <Digest key="d" value={evidence.evidence_sha256} />], ["Artifacts", String(evidence.artifacts.length)], ["Findings", String(findings.length)],
+    <section aria-label={advanced ? "Evidence digest" : "Run summary"} className="grid gap-2 rounded-lg border bg-card p-4">
+      <Facts rows={[["Evidence SHA-256", advanced ? <span key="d" className="inline-flex items-center gap-1"><Digest value={evidence.evidence_sha256} /><GlossaryHint term="digest" /></span> : undefined], ["Artifacts", String(evidence.artifacts.length)], ["Findings", String(findings.length)],
         ["Previews", evidence.previews.available ? `${evidence.previews.artifact_ids.length} rendered` : "None rendered, so a baseline cannot be promoted from this run"]]} />
     </section>
-    <PassportSummary passport={evidence.passport} />
+    {advanced && <PassportSummary passport={evidence.passport} />}
     <section aria-label="Artifacts" className="grid gap-2">
       <h3 className="text-lg font-semibold">Artifacts</h3>
       {evidence.artifacts.length === 0 ? <p className="text-sm text-muted-foreground">This run produced no artifacts.</p> : <Table aria-label="Run artifacts">
-        <TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Kind</TableHead><TableHead>Media type</TableHead><TableHead>Digest</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>Artifact</TableHead><TableHead>Kind</TableHead><TableHead>Media type</TableHead>{advanced && <TableHead>Digest</TableHead>}</TableRow></TableHeader>
         <TableBody>{evidence.artifacts.map(item => <TableRow key={item.id}>
           <TableCell><Link className="font-medium underline-offset-4 hover:underline" to={`/review/artifacts/${encodeURIComponent(item.id)}`}>{item.id}</Link></TableCell>
-          <TableCell>{item.kind}</TableCell><TableCell>{item.media_type || "-"}</TableCell><TableCell><Digest value={item.digest} /></TableCell>
+          <TableCell>{item.kind}</TableCell><TableCell>{item.media_type || "-"}</TableCell>{advanced && <TableCell><Digest value={item.digest} /></TableCell>}
         </TableRow>)}</TableBody>
       </Table>}
     </section>

@@ -1,7 +1,9 @@
+import { useT } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
+import { useMode } from "@/app/mode";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -18,10 +20,11 @@ import { ArtifactPreview, InspectionPanel } from "./inspection";
 function ArtifactDetail({ workspaceId, artifact }: { workspaceId: string | null; artifact: Artifact }) {
   const api = useApi();
   const can = useCapability();
+  const { advanced } = useMode();
   const [inspecting, setInspecting] = useState(false);
   return <section aria-label="Artifact detail" className="grid gap-4 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-center gap-3"><h2 className="text-lg font-semibold">{artifact.name}</h2><StatusBadge status={artifact.status} /></div>
-    <Facts rows={[["Artifact id", artifact.id], ["Kind", artifact.kind], ["Size", artifact.size], ["Pages", artifact.pages?.toString()], ["Checksum", <Digest key="d" value={artifact.checksum} />]]} />
+    <Facts rows={[["Artifact id", artifact.id], ["Kind", artifact.kind], ["Size", artifact.size], ["Pages", artifact.pages?.toString()], ["Checksum", advanced ? <Digest key="d" value={artifact.checksum} /> : undefined]]} />
     <div className="flex flex-wrap items-center gap-4 text-sm">
       {artifact.runId && <Link className="underline underline-offset-4" to={`/review/evidence/${encodeURIComponent(artifact.runId)}`}>Open run evidence</Link>}
       {can("document.inspect") && api.inspectArtifact && <Button type="button" variant="outline" size="sm" aria-pressed={inspecting} onClick={() => setInspecting(value => !value)}>{inspecting ? "Hide inspection" : "Inspect artifact"}</Button>}
@@ -33,9 +36,10 @@ function ArtifactDetail({ workspaceId, artifact }: { workspaceId: string | null;
 
 function ArtifactsTable({ workspaceId, all, selectedId }: { workspaceId: string | null; all: Artifact[]; selectedId?: string }) {
   const api = useApi();
+  const { t } = useT();
   const [runId, setRunId] = useState("all");
   const runs = useQuery({ queryKey: reviewKeys.runs(workspaceId), queryFn: async () => (await api.listRunPage!()).items });
-  if (all.length === 0) return <EmptyState title="No artifacts" description="Artifacts appear here after a build produces output for a run." />;
+  if (all.length === 0) return <EmptyState title="No artifacts" description="Artifacts appear here after a build produces output for a run." action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />;
   const rows = runId === "all" ? all : all.filter(item => item.runId === runId);
   const selected = selectedId ? all.find(item => item.id === selectedId) : undefined;
   return <div className="grid gap-4">

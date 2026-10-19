@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -32,6 +33,7 @@ function ReviewFindingsPanel({ result, onOpenSection }: { result: ReviewResult; 
 }
 
 export function SectionsPanel({ documentId }: { documentId: string }) {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const sections = useSections(documentId);
@@ -90,7 +92,7 @@ export function SectionsPanel({ documentId }: { documentId: string }) {
   const pack = useAction(() => api.packContext!(documentId, target.trim()), { success: result => `Packed context for ${result.target}.`, onDone: result => { setPacked(result); setPackOpen(false); } });
 
   return <QueryBoundary query={sections} skeleton="h-48 w-full">{() => items.length === 0
-    ? <EmptyState title="No sections yet" description="Add sources and build the document structure first. Sections appear here once they exist." />
+    ? <EmptyState title="No sections yet" description="Add sources and build the document structure first. Sections appear here once they exist." action={{ label: t("empty.uploadSources"), to: "/authoring/sources" }} />
     : <div className="grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-semibold">Sections</h2>
         <div className="flex flex-wrap gap-2">

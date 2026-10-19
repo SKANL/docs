@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
@@ -40,11 +41,12 @@ export function DiffViewer({ diff }: { diff: ArtifactDiff }) {
 
 function DiffForm({ artifacts }: { artifacts: Artifact[] }) {
   const api = useApi();
+  const { t } = useT();
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [result, setResult] = useState<ArtifactDiff | null>(null);
   const compare = useAction(() => api.diffArtifacts!(left, right), { success: () => "Comparison ready.", onDone: setResult });
-  if (artifacts.length < 2) return <EmptyState title="Nothing to compare yet" description="Comparing needs two artifacts. Build the document again to produce a second one." />;
+  if (artifacts.length < 2) return <EmptyState title="Nothing to compare yet" description="Comparing needs two artifacts. Build the document again to produce a second one." action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />;
   const picker = (label: string, value: string, set: (id: string) => void) => <div className="grid gap-1"><Label htmlFor={`diff-${label}`}>{label}</Label>
     <Select value={value} onValueChange={id => { set(id); setResult(null); compare.reset(); }}>
       <SelectTrigger id={`diff-${label}`} aria-label={label} className="w-64"><SelectValue placeholder="Choose an artifact" /></SelectTrigger>

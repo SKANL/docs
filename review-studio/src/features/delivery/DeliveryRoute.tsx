@@ -47,7 +47,7 @@ function DeliveryView({ header, context }: { header: ReactNode; context: ActiveC
     </section>
     <section aria-label="Deliver" className="flex flex-wrap items-center gap-2">
       {can("document.package") && api.packageDocument && <Button type="button" variant="outline" onClick={() => setDialog("package")}>Package</Button>}
-      {can("document.publish") && api.publishDocument && <Button type="button" onClick={() => setDialog("publish")}>Publish</Button>}
+      {can("document.publish") && api.publishDocument && <Button id="publish-document" type="button" onClick={() => setDialog("publish")}>Publish</Button>}
     </section>
     {published && <PublicationResultPanel result={published} />}
     {can("document.release") && api.runDocument && <ReleasePanel workspaceId={workspaceId} documentId={documentId} />}

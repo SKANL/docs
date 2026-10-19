@@ -1,9 +1,10 @@
+import { useT } from "@/lib/i18n";
 import { formatApiError } from "@/api/errors";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/app/providers";
 import { ConfirmActionDialog } from "@/components/shared/ConfirmActionDialog";
-import { EmptyState } from "@/components/shared/EmptyState";
+import { EmptyState, focusById } from "@/components/shared/EmptyState";
 import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import { useCapability } from "@/lib/capability-registry";
 import { authoringKeys } from "./data";
 
 export function AssetsPanel({ documentId }: { documentId: string }) {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const [kindDraft, setKindDraft] = useState("");
@@ -38,7 +40,7 @@ export function AssetsPanel({ documentId }: { documentId: string }) {
       <Button type="submit" variant="outline">Apply filter</Button>
     </form>}
     {!(can("asset.list") && api.listAssets) ? <Unavailable>Listing assets is not available on this server.</Unavailable>
-      : <QueryBoundary query={list}>{({ items }) => items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} />
+      : <QueryBoundary query={list}>{({ items }) => items.length === 0 ? <EmptyState title="No assets" description={kind ? `No assets of kind "${kind}".` : "Add logos, images, or other files the document uses."} action={{ label: t("empty.addAsset"), onClick: focusById("asset-file") }} />
       : <Table aria-label="Document assets"><TableHeader><TableRow><TableHead>Name</TableHead><TableHead className="w-24"><span className="sr-only">Actions</span></TableHead></TableRow></TableHeader>
         <TableBody>{items.map(item => <TableRow key={item.name}><TableCell>{item.name}</TableCell>
           <TableCell>{can("asset.rm") && <Button type="button" variant="ghost" size="sm" aria-label={`Remove ${item.name}`} onClick={() => { remove.reset(); setRemoving(item.name); }}>Remove</Button>}</TableCell></TableRow>)}</TableBody></Table>}</QueryBoundary>}

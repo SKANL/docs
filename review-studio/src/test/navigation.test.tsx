@@ -42,16 +42,16 @@ describe("navigation by mode", () => {
   it("lists four task areas in Supervise and no specialist tools", async () => {
     open("#/");
     const nav = await screen.findByRole("navigation", { name: "Task areas" });
-    expect(names(nav)).toEqual(["Home", "Runs", "Review", "Delivery"]);
+    expect(names(nav)).toEqual(["Home", "Run", "Review", "Deliver"]);
     expect(screen.queryByRole("navigation", { name: "Specialist tools" })).toBeNull();
   });
   it("adds Write in write mode", async () => {
     open("#/", { mode: "write" });
-    expect(names(await screen.findByRole("navigation", { name: "Task areas" }))).toEqual(["Home", "Write", "Runs", "Review", "Delivery"]);
+    expect(names(await screen.findByRole("navigation", { name: "Task areas" }))).toEqual(["Home", "Write", "Run", "Review", "Deliver"]);
   });
   it("adds technical configuration and tools under Advanced", async () => {
     open("#/", { advanced: "true" });
-    expect(names(await screen.findByRole("navigation", { name: "Task areas" }))).toEqual(["Home", "Runs", "Review", "Delivery", "Technical configuration"]);
+    expect(names(await screen.findByRole("navigation", { name: "Task areas" }))).toEqual(["Home", "Run", "Review", "Deliver", "Technical configuration"]);
     expect(names(screen.getByRole("navigation", { name: "Specialist tools" }))).toEqual(["Tools"]);
   });
   it("follows a mode change made in the topbar", async () => {
@@ -63,7 +63,7 @@ describe("navigation by mode", () => {
     open("#/");
     await userEvent.click(screen.getByRole("button", { name: "Open command menu" }));
     const palette = await screen.findByRole("dialog", { name: /command palette/i });
-    expect(within(palette).getByText("Runs")).toBeTruthy();
+    expect(within(palette).getByText("Run")).toBeTruthy();
     expect(within(palette).queryByText("Write")).toBeNull();
     expect(within(palette).queryByText("Tools")).toBeNull();
   });
@@ -71,7 +71,7 @@ describe("navigation by mode", () => {
     open("#/", { mode: "write", advanced: "true" });
     await userEvent.click(screen.getByRole("button", { name: "Open command menu" }));
     const palette = await screen.findByRole("dialog", { name: /command palette/i });
-    for (const label of ["Home", "Write", "Runs", "Review", "Delivery", "Tools", "Technical configuration"]) expect(within(palette).getByText(label)).toBeTruthy();
+    for (const label of ["Home", "Write", "Run", "Review", "Deliver", "Tools", "Technical configuration"]) expect(within(palette).getByText(label)).toBeTruthy();
   });
   it.each([["#/authoring/sources", "Authoring"], ["#/tools", "Tools"], ["#/configure", "Configure"]])("still resolves hidden area %s by URL", async (hash, heading) => {
     open(hash);

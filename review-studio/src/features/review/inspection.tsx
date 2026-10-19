@@ -2,6 +2,7 @@ import { formatApiError } from "@/api/errors";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useApi } from "@/app/providers";
+import { useMode } from "@/app/mode";
 import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import type { Artifact } from "@/api/models";
 import type { ArtifactReport } from "@/api/domains/review";
@@ -17,9 +18,10 @@ export const reportRows = (report: ArtifactReport): Array<[string, React.ReactNo
 
 export function InspectionPanel({ workspaceId, artifactId }: { workspaceId: string | null; artifactId: string }) {
   const api = useApi();
+  const { advanced } = useMode();
   const report = useQuery({ queryKey: reviewKeys.inspect(workspaceId, artifactId), queryFn: () => api.inspectArtifact!(artifactId) });
   return <QueryBoundary query={report} title="Could not inspect the artifact" skeleton="h-16 w-full">{data =>
-    <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(data)} /></section>}</QueryBoundary>;
+    <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(data).filter(([name]) => advanced || name !== "SHA-256")} /></section>}</QueryBoundary>;
 }
 
 /** Page previews for an artifact. Every failure path says what is missing instead of leaving a blank box. */
