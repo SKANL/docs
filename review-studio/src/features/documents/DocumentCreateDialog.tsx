@@ -3,12 +3,15 @@ import type { Template } from "@/api/models";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type Props = { open: boolean; pending: boolean; templates: Template[]; error?: string; onOpenChange(open: boolean): void; onSubmit(input: { documentId: string; title: string; template: string }): void };
+type Props = { open: boolean; pending: boolean; templates: Template[]; error?: unknown; onOpenChange(open: boolean): void; onSubmit(input: { documentId: string; title: string; template: string }): void };
 
 export function DocumentCreateDialog({ open, pending, templates, error, onOpenChange, onSubmit }: Props) {
+  const { t } = useT();
   const [documentId, setDocumentId] = useState("");
   const [title, setTitle] = useState("");
   const [template, setTemplate] = useState("");
@@ -19,22 +22,22 @@ export function DocumentCreateDialog({ open, pending, templates, error, onOpenCh
   }
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent showCloseButton={false} aria-describedby="document-create-description">
-      <DialogHeader><DialogTitle>Create document</DialogTitle><DialogDescription id="document-create-description">Choose an identifier and a template. The service initializes the document in the selected workspace.</DialogDescription></DialogHeader>
-      {pending && <p className="text-sm text-muted-foreground" role="status">This request cannot be cancelled after it is sent. You may close this dialog; the action will finish and controls stay unavailable until then.</p>}
+      <DialogHeader><DialogTitle>{t("doc.create")}</DialogTitle><DialogDescription id="document-create-description">{t("doc.createBody")}</DialogDescription></DialogHeader>
+      {pending && <p className="text-sm text-muted-foreground" role="status">{t("common.pendingNote")}</p>}
       <form onSubmit={submit} className="grid gap-4">
-        <div className="grid gap-2"><Label htmlFor="document-id">Document ID</Label><Input id="document-id" name="document_id" autoComplete="off" required value={documentId} onChange={event => setDocumentId(event.target.value)} /></div>
-        <div className="grid gap-2"><Label htmlFor="document-title">Title</Label><Input id="document-title" name="title" required value={title} onChange={event => setTitle(event.target.value)} /></div>
-        <div className="grid gap-2"><Label htmlFor="document-template">Template</Label>
+        <div className="grid gap-2"><Label htmlFor="document-id">{t("doc.id")}</Label><Input id="document-id" name="document_id" autoComplete="off" required value={documentId} onChange={event => setDocumentId(event.target.value)} /></div>
+        <div className="grid gap-2"><Label htmlFor="document-title">{t("doc.title")}</Label><Input id="document-title" name="title" required value={title} onChange={event => setTitle(event.target.value)} /></div>
+        <div className="grid gap-2"><Label htmlFor="document-template">{t("doc.template")}</Label>
           <Select value={template} onValueChange={setTemplate} disabled={!templates.length}>
-            <SelectTrigger id="document-template" aria-label="Template" className="w-full"><SelectValue placeholder="Choose a template" /></SelectTrigger>
+            <SelectTrigger id="document-template" aria-label={t("doc.template")} className="w-full"><SelectValue placeholder={t("doc.chooseTemplate")} /></SelectTrigger>
             <SelectContent>{templates.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        {!templates.length && <p className="text-sm text-destructive" role="alert">No templates are available in this workspace.</p>}
-        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
+        {!templates.length && <p className="text-sm text-destructive" role="alert">{t("doc.noTemplates")}</p>}
+        {error != null && <ErrorState error={error} />}
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
-          <Button type="submit" disabled={pending || !template || !documentId.trim() || !title.trim()}>{pending ? "Creating…" : "Create document"}</Button>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.close")}</Button>
+          <Button type="submit" disabled={pending || !template || !documentId.trim() || !title.trim()}>{pending ? t("common.creating") : t("doc.create")}</Button>
         </DialogFooter>
       </form>
     </DialogContent>
