@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import App from "../App";
 import { ApiError } from "../api/errors";
 import { makeApi } from "./authoringHarness";
+import { openPipeline, streamingApi } from "./pipelineHarness";
 import type { ReviewApi } from "../api/models";
 import { en, es } from "../lib/i18n/messages";
 
@@ -70,4 +71,16 @@ describe("authoring screen", () => {
     expect(screen.getByLabelText("Contenido de la sección")).toBeTruthy();
     expect(screen.queryByText("Section body")).toBeNull();
   });
+});
+
+describe("pipeline screen", () => {
+  it("renders launcher and history in Spanish, with the status words translated", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    openPipeline("/pipeline", streamingApi().api);
+    expect(await screen.findByRole("combobox", { name: "Formato de salida" }, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Política" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Generaciones" })).toBeTruthy();
+    expect(await screen.findByText("en curso")).toBeTruthy();
+    expect(screen.queryByText("Run pipeline")).toBeNull();
+  }, 20_000);
 });
