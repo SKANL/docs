@@ -19,9 +19,12 @@ class FiletypeDetectorAdapter:
     never raises (document-ingest spec: `File-Type Detection`)."""
 
     def detect(self, path: Path) -> str:
-        import filetype  # lazy: a missing lib costs ingest detection, not the CLI (doctor reports it)
-
-        guess = filetype.guess(str(path))
+        try:
+            import filetype  # lazy: a missing lib costs ingest detection, not the CLI (doctor reports it)
+        except ImportError:
+            guess = None  # extension fallback only; `doctor` reports the missing lib
+        else:
+            guess = filetype.guess(str(path))
         if guess is not None:
             return guess.extension
         return _EXTENSION_FALLBACK.get(path.suffix.lower(), "")

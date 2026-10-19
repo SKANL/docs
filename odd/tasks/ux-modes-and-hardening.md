@@ -86,21 +86,34 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] C1 (D) [8397bddc] Remove dead code with its tests: domain/models/result.py,
       RunRecorderService/RunHistoryService/RunReporter (+composition wiring),
       domain/pipeline.py legacy stage sets. Confirm no callers first.
-- [ ] C2 (I) PluginRunner stays (tested sandbox) but docs state it is not wired
+- [x] H13 (D) [902f5db6] From review of batch 4 (approved, lineage review-ac887632da2641c9,
+      acknowledged): (a) filetype_detector_adapter.detect() must not raise when
+      `filetype` is missing (class contract says it never raises; fall back to
+      extension detection); (b) revision diff numbering must not reuse a number
+      after a diff file is removed (derive from log/max existing, not glob count);
+      (c) RevisionService provenance_lock must be required, not a silent no-op
+      default; `_record(**entry)` gets an explicit signature; (d) the interrupted
+      log write test must fail only the LOG write (diff write succeeds) and the
+      concurrency test must cover a gap; (e) locking: PermissionError is retried
+      only for a short bounded grace (Windows mid-delete race), then raised as
+      itself, not as a 30 s timeout; document the trade-off in a comment.
+      Refuted in review (no action): R1-001/R3-005/R3-006 (commits exist, were
+      outside the reviewed range), R1-002/R4-003/R3-007/R3-008 (rg shows no callers).
+- [x] C2 (I) [ce86bb36] PluginRunner stays (tested sandbox) but docs state it is not wired
       into execution; no silent claim of plugin support.
-- [ ] C3 (D) Fix documented drift: AGENTS.md command-group table (no `docx`
+- [x] C3 (D) [10aef688] Fix documented drift: AGENTS.md command-group table (no `docx`
       group; add source/document/workspace/run; `publish` under `document`),
       dangling sentence, ci.md missing test names and job count, CLAUDE.md
       (`pipeline <set>` commands, ARCHITECTURE_REQUIRE_GRAPH, toolchains skip
       gate claim, ruff scope, layout list). Keep test_agents_md_content green.
-- [ ] C4 (I) Lint `tools/` in CI (ruff scope) or document why not.
+- [x] C4 (I) [4e0971b5] Lint `tools/` in CI (ruff scope) or document why not.
 
 ### C. UX: modes and information architecture
-- [ ] U1 (D) Mode state: `mode` (supervise|write) and `advanced` persisted per
+- [x] U1 (D) [870278c2] Mode state: `mode` (supervise|write) and `advanced` persisted per
       browser (try/catch localStorage), React context + tests.
-- [ ] U2 (D) Shell: topbar with workspace + document switcher, mode switch,
+- [x] U2 (D) [d7716796] Shell: topbar with workspace + document switcher, mode switch,
       Advanced toggle, theme toggle; remove "Review Studio foundation" footer.
-- [ ] U3 (D) Navigation by mode/advanced (Supervisar: Inicio, Revisar, Entregar,
+- [x] U3 (D) [fc61fdc4] Navigation by mode/advanced (Supervisar: Inicio, Revisar, Entregar,
       Ejecuciones; Redactar adds Redactar; Avanzado adds Herramientas and
       Configuración técnica). Route map and palette follow the same rule.
 - [ ] U4 (D) Home rewrite: what the product is, the 4-step flow, first-run mode
@@ -193,5 +206,16 @@ failed twice with operation_timeout ("aggregate time budget", mutation not
 started, retry_safe false); not retried further. Review PENDING; lineage not
 acknowledged. Retry when the machine is idle.
 
+Batch 4 review closed: APPROVED and acknowledged (authority burned); 21
+advisory findings triaged into H13 (real) or refuted by rg/commit history.
+Batch 5 (C3, C2, C4): done, 151 tests + ruff + mypy green; drift guard test added.
+Batch 6 (i18n base, U1, U2, U3): done (e85595dc, 870278c2, d7716796, fc61fdc4,
+403ec87a); vitest files green individually, typecheck + lint clean. Known gaps:
+Playwright e2e not updated (break under Spanish default / hidden Authoring);
+palette capability items unfiltered (U10); Supervisar mode cannot reach Sources
+upload from nav (solve in U4 via Home next-action, both modes).
+Frontend baseline: 3 timing-flaky tests under load (pipelineFeature, reviewFeature,
+toolsFeature), pre-existing.
+
 ## Next step
-C3 (docs drift), C2, C4, then U1-U12. Retry the pending review status.
+H13, then U4-U9, U10 sweep, U11, U12 (+ update e2e).

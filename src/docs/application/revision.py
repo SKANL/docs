@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any
 
@@ -40,11 +40,10 @@ class RevisionService:
         review_service: ReviewService,
         context_service: ContextService,
         evidence_repository: EvidenceRepository,
-        provenance_lock: Callable[[Path], AbstractContextManager[None]] | None = None,
+        provenance_lock: Callable[[Path], AbstractContextManager[None]],
     ) -> None:
-        # The composition root injects the inter-process lock; the default
-        # (no lock) keeps single-writer callers and unit tests infrastructure-free.
-        self._provenance_lock = provenance_lock or (lambda _directory: nullcontext())
+        # Required: a silent no-op default would drop the numbering/log race guard unnoticed.
+        self._provenance_lock = provenance_lock
         self.section_repository = section_repository
         self.review_service = review_service
         self.context_service = context_service
@@ -188,18 +187,30 @@ class RevisionService:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def _record(self, config: dict[str, Any], prefix: str, diff: str, **entry: Any) -> str:
+    def _record(
+        self, config: dict[str, Any], prefix: str, diff: str, *, request: str, target_id: str,
+        before_hash: str, after_hash: str, ripple: list[str], ts: str, issues: list[Issue],
+    ) -> str:
         """Allocate the diff number and append the log entry as one critical
-        section: the glob-count numbering and the log read-modify-write would
-        otherwise race (lost entries, overwritten diffs)."""
+        section: the numbering and the log read-modify-write would otherwise
+        race (lost entries, overwritten diffs)."""
         revisions_dir = self._revisions_dir(config)
         with self._provenance_lock(revisions_dir):
             diff_path = self._write_diff(revisions_dir, prefix, diff)
-            self._append_log_entry(revisions_dir, diff_path=diff_path, **entry)
+            self._append_log_entry(
+                revisions_dir, request=request, target_id=target_id, diff_path=diff_path,
+                before_hash=before_hash, after_hash=after_hash, ripple=ripple, ts=ts, issues=issues,
+            )
         return diff_path
 
     def _write_diff(self, revisions_dir: Path, prefix: str, diff: str) -> str:
-        n = len(list(revisions_dir.glob(f"{prefix}.*.diff"))) + 1
+        # max+1, not a count: removing an earlier diff must never make a number reusable.
+        numbers = [
+            int(number)
+            for p in revisions_dir.glob(f"{prefix}.*.diff")
+            if (number := p.name[len(prefix) + 1 : -len(".diff")]).isdigit()
+        ]
+        n = max(numbers, default=0) + 1
         path = revisions_dir / f"{prefix}.{n}.diff"
         self.section_repository.write_raw_text(path, diff)
         return str(path)

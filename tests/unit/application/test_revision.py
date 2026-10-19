@@ -20,6 +20,7 @@ from docs.domain.models.template import ContextSchema, Section, SectionContract,
 from docs.domain.normative import NormativeSettings
 from docs.domain.sections import apply_stamp, with_frontmatter
 from docs.domain.workspace import Workspace
+from docs.infrastructure.locking import owned_directory_lock
 from docs.infrastructure.persistence.context_markdown import ContextMarkdownAdapter
 from docs.infrastructure.persistence.json_context_repository import JsonContextRepository
 from docs.infrastructure.persistence.json_evidence_repository import JsonEvidenceRepository
@@ -107,9 +108,13 @@ def spy_review(section_repo: JsonSectionRepository) -> _SpyReviewService:
     return _SpyReviewService(ReviewService(section_repo))
 
 
+def _lock(directory: Path):
+    return owned_directory_lock(directory / ".revision.lock")
+
+
 @pytest.fixture
 def service(section_repo, spy_review, context_service) -> RevisionService:
-    return RevisionService(section_repo, spy_review, context_service, JsonEvidenceRepository())
+    return RevisionService(section_repo, spy_review, context_service, JsonEvidenceRepository(), _lock)
 
 
 def _config(tmp_path: Path) -> dict:
@@ -231,7 +236,7 @@ def test_revise_persists_review_issues_and_a_stable_id_in_the_log_entry(tmp_path
         def review_document(self, *a, **k):
             return ReviewResult([Issue("warning", "global", code="X2")])
 
-    service = RevisionService(section_repo, _Fake(), context_service, JsonEvidenceRepository())
+    service = RevisionService(section_repo, _Fake(), context_service, JsonEvidenceRepository(), _lock)
     _write_section(section_repo, 1, "introduccion", "V1")
     service.revise(
         "alpha", _template(), _config(tmp_path), "introduccion", "V2", "r",
@@ -256,7 +261,7 @@ def test_revise_topic_persists_issues_too(tmp_path, section_repo, context_servic
         def review_document(self, *a, **k):
             return ReviewResult()
 
-    service = RevisionService(section_repo, _Fake(), context_service, JsonEvidenceRepository())
+    service = RevisionService(section_repo, _Fake(), context_service, JsonEvidenceRepository(), _lock)
     _write_section(section_repo, 1, "introduccion", "V1")
     service.revise_topic(
         "alpha", _template(), _config(tmp_path), "alumno", "Ana", "r", normative=_NORMATIVE, now="t1",
@@ -300,11 +305,9 @@ def test_concurrent_revisions_neither_lose_log_entries_nor_overwrite_a_diff(
 ):
     from concurrent.futures import ThreadPoolExecutor
 
-    from docs.infrastructure.locking import owned_directory_lock
-
     service = RevisionService(
         section_repo, spy_review, context_service, JsonEvidenceRepository(),
-        provenance_lock=lambda directory: owned_directory_lock(directory / ".revision.lock"),
+        provenance_lock=_lock,
     )
     config = _config(tmp_path)
 
@@ -332,11 +335,41 @@ def test_interrupted_log_write_keeps_the_previous_log_intact(tmp_path, section_r
     log_path = Path(config["paths"]["sections_dir"]) / "_revisions" / "revision-log.json"
     before = log_path.read_text(encoding="utf-8")
 
+    real_write = section_repo.write_raw_text
+    calls = []
+
     def interrupted(path, text):
-        raise OSError("disk went away")
+        calls.append(path)
+        if len(calls) == 2:  # the diff (1st write) succeeds; only the log (2nd) is interrupted
+            raise OSError("disk went away")
+        real_write(path, text)
 
     monkeypatch.setattr(section_repo, "write_raw_text", interrupted)
     with pytest.raises(OSError):
         service.revise("alpha", _template(), config, "introduccion", "V3", "dos", normative=_NORMATIVE, now="t2")
 
+    assert len(calls) == 2 and calls[1] == log_path
     assert log_path.read_text(encoding="utf-8") == before
+
+
+def test_diff_numbering_never_reuses_a_number_after_a_diff_is_removed(tmp_path, service):
+    config = _config(tmp_path)
+
+    def record(i: int) -> str:
+        return service._record(
+            config, "001-introduccion", f"diff {i}", request=f"cambio {i}", target_id="introduccion",
+            before_hash="a", after_hash="b", ripple=[], ts=f"t{i}", issues=[],
+        )
+
+    first, second, third = record(1), record(2), record(3)
+    Path(first).unlink()  # a gap below the max: glob-count numbering would now reuse "3"
+    fourth = record(4)
+
+    assert len({first, second, third, fourth}) == 4
+    assert Path(third).read_text(encoding="utf-8") == "diff 3"
+    assert Path(fourth).read_text(encoding="utf-8") == "diff 4"
+
+
+def test_revision_service_requires_a_provenance_lock(section_repo, spy_review, context_service):
+    with pytest.raises(TypeError):
+        RevisionService(section_repo, spy_review, context_service, JsonEvidenceRepository())  # type: ignore[call-arg]
