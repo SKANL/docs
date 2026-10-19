@@ -137,7 +137,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] U8 (D) [98154674] Review: basic tabs (Findings, Artifacts, Compare) vs advanced
       (Evidence, Baselines, Quality, Graph).
 - [x] U9 (D) [e1148967] Friendly error mapping with collapsible technical details.
-- [ ] U14 (D) From review of U13/U7-U9 (approved, lineage review-cb28abc3fa3a4fcb,
+- [x] U14 (D) From review of U13/U7-U9 (approved, lineage review-cb28abc3fa3a4fcb,
       acknowledged): Sources import must report partial success (do not Promise.all
       and lose already-stored files); clear the file input as well as state after
       an import so Ingest never sends an empty list; Import must stay available
@@ -148,7 +148,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       'service unreachable'; ErrorState message/error precedence made explicit in
       the type; status->kind mapping as a table; rename sectionsActions test file
       to match its scope.
-- [ ] U10 (D) i18n: dictionary layer, Spanish default + English, palette shows
+- [x] U10 (D) i18n: dictionary layer, Spanish default + English, palette shows
       labels not raw CLI strings.
 - [ ] U11 (D) Desktop: startup screen, sidecar failure screen with Retry and
       View log via existing Tauri commands.
@@ -257,3 +257,11 @@ acknowledged; 11 advisory findings, 5+ real -> U14.
 
 ## Next step
 U14 + U10 sweep, then U11, U12.
+
+## U14 + U10 outcome
+Commits b4094a68..1861b6f1 (hardening, palette labels, full i18n of all areas, literal-scan test).
+Native review of the tail slice 5953072f..HEAD (24 files, 1084 lines): granted, APPROVED, 3 advisory
+(publish policy label untested, doctor status text untested, literal guard blind to ternaries),
+lineage review-0f91c3e969e429e5 acknowledged. Earlier i18n commits cannot be isolated by a base-diff
+review (head fixed at HEAD, 4076 lines total exceed the lens budget): covered by tests only.
+Reviewed boundary: 1861b6f1. Next: U11, U12.

@@ -126,3 +126,15 @@ describe("configure screens", () => {
     expect(await screen.findByRole("table", { name: "Comprobaciones de diagnóstico" }, { timeout: 5000 })).toBeTruthy();
   }, 20_000);
 });
+
+describe("tools screen", () => {
+  it("renders the specialist tools in Spanish and opens one", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    openAt("/tools", toolsApi());
+    expect(await screen.findByRole("button", { name: "Abrir Revisar reglas" }, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Abrir Traducir PDF" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Abrir Generar DOCX" }));
+    expect(await screen.findByRole("button", { name: "Ejecutar Generar DOCX" })).toBeTruthy();
+    expect(screen.queryByText("Build DOCX")).toBeNull();
+  }, 20_000);
+});
