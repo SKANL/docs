@@ -5,6 +5,7 @@ from pathlib import Path
 from docs.domain.markdown_text import split_frontmatter
 from docs.domain.workspace import Workspace
 from docs.domain.workspace_format import validate_workspace_marker
+from docs.infrastructure.atomic_write import atomic_write_text
 
 
 class JsonSectionRepository:
@@ -33,14 +34,12 @@ class JsonSectionRepository:
 
     def write_section(self, doc_id: str, order: int, section_id: str, raw_text: str) -> None:
         path = self.section_path(doc_id, order, section_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(raw_text, encoding="utf-8")
+        atomic_write_text(path, raw_text)
 
     def write_proposal_section(self, doc_id: str, order: int, section_id: str, raw_text: str) -> Path:
         proposals_dir = self._sections_dir(doc_id) / "_proposals"
-        proposals_dir.mkdir(parents=True, exist_ok=True)
         path = proposals_dir / f"{order:03d}-{section_id}.candidate.md"
-        path.write_text(raw_text, encoding="utf-8")
+        atomic_write_text(path, raw_text)
         return path
 
     def context_pack_path(self, doc_id: str, order: int, section_id: str) -> Path:
@@ -50,8 +49,7 @@ class JsonSectionRepository:
         return self._sections_dir(doc_id) / "_context" / "000-document.context.md"
 
     def write_context_pack(self, path: Path, content: str) -> Path:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        atomic_write_text(path, content)
         return path
 
     def find_section_file(self, doc_id: str, section_id: str) -> Path | None:
@@ -62,5 +60,4 @@ class JsonSectionRepository:
         return path.read_text(encoding="utf-8")
 
     def write_raw_text(self, path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        atomic_write_text(path, content)

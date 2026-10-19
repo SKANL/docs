@@ -8,6 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from docs.domain.models.document import DocumentSummary
 
 
+class RegistryCorruptError(Exception):
+    """registry.json exists but cannot be parsed; it is left untouched for the user to repair."""
+
+
 class Registry(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
     schema_version: int = Field(1, alias="schema")

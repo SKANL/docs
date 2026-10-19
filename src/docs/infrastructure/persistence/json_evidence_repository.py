@@ -7,6 +7,7 @@ from typing import Any
 
 from docs.domain.authoring_clock import authoring_timestamp
 from docs.domain.identity import pretty_json, sha256_bytes, sha256_file
+from docs.infrastructure.atomic_write import atomic_write_text
 
 _TRACEABILITY_SUFFIXES = {".md", ".json"}
 
@@ -67,7 +68,4 @@ class JsonEvidenceRepository:
             if _strip_generated_at(existing) == _strip_generated_at(next_payload):
                 return
         next_payload["generated_at"] = authoring_timestamp()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            pretty_json(next_payload), encoding="utf-8"
-        )
+        atomic_write_text(path, pretty_json(next_payload))

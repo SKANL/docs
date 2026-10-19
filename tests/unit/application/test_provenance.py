@@ -1,11 +1,15 @@
 import hashlib
 import json
+import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 from docs.domain.artifacts import ArtifactRef, ArtifactState, BuildManifest
 from docs.domain.identity import sha256_content
-from docs.infrastructure.provenance.ledger import ProvenanceLedger
+from docs.infrastructure.provenance.ledger import LedgerCorruptError, ProvenanceLedger
 
 
 def test_record_run_writes_deterministic_hashes_and_load_run_returns_them(tmp_path: Path) -> None:
@@ -230,41 +234,52 @@ def test_concurrent_provenance_updates_merge_without_lost_runs(tmp_path: Path) -
     assert set(payload["runs"]) == {f"run-{index}" for index in range(8)}
 
 
-def test_lock_recovers_stale_owner_metadata(tmp_path: Path, monkeypatch) -> None:
+def test_lock_recovers_stale_owner_metadata(tmp_path: Path) -> None:
     source = tmp_path / "source.md"
     source.write_text("source", encoding="utf-8")
     log = tmp_path / "provenance-v2.json"
     lock = log.with_name(log.name + ".lock")
     lock.mkdir()
     (lock / "owner.json").write_text(json.dumps({"pid": 999999, "created_at": 0}), encoding="utf-8")
-    monkeypatch.setattr("docs.infrastructure.provenance.ledger.time.time", lambda: 120)
 
     ProvenanceLedger(log).record_run("after-stale-lock", inputs=(source,), outputs=())
 
     assert ProvenanceLedger(log).load_run("after-stale-lock") is not None
 
 
-def test_lock_does_not_remove_a_stale_lock_already_claimed_by_another_recoverer(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_lock_cleanup_never_evicts_a_newer_owner(tmp_path: Path) -> None:
+    log = tmp_path / "provenance-v2.json"
+    lock = log.with_name(log.name + ".lock")
+    with ProvenanceLedger(log)._lock():
+        # Another process reclaimed this lock and now owns it under its own token.
+        (lock / "owner.json").write_text(
+            json.dumps({"pid": os.getpid(), "token": "someone-else", "created_at": time.time()}),
+            encoding="utf-8",
+        )
+    assert json.loads((lock / "owner.json").read_text(encoding="utf-8"))["token"] == "someone-else"
+
+
+def test_lock_is_released_when_the_holder_finishes(tmp_path: Path) -> None:
+    log = tmp_path / "provenance-v2.json"
+    with ProvenanceLedger(log)._lock():
+        pass
+    assert not log.with_name(log.name + ".lock").exists()
+
+
+@pytest.mark.parametrize("garbage", [b'{"runs": {', b"", b"[]"])
+def test_corrupt_ledger_raises_a_clear_error_and_is_never_reset(tmp_path: Path, garbage: bytes) -> None:
     source = tmp_path / "source.md"
     source.write_text("source", encoding="utf-8")
     log = tmp_path / "provenance-v2.json"
-    lock = log.with_name(log.name + ".lock")
-    lock.mkdir()
-    (lock / "owner.json").write_text(json.dumps({"pid": 999999, "created_at": 0}), encoding="utf-8")
-    (lock / ".reclaim").mkdir()
-    monotonic_values = iter((0, 11))
-    monkeypatch.setattr("docs.infrastructure.provenance.ledger.time.time", lambda: 120)
-    monkeypatch.setattr(
-        "docs.infrastructure.provenance.ledger.time.monotonic", lambda: next(monotonic_values)
-    )
+    log.write_bytes(garbage)
+    ledger = ProvenanceLedger(log)
 
-    with __import__("pytest").raises(TimeoutError, match="timed out acquiring provenance lock"):
-        ProvenanceLedger(log).record_run("must-not-steal", inputs=(source,), outputs=())
+    with pytest.raises(LedgerCorruptError, match=r"provenance-v2\.json"):
+        ledger.load_run("x")
+    with pytest.raises(LedgerCorruptError):
+        ledger.record_run("y", inputs=(source,), outputs=())
 
-    assert lock.exists()
-    assert ProvenanceLedger(log).load_run("must-not-steal") is None
+    assert log.read_bytes() == garbage
 
 
 def test_verify_run_rejects_untrusted_external_path_from_tampered_ledger(tmp_path: Path) -> None:
