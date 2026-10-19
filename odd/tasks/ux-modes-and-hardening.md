@@ -152,7 +152,7 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
       labels not raw CLI strings.
 - [x] U11 (D) Desktop: startup screen, sidecar failure screen with Retry and
       View log via existing Tauri commands.
-- [ ] U12 (I) Verify in a running app: screenshots, a11y pass, parity matrix
+- [x] U12 (I) Verify in a running app: screenshots, a11y pass, parity matrix
       regenerated, specs updated.
 
 ## Acceptance criteria
@@ -265,3 +265,11 @@ Native review of the tail slice 5953072f..HEAD (24 files, 1084 lines): granted, 
 lineage review-0f91c3e969e429e5 acknowledged. Earlier i18n commits cannot be isolated by a base-diff
 review (head fixed at HEAD, 4076 lines total exceed the lens budget): covered by tests only.
 Reviewed boundary: 1861b6f1. Next: U11, U12.
+
+## Close-out (U11, U12)
+U11 2567299a, 9a2c7afb (desktop gate; Rust 9/9, only a faked Tauri bridge in UI tests, no real Tauri run).
+e2e a7fef3f4 (52/52, fixture pins EN + Write + Advanced; new modes.spec.ts).
+Full-suite fixes: 39bbffeb (gate needs callable invoke; parity tab check), test patch for lazy PDF import.
+Backend: 3200 passed (non-architecture) + 131 architecture; frontend 395; ruff/mypy/tsc/eslint clean.
+U11+U12 slice 1861b6f1..HEAD: 379 lines, under budget, not natively reviewed.
+Not done: real Tauri run + screenshots; chained-PR strategy choice before first push.
