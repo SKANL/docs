@@ -137,6 +137,17 @@ Route: D = delegated writer, I = inline. Mark [x] only after observed outcome + 
 - [x] U8 (D) [98154674] Review: basic tabs (Findings, Artifacts, Compare) vs advanced
       (Evidence, Baselines, Quality, Graph).
 - [x] U9 (D) [e1148967] Friendly error mapping with collapsible technical details.
+- [ ] U14 (D) From review of U13/U7-U9 (approved, lineage review-cb28abc3fa3a4fcb,
+      acknowledged): Sources import must report partial success (do not Promise.all
+      and lose already-stored files); clear the file input as well as state after
+      an import so Ingest never sends an empty list; Import must stay available
+      when document.import exists without source.ingest; SectionsPanel `editing`
+      resets on section/mode/document change; PipelineLauncher policy resets when
+      Advanced is turned off while 'release' is selected; friendly-error must not
+      map a stale-chunk 'Failed to fetch dynamically imported module' TypeError to
+      'service unreachable'; ErrorState message/error precedence made explicit in
+      the type; status->kind mapping as a table; rename sectionsActions test file
+      to match its scope.
 - [ ] U10 (D) i18n: dictionary layer, Spanish default + English, palette shows
       labels not raw CLI strings.
 - [ ] U11 (D) Desktop: startup screen, sidecar failure screen with Retry and
@@ -241,5 +252,8 @@ Follow-ups: dialogs (ConfirmActionDialog, WorkspaceFormDialog, DocumentCreateDia
 rename) and ApiStatus/DocumentStatusPanel/context switcher still use formatApiError
 text; fold into U10 sweep. Mutation error toasts do not exist (ActionError covers).
 
+Review of U13/U7-U9 (base fa09a21a, 35 files, 637 lines): APPROVED and
+acknowledged; 11 advisory findings, 5+ real -> U14.
+
 ## Next step
-U10 sweep (translate remaining panels + palette labels + dialog errors), U11, U12.
+U14 + U10 sweep, then U11, U12.
