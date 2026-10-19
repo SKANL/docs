@@ -66,6 +66,24 @@ fn check_schema_supported(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// File the supervisor points the sidecar's stdout/stderr at, inside the app data root.
+pub(crate) const SIDECAR_LOG_FILE: &str = "sidecar.log";
+
+/// Last `max_bytes` of the sidecar log, or "" when there is none. Never fails:
+/// the failure screen must still render when the log is missing or unreadable.
+pub(crate) fn read_log_tail(root: &Path, max_bytes: usize) -> String {
+    let Ok(bytes) = std::fs::read(root.join(SIDECAR_LOG_FILE)) else {
+        return String::new();
+    };
+    let tail = &bytes[bytes.len().saturating_sub(max_bytes)..];
+    // Drop a UTF-8 sequence cut in half by the byte window.
+    let start = tail
+        .iter()
+        .take_while(|byte| (**byte & 0xC0) == 0x80)
+        .count();
+    String::from_utf8_lossy(&tail[start..]).into_owned()
+}
+
 pub(crate) fn append_startup_log(app: &tauri::AppHandle, message: &str) {
     let mut paths = vec![std::env::temp_dir().join("docs-desktop-startup.log")];
     if let Ok(root) = app.path().app_data_dir() {
@@ -129,6 +147,41 @@ mod tests {
         let error = prepare_app_data(&root).expect_err("newer root schema");
         assert!(error.contains("newer"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_log_tail_returns_only_the_last_bytes_on_a_char_boundary() {
+        let root = unique_root("log");
+        std::fs::create_dir_all(&root).unwrap();
+        let log = root.join(SIDECAR_LOG_FILE);
+        std::fs::write(
+            &log,
+            "línea uno
+línea dos
+línea tres
+",
+        )
+        .unwrap();
+        let tail = read_log_tail(&root, 14);
+        assert!(tail.ends_with(
+            "línea tres
+"
+        ));
+        assert!(!tail.contains("uno"));
+        assert_eq!(
+            read_log_tail(&root, 10_000),
+            "línea uno
+línea dos
+línea tres
+"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_log_tail_is_empty_when_there_is_no_log() {
+        let root = unique_root("nolog");
+        assert_eq!(read_log_tail(&root, 100), "");
     }
 
     #[test]

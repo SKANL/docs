@@ -64,3 +64,12 @@ The supervisor probes `http://127.0.0.1:8765/health` by default (override with
 `{"ready":true,"protocol":"docs-sidecar/v1"}`. The desktop commands expose
 the in-process handshake/health state only; no remote IPC or broad shell
 permissions are enabled.
+
+## Startup and failure screens
+
+Inside the desktop shell the UI (`review-studio/src/app/shell/SidecarGate.tsx`)
+polls `sidecar_health` and shows a startup screen while the sidecar boots. If
+the shell reports `failed` on two consecutive polls it shows a failure screen
+with **Retry** (`sidecar_restart`) and **View log** (`sidecar_log`, the last
+16 KiB of `sidecar.log` in the app data directory). In a browser the gate is
+transparent.

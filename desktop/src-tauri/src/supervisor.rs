@@ -103,7 +103,10 @@ impl SidecarSupervisor {
         // Keep the console hidden for end users while preserving a durable,
         // local diagnostic stream for startup/runtime failures. The file
         // handle belongs to the child after spawn and is closed with it.
-        let log_path = workspace.parent().unwrap_or(workspace).join("sidecar.log");
+        let log_path = workspace
+            .parent()
+            .unwrap_or(workspace)
+            .join(crate::app_data::SIDECAR_LOG_FILE);
         // The supervisor owns this path; record it separately so a failed
         // packaged startup can be diagnosed even when the UI never loads.
         let _ = std::fs::OpenOptions::new()
