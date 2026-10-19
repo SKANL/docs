@@ -24,3 +24,9 @@ export function visibleAreas(mode: "supervise" | "write", advanced: boolean): Ar
 /** Capability `slice` (S0-S6, from the catalogue) to the task area that hosts it. */
 const sliceArea: Record<string, string> = { S0: "/", S1: "/configure/workspaces", S2: "/authoring", S3: "/pipeline", S4: "/review", S5: "/delivery", S6: "/configure" };
 export const areaPathForSlice = (slice: string) => sliceArea[slice] ?? "/";
+
+/** Whether the area hosting `path` is listed in navigation for this mode; the palette applies the same rule to capability items. */
+export function isPathVisible(path: string, mode: "supervise" | "write", advanced: boolean): boolean {
+  const host = areas.find(area => area.path === "/" ? path === "/" : path === area.path || path.startsWith(`${area.path}/`));
+  return !host || visibleAreas(mode, advanced).includes(host);
+}

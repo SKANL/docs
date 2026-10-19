@@ -54,11 +54,12 @@ describe("application shell", () => {
   });
 
   it("lists navigation plus only enabled capabilities as palette actions", async () => {
+    localStorage.setItem("review-studio.advanced", "true");
     render(<App api={makeApi()} />);
     await userEvent.click(screen.getByRole("button", { name: "Open command menu" }));
     const palette = await screen.findByRole("dialog", { name: /command palette/i });
     expect(within(palette).getByText("Run")).toBeTruthy();
-    await waitFor(() => expect(within(palette).getByText("workspace list")).toBeTruthy());
+    await waitFor(() => expect(within(palette).getByText("List workspaces")).toBeTruthy());
     expect(within(palette).queryByText("stamp")).toBeNull();
   });
 
