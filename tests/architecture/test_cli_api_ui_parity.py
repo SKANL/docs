@@ -206,7 +206,9 @@ def test_every_claimed_ui_route_exists_in_the_router():
         area, _, tab = route.strip("/").partition("/")
         if area in tabs and tab and not tab.startswith(":"):
             source = (ROOT / "review-studio/src" / tabs[area]).read_text(encoding="utf-8")
-            assert f'["{tab.split("/")[0]}",' in source, f"{command}: no {area} tab {tab}"
+            # tabs are `["id", label, ...]` tuples or a plain id list
+            name = tab.split("/")[0]
+            assert f'"{name}",' in source or f'"{name}"]' in source, f"{command}: no {area} tab {tab}"
 
 
 def test_excluded_rows_carry_their_reason_in_the_matrix_and_no_ui_data():
