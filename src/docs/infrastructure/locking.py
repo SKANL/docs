@@ -46,7 +46,66 @@ def owned_directory_lock(path: Path, *, timeout: float = 30.0, stale_after: floa
         except (OSError, ValueError, json.JSONDecodeError):
             owner = {}
         if owner.get("token") == token:
-            shutil.rmtree(path, ignore_errors=True)
+            _remove_lock_dir(path)
+
+
+def _remove_lock_dir(path: Path, *, attempts: int = 200) -> None:
+    """Remove a lock directory, retrying while a contender holds owner.json open.
+
+    On Windows a reader that has the owner file open makes the removal fail once;
+    swallowing that error would leave the lock behind and block every later owner.
+    """
+    for _ in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            time.sleep(0.01)
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def pid_alive(pid: int) -> bool:
+    """True when `pid` names a running process (conservative: unknown means alive).
+
+    `os.kill(pid, 0)` is not usable on Windows: it reports an exited pid as alive,
+    so a crashed owner's lock was never reclaimed.
+    """
+    if os.name == "nt":
+        return _pid_alive_windows(pid)
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _pid_alive_windows(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    error_invalid_parameter = 87
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        # Only "no such pid" proves death; access denied etc. means it exists.
+        return ctypes.get_last_error() != error_invalid_parameter  # type: ignore[attr-defined]
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def _reclaim_stale(path: Path, *, stale_after: float) -> bool:
@@ -65,15 +124,8 @@ def _reclaim_stale(path: Path, *, stale_after: float) -> bool:
             return False
     if pid is not None and time.time() - created_at <= stale_after:
         return False
-    if pid is not None:
-        try:
-            os.kill(pid, 0)
-        except PermissionError:
-            return False
-        except OSError:
-            pass
-        else:
-            return False
+    if pid is not None and pid_alive(pid):
+        return False
     quarantine = path.with_name(f".{path.name}.reclaim-{uuid.uuid4().hex}")
     try:
         os.replace(path, quarantine)

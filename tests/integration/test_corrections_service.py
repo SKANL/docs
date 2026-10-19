@@ -141,3 +141,20 @@ def test_a_failure_midway_keeps_earlier_ids_recorded_and_a_rerun_resumes(tmp_pat
     recorded = json.loads(applied_path.read_text(encoding="utf-8"))["applied"]
     assert [item["id"] for item in recorded] == ["c1", "c2", "c3"]
     assert section_repo.read_raw_text(section_repo.section_path("doc1", 1, "intro")) == "1 2 3"
+
+
+def test_applied_ledger_is_written_into_a_missing_nested_parent(tmp_path):
+    service, workspace = _service(tmp_path)
+    section_repo = JsonSectionRepository(workspace)
+    section_repo.write_section("doc1", 1, "intro", "Hola mundo")
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    (inbox / "c1.yaml").write_text("id: c1\nsection_id: intro\nfind: mundo\nreplace: gente\n", encoding="utf-8")
+    config = _config(tmp_path, [{"id": "intro", "order": 1}])
+    applied = tmp_path / "missing" / "deeper" / "applied.json"
+    config["paths"]["corrections_applied"] = str(applied)
+    assert not applied.parent.exists()
+
+    assert service.apply_corrections("doc1", config) == 1
+
+    assert json.loads(applied.read_text(encoding="utf-8"))["applied"][0]["id"] == "c1"

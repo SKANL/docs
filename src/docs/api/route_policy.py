@@ -14,6 +14,10 @@ DYNAMIC_ROOTS = tuple(
     )
 )
 
+# Routes deliberately open to any authenticated caller. Every other route needs a scope entry in
+# `required_scope`; the application denies a route that has neither (fail closed).
+PUBLIC_ROUTES = frozenset({("GET", "/v2/capabilities"), ("GET", "/v2/openapi.json")})
+
 
 def required_scope(method: str, path: str) -> str | None:
     method = method.upper()
