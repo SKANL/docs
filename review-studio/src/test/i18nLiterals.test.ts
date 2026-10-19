@@ -1,6 +1,4 @@
 // @vitest-environment node
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -8,7 +6,7 @@ import { describe, expect, it } from "vitest";
  * It flags (a) JSX text that starts like a sentence and (b) literal text attributes.
  * ponytail: regex scan, not a parser; multi-line JSX text and template literals are not seen. Upgrade to a TS AST walk if it misses real cases.
  */
-const root = join(__dirname, "..", "features");
+const sources = import.meta.glob("../features/**/*.tsx", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const ATTRS = "aria-label|title|placeholder|description|confirmLabel|label|what|eyebrow";
 const TEXT = /(?<=>)\s*([A-Z][a-z]+(?:[ ,.'’&;a-z-]+)[^<>{}]*)\s*(?=<)/g;
 const ATTR = new RegExp(`\\b(?:${ATTRS})="([A-Za-z][^"{}]*)"`, "g");
@@ -21,18 +19,12 @@ const ALLOW: Record<string, string[]> = {
   "tools/TranslationWorkflow.tsx": ["es"], // language code placeholder
 };
 
-const files = (dir: string): string[] => readdirSync(dir).flatMap(name => {
-  const path = join(dir, name);
-  return statSync(path).isDirectory() ? files(path) : path.endsWith(".tsx") ? [path] : [];
-});
-
 describe("untranslated JSX literals", () => {
   it("finds no user-facing string literal in src/features outside the allowlist", () => {
     const found: string[] = [];
-    for (const path of files(root)) {
-      const name = path.slice(root.length + 1).replace(/\\/g, "/");
+    for (const [path, source] of Object.entries(sources)) {
+      const name = path.replace("../features/", "");
       const allowed = ALLOW[name] ?? [];
-      const source = readFileSync(path, "utf8");
       for (const re of [TEXT, ATTR]) {
         for (const match of source.matchAll(re)) {
           const literal = match[1]!.trim();
