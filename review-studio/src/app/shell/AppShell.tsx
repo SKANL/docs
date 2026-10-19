@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { RouteErrorBoundary } from "@/components/shared/RouteErrorBoundary";
 import { useApi } from "@/app/providers";
 import { useApiHealth } from "@/components/shared/ApiStatus";
+import { useT } from "@/lib/i18n";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -17,6 +18,7 @@ function RouteSkeleton() {
 
 export function AppShell({ pollIntervalMs }: { pollIntervalMs?: number }) {
   const api = useApi();
+  const { t } = useT();
   const health = useApiHealth(api, pollIntervalMs);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const commandsOpenRef = useRef(false);
@@ -50,7 +52,7 @@ export function AppShell({ pollIntervalMs }: { pollIntervalMs?: number }) {
 
   return <div className="flex min-h-screen flex-col">
     <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md focus:bg-card focus:px-4 focus:py-2 focus:shadow-lg"
-      onClick={event => { event.preventDefault(); main.current?.focus(); }}>Skip to content</a>
+      onClick={event => { event.preventDefault(); main.current?.focus(); }}>{t("app.skip")}</a>
     <Topbar health={health} onOpenCommands={() => setCommands(true)} />
     <UpdateNotice />
     <div className="flex flex-1 flex-col md:flex-row">
@@ -60,7 +62,6 @@ export function AppShell({ pollIntervalMs }: { pollIntervalMs?: number }) {
         <Fragment key={health.readyEpoch}><RouteErrorBoundary key={pathname}><Suspense fallback={<RouteSkeleton />}><Outlet /></Suspense></RouteErrorBoundary></Fragment>
       </main>
     </div>
-    <footer className="border-t bg-card px-4 py-4 text-xs text-muted-foreground sm:px-8">Review Studio foundation</footer>
     {(commandsOpen || paletteLoaded.current) && <Suspense fallback={null}><CommandPalette open={commandsOpen} onOpenChange={setCommands} /></Suspense>}
   </div>;
 }

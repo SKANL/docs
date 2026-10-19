@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import { ok, openAt, toolsApi, toolsCatalog } from "./toolsHarness";
 
-afterEach(() => { cleanup(); window.location.hash = ""; });
+afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); });
 
 const card = async (title: string) => {
   const region = await screen.findByRole("region", { name: title });
@@ -25,7 +25,8 @@ describe("tools area", () => {
     expect(open.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("lists Tools as a secondary sidebar entry and keeps specialist controls out of authoring", async () => {
+  it("lists Tools as a secondary sidebar entry (under Advanced) and keeps specialist controls out of authoring", async () => {
+    localStorage.setItem("review-studio.advanced", "true");
     openAt("/authoring/sources", toolsApi());
     const secondary = await screen.findByRole("navigation", { name: "Specialist tools" });
     expect(within(secondary).getByRole("link", { name: "Tools" }).getAttribute("href")).toContain("/tools");
