@@ -13,31 +13,34 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Unavailable } from "@/components/shared/Unavailable";
 import { useActiveContext } from "@/app/active-context";
 import { useCapability } from "@/lib/capability-registry";
+import { statusKey, useT } from "@/lib/i18n";
 import type { DiagnosticStatus } from "@/api/domains/tools";
 
 const statusVariant: Record<DiagnosticStatus, "secondary" | "outline" | "destructive" | "default"> = { ok: "secondary", warn: "outline", error: "destructive", unavailable: "outline" };
 
 function IssueCodeLookup() {
+  const { t } = useT();
   const api = useApi();
   const [code, setCode] = useState("");
   const explain = useMutation({ mutationFn: (value: string) => api.explainIssueCode!(value) });
-  return <section aria-label="Explain an issue code" className="grid gap-3">
-    <h2 className="text-xl font-semibold">Explain an issue code</h2>
+  return <section aria-label={t("dx.explain.heading")} className="grid gap-3">
+    <h2 className="text-xl font-semibold">{t("dx.explain.heading")}</h2>
     <form className="flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); if (code.trim()) explain.mutate(code.trim()); }}>
-      <div className="grid gap-1"><Label htmlFor="issue-code">Issue code</Label><Input id="issue-code" autoComplete="off" placeholder="e.g. QA.001" value={code} onChange={event => setCode(event.target.value)} /></div>
-      <Button type="submit" variant="outline" disabled={!code.trim() || explain.isPending}>Explain code</Button>
+      <div className="grid gap-1"><Label htmlFor="issue-code">{t("dx.code")}</Label><Input id="issue-code" autoComplete="off" placeholder={t("dx.codePlaceholder")} value={code} onChange={event => setCode(event.target.value)} /></div>
+      <Button type="submit" variant="outline" disabled={!code.trim() || explain.isPending}>{t("dx.explainBtn")}</Button>
     </form>
-    {explain.isError && <ErrorState title="Could not explain the code" error={explain.error} />}
-    {explain.data && <section aria-label="Issue code explanation" className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
+    {explain.isError && <ErrorState title={t("dx.explainFailed")} error={explain.error} />}
+    {explain.data && <section aria-label={t("dx.explanation")} className="grid gap-2 rounded-lg border bg-card p-4 text-sm">
       <p className="font-medium"><code>{explain.data.code}</code> <span className="text-muted-foreground">{explain.data.family}{explain.data.family_description ? ` · ${explain.data.family_description}` : ""}</span></p>
-      <p><span className="text-muted-foreground">Meaning</span> {explain.data.meaning}</p>
-      <p><span className="text-muted-foreground">How to fix</span> {explain.data.fix}</p>
+      <p><span className="text-muted-foreground">{t("dx.meaning")}</span> {explain.data.meaning}</p>
+      <p><span className="text-muted-foreground">{t("dx.fix")}</span> {explain.data.fix}</p>
     </section>}
   </section>;
 }
 
 /** Environment checks for the current document, plus an issue-code lookup. A degraded capability is explained, never hidden. */
 export function DoctorPanel() {
+  const { t } = useT();
   const api = useApi();
   const can = useCapability();
   const active = useActiveContext();
@@ -52,25 +55,25 @@ export function DoctorPanel() {
   const degraded = Object.entries(diagnostics.data?.capability_diagnostics ?? {});
 
   return <div className="grid gap-8">
-    <section aria-label="Diagnostics" className="grid gap-3">
+    <section aria-label={t("dx.heading")} className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">Diagnostics</h2>
-        <div className="flex items-center gap-2"><Switch id="doctor-strict" checked={strict} onCheckedChange={setStrict} /><Label htmlFor="doctor-strict">Strict</Label></div>
+        <h2 className="text-xl font-semibold">{t("dx.heading")}</h2>
+        <div className="flex items-center gap-2"><Switch id="doctor-strict" checked={strict} onCheckedChange={setStrict} /><Label htmlFor="doctor-strict">{t("dx.strict")}</Label></div>
       </div>
-      {!can("doctor") || !api.getDiagnostics ? <Unavailable>Diagnostics are not available on this server.</Unavailable>
-        : <QueryBoundary query={diagnostics} title="Could not run the diagnostics">{report => <>
-          <p className="flex items-center gap-2 text-sm"><Badge variant={report.passed ? "secondary" : "destructive"}>{report.passed ? "Passed" : "Needs attention"}</Badge><span className="text-muted-foreground">Checked for {report.document_id}{report.strict ? " (strict)" : ""}</span></p>
-          <Table aria-label="Diagnostic checks">
-            <TableHeader><TableRow><TableHead>Check</TableHead><TableHead>Status</TableHead><TableHead>Required</TableHead><TableHead>Version</TableHead><TableHead>Detail</TableHead></TableRow></TableHeader>
+      {!can("doctor") || !api.getDiagnostics ? <Unavailable>{t("dx.unavailable")}</Unavailable>
+        : <QueryBoundary query={diagnostics} title={t("dx.runFailed")}>{report => <>
+          <p className="flex items-center gap-2 text-sm"><Badge variant={report.passed ? "secondary" : "destructive"}>{report.passed ? t("dx.passed") : t("dx.attention")}</Badge><span className="text-muted-foreground">{t(report.strict ? "dx.checkedStrict" : "dx.checked", { document: report.document_id })}</span></p>
+          <Table aria-label={t("dx.checks")}>
+            <TableHeader><TableRow><TableHead>{t("dx.check")}</TableHead><TableHead>{t("dx.status")}</TableHead><TableHead>{t("dx.required")}</TableHead><TableHead>{t("dx.version")}</TableHead><TableHead>{t("dx.detail")}</TableHead></TableRow></TableHeader>
             <TableBody>{report.checks.map(check => <TableRow key={check.name}>
               <TableCell className="font-medium">{check.name}</TableCell>
-              <TableCell><Badge variant={statusVariant[check.status] ?? "outline"}>{check.status}</Badge></TableCell>
-              <TableCell>{check.required ? "yes" : "no"}</TableCell><TableCell>{check.version ?? "-"}</TableCell><TableCell className="break-words">{check.detail}</TableCell>
+              <TableCell><Badge variant={statusVariant[check.status] ?? "outline"}>{statusKey("dx.status", check.status) ? t(statusKey("dx.status", check.status)!) : check.status}</Badge></TableCell>
+              <TableCell>{check.required ? t("common.yes") : t("common.no")}</TableCell><TableCell>{check.version ?? "-"}</TableCell><TableCell className="break-words">{check.detail}</TableCell>
             </TableRow>)}</TableBody>
           </Table>
-          {degraded.length > 0 && <section aria-label="Degraded capabilities" className="grid gap-2 rounded-lg border bg-card p-4">
-            <h3 className="text-lg font-semibold">Degraded capabilities</h3>
-            <p className="text-sm text-muted-foreground">These features run in a reduced mode. The reason is shown as reported.</p>
+          {degraded.length > 0 && <section aria-label={t("dx.degraded")} className="grid gap-2 rounded-lg border bg-card p-4">
+            <h3 className="text-lg font-semibold">{t("dx.degraded")}</h3>
+            <p className="text-sm text-muted-foreground">{t("dx.degradedBody")}</p>
             <StructureView value={Object.fromEntries(degraded)} />
           </section>}
         </>}</QueryBoundary>}

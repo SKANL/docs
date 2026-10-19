@@ -4,6 +4,7 @@ import { AppShell } from "@/app/shell/AppShell";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { ConfigureLayout } from "@/features/configure/ConfigureLayout";
+import { useT } from "@/lib/i18n";
 
 // Each feature area is its own chunk so the entry bundle holds only the shell (budget: docs/review-studio/release-proof.md).
 const HomePage = lazy(() => import("@/features/home/HomePage").then(m => ({ default: m.HomePage })));
@@ -20,6 +21,7 @@ const DoctorPanel = lazy(() => import("@/features/configure/DoctorPanel").then(m
 const PluginsPanel = lazy(() => import("@/features/configure/PluginsPanel").then(m => ({ default: m.PluginsPanel })));
 
 export function AppRoutes({ pollIntervalMs }: { pollIntervalMs?: number }) {
+  const { t } = useT();
   return <Routes>
     <Route element={<AppShell pollIntervalMs={pollIntervalMs} />}>
       <Route index element={<HomePage />} />
@@ -30,11 +32,11 @@ export function AppRoutes({ pollIntervalMs }: { pollIntervalMs?: number }) {
       <Route path="delivery" element={<DeliveryRoute />} />
       <Route path="configure" element={<ConfigureIndex />} />
       <Route path="configure/workspaces" element={<WorkspaceDocumentPage />} />
-      <Route path="configure/templates" element={<ConfigureLayout title="Templates" description="Installed and built-in templates, creation, and validation."><TemplateEditorPage /></ConfigureLayout>} />
-      <Route path="configure/diagnostics" element={<ConfigureLayout title="Diagnostics" description="Environment checks for the current document and issue-code explanations."><DoctorPanel /></ConfigureLayout>} />
-      <Route path="configure/plugins" element={<ConfigureLayout title="Plugins" description="The read-only plugin registry."><PluginsPanel /></ConfigureLayout>} />
+      <Route path="configure/templates" element={<ConfigureLayout title="cfg.templates" description="cfg.templates.text"><TemplateEditorPage /></ConfigureLayout>} />
+      <Route path="configure/diagnostics" element={<ConfigureLayout title="cfg.diagnostics" description="cfg.diagnostics.page"><DoctorPanel /></ConfigureLayout>} />
+      <Route path="configure/plugins" element={<ConfigureLayout title="cfg.plugins" description="cfg.plugins.text"><PluginsPanel /></ConfigureLayout>} />
       <Route path="tools" element={<ToolsRoute />} />
-      <Route path="*" element={<EmptyState title="Page not found" description="This address does not match any Review Studio page."><Button asChild variant="outline"><Link to="/">Go home</Link></Button></EmptyState>} />
+      <Route path="*" element={<EmptyState title={t("app.notFound.title")} description={t("app.notFound.body")}><Button asChild variant="outline"><Link to="/">{t("app.goHome")}</Link></Button></EmptyState>} />
     </Route>
   </Routes>;
 }
