@@ -3,7 +3,9 @@ import { Button } from "@/components/ui/button";
 import { errorMessageKey, technicalDetails } from "@/lib/friendly-error";
 import { useT } from "@/lib/i18n";
 
-type Props = { title?: string; message?: string; error?: unknown; onRetry?: () => void; retrying?: boolean };
+type Common = { title?: string; onRetry?: () => void; retrying?: boolean };
+/** Either a caught `error` (message derived, details disclosed) or ready-made `message` text; never both. */
+type Props = Common & ({ error: unknown; message?: never } | { message: string; error?: never });
 
 /**
  * Pass `error` to get a plain-language message with the raw server text, code and request id tucked into a

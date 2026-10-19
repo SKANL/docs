@@ -18,6 +18,9 @@ const api = (status: number, code = "x") => new ApiError(raw, status, code, { fi
 describe("errorKind", () => {
   it.each([
     [new TypeError("Failed to fetch"), "network"],
+    [new TypeError("Failed to fetch dynamically imported module: http://x/assets/a.js"), "unknown"],
+    [new TypeError("Importing a module script failed."), "unknown"],
+    [new TypeError("error loading dynamically imported module"), "unknown"],
     [new DOMException("Request timed out", "TimeoutError"), "network"],
     [api(0), "network"],
     [api(401), "auth"], [api(403), "auth"],
@@ -85,8 +88,16 @@ describe("where errors reach the person", () => {
     const Broken = lazy(() => Promise.reject(new TypeError("Failed to fetch dynamically imported module")));
     withI18n(<RouteErrorBoundary><Suspense fallback={null}><Broken /></Suspense></RouteErrorBoundary>);
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain(translate("en", "error.network"));
+    expect(alert.textContent).toContain(translate("en", "error.unknown"));
     expect(alert.querySelector("details")!.textContent).toContain("Failed to fetch dynamically imported module");
     expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
+  });
+});
+
+describe("ErrorState props", () => {
+  it("takes either an error or a message, never both (checked by the type)", () => {
+    // @ts-expect-error `error` and `message` are mutually exclusive
+    const both = <ErrorState error={new Error("x")} message="ready-made" />;
+    expect(both).toBeTruthy();
   });
 });
