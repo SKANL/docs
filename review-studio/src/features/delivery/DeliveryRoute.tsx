@@ -1,3 +1,4 @@
+import { focusTargets } from "@/lib/focus-targets";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "@/app/providers";
@@ -6,6 +7,8 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { QueryBoundary } from "@/components/shared/QueryBoundary";
 import { Button } from "@/components/ui/button";
 import { useActiveContext, type ActiveContext } from "@/app/active-context";
+import { useMode } from "@/app/mode";
+import { useT } from "@/lib/i18n";
 import { useCapability } from "@/lib/capability-registry";
 import { Facts } from "@/components/shared/Facts";
 import type { PublicationResult } from "@/api/domains/delivery";
@@ -31,6 +34,8 @@ function PublicationResultPanel({ result }: { result: PublicationResult }) {
 function DeliveryView({ header, context }: { header: ReactNode; context: ActiveContext }) {
   const api = useApi();
   const can = useCapability();
+  const { advanced } = useMode();
+  const { t } = useT();
   const [dialog, setDialog] = useState<"package" | "publish" | null>(null);
   const [published, setPublished] = useState<PublicationResult | null>(null);
   const { workspaceId, workspaceName, documentId, documentTitle } = context;
@@ -47,10 +52,10 @@ function DeliveryView({ header, context }: { header: ReactNode; context: ActiveC
     </section>
     <section aria-label="Deliver" className="flex flex-wrap items-center gap-2">
       {can("document.package") && api.packageDocument && <Button type="button" variant="outline" onClick={() => setDialog("package")}>Package</Button>}
-      {can("document.publish") && api.publishDocument && <Button id="publish-document" type="button" onClick={() => setDialog("publish")}>Publish</Button>}
+      {can("document.publish") && api.publishDocument && <Button id={focusTargets.publishDocument} type="button" onClick={() => setDialog("publish")}>{t("term.deliver")}</Button>}
     </section>
     {published && <PublicationResultPanel result={published} />}
-    {can("document.release") && api.runDocument && <ReleasePanel workspaceId={workspaceId} documentId={documentId} />}
+    {advanced && can("document.release") && api.runDocument && <ReleasePanel workspaceId={workspaceId} documentId={documentId} />}
     <PublicationHistory workspaceId={workspaceId} />
     <PackageDialog open={dialog === "package"} workspaceId={workspaceId} documentId={documentId} onOpenChange={open => setDialog(open ? "package" : null)} />
     <PublishDialog open={dialog === "publish"} workspaceId={workspaceId} documentId={documentId} onOpenChange={open => setDialog(open ? "publish" : null)} onPublished={setPublished} />

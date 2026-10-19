@@ -1,3 +1,4 @@
+import { focusTargets } from "@/lib/focus-targets";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -8,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ActionError, useAction } from "@/lib/actions";
+import { useMode } from "@/app/mode";
+import { useT } from "@/lib/i18n";
 import { useCapability } from "@/lib/capability-registry";
 import { type ActiveContext } from "@/app/active-context";
 import type { OutputFormat, RunPolicy } from "@/api/domains/pipeline";
@@ -31,6 +34,8 @@ function Choice({ label, value, options, onChange }: { label: string; value: str
 export function PipelineLauncher({ context }: { context: ActiveContext }) {
   const api = useApi();
   const can = useCapability();
+  const { advanced } = useMode();
+  const { t } = useT();
   const navigate = useNavigate();
   const [format, setFormat] = useState<OutputFormat>("docx");
   const [policy, setPolicy] = useState<RunPolicy>("draft");
@@ -59,7 +64,7 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
   return <section aria-label="Launch" className="grid gap-4 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-end gap-4">
       <Choice label="Output format" value={format} options={formats} onChange={next => setFormat(next as OutputFormat)} />
-      <Choice label="Policy" value={policy} options={policies} onChange={next => setPolicy(next as RunPolicy)} />
+      <Choice label="Policy" value={policy} options={advanced ? policies : policies.filter(item => item !== "release")} onChange={next => setPolicy(next as RunPolicy)} />
     </div>
     {can("document.plan") && api.planPipeline && <QueryBoundary query={plan} title="Could not plan the pipeline" skeleton="h-16 w-full">{data => <div className="grid gap-2 text-sm">
         <p className="font-medium">Plan for {data.document_id} ({data.pipeline_id})</p>
@@ -68,10 +73,11 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
           <ul className="flex flex-wrap gap-2">{data.external_artifacts.map(name => <li key={name} className="rounded-md bg-muted px-2 py-0.5">{name}</li>)}</ul></div>}
       </div>}</QueryBoundary>}
     <div className="flex flex-wrap items-center gap-2">
-      {can("document.run") && api.runDocument && <Button id="run-pipeline" type="button" disabled={busy} onClick={() => run.mutate(undefined)}>Run pipeline</Button>}
+      {can("document.run") && api.runDocument && <Button id={focusTargets.runPipeline} type="button" disabled={busy} onClick={() => run.mutate(undefined)}>Run pipeline</Button>}
       {api.documentAction && stageActions.filter(([, , capability]) => can(capability)).map(([kind, label]) =>
         <Button key={kind} type="button" variant="outline" disabled={busy} onClick={() => step.mutate(kind)}>{label}</Button>)}
     </div>
+    <p className="text-sm text-muted-foreground">{t("pipeline.deliverHint")} <Link className="font-medium underline underline-offset-4" to="/delivery">{t("term.deliver")}</Link></p>
     <ActionError action={run} what="start the run" />
     <ActionError action={step} what="run the step" />
   </section>;

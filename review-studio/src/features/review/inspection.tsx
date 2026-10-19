@@ -12,16 +12,21 @@ import { Digest, Facts } from "@/components/shared/Facts";
 import { reviewKeys } from "./data";
 
 /** The structured inspect report for one artifact: where it lives, what it is, and its digest. */
-export const reportRows = (report: ArtifactReport): Array<[string, React.ReactNode]> => [
-  ["Path", report.path], ["Media type", report.media_type], ["Size", `${report.size_bytes} bytes`], ["SHA-256", <Digest key="d" value={report.sha256} />],
+export type ReportRow = { label: string; value: React.ReactNode; /** Technical detail shown only when Advanced is on. */ advancedOnly?: boolean };
+export const reportRows = (report: ArtifactReport): ReportRow[] => [
+  { label: "Path", value: report.path }, { label: "Media type", value: report.media_type }, { label: "Size", value: `${report.size_bytes} bytes` },
+  { label: "SHA-256", value: <Digest value={report.sha256} />, advancedOnly: true },
 ];
+/** Rows as the Facts list takes them; Advanced-only rows drop out unless `advanced`. */
+export const factRows = (rows: ReportRow[], advanced = true): Array<[string, React.ReactNode]> =>
+  rows.filter(row => advanced || !row.advancedOnly).map(row => [row.label, row.value]);
 
 export function InspectionPanel({ workspaceId, artifactId }: { workspaceId: string | null; artifactId: string }) {
   const api = useApi();
   const { advanced } = useMode();
   const report = useQuery({ queryKey: reviewKeys.inspect(workspaceId, artifactId), queryFn: () => api.inspectArtifact!(artifactId) });
   return <QueryBoundary query={report} title="Could not inspect the artifact" skeleton="h-16 w-full">{data =>
-    <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={reportRows(data).filter(([name]) => advanced || name !== "SHA-256")} /></section>}</QueryBoundary>;
+    <section aria-label="Inspection" className="grid gap-2 rounded-md border p-3"><h3 className="font-semibold">Inspection</h3><Facts rows={factRows(reportRows(data), advanced)} /></section>}</QueryBoundary>;
 }
 
 /** Page previews for an artifact. Every failure path says what is missing instead of leaving a blank box. */

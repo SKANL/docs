@@ -14,7 +14,7 @@ import { Unavailable } from "@/components/shared/Unavailable";
 import { useCapability } from "@/lib/capability-registry";
 import { Facts } from "@/components/shared/Facts";
 import { reviewKeys } from "./data";
-import { reportRows } from "./inspection";
+import { factRows, reportRows } from "./inspection";
 
 const SHOWN_LINES = 200;
 const lineClass = (line: string) => line.startsWith("+") && !line.startsWith("+++") ? "bg-emerald-500/15" : line.startsWith("-") && !line.startsWith("---") ? "bg-red-500/15" : "text-muted-foreground";
@@ -26,8 +26,8 @@ export function DiffViewer({ diff }: { diff: ArtifactDiff }) {
   return <section aria-label="Differences" className="grid gap-3 rounded-lg border bg-card p-4">
     <h3 className="text-lg font-semibold">{diff.same ? "The artifacts are identical." : "The artifacts differ."}</h3>
     <div className="grid gap-4 sm:grid-cols-2">
-      <div><p className="mb-1 text-sm font-medium">Left</p><Facts rows={reportRows(diff.left)} /></div>
-      <div><p className="mb-1 text-sm font-medium">Right</p><Facts rows={reportRows(diff.right)} /></div>
+      <div><p className="mb-1 text-sm font-medium">Left</p><Facts rows={factRows(reportRows(diff.left))} /></div>
+      <div><p className="mb-1 text-sm font-medium">Right</p><Facts rows={factRows(reportRows(diff.right))} /></div>
     </div>
     {diff.text_diff.length > 0 && <>
       <div className="max-h-96 overflow-auto rounded-md border font-mono text-xs" tabIndex={0} aria-label="Diff lines">

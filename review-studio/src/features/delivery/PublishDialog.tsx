@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useApi } from "@/app/providers";
+import { useT } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ type Props = { open: boolean; workspaceId: string | null; documentId: string; on
  */
 export function PublishDialog({ open, workspaceId, documentId, onOpenChange, onPublished }: Props) {
   const api = useApi();
+  const { t } = useT();
   const [step, setStep] = useState<"form" | "confirm">("form");
   const [destination, setDestination] = useState("");
   const [policy, setPolicy] = useState<RunPolicy>("release");
@@ -38,7 +40,7 @@ export function PublishDialog({ open, workspaceId, documentId, onOpenChange, onP
 
   return <Dialog open={open} onOpenChange={next => { if (!publish.isPending) onOpenChange(next); }}>
     <DialogContent showCloseButton={false} aria-describedby="publish-description">
-      <DialogHeader><DialogTitle>Publish</DialogTitle>
+      <DialogHeader><DialogTitle>{t("term.deliver")}</DialogTitle>
         <DialogDescription id="publish-description">Copies the verified build output to a destination inside the document&apos;s release folder. The server decides whether the policy allows it.</DialogDescription></DialogHeader>
       {step === "form" ? <form onSubmit={review} className="grid gap-4">
         <div className="grid gap-2"><Label htmlFor="publish-destination">Destination</Label>

@@ -18,7 +18,7 @@ import { useT, type MessageKey } from "@/lib/i18n";
 import type { GlossaryTerm } from "@/lib/i18n/glossary";
 import { toFindingRow } from "../review/data";
 
-// ponytail: findings are matched to the document through its latest 100 runs, so findings of older runs go uncounted. Server-side filtering by document would lift the cap.
+// ponytail: findings are matched to the document through its latest 100 runs (the API has no document filter for findings); a count that cannot cover them all is shown as partial. A server-side filter would lift the cap.
 const RUN_WINDOW = 100;
 const RECENT = 5;
 
@@ -72,8 +72,11 @@ function HomeView({ header, context }: { header: ReactNode; context: ActiveConte
   const recent = allRuns.slice(0, RECENT);
   // The API lists findings per workspace only, so they are matched to this document through its runs.
   const runIds = new Set(allRuns.map(item => item.id));
-  const mine = (findings.data ?? []).map(toFindingRow).filter(item => item.runId !== undefined && runIds.has(item.runId));
+  const rows = (findings.data ?? []).map(toFindingRow);
+  const mine = rows.filter(item => item.runId !== undefined && runIds.has(item.runId));
   const failing = mine.filter(item => item.status === "failed").length;
+  // Findings with no run, or runs beyond the window, cannot be matched to this document: the count is then a lower bound, never a fact.
+  const partial = rows.some(item => item.runId === undefined) || !!runs.data?.nextCursor;
   // "source" is not an asset kind (the server rejects it); the server's source inventory covers inbox files
   // and ingested outputs, so a source that was just added counts before it is ingested.
   // A failed or still-loading query is unknown, never evidence: suggest no step inferred from it.
@@ -109,7 +112,7 @@ function HomeView({ header, context }: { header: ReactNode; context: ActiveConte
         <h2 className="text-lg font-semibold">{t("home.blockers")}</h2>
         {blockers.length ? <ul className="list-disc pl-5 text-sm text-destructive">{blockers.map((blocker, index) => <li key={index}>{typeof blocker === "string" ? blocker : String((blocker as { message?: unknown }).message ?? t("home.blocked"))}</li>)}</ul>
           : <p className="text-sm text-muted-foreground">{t("home.noBlockers")}</p>}
-        {findings.data && runs.data && <p className="flex items-center gap-1 text-sm text-muted-foreground">{t("home.findings", { count: failing, noun: t(failing === 1 ? "home.finding.one" : "home.finding.many") })}<GlossaryHint term="finding" /></p>}
+        {findings.data && (runs.data || !api.listRunPage) && <p className="flex items-center gap-1 text-sm text-muted-foreground">{!runs.data ? t("home.findings.unavailable") : partial ? t("home.findings.partial", { count: failing, window: RUN_WINDOW }) : t(failing === 1 ? "home.findings.one" : "home.findings.other", { count: failing })}<GlossaryHint term="finding" /></p>}
         {sources.isError && <ErrorState message={formatApiError(sources.error)} onRetry={() => void sources.refetch()} />}
         {findings.isError && <ErrorState message={formatApiError(findings.error)} onRetry={() => void findings.refetch()} />}
       </section>

@@ -84,12 +84,44 @@ describe("Home with unknown data", () => {
   });
   it("counts open findings for the current document only", async () => {
     open(homeApi({ listFindings: async () => [finding(), finding({ id: "f2", run_id: "run-other" }), finding({ id: "f3", status: "passed" })] }));
-    expect(await screen.findByText(/1 open finding in this document/)).toBeTruthy();
+    expect(await screen.findByText(/1 failed finding in this document/)).toBeTruthy();
   });
   it("does not push a review step for findings that belong to another document", async () => {
     open(homeApi({ listFindings: async () => [finding({ run_id: "run-other" })] }));
     expect(await screen.findByRole("link", { name: /Deliver the document/ })).toBeTruthy();
     expect(screen.queryByRole("link", { name: /Review findings/ })).toBeNull();
+  });
+});
+
+describe("Home findings count never fails open", () => {
+  const partial = /Partial count/;
+  it("says the count is partial when a finding has no run to match it to the document", async () => {
+    open(homeApi({ listFindings: async () => [finding({ run_id: undefined })] }));
+    expect(await screen.findByText(partial)).toBeTruthy();
+    expect(screen.queryByText(/0 failed findings in this document/)).toBeNull();
+  });
+  it("says the count is partial when the run window has more runs than it covers", async () => {
+    open(homeApi({ listRunPage: async () => page([run({ id: "run-9", status: "succeeded" })], "next"), listFindings: async () => [] }));
+    expect(await screen.findByText(partial)).toBeTruthy();
+    expect(screen.queryByText(/0 failed findings in this document/)).toBeNull();
+  });
+  it("says it cannot count when run history is unavailable", async () => {
+    open(homeApi({ listRunPage: undefined, listFindings: async () => [finding()] }));
+    expect(await screen.findByText(/cannot be counted/i)).toBeTruthy();
+    expect(screen.queryByText(/failed finding/)).toBeNull();
+  });
+  it("states the count plainly when it is complete", async () => {
+    open(homeApi({ listFindings: async () => [] }));
+    expect(await screen.findByText(/0 failed findings in this document/)).toBeTruthy();
+    expect(screen.queryByText(partial)).toBeNull();
+  });
+  it("agrees singular and plural in Spanish", async () => {
+    localStorage.setItem("review-studio.locale", "es");
+    const { unmount } = open(homeApi({ listFindings: async () => [finding()] }));
+    expect(await screen.findByText(/1 hallazgo fallido en este documento/)).toBeTruthy();
+    unmount();
+    open(homeApi({ listFindings: async () => [finding(), finding({ id: "f2" })] }));
+    expect(await screen.findByText(/2 hallazgos fallidos en este documento/)).toBeTruthy();
   });
 });
 
@@ -131,7 +163,7 @@ describe("Home purpose, flow and mode chooser", () => {
   });
   it("offers a plain-language explanation of finding", async () => {
     open(homeApi({ listFindings: async () => [finding()] }));
-    await screen.findByText(/1 open finding in this document/);
+    await screen.findByText(/1 failed finding in this document/);
     await userEvent.click(screen.getAllByRole("button", { name: /What is .*finding/i })[0]!);
     expect(screen.getByRole("note").textContent).toMatch(/problem/i);
   });

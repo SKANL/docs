@@ -7,7 +7,8 @@ import App from "../App";
 import { EmptyState } from "../components/shared/EmptyState";
 import { ApiError } from "../api/errors";
 import { makeApi, openAuthoring } from "./authoringHarness";
-import { deliveryApi } from "./deliveryHarness";
+import { deliveryApi, deliveryCatalog } from "./deliveryHarness";
+import { focusTargets } from "../lib/focus-targets";
 import { openPipeline, page, streamingApi } from "./pipelineHarness";
 import { artifact, makeReviewApi, openReview } from "./reviewHarness";
 
@@ -50,15 +51,22 @@ describe("every empty state carries a next step", () => {
   });
 
   it.each([
-    ["assets", "No assets", () => openAuthoring("assets", makeApi({ addAsset: async () => ({}) as never })), /Add an asset/, "asset-file"],
-    ["runs", "No runs yet", () => openPipeline("/pipeline", streamingApi({ listRunPage: async () => page([]), runDocument: async () => ({}) as never }).api), /Plan or run/, "run-pipeline"],
-    ["publications", "Nothing published yet", () => { window.location.hash = "#/delivery"; render(<App api={deliveryApi().api} />); }, /Publish a document/, "publish-document"],
+    ["assets", "No assets", () => openAuthoring("assets", makeApi({ addAsset: async () => ({}) as never })), /Add an asset/, focusTargets.assetFile],
+    ["runs", "No runs yet", () => openPipeline("/pipeline", streamingApi({ listRunPage: async () => page([]), runDocument: async () => ({}) as never }).api), /Plan or run/, focusTargets.runPipeline],
+    ["publications", "Nothing published yet", () => { window.location.hash = "#/delivery"; render(<App api={deliveryApi().api} />); }, /Publish a document/, focusTargets.publishDocument],
   ])("%s focuses the control that fills it", async (_name, title, open, label, id) => {
     open();
     const button = (await emptyState(title as string)).getByRole("button", { name: label as RegExp });
     await waitFor(() => expect(document.getElementById(id as string)).toBeTruthy());
     await userEvent.click(button);
     expect(document.activeElement).toBe(document.getElementById(id as string));
+  });
+
+  it("publications offers no publish action when publishing is unavailable", async () => {
+    window.location.hash = "#/delivery";
+    render(<App api={deliveryApi({ getCapabilities: async () => deliveryCatalog("document.publish") }).api} />);
+    const state = await emptyState("Nothing published yet");
+    expect(state.queryByRole("button")).toBeNull();
   });
 
   it("documents offers to create one", async () => {
