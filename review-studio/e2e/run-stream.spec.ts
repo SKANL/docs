@@ -34,8 +34,6 @@ test("leaving a run aborts its progress stream and its frames never reach the ne
 
   const startedAtSwitch = seen["run-a"].started;
   await page.waitForTimeout(2_500); // longer than the reconnect backoff: a leaked loop would have reopened A by now
-  expect(seen["run-a"].started).toBe(startedAtSwitch);
+  expect(seen["run-a"].started, `stream counters ${JSON.stringify(seen)}`).toBe(startedAtSwitch);
   expect(seen["run-a"].failed + seen["run-a"].finished, "every A progress request ended").toBe(startedAtSwitch);
-  await expect(page.getByText("frame-from-A")).toHaveCount(0);
-  console.log("stream counters", JSON.stringify(seen));
-});
+  await expect(page.getByText("frame-from-A")).toHaveCount(0);});

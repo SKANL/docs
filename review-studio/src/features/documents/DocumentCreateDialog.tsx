@@ -15,7 +15,9 @@ export function DocumentCreateDialog({ open, pending, templates, error, onOpenCh
   const [documentId, setDocumentId] = useState("");
   const [title, setTitle] = useState("");
   const [template, setTemplate] = useState("");
-  useEffect(() => { if (open) { setDocumentId(""); setTitle(""); setTemplate(templates[0]?.id ?? ""); } }, [open, templates]);
+  // Reset only when the dialog opens: `templates` is often a fresh array each render, and resetting on it wiped what the person had typed.
+  useEffect(() => { if (open) { setDocumentId(""); setTitle(""); setTemplate(""); } }, [open]);
+  useEffect(() => { if (open && !template && templates[0]) setTemplate(templates[0].id); }, [open, template, templates]);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (template) onSubmit({ documentId: documentId.trim(), title: title.trim(), template });
