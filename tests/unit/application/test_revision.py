@@ -13,7 +13,7 @@ import pytest
 
 from docs.application.context import ContextService
 from docs.application.review import ReviewService
-from docs.application.revision import RevisionService
+from docs.application.revision import RevisionService, _diff_number
 from docs.domain.identity import sha256_content
 from docs.domain.models.document import Document, DocumentSummary
 from docs.domain.models.template import ContextSchema, Section, SectionContract, Template, Topic
@@ -393,3 +393,18 @@ def test_diff_numbering_never_reuses_the_number_of_a_logged_diff_that_was_remove
 def test_revision_service_requires_a_provenance_lock(section_repo, spy_review, context_service):
     with pytest.raises(TypeError):
         RevisionService(section_repo, spy_review, context_service, JsonEvidenceRepository())  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("sec.3.diff", 3),
+        ("sec.٣.diff", 3),  # Arabic-Indic digit: isdecimal, and int() accepts it
+        ("sec.².diff", None),  # superscript two: isdigit() is True but int() raises
+        ("sec.x.diff", None),
+        ("sec..diff", None),
+        ("other.3.diff", None),
+    ],
+)
+def test_diff_number_only_accepts_decimal_digits(name: str, expected: int | None) -> None:
+    assert _diff_number(name, "sec") == expected

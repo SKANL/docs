@@ -24,7 +24,9 @@ export function ContextSwitcher() {
   const selectDocument = useAction((id: string) => api.useDocument!(id, workspaceId), common);
   const failure = selectWorkspace.error ?? selectDocument.error;
   // A failed fetch must not read as "no workspace": say which query failed. active-context also
-  // lists workspaces, so a workspaces failure explains an active-context one and wins.
+  // lists workspaces, so a workspaces failure explains an active-context one and wins. A documents
+  // failure comes next: it leaves the document picker empty (what the user sees), whereas an
+  // active-context failure only loses which document is current.
   const loadFailure = workspaces.error != null ? { key: "ctx.loadFailed" as const, error: workspaces.error }
     : documents.error != null ? { key: "ctx.documentsLoadFailed" as const, error: documents.error }
     : active.error != null ? { key: "ctx.currentLoadFailed" as const, error: active.error } : null;
