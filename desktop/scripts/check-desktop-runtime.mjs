@@ -50,7 +50,14 @@ try {
   await page.waitForLoadState("load");
   log("url", page.url(), "tauri", await page.evaluate(() => "__TAURI_INTERNALS__" in window));
   await page.waitForFunction(() => document.body.innerText.includes("Review Studio"), null, { timeout: 30000 });
-  await page.evaluate(() => { location.hash = "#workspace"; });
+  // English, mode chosen and Advanced on, so the journey sees the full app; then the workspaces route.
+  await page.evaluate(() => {
+    localStorage.setItem("review-studio.locale", "en");
+    localStorage.setItem("review-studio.mode", "write");
+    localStorage.setItem("review-studio.advanced", "true");
+    location.hash = "#/configure/workspaces";
+    location.reload();
+  });
   const heading = page.getByRole("heading", { name: "Workspace and document control" });
   await heading.waitFor({ timeout: 90000 });
   log("workspace page visible");
