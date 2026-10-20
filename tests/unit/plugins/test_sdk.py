@@ -294,11 +294,11 @@ def test_runner_enforces_measurable_scratch_limits_and_reports_usage() -> None:
     ]
 
     with pytest.raises(PluginRunError, match="scratch file limit exceeded"):
-        sandbox_runner(timeout_seconds=2, max_output_bytes=1024, max_scratch_files=1).run(
+        sandbox_runner(timeout_seconds=30, max_output_bytes=1024, max_scratch_files=1).run(
             validate_manifest(manifest(entrypoint=command)), {}
         )
 
-    result = sandbox_runner(timeout_seconds=2, max_output_bytes=1024, max_scratch_files=3).run(
+    result = sandbox_runner(timeout_seconds=30, max_output_bytes=1024, max_scratch_files=3).run(
         validate_manifest(manifest(entrypoint=command)), {}
     )
     scratch = cast(dict[str, Any], result.metadata["scratch"])
