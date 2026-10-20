@@ -72,6 +72,20 @@ describe("topbar", () => {
     expect(alert.textContent).toContain("Could not load workspaces");
   });
 
+  it("names the document list, not the workspaces, when only the document list fails", async () => {
+    open("#/", makeApi({ listDocuments: async () => { throw new Error("boom"); } }));
+    const alert = await within(topbar()).findByRole("alert");
+    expect(alert.textContent).toContain("Could not load documents");
+    expect(alert.textContent).not.toContain("workspaces");
+  });
+
+  it("names the current document, not the workspaces, when only that lookup fails", async () => {
+    open("#/", makeApi({ getCurrentDocument: async () => { throw new Error("boom"); } }));
+    const alert = await within(topbar()).findByRole("alert");
+    expect(alert.textContent).toContain("Could not load the current document");
+    expect(alert.textContent).not.toContain("workspaces");
+  });
+
   it("offers an accessible Supervise | Write switch that persists", async () => {
     open("#/");
     const group = within(topbar()).getByRole("group", { name: "Working mode" });
