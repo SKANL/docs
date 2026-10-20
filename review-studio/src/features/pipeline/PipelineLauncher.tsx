@@ -1,6 +1,6 @@
 import { focusTargets } from "@/lib/focus-targets";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApi } from "@/app/providers";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -37,9 +37,11 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
   const { t } = useT();
   const navigate = useNavigate();
   const [format, setFormat] = useState<OutputFormat>("docx");
-  const [chosenPolicy, setPolicy] = useState<RunPolicy>("draft");
-  // "release" only exists under Advanced; turning Advanced off must not leave it selected.
+  const [chosenPolicy, setChosenPolicy] = useState<RunPolicy>("draft");
+  // "release" only exists under Advanced; turning Advanced off must not leave it selected, neither now
+  // (derived below, no flash) nor later (the effect clears it, so turning Advanced on never resurrects it).
   const policy: RunPolicy = !advanced && chosenPolicy === "release" ? "draft" : chosenPolicy;
+  useEffect(() => { if (!advanced) setChosenPolicy(current => current === "release" ? "draft" : current); }, [advanced]);
   const { workspaceId, documentId } = context;
 
   const plan = useQuery({
@@ -65,7 +67,7 @@ export function PipelineLauncher({ context }: { context: ActiveContext }) {
   return <section aria-label={t("pl.launch")} className="grid gap-4 rounded-lg border bg-card p-4">
     <div className="flex flex-wrap items-end gap-4">
       <Choice id="pipeline-format" label={t("pl.format")} value={format} options={formats} onChange={next => setFormat(next as OutputFormat)} />
-      <Choice id="pipeline-policy" label={t("pl.policy")} value={policy} options={advanced ? policies : policies.filter(item => item !== "release")} optionLabel={option => t(`pl.policy.${option as RunPolicy}`)} onChange={next => setPolicy(next as RunPolicy)} />
+      <Choice id="pipeline-policy" label={t("pl.policy")} value={policy} options={advanced ? policies : policies.filter(item => item !== "release")} optionLabel={option => t(`pl.policy.${option as RunPolicy}`)} onChange={next => setChosenPolicy(next as RunPolicy)} />
     </div>
     {can("document.plan") && api.planPipeline && <QueryBoundary query={plan} title={t("pl.planFailed")} skeleton="h-16 w-full">{data => <div className="grid gap-2 text-sm">
         <p className="font-medium">{t("pl.planFor", { document: data.document_id, pipeline: data.pipeline_id })}</p>

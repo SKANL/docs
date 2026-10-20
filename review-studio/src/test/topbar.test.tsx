@@ -66,6 +66,12 @@ describe("topbar", () => {
     expect((await within(topbar()).findByRole("combobox", { name: "Workspace" })).textContent).toContain("No workspace");
   });
 
+  it("says the workspaces could not be loaded instead of claiming there are none", async () => {
+    open("#/", makeApi({ listWorkspaces: async () => { throw new Error("boom"); } }));
+    const alert = await within(topbar()).findByRole("alert");
+    expect(alert.textContent).toContain("Could not load workspaces");
+  });
+
   it("offers an accessible Supervise | Write switch that persists", async () => {
     open("#/");
     const group = within(topbar()).getByRole("group", { name: "Working mode" });

@@ -6,6 +6,8 @@ export type RunStream = { status?: string; percent?: number; message?: string; t
 type Tagged = RunStream & { runId: string; workspaceId: string | null };
 
 const BACKOFF_CAP_MS = 8_000;
+/** Something readable for any thrown value: undefined, null and plain objects would otherwise print "undefined" / "[object Object]". Never empty (the banner keys on it). */
+const reasonOf = (error: unknown) => (error instanceof Error ? error.message : typeof error === "string" ? error : "") || "unknown error";
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>(resolve => {
   const timer = setTimeout(resolve, ms);
   signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
@@ -43,7 +45,7 @@ export function useRunStream(runId: string | undefined, { workspaceId = null, ba
           delay = backoffMs;
         } catch (error) {
           if (signal.aborted) return;
-          update({ error: error instanceof Error ? error.message : String(error) });
+          update({ error: reasonOf(error) });
         }
         // The server closes a long stream before the run ends; reconnect with a growing pause until terminal.
         if (!done) { await sleep(delay, signal); delay = Math.min(delay * 2, BACKOFF_CAP_MS); }

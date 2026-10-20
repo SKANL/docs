@@ -14,7 +14,8 @@ export function ContextSwitcher() {
   const workspaces = useWorkspaces();
   const active = useActiveContext();
   const list = workspaces.data ?? [];
-  const workspaceId = list[0]?.id ?? ""; // the server lists the selected workspace first
+  // listWorkspaces (api/domains/workspaces.ts) returns the selected workspace first; client.test.ts pins that order.
+  const workspaceId = list[0]?.id ?? "";
   const documentId = active.data?.documentId ?? "";
   const documents = useQuery({ queryKey: workspaceKeys.documents(workspaceId), queryFn: () => api.listDocuments!(workspaceId), enabled: !!workspaceId && !!api.listDocuments });
   const docs = documents.data ?? [];
@@ -22,6 +23,8 @@ export function ContextSwitcher() {
   const selectWorkspace = useAction((id: string) => api.selectWorkspace!(id), common);
   const selectDocument = useAction((id: string) => api.useDocument!(id, workspaceId), common);
   const failure = selectWorkspace.error ?? selectDocument.error;
+  // A failed fetch must not read as "no workspace": say what failed.
+  const loadFailure = workspaces.error ?? active.error ?? documents.error;
 
   return <div className="flex flex-wrap items-center gap-2">
     <Select value={workspaceId} onValueChange={id => { if (id !== workspaceId) selectWorkspace.mutate(id); }} disabled={!api.selectWorkspace || list.length === 0 || selectWorkspace.isPending}>
@@ -33,5 +36,6 @@ export function ContextSwitcher() {
       <SelectContent>{docs.map(item => <SelectItem key={item.id} value={item.id}>{item.title || item.id}</SelectItem>)}</SelectContent>
     </Select>
     {failure && <span role="alert" className="text-xs text-destructive">{t("ctx.switchFailed", { message: t(errorMessageKey(failure)) })}</span>}
+    {!failure && loadFailure != null && <span role="alert" className="text-xs text-destructive">{t("ctx.loadFailed", { message: t(errorMessageKey(loadFailure)) })}</span>}
   </div>;
 }

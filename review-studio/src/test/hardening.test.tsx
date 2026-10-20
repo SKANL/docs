@@ -22,6 +22,30 @@ describe("Sources import", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("bad.md");
   });
 
+  it("shows every failure's reason and lets a failed file be retried on its own", async () => {
+    let attempts = 0;
+    const importSourceFile = vi.fn(async (id: string, input: { filename: string }) => {
+      if (input.filename === "a.md") throw new Error("disk full");
+      if (input.filename === "b.md" && attempts++ === 0) throw new Error("quota exceeded");
+      return stored(id, input);
+    });
+    localStorage.setItem("review-studio.advanced", "true");
+    openAt("/authoring/sources", toolsApi({ importSourceFile, ingestSources: async () => ({}) }));
+    await userEvent.upload(await screen.findByLabelText("Source files"), [md("a.md"), md("b.md"), md("c.md")]);
+    await userEvent.click(screen.getByRole("button", { name: "Import without converting" }));
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts).toHaveLength(2);
+    expect(alerts.map(alert => alert.textContent).join(" ")).toContain("disk full");
+    expect(alerts.map(alert => alert.textContent).join(" ")).toContain("quota exceeded");
+    const retryB = within(alerts.find(alert => alert.textContent?.includes("b.md"))!).getByRole("button", { name: "Try again" });
+    await userEvent.click(retryB);
+    expect(await screen.findByText("documents/doc-1/imports/b.md")).toBeTruthy();
+    expect(screen.getByText("documents/doc-1/imports/c.md")).toBeTruthy(); // earlier successes are kept
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(importSourceFile.mock.calls.filter(([, input]) => input.filename === "b.md")).toHaveLength(2);
+    expect(importSourceFile.mock.calls.filter(([, input]) => input.filename === "c.md")).toHaveLength(1);
+  });
+
   it("clears the file input after an import so the form does not show stale files", async () => {
     localStorage.setItem("review-studio.advanced", "true");
     openAt("/authoring/sources", toolsApi({ ingestSources: async () => ({}) }));
@@ -70,6 +94,19 @@ describe("Pipeline policy", () => {
     await userEvent.click(await screen.findByRole("combobox", { name: "Policy" }));
     await userEvent.click(await screen.findByRole("option", { name: "release" }));
     await userEvent.click(screen.getByRole("switch", { name: "Advanced" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run pipeline" }));
+    await waitFor(() => expect(runDocument).toHaveBeenCalledWith("doc-1", { format: "docx", policy: "draft" }));
+  });
+
+  it("does not bring release back when Advanced is turned on again", async () => {
+    const runDocument = vi.fn(async () => ({ id: "r1" }));
+    localStorage.setItem("review-studio.advanced", "true");
+    openPipeline("/pipeline", streamingApi({ runDocument } as never).api);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Policy" }));
+    await userEvent.click(await screen.findByRole("option", { name: "release" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Advanced" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Advanced" }));
+    expect(screen.getByRole("combobox", { name: "Policy" }).textContent).toContain("draft");
     await userEvent.click(screen.getByRole("button", { name: "Run pipeline" }));
     await waitFor(() => expect(runDocument).toHaveBeenCalledWith("doc-1", { format: "docx", policy: "draft" }));
   });

@@ -20,7 +20,8 @@ export function errorKind(error: unknown): ErrorKind {
   if (error instanceof ApiError) {
     return STATUS_KINDS.find(([matches]) => matches(error.status))?.[1] ?? "unknown";
   }
-  // A stale lazy chunk is a TypeError too (after a deploy), but the service is fine: the page needs a reload.
+  // A stale lazy chunk is a TypeError too (after a deploy), but the service is fine, so it is not "network".
+  // It gets the generic message; RouteErrorBoundary adds the Reload button that actually fixes it.
   if (error instanceof TypeError && STALE_CHUNK.test(error.message)) return "unknown";
   // fetch rejects with a TypeError when the service cannot be reached; a timeout is a DOMException.
   if (error instanceof TypeError || (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "NetworkError"))) return "network";

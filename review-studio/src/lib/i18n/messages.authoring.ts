@@ -386,7 +386,7 @@ export const authoring = defineMessages({
   "ctx.questionnaireToast": "Cuestionario escrito en {path}.",
   "ctx.ingested": "{count} temas importados.",
   "rev.heading": "Revisiones",
-  "rev.reviseDocument": "Revisar documento",
+  "rev.reviseDocument": "Aplicar revisión al documento",
   "rev.unavailableRevise": "Este servidor no permite aplicar revisiones.",
   "rev.unavailableList": "Las revisiones no están disponibles en este servidor.",
   "rev.none.title": "Aún no hay revisiones",

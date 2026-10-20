@@ -19,10 +19,14 @@ describe("translate", () => {
   it("falls back to the key when it is unknown", () => {
     expect(translate("es", "no.such.key")).toBe("no.such.key");
   });
+  it("leaves a placeholder alone when it names an inherited Object member", () => {
+    const source = { en: { "t.k": "{constructor} / {toString} / {name}" }, es: {} };
+    expect(translate("en", "t.k", { name: "x" }, source)).toBe("{constructor} / {toString} / x");
+  });
+  it("has a Spanish message for every English key", () => {
+    expect(Object.keys(en).filter(key => !(key in es))).toEqual([]);
+  });
   it("falls back to English when Spanish lacks the key", () => {
-    const missing = Object.keys(en).find(key => !(key in es));
-    expect(missing).toBeUndefined(); // the guard: Spanish must cover every key...
-    // ...and the fallback itself is exercised through a key present only in English:
     expect(translate("es", "test.englishOnly", undefined, { en: { "test.englishOnly": "only en" }, es: {} })).toBe("only en");
   });
 });
