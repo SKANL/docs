@@ -232,6 +232,9 @@ class ApiTransport:
             return False
         # SERVER_PORT comes from the bound socket, so it is the real port even for port 0.
         bound_port = str(environ.get("SERVER_PORT") or self.config.port)
+        # A browser never sends userinfo or a path in Host; urlsplit would silently drop them.
+        if "@" in host or "/" in host:
+            return False
         try:
             parsed = urlsplit(f"//{host}")
             name, port = parsed.hostname, parsed.port

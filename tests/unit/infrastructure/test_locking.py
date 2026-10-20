@@ -56,41 +56,76 @@ def test_pid_alive_distinguishes_live_and_exited_processes() -> None:
     assert pid_alive(child.pid) is False
 
 
-def test_remove_lock_dir_retries_then_succeeds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remove_lock_dir_retries_the_release_rename_then_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     calls = {"n": 0}
-    real_rmtree = shutil.rmtree
+    real_replace = os.replace
 
-    def flaky(path: Path, *args: object, **kwargs: object) -> None:
+    def flaky(source: Path, destination: Path) -> None:
         calls["n"] += 1
         if calls["n"] < 3:
             raise PermissionError("owner.json is open")
-        real_rmtree(path)
+        real_replace(source, destination)
 
     lock = tmp_path / "x.lock"
     lock.mkdir()
-    monkeypatch.setattr(locking.shutil, "rmtree", flaky)
+    (lock / "owner.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(locking, "_rename", flaky)
     locking._remove_lock_dir(lock)
     assert calls["n"] == 3
     assert not lock.exists()
+    assert not list(tmp_path.iterdir())
 
 
-def test_remove_lock_dir_gives_up_quietly_and_ignores_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: list[object] = []
+def test_a_failed_cleanup_never_touches_a_lock_a_contender_created_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A partial rmtree (owner.json gone, directory stuck) used to leave an ownerless directory at
+    # the lock path; a contender reclaims it, and the NEXT retry deleted the contender's lock.
+    lock = tmp_path / "x.lock"
+    lock.mkdir()
+    (lock / "owner.json").write_text("{}", encoding="utf-8")
+    real_rmtree = shutil.rmtree
 
-    def always_busy(path: Path, *args: object, **kwargs: object) -> None:
-        seen.append(kwargs.get("ignore_errors"))
+    def stuck(path: Path, *args: object, **kwargs: object) -> None:
+        if Path(path) == lock:  # the lock path itself must never be rmtree'd
+            raise AssertionError("rmtree on the live lock path")
+        (Path(path) / "owner.json").unlink()
         if not kwargs.get("ignore_errors"):
-            raise PermissionError("busy")
+            raise PermissionError("directory is busy")
 
-    monkeypatch.setattr(locking.shutil, "rmtree", always_busy)
-    locking._remove_lock_dir(tmp_path / "busy.lock", attempts=2)
-    assert seen == [None, None, True]
+    monkeypatch.setattr(locking.shutil, "rmtree", stuck)
+    locking._remove_lock_dir(lock, attempts=3)
+    assert not lock.exists()  # released at once: a contender may now take the path
+    lock.mkdir()  # the contender
+    (lock / "owner.json").write_text('{"token": "new"}', encoding="utf-8")
+    monkeypatch.setattr(locking.shutil, "rmtree", real_rmtree)
+    assert (lock / "owner.json").exists()
 
-    def gone(path: Path, *args: object, **kwargs: object) -> None:
+
+def test_remove_lock_dir_warns_when_it_cannot_release_and_ignores_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    lock = tmp_path / "busy.lock"
+    lock.mkdir()
+
+    def busy(source: Path, destination: Path) -> None:
+        raise PermissionError("busy")
+
+    monkeypatch.setattr(locking, "_rename", busy)
+    with caplog.at_level("WARNING", logger=locking.__name__):
+        locking._remove_lock_dir(lock, attempts=2)
+    assert lock.exists()
+    assert any("busy.lock" in record.getMessage() for record in caplog.records)
+
+    def gone(source: Path, destination: Path) -> None:
         raise FileNotFoundError
 
-    monkeypatch.setattr(locking.shutil, "rmtree", gone)
+    monkeypatch.setattr(locking, "_rename", gone)
+    caplog.clear()
     locking._remove_lock_dir(tmp_path / "gone.lock")
+    assert not caplog.records
 
 
 def test_pid_alive_uses_the_windows_probe_on_nt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -148,3 +183,20 @@ def test_persistent_permission_error_fails_fast_as_permission_error(tmp_path: Pa
     with pytest.raises(PermissionError), owned_directory_lock(tmp_path / "denied.lock", timeout=30):
         pass
     assert time.monotonic() - started < 10
+
+
+def test_a_short_permission_error_is_retried_and_a_contention_resets_the_grace(tmp_path: Path, monkeypatch) -> None:
+    real_mkdir = Path.mkdir
+    outcomes = iter([PermissionError("deleting"), FileExistsError(), PermissionError("deleting")])
+
+    def flaky(self: Path, *args: object, **kwargs: object) -> None:
+        if self.name == "grace.lock":
+            outcome = next(outcomes, None)
+            if outcome is not None:
+                raise outcome
+        real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", flaky)
+    with owned_directory_lock(tmp_path / "grace.lock", timeout=5, permission_grace=0.0001):
+        pass  # the FileExistsError reset the grace window, so the 2nd denial did not raise
+    assert not (tmp_path / "grace.lock").exists()

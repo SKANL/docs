@@ -370,6 +370,26 @@ def test_diff_numbering_never_reuses_a_number_after_a_diff_is_removed(tmp_path, 
     assert Path(fourth).read_text(encoding="utf-8") == "diff 4"
 
 
+def test_diff_numbering_never_reuses_the_number_of_a_logged_diff_that_was_removed(tmp_path, service):
+    config = _config(tmp_path)
+
+    def record(i: int) -> str:
+        return service._record(
+            config, "001-introduccion", f"diff {i}", request=f"cambio {i}", target_id="introduccion",
+            before_hash="a", after_hash="b", ripple=[], ts=f"t{i}", issues=[],
+        )
+
+    record(1), record(2)
+    third = record(3)
+    Path(third).unlink()  # the HIGHEST number is gone, but revision-log.json still points at it
+    fourth = record(4)
+
+    assert fourth != third
+    log = json.loads((Path(third).parent / "revision-log.json").read_text(encoding="utf-8"))
+    paths = [entry["diff_path"] for entry in log["entries"]]
+    assert len(set(paths)) == len(paths)
+
+
 def test_revision_service_requires_a_provenance_lock(section_repo, spy_review, context_service):
     with pytest.raises(TypeError):
         RevisionService(section_repo, spy_review, context_service, JsonEvidenceRepository())  # type: ignore[call-arg]

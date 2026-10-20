@@ -5,6 +5,7 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 from typer.main import get_command
 
 from docs.api import openapi
@@ -206,9 +207,29 @@ def test_every_claimed_ui_route_exists_in_the_router():
         area, _, tab = route.strip("/").partition("/")
         if area in tabs and tab and not tab.startswith(":"):
             source = (ROOT / "review-studio/src" / tabs[area]).read_text(encoding="utf-8")
-            # tabs are `["id", label, ...]` tuples or a plain id list
             name = tab.split("/")[0]
-            assert f'"{name}",' in source or f'"{name}"]' in source, f"{command}: no {area} tab {tab}"
+            assert f'"{name}"' in _tabs_declaration(source), f"{command}: no {area} tab {tab}"
+
+
+def _tabs_declaration(source: str) -> str:
+    """The `const tabs ... = [ ... ];` expression only: a plain id list or `["id", label, ...]`
+    tuples. Quoted ids elsewhere in the file (NextAction hints, links) must not count as a tab."""
+    match = re.search(r"const tabs\b[^=]*=\s*\[(.*?)\n?\]\s*(?:as const)?;", source, re.DOTALL)
+    assert match, "no `const tabs = [...]` declaration found: update this parity guard"
+    return match.group(1)
+
+
+def test_tabs_declaration_ignores_ids_quoted_elsewhere_in_the_route():
+    source = (
+        'const tabs = ["sources", "context"] as const;\n'
+        'const hint = ["sections"];\n'
+        'const tupled: ReadonlyArray<readonly [string, string]> = [\n  ["findings", "k.findings"],\n];\n'
+    )
+    declared = _tabs_declaration(source)
+    assert '"context"' in declared and '"sections"' not in declared
+    assert '"findings"' not in declared  # a later, differently-named list is not the `tabs` declaration
+    with pytest.raises(AssertionError):
+        _tabs_declaration("const other = [];")
 
 
 def test_excluded_rows_carry_their_reason_in_the_matrix_and_no_ui_data():

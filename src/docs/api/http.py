@@ -142,13 +142,17 @@ _log = logging.getLogger("docs.api")
 
 # Per-process random by default; a host with durable state (the sidecar) installs a persistent
 # per-install secret via `set_cursor_secret`. Cursors signed under any other secret are invalid.
-_cursor_secret = secrets.token_bytes(32)
+# ponytail: process-global by design. The only production host is the single-process sidecar, which
+# persists its key; any other host loses cursors on restart (clients restart pagination). A
+# multi-worker host must call `set_cursor_secret` with a shared key.
+CURSOR_SECRET_BYTES = 32
+_cursor_secret = secrets.token_bytes(CURSOR_SECRET_BYTES)
 
 
 def set_cursor_secret(secret: bytes) -> None:
     global _cursor_secret  # noqa: PLW0603 - one process-wide signing key by design
-    if len(secret) < 32:
-        raise ValueError("cursor secret must be at least 32 bytes")
+    if len(secret) < CURSOR_SECRET_BYTES:
+        raise ValueError(f"cursor secret must be at least {CURSOR_SECRET_BYTES} bytes")
     _cursor_secret = secret
 
 

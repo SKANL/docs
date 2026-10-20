@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -28,6 +29,9 @@ def resolve_java_executable(paths: dict[str, Any]) -> str | None:
     )
 
 
+_SWAP_LOCK = threading.Lock()
+
+
 class _EnvSubprocess:
     """`subprocess` stand-in that hands every child the given environment."""
 
@@ -48,23 +52,27 @@ class _EnvSubprocess:
 def java_on_path(java_executable: str) -> Iterator[None]:
     """Make `opendataloader_pdf`'s bare `java` resolve to `java_executable`.
 
-    The process environment is never mutated: the library's `subprocess`
-    reference is swapped for one that passes an augmented `PATH` env to each
-    child, then restored.
+    Scope is deliberately that ONE library (the name is historical): only
+    children started through `opendataloader_pdf.runner` see the augmented
+    `PATH`. The process environment is never mutated: the library's
+    `subprocess` reference is swapped for one that passes the env to each child,
+    then restored. Callers needing java elsewhere must resolve it themselves.
     """
-    # ponytail: the library exposes no env hook, so its module-level `subprocess`
-    # is swapped for the duration; not thread-safe across concurrent callers.
-    # Upgrade path: an upstream `env=` parameter on run_jar.
+    # ponytail: the library exposes no env hook, so its module-level `subprocess` is swapped for
+    # the duration. A process-wide lock serialises overlapping contexts so a later one can never
+    # save an earlier one's wrapper as its "original"; concurrent Java conversions therefore run
+    # one at a time. Upgrade path: an upstream `env=` parameter on run_jar.
     from opendataloader_pdf import runner
 
-    env = dict(os.environ)
-    java_dir = str(Path(java_executable).parent)
-    path = env.get("PATH", "")
-    if java_dir and java_dir not in path.split(os.pathsep):
-        env["PATH"] = java_dir + os.pathsep + path
-    original = runner.subprocess
-    runner.subprocess = _EnvSubprocess(env)  # type: ignore[assignment]
-    try:
-        yield
-    finally:
-        runner.subprocess = original
+    with _SWAP_LOCK:
+        env = dict(os.environ)
+        java_dir = str(Path(java_executable).parent)
+        path = env.get("PATH", "")
+        if java_dir and java_dir not in path.split(os.pathsep):
+            env["PATH"] = java_dir + os.pathsep + path
+        original = runner.subprocess
+        runner.subprocess = _EnvSubprocess(env)  # type: ignore[assignment]
+        try:
+            yield
+        finally:
+            runner.subprocess = original

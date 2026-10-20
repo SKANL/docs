@@ -29,7 +29,13 @@ def test_agents_md_command_groups_match_the_cli():
 
 
 def test_agents_md_has_no_dangling_pipeline_sentence():
-    assert "`docs document verify --json`. \nexisting callers." not in _read("AGENTS.md")
+    # whitespace-collapsed, so a reflow of the same broken fragment cannot slip past
+    assert "existing callers" not in _prose("AGENTS.md")
+
+
+def test_architecture_workflow_demands_the_graph_as_claude_md_says():
+    assert "ARCHITECTURE_REQUIRE_GRAPH: '1'" in _read(".github/workflows/architecture.yml")
+    assert "ARCHITECTURE_REQUIRE_GRAPH` to `1`" in _prose("CLAUDE.md") or "sets it to `1`" in _prose("CLAUDE.md")
 
 
 def test_test_files_cited_in_docs_exist():
@@ -43,10 +49,13 @@ def test_test_files_cited_in_docs_exist():
 def test_ci_docs_job_names_match_workflows():
     jobs = {
         m.group(1)
-        for path in WORKFLOWS.glob("*.yml")
-        for m in re.finditer(r"(?m)^  ([a-z][\w-]*):\s*$", path.read_text(encoding="utf-8").split("jobs:", 1)[-1])
-        if path.stem in {"quality", "toolchains", "architecture"}
+        for stem in ("quality", "toolchains", "architecture")
+        for m in re.finditer(
+            r"(?m)^  ([a-z][\w-]*):\s*$", (WORKFLOWS / f"{stem}.yml").read_text(encoding="utf-8").split("\njobs:", 1)[-1]
+        )
     }
+    # Pinned, not just non-empty: a rename or reindent must fail here, not pass over zero jobs.
+    assert jobs == {"quality", "toolchains", "architecture"}
     ci = _read("docs/ci.md")
     for job in jobs:
         assert f"`{job}`" in ci, job
