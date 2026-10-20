@@ -40,6 +40,10 @@ disposable machine. Pass `--fresh` (`npm run check:runtime -- --fresh`) to
 re-run: it deletes that directory only if it holds the `.runtime-check-owned`
 marker the script wrote when it created it; foreign data is never deleted.
 
+`npm run check:runtime:failure` runs the same binary with `DOCS_SIDECAR_EXECUTABLE` pointing at an
+executable that exits immediately, and checks the failure screen: it appears, View log shows the
+service log, and Retry against a still-broken service keeps the screen. Same fresh-install rules.
+
 ## Real installer and PDF journeys
 
 `npm run build:windows` produces the MSI and NSIS installers. Without

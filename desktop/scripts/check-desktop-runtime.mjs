@@ -33,7 +33,11 @@ const require = createRequire(`${reviewStudioDir}/package.json`);
 const { chromium } = require("@playwright/test");
 // Claim the dir we are about to create so a later --fresh may remove it.
 if (freshRun) { mkdirSync(appData, { recursive: true }); writeFileSync(marker, "created by check-desktop-runtime.mjs"); }
-const app = spawn(exe, [], { env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` }, stdio: "inherit" });
+// --sidecar-failure: point the supervisor at an executable that exits at once, so the
+// service never becomes healthy and the failure screen (Retry, View log) must appear.
+const failureMode = process.argv.includes("--sidecar-failure");
+const failureEnv = failureMode ? { DOCS_SIDECAR_EXECUTABLE: join(process.env.SystemRoot ?? "C:\Windows", "System32", "whoami.exe") } : {};
+const app = spawn(exe, [], { env: { ...process.env, ...failureEnv, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` }, stdio: "inherit" });
 const kill = () => spawnSync("taskkill", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore" });
 const log = (...a) => console.log("[desktop-runtime]", ...a);
 try {
@@ -49,6 +53,24 @@ try {
   if (!/tauri\.localhost/.test(page.url())) throw new Error(`WebView never navigated to tauri.localhost (stuck at ${page.url()})`);
   await page.waitForLoadState("load");
   log("url", page.url(), "tauri", await page.evaluate(() => "__TAURI_INTERNALS__" in window));
+  if (failureMode) {
+    // The copy is Spanish by default and English when chosen: accept either.
+    const failed = page.getByRole("heading", { name: /could not start|no pudo iniciar/i });
+    await failed.waitFor({ timeout: 90000 });
+    log("failure screen visible");
+    await page.getByRole("button", { name: /^(Retry|Reintentar)$/ }).waitFor();
+    await page.getByRole("button", { name: /^(View log|Ver registro)$/ }).click();
+    await page.locator("pre").first().waitFor({ timeout: 30000 });
+    log("service log shown");
+    await page.getByRole("button", { name: /^(Retry|Reintentar)$/ }).click();
+    await failed.waitFor({ timeout: 90000 });
+    log("retry with a still-broken service keeps the failure screen");
+    await page.screenshot({ path: screenshotPath.replace(".png", "-failure.png") });
+    log("PASS (failure screen)");
+    await browser.close();
+    kill();
+    process.exit(0);
+  }
   await page.waitForFunction(() => document.body.innerText.includes("Review Studio"), null, { timeout: 30000 });
   // English, mode chosen and Advanced on, so the journey sees the full app; then the workspaces route.
   await page.evaluate(() => {
