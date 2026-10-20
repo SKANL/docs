@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { deliveryApi, published } from "./deliveryHarness";
 import { openAt, toolsApi } from "./toolsHarness";
 import { openPipeline } from "./pipelineHarness";
@@ -16,7 +16,7 @@ const copies: Copy[] = [
 ];
 
 describe.each(copies)("publish dialog policy labels ($locale)", copy => {
-  const openDialog = async (publishDocument: ReturnType<typeof vi.fn>) => {
+  const openDialog = async (publishDocument: Mock<() => Promise<typeof published>>) => {
     localStorage.setItem("review-studio.locale", copy.locale);
     openPipeline("/delivery", deliveryApi({ publishDocument }).api);
     await userEvent.click(await screen.findByRole("button", { name: copy.deliver }));
