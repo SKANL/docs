@@ -213,6 +213,24 @@ def test_failed_release_logs_the_outcome_it_actually_had(
     assert not any("marked" in m for m in messages)
 
 
+def test_failed_release_does_not_claim_a_mark_when_neither_write_nor_unlink_worked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def busy(source: Path, destination: Path) -> None:
+        raise PermissionError("busy")
+
+    lock = tmp_path / "stuck.lock"
+    lock.mkdir()
+    (lock / "owner.json").write_text(json.dumps({"token": "t"}), encoding="utf-8")
+    monkeypatch.setattr(locking, "_rename", busy)
+    monkeypatch.setattr(Path, "write_text", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
+    monkeypatch.setattr(Path, "unlink", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
+    with caplog.at_level("DEBUG", logger=locking.__name__):
+        locking._remove_lock_dir(lock, token="t", attempts=1)
+    assert not any("marked" in r.getMessage() for r in caplog.records)
+    assert any("could not" in r.getMessage() for r in caplog.records)
+
+
 def test_pid_alive_uses_the_windows_probe_on_nt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(locking, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(locking, "_pid_alive_windows", lambda pid: pid == 7)
