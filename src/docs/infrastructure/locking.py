@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -89,11 +90,22 @@ def _remove_lock_dir(path: Path, *, attempts: int = 200) -> None:
         except OSError:
             time.sleep(0.01)
     else:
-        # Still held: later acquirers wait for stale reclaim (`stale_after`), not for us.
-        _log.warning("could not release lock %s after %d attempts; it stays until reclaimed as stale", path, attempts)
+        # We are a live pid, so the lock could never age out as "stale": mark it released so the
+        # next acquirer reclaims it at once (or, failing even that, strip the owner so it ages out).
+        _log.warning("could not release lock %s after %d attempts; marking it reclaimable", path, attempts)
+        _mark_released(path)
         return
     # Best effort: the lock is already released, a leftover quarantine blocks nobody.
     shutil.rmtree(quarantine, ignore_errors=True)
+
+
+def _mark_released(path: Path) -> None:
+    owner = path / "owner.json"
+    try:
+        owner.write_text(json.dumps({"released": True}), encoding="utf-8")
+    except OSError:
+        with contextlib.suppress(OSError):
+            owner.unlink()  # ownerless: `_reclaim_stale` ages it out by mtime
 
 
 def pid_alive(pid: int) -> bool:
@@ -141,6 +153,8 @@ def _pid_alive_windows(pid: int) -> bool:
 def _reclaim_stale(path: Path, *, stale_after: float) -> bool:
     try:
         owner = json.loads((path / "owner.json").read_text(encoding="utf-8"))
+        if isinstance(owner, dict) and owner.get("released") is True:
+            return _quarantine(path)
         pid = int(owner["pid"])
         created_at = float(owner["created_at"])
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
@@ -156,6 +170,10 @@ def _reclaim_stale(path: Path, *, stale_after: float) -> bool:
         return False
     if pid is not None and pid_alive(pid):
         return False
+    return _quarantine(path)
+
+
+def _quarantine(path: Path) -> bool:
     quarantine = path.with_name(f".{path.name}.reclaim-{uuid.uuid4().hex}")
     try:
         _rename(path, quarantine)
