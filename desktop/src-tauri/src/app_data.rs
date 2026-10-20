@@ -1,7 +1,7 @@
 //! Shell-owned app data: the versioned schema marker and the startup log.
 
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
@@ -72,16 +72,23 @@ pub(crate) const SIDECAR_LOG_FILE: &str = "sidecar.log";
 /// Last `max_bytes` of the sidecar log, or "" when there is none. Never fails:
 /// the failure screen must still render when the log is missing or unreadable.
 pub(crate) fn read_log_tail(root: &Path, max_bytes: usize) -> String {
-    let Ok(bytes) = std::fs::read(root.join(SIDECAR_LOG_FILE)) else {
-        return String::new();
-    };
-    let tail = &bytes[bytes.len().saturating_sub(max_bytes)..];
+    std::fs::File::open(root.join(SIDECAR_LOG_FILE))
+        .and_then(|mut file| tail_from(&mut file, max_bytes))
+        .unwrap_or_default()
+}
+
+/// Reads only the last `max_bytes` of `source`, so a huge log is never loaded whole.
+fn tail_from<R: Read + Seek>(source: &mut R, max_bytes: usize) -> std::io::Result<String> {
+    let len = source.seek(SeekFrom::End(0))?;
+    source.seek(SeekFrom::Start(len.saturating_sub(max_bytes as u64)))?;
+    let mut bytes = Vec::with_capacity(max_bytes.min(len as usize));
+    source.take(max_bytes as u64).read_to_end(&mut bytes)?;
     // Drop a UTF-8 sequence cut in half by the byte window.
-    let start = tail
+    let start = bytes
         .iter()
         .take_while(|byte| (**byte & 0xC0) == 0x80)
         .count();
-    String::from_utf8_lossy(&tail[start..]).into_owned()
+    Ok(String::from_utf8_lossy(&bytes[start..]).into_owned())
 }
 
 pub(crate) fn append_startup_log(app: &tauri::AppHandle, message: &str) {
@@ -176,6 +183,41 @@ línea tres
 "
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn read_log_tail_reads_a_bounded_window_of_a_large_file() {
+        struct Counting<R> {
+            inner: R,
+            read: usize,
+        }
+        impl<R: std::io::Read> std::io::Read for Counting<R> {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.inner.read(buf)?;
+                self.read += n;
+                Ok(n)
+            }
+        }
+        impl<R: std::io::Seek> std::io::Seek for Counting<R> {
+            fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+                self.inner.seek(pos)
+            }
+        }
+        let mut data = vec![b'x'; 5_000_000];
+        data.extend_from_slice(
+            b"final line
+",
+        );
+        let mut source = Counting {
+            inner: std::io::Cursor::new(data),
+            read: 0,
+        };
+        let tail = tail_from(&mut source, 16).unwrap();
+        assert!(tail.ends_with(
+            "final line
+"
+        ));
+        assert!(source.read <= 16, "read {} bytes", source.read);
     }
 
     #[test]
