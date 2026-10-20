@@ -186,6 +186,33 @@ def test_remove_lock_dir_warns_when_it_cannot_release_and_ignores_missing(
     assert not caplog.records
 
 
+def test_failed_release_logs_the_outcome_it_actually_had(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def busy(source: Path, destination: Path) -> None:
+        raise PermissionError("busy")
+
+    monkeypatch.setattr(locking, "_rename", busy)
+    mine = tmp_path / "mine.lock"
+    mine.mkdir()
+    (mine / "owner.json").write_text(json.dumps({"token": "t"}), encoding="utf-8")
+    with caplog.at_level("DEBUG", logger=locking.__name__):
+        locking._remove_lock_dir(mine, token="t", attempts=1)
+    assert json.loads((mine / "owner.json").read_text(encoding="utf-8")) == {"released": True}
+    assert any("marked" in r.getMessage() and r.levelname == "WARNING" for r in caplog.records)
+
+    theirs = tmp_path / "theirs.lock"
+    theirs.mkdir()
+    (theirs / "owner.json").write_text(json.dumps({"token": "other"}), encoding="utf-8")
+    caplog.clear()
+    with caplog.at_level("DEBUG", logger=locking.__name__):
+        locking._remove_lock_dir(theirs, token="t", attempts=1)
+    assert json.loads((theirs / "owner.json").read_text(encoding="utf-8")) == {"token": "other"}
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("another owner" in m for m in messages)
+    assert not any("marked" in m for m in messages)
+
+
 def test_pid_alive_uses_the_windows_probe_on_nt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(locking, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(locking, "_pid_alive_windows", lambda pid: pid == 7)
