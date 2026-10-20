@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SidecarGate } from "../app/shell/SidecarGate";
@@ -21,7 +21,7 @@ function installTauri(health: Health[], handlers: Record<string, () => unknown> 
   return invoke;
 }
 
-const renderGate = (startupTimeoutMs?: number) => render(<I18nProvider><SidecarGate pollIntervalMs={5} startupTimeoutMs={startupTimeoutMs}><p>app content</p></SidecarGate></I18nProvider>);
+const renderGate = (startupTimeoutMs?: number, extra: { restartTimeoutMs?: number; recoveryPollMs?: number } = {}) => render(<I18nProvider><SidecarGate pollIntervalMs={5} startupTimeoutMs={startupTimeoutMs} {...extra}><p>app content</p></SidecarGate></I18nProvider>);
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 afterEach(() => { vi.useRealTimers(); cleanup(); localStorage.clear(); delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__; });
@@ -121,6 +121,32 @@ describe("SidecarGate", () => {
     renderGate(1000);
     await vi.advanceTimersByTimeAsync(1100);
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("a restart that never settles gives up after the restart timeout and shows the failure screen", async () => {
+    vi.useFakeTimers();
+    installTauri([failed], { sidecar_restart: () => new Promise<Health>(() => {}) });
+    renderGate(10_000, { restartTimeoutMs: 1000 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => { screen.getByRole("button", { name: "Retry" }).click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(screen.getByRole("status")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("timed out");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("keeps watching after the startup timeout and recovers when the slow service turns healthy", async () => {
+    vi.useFakeTimers();
+    const invoke = installTauri([starting]);
+    renderGate(1000, { recoveryPollMs: 200 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    invoke.mockImplementation(async (command: string) => (command === "sidecar_health" ? ready : undefined));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(screen.getByText("app content")).toBeTruthy();
+    expect(invoke).not.toHaveBeenCalledWith("sidecar_restart");
   });
 
   it("View log shows the log text, and says so when the log is empty", async () => {

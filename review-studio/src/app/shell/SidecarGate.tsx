@@ -13,9 +13,13 @@ const invoke = <T,>(command: string) => (window as unknown as { __TAURI_INTERNAL
 const CONFIRM_FAILURES = 2;
 /** How long the startup screen may wait before it gives up and offers Retry / View log. */
 const STARTUP_TIMEOUT_MS = 120_000;
+/** A restart that has not answered by then is treated as failed, so a hung shell call cannot pin the startup screen. */
+const RESTART_TIMEOUT_MS = 120_000;
+/** On the failure screen a slow service that turns healthy later is still noticed, at this slower pace. */
+const RECOVERY_POLL_MS = 3_000;
 
 /** Desktop only: shows a startup screen while the local service boots and a failure screen (Retry, View log) if it does not. In a browser it renders the app directly. */
-export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs = STARTUP_TIMEOUT_MS }: { children: ReactNode; pollIntervalMs?: number; startupTimeoutMs?: number }) {
+export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs = STARTUP_TIMEOUT_MS, restartTimeoutMs = RESTART_TIMEOUT_MS, recoveryPollMs = RECOVERY_POLL_MS }: { children: ReactNode; pollIntervalMs?: number; startupTimeoutMs?: number; restartTimeoutMs?: number; recoveryPollMs?: number }) {
   const desktop = inTauri();
   const [phase, setPhase] = useState<Phase>(desktop ? "booting" : "ready");
   const [error, setError] = useState<string>();
@@ -43,17 +47,37 @@ export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs =
     return () => { active = false; clearTimeout(timer); clearTimeout(giveUp); };
   }, [phase, desktop, pollIntervalMs, startupTimeoutMs]);
 
+  // After giving up (or a failed start) keep watching: a service that is merely slow can still come up, and Retry would restart it.
+  useEffect(() => {
+    if (phase !== "failed" || !desktop) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
+      invoke<Health>("sidecar_health").then(health => {
+        if (!active) return;
+        if (health.ready) return setPhase("ready");
+        timer = setTimeout(poll, recoveryPollMs);
+      }).catch(() => { if (active) timer = setTimeout(poll, recoveryPollMs); });
+    };
+    timer = setTimeout(poll, recoveryPollMs);
+    return () => { active = false; clearTimeout(timer); };
+  }, [phase, desktop, recoveryPollMs]);
+
   const retry = useCallback(() => {
     failures.current = 0;
     restarting.current = true;
     setError(undefined);
     setPhase("booting");
     // The restart command blocks until the service is healthy or has failed; its answer decides.
+    // Bounded: if the shell call never settles, the timeout ends the wait and a late answer is ignored.
+    let done = false;
+    const finish = (apply: () => void) => { if (done) return; done = true; clearTimeout(bound); restarting.current = false; apply(); };
+    const bound = setTimeout(() => finish(() => { setError("sidecar restart timed out"); setPhase("failed"); }), restartTimeoutMs);
     invoke<Health>("sidecar_restart").then(
-      health => { restarting.current = false; setPhase(health.ready ? "ready" : "failed"); },
-      reason => { restarting.current = false; setError(String(reason)); setPhase("failed"); },
+      health => finish(() => setPhase(health.ready ? "ready" : "failed")),
+      reason => finish(() => { setError(String(reason)); setPhase("failed"); }),
     );
-  }, []);
+  }, [restartTimeoutMs]);
 
   if (phase === "ready") return <>{children}</>;
   return phase === "failed" ? <FailureScreen onRetry={retry} error={error} /> : <StartupScreen />;
