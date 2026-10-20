@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -92,16 +91,19 @@ def _remove_lock_dir(path: Path, *, token: str, attempts: int = 200) -> None:
     else:
         # We are a live pid, so the lock could never age out as "stale": mark it released so the
         # next acquirer reclaims it at once (or, failing even that, strip the owner so it ages out).
-        if _mark_released(path, token):
+        outcome = _mark_released(path, token)
+        if outcome == "marked":
             _log.warning("could not release lock %s after %d attempts; marked it reclaimable", path, attempts)
-        else:
+        elif outcome == "foreign":
             _log.debug("could not release lock %s after %d attempts; it now belongs to another owner, left untouched", path, attempts)
+        else:
+            _log.warning("could not release lock %s after %d attempts, nor mark it reclaimable; it ages out by mtime", path, attempts)
         return
     # Best effort: the lock is already released, a leftover quarantine blocks nobody.
     shutil.rmtree(quarantine, ignore_errors=True)
 
 
-def _mark_released(path: Path, token: str) -> bool:
+def _mark_released(path: Path, token: str) -> str:
     """Mark the lock released only while `owner.json` still carries OUR token.
 
     If the path changed hands during the failed release, the new owner's lock must stay untouched.
@@ -109,21 +111,23 @@ def _mark_released(path: Path, token: str) -> bool:
     acquire landing between the read below and the write; it needs a stale-reclaim of a live pid's
     lock inside microseconds, so it is accepted rather than guarded.
 
-    Returns False when the lock belongs to another owner and was left untouched.
+    Returns "marked", "foreign" (another owner, left untouched) or "failed" (neither the marker nor the unlink landed).
     """
     owner = path / "owner.json"
     try:
         if json.loads(owner.read_text(encoding="utf-8")).get("token") != token:
-            return False
+            return "foreign"
     except (OSError, ValueError, AttributeError):
         # Unreadable (e.g. already ownerless): fall through to the best-effort marker.
         pass
     try:
         owner.write_text(json.dumps({"released": True}), encoding="utf-8")
     except OSError:
-        with contextlib.suppress(OSError):
+        try:
             owner.unlink()  # ownerless: `_reclaim_stale` ages it out by mtime
-    return True
+        except OSError:
+            return "failed"
+    return "marked"
 
 
 def pid_alive(pid: int) -> bool:
