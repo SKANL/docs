@@ -16,6 +16,9 @@ export default defineConfig({
     exclude: ["e2e/**", "node_modules/**"],
     setupFiles: ["./src/test/setup.ts"],
     css: { include: [/globals.css/] },
+    // Under full-suite load (single worker, jsdom, lazy routes + i18n) a first render takes several seconds; vitest's 5s test / testing-library's 1s findBy defaults flake. Raised once here and in setup.ts.
+    testTimeout: 20000,
+    hookTimeout: 20000,
     pool: "threads",
     maxWorkers: 1,
     minWorkers: 1,

@@ -15,3 +15,7 @@ if (typeof window !== "undefined") {
 // Existing tests assert English copy; production defaults to Spanish.
 import { setDefaultLocale } from "../lib/i18n";
 setDefaultLocale("en");
+
+// findBy*/waitFor default to 1000ms, shorter than a first lazy-route render under load. Run 2 of verification still flaked at 5s on a 700s loaded run.
+import { configure } from "@testing-library/react";
+configure({ asyncUtilTimeout: 10000 });
