@@ -36,7 +36,7 @@ if (freshRun) { mkdirSync(appData, { recursive: true }); writeFileSync(marker, "
 // --sidecar-failure: point the supervisor at an executable that exits at once, so the
 // service never becomes healthy and the failure screen (Retry, View log) must appear.
 const failureMode = process.argv.includes("--sidecar-failure");
-const failureEnv = failureMode ? { DOCS_SIDECAR_EXECUTABLE: join(process.env.SystemRoot ?? "C:\Windows", "System32", "whoami.exe") } : {};
+const failureEnv = failureMode ? { DOCS_SIDECAR_EXECUTABLE: join(process.env.SystemRoot ?? String.raw`C:\Windows`, "System32", "whoami.exe") } : {};
 const app = spawn(exe, [], { env: { ...process.env, ...failureEnv, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` }, stdio: "inherit" });
 const kill = () => spawnSync("taskkill", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore" });
 const log = (...a) => console.log("[desktop-runtime]", ...a);
@@ -62,8 +62,19 @@ try {
     await page.getByRole("button", { name: /^(View log|Ver registro)$/ }).click();
     await page.locator("pre").first().waitFor({ timeout: 30000 });
     log("service log shown");
+    // Record, in the page, whether the startup screen shows between the click and the
+    // failure screen coming back: a heading that never left would pass a bare waitFor.
+    await page.evaluate(() => {
+      const w = window;
+      w.__sawStartup = false;
+      // Read the ADDED nodes: by callback time the startup screen may already be gone again.
+      const look = records => { if (records.some(r => [...r.addedNodes].some(n => /starting review studio|iniciando review studio/i.test(n.textContent ?? "")))) w.__sawStartup = true; };
+      w.__startupObserver = new MutationObserver(look);
+      w.__startupObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
     await page.getByRole("button", { name: /^(Retry|Reintentar)$/ }).click();
     await failed.waitFor({ timeout: 90000 });
+    if (!await page.evaluate(() => { window.__startupObserver.disconnect(); return window.__sawStartup; })) throw new Error("retry never showed the startup screen: the failure screen did not leave and come back");
     log("retry with a still-broken service keeps the failure screen");
     await page.screenshot({ path: screenshotPath.replace(".png", "-failure.png") });
     log("PASS (failure screen)");
