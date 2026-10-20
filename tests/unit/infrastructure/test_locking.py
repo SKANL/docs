@@ -72,7 +72,7 @@ def test_remove_lock_dir_retries_the_release_rename_then_succeeds(
     lock.mkdir()
     (lock / "owner.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(locking, "_rename", flaky)
-    locking._remove_lock_dir(lock)
+    locking._remove_lock_dir(lock, token="t")
     assert calls["n"] == 3
     assert not lock.exists()
     assert not list(tmp_path.iterdir())
@@ -81,8 +81,8 @@ def test_remove_lock_dir_retries_the_release_rename_then_succeeds(
 def test_a_failed_private_cleanup_still_releases_the_lock_path_at_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A partial rmtree (owner.json gone, directory stuck) used to leave an ownerless directory at
-    # the lock path; a contender reclaims it, and the NEXT retry deleted the contender's lock.
+    # A failed rmtree of the PRIVATE quarantine (busy directory) must not hold the lock path: the
+    # rename already released it, so a contender may take the path at once.
     lock = tmp_path / "x.lock"
     lock.mkdir()
     (lock / "owner.json").write_text("{}", encoding="utf-8")
@@ -94,7 +94,7 @@ def test_a_failed_private_cleanup_still_releases_the_lock_path_at_once(
             raise PermissionError("directory is busy")
 
     monkeypatch.setattr(locking.shutil, "rmtree", stuck)
-    locking._remove_lock_dir(lock, attempts=3)
+    locking._remove_lock_dir(lock, token="t", attempts=3)
     assert not lock.exists()  # released at once: a contender may now take the path
 
 
@@ -106,6 +106,22 @@ def test_release_never_removes_a_lock_a_contender_now_owns(tmp_path: Path) -> No
         lock.mkdir()
         (lock / "owner.json").write_text('{"token": "contender"}', encoding="utf-8")
     assert json.loads((lock / "owner.json").read_text(encoding="utf-8"))["token"] == "contender"
+
+
+def test_a_failed_release_never_marks_a_lock_a_contender_now_owns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "x.lock"
+    real_rename = locking._rename
+    with owned_directory_lock(lock):
+        shutil.rmtree(lock)
+        lock.mkdir()
+        contender = '{"token": "contender", "pid": 1, "created_at": 1}'
+        (lock / "owner.json").write_text(contender, encoding="utf-8")
+        monkeypatch.setattr(locking, "_rename", lambda *a: (_ for _ in ()).throw(PermissionError("busy")))
+        locking._remove_lock_dir(lock, token="ours", attempts=2)
+    monkeypatch.setattr(locking, "_rename", real_rename)
+    assert (lock / "owner.json").read_text(encoding="utf-8") == contender
 
 
 def test_a_lock_whose_release_keeps_failing_is_immediately_reclaimable(
@@ -157,7 +173,7 @@ def test_remove_lock_dir_warns_when_it_cannot_release_and_ignores_missing(
 
     monkeypatch.setattr(locking, "_rename", busy)
     with caplog.at_level("WARNING", logger=locking.__name__):
-        locking._remove_lock_dir(lock, attempts=2)
+        locking._remove_lock_dir(lock, token="t", attempts=2)
     assert lock.exists()
     assert any("busy.lock" in record.getMessage() for record in caplog.records)
 
@@ -166,7 +182,7 @@ def test_remove_lock_dir_warns_when_it_cannot_release_and_ignores_missing(
 
     monkeypatch.setattr(locking, "_rename", gone)
     caplog.clear()
-    locking._remove_lock_dir(tmp_path / "gone.lock")
+    locking._remove_lock_dir(tmp_path / "gone.lock", token="t")
     assert not caplog.records
 
 

@@ -70,7 +70,7 @@ try {
       // Read the ADDED nodes: by callback time the startup screen may already be gone again.
       const look = records => { if (records.some(r => [...r.addedNodes].some(n => /starting review studio|iniciando review studio/i.test(n.textContent ?? "")))) w.__sawStartup = true; };
       w.__startupObserver = new MutationObserver(look);
-      w.__startupObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+      w.__startupObserver.observe(document.body, { childList: true, subtree: true });
     });
     await page.getByRole("button", { name: /^(Retry|Reintentar)$/ }).click();
     await failed.waitFor({ timeout: 90000 });

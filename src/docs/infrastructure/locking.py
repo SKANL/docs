@@ -67,10 +67,10 @@ def owned_directory_lock(
         except (OSError, ValueError, json.JSONDecodeError):
             owner = {}
         if owner.get("token") == token:
-            _remove_lock_dir(path)
+            _remove_lock_dir(path, token=token)
 
 
-def _remove_lock_dir(path: Path, *, attempts: int = 200) -> None:
+def _remove_lock_dir(path: Path, *, token: str, attempts: int = 200) -> None:
     """Release a lock by atomically renaming it away, then deleting the private copy.
 
     Deleting the lock path in place could leave an ownerless directory there after
@@ -93,14 +93,27 @@ def _remove_lock_dir(path: Path, *, attempts: int = 200) -> None:
         # We are a live pid, so the lock could never age out as "stale": mark it released so the
         # next acquirer reclaims it at once (or, failing even that, strip the owner so it ages out).
         _log.warning("could not release lock %s after %d attempts; marking it reclaimable", path, attempts)
-        _mark_released(path)
+        _mark_released(path, token)
         return
     # Best effort: the lock is already released, a leftover quarantine blocks nobody.
     shutil.rmtree(quarantine, ignore_errors=True)
 
 
-def _mark_released(path: Path) -> None:
+def _mark_released(path: Path, token: str) -> None:
+    """Mark the lock released only while `owner.json` still carries OUR token.
+
+    If the path changed hands during the failed release, the new owner's lock must stay untouched.
+    Residual window (ponytail: no cross-process CAS on a plain file): a reclaim plus a contender's
+    acquire landing between the read below and the write; it needs a stale-reclaim of a live pid's
+    lock inside microseconds, so it is accepted rather than guarded.
+    """
     owner = path / "owner.json"
+    try:
+        if json.loads(owner.read_text(encoding="utf-8")).get("token") != token:
+            return
+    except (OSError, ValueError, AttributeError):
+        # Unreadable (e.g. already ownerless): fall through to the best-effort marker.
+        pass
     try:
         owner.write_text(json.dumps({"released": True}), encoding="utf-8")
     except OSError:
