@@ -280,4 +280,11 @@ describe("useRunStream", () => {
     await waitFor(() => expect(result.current.error).toContain("stream dropped"));
     await waitFor(() => expect(attempts).toBeGreaterThan(1));
   });
+
+  it.each([[undefined], [null], [{ code: 7 }], [""]])("never shows a meaningless reason when the stream throws %j", async thrown => {
+    const api = makeApi({ streamProgress: (async () => { throw thrown; }) as never });
+    const { result } = renderHook(() => useRunStream("run-1", { workspaceId: "ws-1", backoffMs: 1 }), { wrapper: wrapper(api) });
+    await waitFor(() => expect(result.current.error).toBeTruthy());
+    expect(result.current.error).not.toMatch(/undefined|null|\[object Object\]/);
+  });
 });

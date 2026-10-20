@@ -16,7 +16,7 @@ export function setDefaultLocale(locale: Locale) { defaultLocale = locale; }
 /** Looks `key` up in `locale`, then in English, then returns the key itself. `{name}` placeholders are filled from `vars`. */
 export function translate(locale: Locale, key: string, vars?: Record<string, string | number>, source: Dictionaries = dictionaries): string {
   const text = source[locale][key] ?? source.en[key] ?? key;
-  return vars ? text.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match)) : text;
+  return vars ? text.replace(/\{(\w+)\}/g, (match, name: string) => (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match)) : text;
 }
 
 /** True when `key` is a known message key; lets dynamic keys (like server capability ids) fall back instead of showing the raw key. */
@@ -33,6 +33,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((next: Locale) => { writeStored(STORAGE_KEY, next); setLocaleState(next); }, []);
   const value = useMemo<I18n>(() => ({ locale, setLocale, t: (key, vars) => translate(locale, key, vars) }), [locale, setLocale]);
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+/**
+ * `useT` for last-resort UI (error fallbacks): without a provider it translates in the default locale instead
+ * of throwing, so a failure screen can never itself fail for lack of context.
+ */
+export function useSafeT(): I18n {
+  const value = useContext(I18nContext);
+  return value ?? { locale: defaultLocale, setLocale: () => {}, t: (key, vars) => translate(defaultLocale, key, vars) };
 }
 
 export function useT(): I18n {

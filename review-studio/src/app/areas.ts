@@ -1,11 +1,15 @@
 import type { MessageKey } from "@/lib/i18n";
+import type { Mode } from "@/app/mode";
 import { FileText, Home, PackageCheck, Play, Settings2, ShieldCheck, Wrench, type LucideIcon } from "lucide-react";
 
 /** Who sees an area in navigation: everyone, people writing in the UI, or people who opted into Advanced. */
 type Reach = "base" | "write" | "advanced";
 type Area = { id: string; label: string; navKey: MessageKey; path: string; summary: string; icon: LucideIcon; reach: Reach; secondary?: boolean };
 
-/** Task areas from the redesign spec's information architecture. */
+/**
+ * Task areas from the redesign spec's information architecture. `label` is the page heading and the
+ * spec's name for the area; `navKey` is what navigation and the palette show (so they may differ).
+ */
 export const areas: Area[] = [
   { id: "home", navKey: "nav.home", reach: "base", label: "Home", path: "/", summary: "Current document readiness, blockers, recent runs, and the next safe action.", icon: Home },
   { id: "authoring", navKey: "nav.write", reach: "write", label: "Authoring", path: "/authoring", summary: "Sources, classification, assets, context, sections, and revisions.", icon: FileText },
@@ -17,7 +21,7 @@ export const areas: Area[] = [
 ];
 
 /** Areas shown in navigation, the palette and route maps. Hidden areas keep their URLs; they are only unlisted. */
-export function visibleAreas(mode: "supervise" | "write", advanced: boolean): Area[] {
+export function visibleAreas(mode: Mode, advanced: boolean): Area[] {
   return areas.filter(area => area.reach === "base" || (area.reach === "write" && mode === "write") || (area.reach === "advanced" && advanced));
 }
 
@@ -26,7 +30,7 @@ const sliceArea: Record<string, string> = { S0: "/", S1: "/configure/workspaces"
 export const areaPathForSlice = (slice: string) => sliceArea[slice] ?? "/";
 
 /** Whether the area hosting `path` is listed in navigation for this mode; the palette applies the same rule to capability items. */
-export function isPathVisible(path: string, mode: "supervise" | "write", advanced: boolean): boolean {
+export function isPathVisible(path: string, mode: Mode, advanced: boolean): boolean {
   const host = areas.find(area => area.path === "/" ? path === "/" : path === area.path || path.startsWith(`${area.path}/`));
   return !host || visibleAreas(mode, advanced).includes(host);
 }

@@ -40,7 +40,8 @@ function FindingsTable({ all, selectedId }: { all: FindingRow[]; selectedId?: st
   const [severity, setSeverity] = useState("all");
   if (all.length === 0) return <EmptyState title={t("rv.finding.none.title")} description={t("rv.finding.none.body")} action={{ label: t("empty.runPipeline"), to: "/pipeline" }} />;
   const needle = filter.trim().toLowerCase();
-  const rows = all.filter(item => (severity === "all" || item.severity === severity) && (!needle || `${item.id} ${item.message} ${findingLocation(item, t)} ${item.severity}`.toLowerCase().includes(needle)));
+  const severityLabel = (value: string) => { const key = statusKey("rv.sev", value); return key ? t(key) : value; }; // what the table shows
+  const rows = all.filter(item => (severity === "all" || item.severity === severity) && (!needle || `${item.id} ${item.message} ${findingLocation(item, t)} ${item.severity} ${severityLabel(item.severity)}`.toLowerCase().includes(needle)));
   const selected = selectedId ? all.find(item => item.id === selectedId) : undefined;
   return <div className="grid gap-4">
     <div className="flex flex-wrap items-end gap-4">

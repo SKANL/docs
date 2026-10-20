@@ -1,10 +1,10 @@
 import { Component, type ReactNode } from "react";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Button } from "@/components/ui/button";
-import { useT } from "@/lib/i18n";
+import { useSafeT } from "@/lib/i18n";
 
 function Failed({ error }: { error: Error }) {
-  const { t } = useT();
+  const { t } = useSafeT();
   return <div className="grid gap-3">
     <ErrorState title={t("error.pageFailed")} error={error} />
     <div><Button type="button" variant="outline" size="sm" onClick={() => window.location.reload()}>{t("error.reload")}</Button></div>

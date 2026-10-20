@@ -1,7 +1,7 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { errorMessageKey, technicalDetails } from "@/lib/friendly-error";
-import { useT } from "@/lib/i18n";
+import { useSafeT } from "@/lib/i18n";
 
 type Common = { title?: string; onRetry?: () => void; retrying?: boolean };
 /** Either a caught `error` (message derived, details disclosed) or ready-made `message` text; never both. */
@@ -12,7 +12,7 @@ type Props = Common & ({ error: unknown; message?: never } | { message: string; 
  * collapsed "Technical details" disclosure. `message` is for text that is already written for people.
  */
 export function ErrorState({ title, message, error, onRetry, retrying }: Props) {
-  const { t } = useT();
+  const { t } = useSafeT(); // works outside I18nProvider: an error screen must not need the thing that may have failed
   const details = error === undefined ? [] : technicalDetails(error);
   return <Alert variant="destructive" role="alert">
     <AlertTitle>{title ?? t("error.title")}</AlertTitle>
