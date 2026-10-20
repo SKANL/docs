@@ -29,7 +29,11 @@ def resolve_java_executable(paths: dict[str, Any]) -> str | None:
     )
 
 
-_SWAP_LOCK = threading.Lock()
+# Re-entrant: a helper nesting java_on_path on the same thread must not deadlock itself.
+_SWAP_LOCK = threading.RLock()
+# Upper bound on waiting for another conversion; a stuck one fails this call (the PDF adapter
+# degrades to its text-layer fallback) instead of queueing every later request forever.
+_SWAP_TIMEOUT = 600.0
 
 
 class _EnvSubprocess:
@@ -64,7 +68,9 @@ def java_on_path(java_executable: str) -> Iterator[None]:
     # one at a time. Upgrade path: an upstream `env=` parameter on run_jar.
     from opendataloader_pdf import runner
 
-    with _SWAP_LOCK:
+    if not _SWAP_LOCK.acquire(timeout=_SWAP_TIMEOUT):
+        raise TimeoutError(f"another Java conversion held the runner for over {_SWAP_TIMEOUT:.0f}s")
+    try:
         env = dict(os.environ)
         java_dir = str(Path(java_executable).parent)
         path = env.get("PATH", "")
@@ -76,3 +82,5 @@ def java_on_path(java_executable: str) -> Iterator[None]:
             yield
         finally:
             runner.subprocess = original
+    finally:
+        _SWAP_LOCK.release()
