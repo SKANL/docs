@@ -74,6 +74,7 @@ export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs =
     // Bounded: if the shell call never settles, the timeout ends the wait and a late answer is ignored.
     // A timed-out call may still be running in the shell (its supervisor state is mutex-guarded, but
     // a second restart would only queue behind it), so Retry adopts the pending call instead of re-sending.
+    // The wait is bounded: the shell gives up on health after 60 s (supervisor.rs HEALTH_TIMEOUT), which settles the call.
     let done = false;
     const finish = (apply: () => void) => { if (done) return; done = true; clearTimeout(bound); restarting.current = false; apply(); };
     const bound = setTimeout(() => finish(() => { setError("sidecar restart timed out"); setPhase("failed"); }), restartTimeoutMs);

@@ -273,3 +273,12 @@ Full-suite fixes: 39bbffeb (gate needs callable invoke; parity tab check), test 
 Backend: 3200 passed (non-architecture) + 131 architecture; frontend 395; ruff/mypy/tsc/eslint clean.
 U11+U12 slice 1861b6f1..HEAD: 379 lines, under budget, not natively reviewed.
 Not done: real Tauri run + screenshots; chained-PR strategy choice before first push.
+
+## Delivered (final)
+All tasks shipped to main: stacked PRs #166-#188 (merge commits), review follow-ups #189-#200.
+Native reviews (r1-r11) were all APPROVED and acknowledged; advisory findings were triaged and fixed in
+#192-#200. Real desktop runtime check passed (`check:runtime` and `check:runtime:failure`, isolated APPDATA).
+Closed after delivery: lock-release logging (#199, #200), restart overlap guard (#199; the wait is bounded
+by the shell's 60 s HEALTH_TIMEOUT), plugins scratch-limit test made load-proof (30 s subprocess timeout).
+Known and accepted: the r5 combined review of range 10 hit a tool failure and was re-covered in smaller
+slices; the last follow-up PR (docs/test only) was not re-reviewed natively.
