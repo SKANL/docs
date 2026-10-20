@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 import secrets
 from pathlib import Path
 
+from docs.api.http import CURSOR_SECRET_BYTES
 from docs.composition import atomic_write_text
 
-_SECRET_BYTES = 32
+LOG = logging.getLogger(__name__)
 
 
 def load_or_create_cursor_secret(workspace: Path) -> bytes:
@@ -23,11 +25,15 @@ def load_or_create_cursor_secret(workspace: Path) -> bytes:
     path = workspace / ".docs" / "cursor.key"
     with contextlib.suppress(OSError, ValueError):
         existing = bytes.fromhex(path.read_text(encoding="ascii").strip())
-        if len(existing) >= _SECRET_BYTES:
+        if len(existing) >= CURSOR_SECRET_BYTES:
             return existing
-    path.parent.mkdir(parents=True, exist_ok=True)
-    secret = secrets.token_bytes(_SECRET_BYTES)
-    atomic_write_text(path, secret.hex())
+    secret = secrets.token_bytes(CURSOR_SECRET_BYTES)
+    try:
+        atomic_write_text(path, secret.hex())  # creates the missing parent directories
+    except OSError:
+        # An unwritable workspace degrades (cursors die on restart) instead of killing startup.
+        LOG.warning("cursor key %s is not writable; using an ephemeral secret", path)
+        return secret
     # Owner-only on POSIX; on Windows chmod only toggles read-only and the file inherits the
     # per-user ACL of the workspace's .docs directory.
     with contextlib.suppress(OSError):

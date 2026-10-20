@@ -204,16 +204,31 @@ class RevisionService:
         return diff_path
 
     def _write_diff(self, revisions_dir: Path, prefix: str, diff: str) -> str:
-        # max+1, not a count: removing an earlier diff must never make a number reusable.
+        # max+1 over the files AND the log, not a count: removing a diff (even the highest) must
+        # never free a number that revision-log.json still points at.
         numbers = [
             int(number)
             for p in revisions_dir.glob(f"{prefix}.*.diff")
             if (number := p.name[len(prefix) + 1 : -len(".diff")]).isdigit()
         ]
+        numbers += self._logged_diff_numbers(revisions_dir, prefix)
         n = max(numbers, default=0) + 1
         path = revisions_dir / f"{prefix}.{n}.diff"
         self.section_repository.write_raw_text(path, diff)
         return str(path)
+
+    def _logged_diff_numbers(self, revisions_dir: Path, prefix: str) -> list[int]:
+        log_path = revisions_dir / "revision-log.json"
+        if not log_path.exists():
+            return []
+        entries = json.loads(log_path.read_text(encoding="utf-8")).get("entries", [])
+        names = (Path(str(entry.get("diff_path", ""))).name for entry in entries)
+        return [
+            int(number)
+            for name in names
+            if name.startswith(f"{prefix}.") and name.endswith(".diff")
+            and (number := name[len(prefix) + 1 : -len(".diff")]).isdecimal()
+        ]
 
     def _append_log_entry(
         self, revisions_dir: Path, *, request: str, target_id: str, diff_path: str,

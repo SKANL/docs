@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -39,4 +40,32 @@ def test_subprocess_receives_augmented_path_and_is_restored(
 
     assert seen["env"]["PATH"].split(os.pathsep)[0] == str(java.parent)
     assert os.environ["PATH"].split(os.pathsep)[0] != str(java.parent)
+    assert odl_runner.subprocess is original_module
+
+
+def test_overlapping_contexts_restore_the_real_subprocess(tmp_path: Path) -> None:
+    # Two concurrent conversions (threaded sidecar): the 2nd used to save the 1st's wrapper as its
+    # "original" and restore it last, leaving the library pinned to a stale environment snapshot.
+    original_module = odl_runner.subprocess
+    first_in, second_started, first_done = threading.Event(), threading.Event(), threading.Event()
+
+    def first() -> None:
+        with java_on_path(str(tmp_path / "a" / "java")):
+            first_in.set()
+            second_started.wait(5)
+            threading.Event().wait(0.2)  # give the 2nd every chance to overlap
+        first_done.set()
+
+    def second() -> None:
+        first_in.wait(5)
+        second_started.set()
+        with java_on_path(str(tmp_path / "b" / "java")):
+            first_done.wait(1)  # the 1st leaves while the 2nd is (unserialised) still inside
+
+    threads = [threading.Thread(target=first), threading.Thread(target=second)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+
     assert odl_runner.subprocess is original_module

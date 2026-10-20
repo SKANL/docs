@@ -599,6 +599,8 @@ def test_transport_generates_one_stable_request_id_and_replaces_duplicates():
         ("evil.test", False),
         ("127.0.0.1:9999", False),
         ("localhost.evil.test:8000", False),
+        ("anything@127.0.0.1:8000", False),
+        ("127.0.0.1:8000/evil", False),
         ("", False),
         (None, False),
     ],

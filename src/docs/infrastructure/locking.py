@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import time
@@ -10,6 +11,10 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
+# Bound at import: lock release must not be hijacked by code (or tests) that patches the global `os.replace`.
+_rename = os.replace
 
 
 @contextmanager
@@ -65,20 +70,30 @@ def owned_directory_lock(
 
 
 def _remove_lock_dir(path: Path, *, attempts: int = 200) -> None:
-    """Remove a lock directory, retrying while a contender holds owner.json open.
+    """Release a lock by atomically renaming it away, then deleting the private copy.
 
-    On Windows a reader that has the owner file open makes the removal fail once;
-    swallowing that error would leave the lock behind and block every later owner.
+    Deleting the lock path in place could leave an ownerless directory there after
+    a partial `rmtree` (Windows: `owner.json` removed, directory still busy); a
+    contender would reclaim that path and a later retry would delete ITS lock.
+    The rename is the release: it is atomic, fails while a reader holds `owner.json`
+    open (retried, `attempts` x 10 ms = 2 s by default), and afterwards the lock
+    path is free while only this call touches the quarantine.
     """
+    quarantine = path.with_name(f".{path.name}.release-{uuid.uuid4().hex}")
     for _ in range(attempts):
         try:
-            shutil.rmtree(path)
-            return
+            _rename(path, quarantine)
+            break
         except FileNotFoundError:
             return
         except OSError:
             time.sleep(0.01)
-    shutil.rmtree(path, ignore_errors=True)
+    else:
+        # Still held: later acquirers wait for stale reclaim (`stale_after`), not for us.
+        _log.warning("could not release lock %s after %d attempts; it stays until reclaimed as stale", path, attempts)
+        return
+    # Best effort: the lock is already released, a leftover quarantine blocks nobody.
+    shutil.rmtree(quarantine, ignore_errors=True)
 
 
 def pid_alive(pid: int) -> bool:
@@ -143,7 +158,7 @@ def _reclaim_stale(path: Path, *, stale_after: float) -> bool:
         return False
     quarantine = path.with_name(f".{path.name}.reclaim-{uuid.uuid4().hex}")
     try:
-        os.replace(path, quarantine)
+        _rename(path, quarantine)
     except (FileExistsError, OSError):
         return False
     shutil.rmtree(quarantine, ignore_errors=True)
