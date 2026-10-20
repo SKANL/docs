@@ -33,6 +33,14 @@ _STRUCTURAL_SCOPE_ERROR = (
 )
 
 
+def _diff_number(name: str, prefix: str) -> int | None:
+    """`n` of a `<prefix>.<n>.diff` file name; the one parser behind "never reuse a number"."""
+    if not (name.startswith(f"{prefix}.") and name.endswith(".diff")):
+        return None
+    number = name[len(prefix) + 1 : -len(".diff")]
+    return int(number) if number.isdecimal() else None
+
+
 class RevisionService:
     def __init__(
         self,
@@ -207,9 +215,9 @@ class RevisionService:
         # max+1 over the files AND the log, not a count: removing a diff (even the highest) must
         # never free a number that revision-log.json still points at.
         numbers = [
-            int(number)
+            number
             for p in revisions_dir.glob(f"{prefix}.*.diff")
-            if (number := p.name[len(prefix) + 1 : -len(".diff")]).isdigit()
+            if (number := _diff_number(p.name, prefix)) is not None
         ]
         numbers += self._logged_diff_numbers(revisions_dir, prefix)
         n = max(numbers, default=0) + 1
@@ -223,12 +231,7 @@ class RevisionService:
             return []
         entries = json.loads(log_path.read_text(encoding="utf-8")).get("entries", [])
         names = (Path(str(entry.get("diff_path", ""))).name for entry in entries)
-        return [
-            int(number)
-            for name in names
-            if name.startswith(f"{prefix}.") and name.endswith(".diff")
-            and (number := name[len(prefix) + 1 : -len(".diff")]).isdecimal()
-        ]
+        return [number for name in names if (number := _diff_number(name, prefix)) is not None]
 
     def _append_log_entry(
         self, revisions_dir: Path, *, request: str, target_id: str, diff_path: str,
