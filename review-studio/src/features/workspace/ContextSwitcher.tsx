@@ -23,8 +23,11 @@ export function ContextSwitcher() {
   const selectWorkspace = useAction((id: string) => api.selectWorkspace!(id), common);
   const selectDocument = useAction((id: string) => api.useDocument!(id, workspaceId), common);
   const failure = selectWorkspace.error ?? selectDocument.error;
-  // A failed fetch must not read as "no workspace": say what failed.
-  const loadFailure = workspaces.error ?? active.error ?? documents.error;
+  // A failed fetch must not read as "no workspace": say which query failed. active-context also
+  // lists workspaces, so a workspaces failure explains an active-context one and wins.
+  const loadFailure = workspaces.error != null ? { key: "ctx.loadFailed" as const, error: workspaces.error }
+    : documents.error != null ? { key: "ctx.documentsLoadFailed" as const, error: documents.error }
+    : active.error != null ? { key: "ctx.currentLoadFailed" as const, error: active.error } : null;
 
   return <div className="flex flex-wrap items-center gap-2">
     <Select value={workspaceId} onValueChange={id => { if (id !== workspaceId) selectWorkspace.mutate(id); }} disabled={!api.selectWorkspace || list.length === 0 || selectWorkspace.isPending}>
@@ -36,6 +39,6 @@ export function ContextSwitcher() {
       <SelectContent>{docs.map(item => <SelectItem key={item.id} value={item.id}>{item.title || item.id}</SelectItem>)}</SelectContent>
     </Select>
     {failure && <span role="alert" className="text-xs text-destructive">{t("ctx.switchFailed", { message: t(errorMessageKey(failure)) })}</span>}
-    {!failure && loadFailure != null && <span role="alert" className="text-xs text-destructive">{t("ctx.loadFailed", { message: t(errorMessageKey(loadFailure)) })}</span>}
+    {!failure && loadFailure && <span role="alert" className="text-xs text-destructive">{t(loadFailure.key, { message: t(errorMessageKey(loadFailure.error)) })}</span>}
   </div>;
 }

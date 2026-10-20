@@ -94,7 +94,7 @@ export function SourcesPanel({ documentId }: { documentId: string }) {
     </form> : <Unavailable>{t("src.unavailable")}</Unavailable>}
     <ActionError action={ingest} what={t("act.ingestSources")} />
     {ingest.data && <IngestResult result={ingest.data} />}
-    {report?.failed.map(item => <ErrorState key={item.file.name} title={t("sources.importFailed", { files: item.file.name })} error={item.reason} onRetry={() => imported.mutate([item.file])} retrying={imported.isPending} />)}
+    {report?.failed.map((item, index) => <ErrorState key={`${index}:${item.file.name}`} title={t("sources.importFailed", { files: item.file.name })} error={item.reason} onRetry={() => imported.mutate([item.file])} retrying={imported.isPending} />)}
     {report && report.stored.length > 0 && <ul role="status" className="grid gap-1 text-sm">{report.stored.map(result => <li key={result.path}>{result.deduplicated ? t("src.alreadyImported") : t("src.imported")}<code>{result.path}</code> ({t("src.bytes", { size: result.size })})</li>)}</ul>}
   </div>;
 }

@@ -68,4 +68,47 @@ def test_overlapping_contexts_restore_the_real_subprocess(tmp_path: Path) -> Non
     for thread in threads:
         thread.join(10)
 
+    assert not any(thread.is_alive() for thread in threads)
     assert odl_runner.subprocess is original_module
+
+
+def test_nested_contexts_on_one_thread_do_not_deadlock(tmp_path: Path) -> None:
+    original_module = odl_runner.subprocess
+    done = threading.Event()
+
+    def nested() -> None:
+        with java_on_path(str(tmp_path / "a" / "java")), java_on_path(str(tmp_path / "b" / "java")):
+            pass
+        done.set()
+
+    worker = threading.Thread(target=nested, daemon=True)
+    worker.start()
+    worker.join(5)
+
+    assert done.is_set() and not worker.is_alive()
+    assert odl_runner.subprocess is original_module
+
+
+def test_a_context_stuck_in_another_thread_times_out_instead_of_blocking_forever(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from docs.infrastructure.tools import java_resolution
+
+    monkeypatch.setattr(java_resolution, "_SWAP_TIMEOUT", 0.2)
+    holding, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with java_on_path(str(tmp_path / "a" / "java")):
+            holding.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    assert holding.wait(5)
+    try:
+        with pytest.raises(TimeoutError), java_on_path(str(tmp_path / "b" / "java")):
+            pass
+    finally:
+        release.set()
+        holder.join(5)
+    assert not holder.is_alive()

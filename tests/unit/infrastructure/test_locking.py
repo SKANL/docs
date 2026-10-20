@@ -78,7 +78,7 @@ def test_remove_lock_dir_retries_the_release_rename_then_succeeds(
     assert not list(tmp_path.iterdir())
 
 
-def test_a_failed_cleanup_never_touches_a_lock_a_contender_created_meanwhile(
+def test_a_failed_private_cleanup_still_releases_the_lock_path_at_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A partial rmtree (owner.json gone, directory stuck) used to leave an ownerless directory at
@@ -86,22 +86,64 @@ def test_a_failed_cleanup_never_touches_a_lock_a_contender_created_meanwhile(
     lock = tmp_path / "x.lock"
     lock.mkdir()
     (lock / "owner.json").write_text("{}", encoding="utf-8")
-    real_rmtree = shutil.rmtree
 
     def stuck(path: Path, *args: object, **kwargs: object) -> None:
         if Path(path) == lock:  # the lock path itself must never be rmtree'd
             raise AssertionError("rmtree on the live lock path")
-        (Path(path) / "owner.json").unlink()
         if not kwargs.get("ignore_errors"):
             raise PermissionError("directory is busy")
 
     monkeypatch.setattr(locking.shutil, "rmtree", stuck)
     locking._remove_lock_dir(lock, attempts=3)
     assert not lock.exists()  # released at once: a contender may now take the path
-    lock.mkdir()  # the contender
-    (lock / "owner.json").write_text('{"token": "new"}', encoding="utf-8")
-    monkeypatch.setattr(locking.shutil, "rmtree", real_rmtree)
-    assert (lock / "owner.json").exists()
+
+
+def test_release_never_removes_a_lock_a_contender_now_owns(tmp_path: Path) -> None:
+    lock = tmp_path / "x.lock"
+    with owned_directory_lock(lock):
+        # Simulate stale reclaim + a contender taking the path while we still run.
+        shutil.rmtree(lock)
+        lock.mkdir()
+        (lock / "owner.json").write_text('{"token": "contender"}', encoding="utf-8")
+    assert json.loads((lock / "owner.json").read_text(encoding="utf-8"))["token"] == "contender"
+
+
+def test_a_lock_whose_release_keeps_failing_is_immediately_reclaimable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner is this live process, so without a marker nobody could reclaim it before stale_after.
+    lock = tmp_path / "stuck.lock"
+    real_rename = locking._rename
+    monkeypatch.setattr(locking, "_rename", lambda *a: (_ for _ in ()).throw(PermissionError("busy")))
+    with owned_directory_lock(lock):
+        pass
+    assert lock.exists()
+    monkeypatch.setattr(locking, "_rename", real_rename)
+    started = time.monotonic()
+    with owned_directory_lock(lock, timeout=5, stale_after=3600):
+        pass
+    assert time.monotonic() - started < 2
+
+
+def test_a_lock_whose_release_and_marker_write_both_fail_still_ends_via_stale_reclaim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "stuck.lock"
+    real_rename, real_write = locking._rename, Path.write_text
+    with owned_directory_lock(lock):
+        monkeypatch.setattr(locking, "_rename", lambda *a: (_ for _ in ()).throw(PermissionError("busy")))
+
+        def no_write(self: Path, *args: object, **kwargs: object) -> int:
+            if self.name == "owner.json":
+                raise PermissionError("busy")
+            return real_write(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "write_text", no_write)
+    monkeypatch.setattr(locking, "_rename", real_rename)
+    monkeypatch.setattr(Path, "write_text", real_write)
+    assert lock.exists()
+    with owned_directory_lock(lock, timeout=5, stale_after=0):  # ownerless -> ages out, bounded
+        pass
 
 
 def test_remove_lock_dir_warns_when_it_cannot_release_and_ignores_missing(
