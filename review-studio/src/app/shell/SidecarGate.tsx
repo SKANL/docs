@@ -11,12 +11,17 @@ const invoke = <T,>(command: string) => (window as unknown as { __TAURI_INTERNAL
 
 /** Consecutive "failed" answers needed before the failure screen shows: the shell reports "failed" for a moment before it starts the service. */
 const CONFIRM_FAILURES = 2;
+/** How long the startup screen may wait before it gives up and offers Retry / View log. */
+const STARTUP_TIMEOUT_MS = 120_000;
 
 /** Desktop only: shows a startup screen while the local service boots and a failure screen (Retry, View log) if it does not. In a browser it renders the app directly. */
-export function SidecarGate({ children, pollIntervalMs = 500 }: { children: ReactNode; pollIntervalMs?: number }) {
+export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs = STARTUP_TIMEOUT_MS }: { children: ReactNode; pollIntervalMs?: number; startupTimeoutMs?: number }) {
   const desktop = inTauri();
   const [phase, setPhase] = useState<Phase>(desktop ? "booting" : "ready");
+  const [error, setError] = useState<string>();
   const failures = useRef(0);
+  // While a restart is pending, its own answer is the only truth: health polls still see the old state.
+  const restarting = useRef(false);
 
   useEffect(() => {
     if (phase !== "booting" || !desktop) return;
@@ -25,25 +30,33 @@ export function SidecarGate({ children, pollIntervalMs = 500 }: { children: Reac
     const poll = () => {
       invoke<Health>("sidecar_health").then(health => {
         if (!active) return;
-        if (health.ready) return setPhase("ready");
-        failures.current = health.state === "failed" ? failures.current + 1 : 0;
-        if (failures.current >= CONFIRM_FAILURES) return setPhase("failed");
+        if (!restarting.current) {
+          if (health.ready) return setPhase("ready");
+          failures.current = health.state === "failed" ? failures.current + 1 : 0;
+          if (failures.current >= CONFIRM_FAILURES) return setPhase("failed");
+        }
         timer = setTimeout(poll, pollIntervalMs);
       }).catch(() => { if (active) timer = setTimeout(poll, pollIntervalMs); });
     };
     poll();
-    return () => { active = false; clearTimeout(timer); };
-  }, [phase, desktop, pollIntervalMs]);
+    const giveUp = setTimeout(() => { if (active && !restarting.current) setPhase("failed"); }, startupTimeoutMs);
+    return () => { active = false; clearTimeout(timer); clearTimeout(giveUp); };
+  }, [phase, desktop, pollIntervalMs, startupTimeoutMs]);
 
   const retry = useCallback(() => {
     failures.current = 0;
+    restarting.current = true;
+    setError(undefined);
     setPhase("booting");
-    // The restart command blocks until the service is healthy or has failed.
-    invoke<Health>("sidecar_restart").then(() => setPhase("ready"), () => setPhase("failed"));
+    // The restart command blocks until the service is healthy or has failed; its answer decides.
+    invoke<Health>("sidecar_restart").then(
+      health => { restarting.current = false; setPhase(health.ready ? "ready" : "failed"); },
+      reason => { restarting.current = false; setError(String(reason)); setPhase("failed"); },
+    );
   }, []);
 
   if (phase === "ready") return <>{children}</>;
-  return phase === "failed" ? <FailureScreen onRetry={retry} /> : <StartupScreen />;
+  return phase === "failed" ? <FailureScreen onRetry={retry} error={error} /> : <StartupScreen />;
 }
 
 const screenClass = "mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 px-6";
@@ -58,7 +71,7 @@ function StartupScreen() {
   </main>;
 }
 
-function FailureScreen({ onRetry }: { onRetry(): void }) {
+function FailureScreen({ onRetry, error }: { onRetry(): void; error?: string }) {
   const { t } = useT();
   const [log, setLog] = useState<string>();
   const toggleLog = async () => {
@@ -69,6 +82,7 @@ function FailureScreen({ onRetry }: { onRetry(): void }) {
     <div role="alert" className="grid gap-2">
       <h1 className="text-2xl font-semibold">{t("sidecar.failed.title")}</h1>
       <p className="text-muted-foreground">{t("sidecar.failed.body")}</p>
+      {error && <p className="text-sm break-words">{error}</p>}
     </div>
     <div className="flex gap-3">
       <Button type="button" onClick={onRetry}>{t("sidecar.retry")}</Button>

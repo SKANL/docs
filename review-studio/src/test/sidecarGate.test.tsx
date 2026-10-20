@@ -21,9 +21,10 @@ function installTauri(health: Health[], handlers: Record<string, () => unknown> 
   return invoke;
 }
 
-const renderGate = () => render(<I18nProvider><SidecarGate pollIntervalMs={5}><p>app content</p></SidecarGate></I18nProvider>);
+const renderGate = (startupTimeoutMs?: number) => render(<I18nProvider><SidecarGate pollIntervalMs={5} startupTimeoutMs={startupTimeoutMs}><p>app content</p></SidecarGate></I18nProvider>);
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-afterEach(() => { cleanup(); localStorage.clear(); delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__; });
+afterEach(() => { vi.useRealTimers(); cleanup(); localStorage.clear(); delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__; });
 
 describe("SidecarGate", () => {
   it("renders the app untouched outside the desktop shell", () => {
@@ -71,6 +72,55 @@ describe("SidecarGate", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("Retry shows the startup screen and ignores stale 'failed' polls until the restart settles, then follows its result", async () => {
+    let settle!: (health: Health) => void;
+    installTauri([failed], { sidecar_restart: () => new Promise<Health>(resolve => { settle = resolve; }) });
+    renderGate();
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await pause(60); // many stale 'failed' polls land while the restart is pending
+    expect(screen.getByRole("status").textContent).toContain("Starting Review Studio");
+    expect(screen.queryByRole("alert")).toBeNull();
+    settle(failed);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+
+  it("Retry uses the restart's ready answer even while polls still read 'failed'", async () => {
+    let settle!: (health: Health) => void;
+    installTauri([failed], { sidecar_restart: () => new Promise<Health>(resolve => { settle = resolve; }) });
+    renderGate();
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    await pause(30);
+    settle(ready);
+    expect(await screen.findByText("app content")).toBeTruthy();
+  });
+
+  it("a restart rejection shows the failure screen with the error", async () => {
+    installTauri([failed], { sidecar_restart: () => { throw "no executable"; } });
+    renderGate();
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("no executable");
+  });
+
+  it("gives up after the startup timeout when the service stays 'starting'", async () => {
+    vi.useFakeTimers();
+    installTauri([starting]);
+    renderGate(1000);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(screen.queryByRole("alert")).toBeNull();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("gives up after the startup timeout when every health call errors", async () => {
+    vi.useFakeTimers();
+    const invoke = installTauri([starting]);
+    invoke.mockRejectedValue("ipc down");
+    renderGate(1000);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(screen.getByRole("alert")).toBeTruthy();
   });
 
   it("View log shows the log text, and says so when the log is empty", async () => {
