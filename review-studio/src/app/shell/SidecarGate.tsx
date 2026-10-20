@@ -26,6 +26,8 @@ export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs =
   const failures = useRef(0);
   // While a restart is pending, its own answer is the only truth: health polls still see the old state.
   const restarting = useRef(false);
+  const inFlight = useRef(false);
+  const settle = useRef<(apply: () => void) => void>(() => {});
 
   useEffect(() => {
     if (phase !== "booting" || !desktop) return;
@@ -70,12 +72,17 @@ export function SidecarGate({ children, pollIntervalMs = 500, startupTimeoutMs =
     setPhase("booting");
     // The restart command blocks until the service is healthy or has failed; its answer decides.
     // Bounded: if the shell call never settles, the timeout ends the wait and a late answer is ignored.
+    // A timed-out call may still be running in the shell (its supervisor state is mutex-guarded, but
+    // a second restart would only queue behind it), so Retry adopts the pending call instead of re-sending.
     let done = false;
     const finish = (apply: () => void) => { if (done) return; done = true; clearTimeout(bound); restarting.current = false; apply(); };
     const bound = setTimeout(() => finish(() => { setError("sidecar restart timed out"); setPhase("failed"); }), restartTimeoutMs);
+    settle.current = finish;
+    if (inFlight.current) return;
+    inFlight.current = true;
     invoke<Health>("sidecar_restart").then(
-      health => finish(() => setPhase(health.ready ? "ready" : "failed")),
-      reason => finish(() => { setError(String(reason)); setPhase("failed"); }),
+      health => { inFlight.current = false; settle.current(() => setPhase(health.ready ? "ready" : "failed")); },
+      reason => { inFlight.current = false; settle.current(() => { setError(String(reason)); setPhase("failed"); }); },
     );
   }, [restartTimeoutMs]);
 

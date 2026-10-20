@@ -92,25 +92,29 @@ def _remove_lock_dir(path: Path, *, token: str, attempts: int = 200) -> None:
     else:
         # We are a live pid, so the lock could never age out as "stale": mark it released so the
         # next acquirer reclaims it at once (or, failing even that, strip the owner so it ages out).
-        _log.warning("could not release lock %s after %d attempts; marking it reclaimable", path, attempts)
-        _mark_released(path, token)
+        if _mark_released(path, token):
+            _log.warning("could not release lock %s after %d attempts; marked it reclaimable", path, attempts)
+        else:
+            _log.debug("could not release lock %s after %d attempts; it now belongs to another owner, left untouched", path, attempts)
         return
     # Best effort: the lock is already released, a leftover quarantine blocks nobody.
     shutil.rmtree(quarantine, ignore_errors=True)
 
 
-def _mark_released(path: Path, token: str) -> None:
+def _mark_released(path: Path, token: str) -> bool:
     """Mark the lock released only while `owner.json` still carries OUR token.
 
     If the path changed hands during the failed release, the new owner's lock must stay untouched.
     Residual window (ponytail: no cross-process CAS on a plain file): a reclaim plus a contender's
     acquire landing between the read below and the write; it needs a stale-reclaim of a live pid's
     lock inside microseconds, so it is accepted rather than guarded.
+
+    Returns False when the lock belongs to another owner and was left untouched.
     """
     owner = path / "owner.json"
     try:
         if json.loads(owner.read_text(encoding="utf-8")).get("token") != token:
-            return
+            return False
     except (OSError, ValueError, AttributeError):
         # Unreadable (e.g. already ownerless): fall through to the best-effort marker.
         pass
@@ -119,6 +123,7 @@ def _mark_released(path: Path, token: str) -> None:
     except OSError:
         with contextlib.suppress(OSError):
             owner.unlink()  # ownerless: `_reclaim_stale` ages it out by mtime
+    return True
 
 
 def pid_alive(pid: int) -> bool:

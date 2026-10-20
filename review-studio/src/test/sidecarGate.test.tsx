@@ -137,6 +137,21 @@ describe("SidecarGate", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
+  it("Retry after a timed-out restart waits for the first call instead of sending a second one", async () => {
+    vi.useFakeTimers();
+    let answer: (health: Health) => void = () => {};
+    const invoke = installTauri([failed], { sidecar_restart: () => new Promise<Health>(resolve => { answer = resolve; }) });
+    renderGate(10_000, { restartTimeoutMs: 1000 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    await act(async () => { screen.getByRole("button", { name: "Retry" }).click(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    await act(async () => { screen.getByRole("button", { name: "Retry" }).click(); });
+    expect(invoke.mock.calls.filter(([command]) => command === "sidecar_restart")).toHaveLength(1);
+    expect(screen.getByRole("status")).toBeTruthy();
+    await act(async () => { answer(ready); });
+    expect(screen.getByText("app content")).toBeTruthy();
+  });
+
   it("keeps watching after the startup timeout and recovers when the slow service turns healthy", async () => {
     vi.useFakeTimers();
     const invoke = installTauri([starting]);
