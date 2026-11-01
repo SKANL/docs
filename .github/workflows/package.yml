@@ -52,6 +52,6 @@ jobs:
         with:
           name: package-${{ github.run_id }}
           path: dist
-      - uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v2.2.3
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v2.2.3
         with:
           subject-path: 'dist/*'
